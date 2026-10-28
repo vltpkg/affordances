@@ -7,4 +7,6 @@ export default defineConfig({
   platform: 'neutral',
   dts: true,
   clean: true,
+  // .js + .d.ts: every package is type: module
+  fixedExtension: false,
 })

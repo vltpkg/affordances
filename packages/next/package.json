@@ -1,11 +1,15 @@
 {
   "name": "@afford/next",
   "version": "0.0.0",
+  "description": "Afford for Next.js: withAfford, codegen, and the route handler",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/afford/afford.git",
     "directory": "packages/next"
+  },
+  "bin": {
+    "afford": "./dist/cli.js"
   },
   "files": [
     "dist"
@@ -16,11 +20,34 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "default": "./dist/config.js"
+    },
+    "./route": {
+      "types": "./dist/route.d.ts",
+      "default": "./dist/route.js"
     }
   },
   "scripts": {
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@afford/core": "workspace:*",
+    "@afford/protocol": "workspace:*",
+    "oxc-parser": "^0.156.0"
+  },
+  "devDependencies": {
+    "next": "^16.4.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zod": "^4.6.7"
+  },
+  "peerDependencies": {
+    "next": ">=16",
+    "react": ">=19"
   }
 }
