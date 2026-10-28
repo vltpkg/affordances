@@ -1,0 +1,9 @@
+{
+  "v": "0",
+  "page": "/",
+  "route": "/",
+  "entities": {},
+  "actions": [
+    { "name": "x", "description": "", "input": {}, "expose": "everyone", "available": true }
+  ]
+}

@@ -655,6 +655,7 @@
     "workspace~apps+example react-dom": "prod ^19.3.1 ~npm~react-dom@19.3.1~peer.ac52619a787f06cf",
     "workspace~apps+example react": "prod ^19.3.1 ~npm~react@19.3.1",
     "workspace~apps+example @afford/ui": "prod workspace:* workspace~packages+ui",
+    "workspace~packages+protocol zod": "prod ^4.6.7 ~npm~zod@4.6.7",
     "workspace~packages+ui @tailwindcss/postcss": "dev ^4.3.3 ~npm~@tailwindcss+postcss@4.3.3",
     "workspace~packages+ui @types/react-dom": "dev ^19.3.0 ~npm~@types+react-dom@19.3.0~peer.f18d9ecf01787eaa",
     "workspace~packages+ui @types/react": "dev ^19.3.0 ~npm~@types+react@19.3.0",

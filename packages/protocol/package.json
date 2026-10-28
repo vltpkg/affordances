@@ -1,6 +1,7 @@
 {
   "name": "@afford/protocol",
   "version": "0.0.0",
+  "description": "Afford protocol: types, JSON Schemas, and the spec",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -8,7 +9,10 @@
     "directory": "packages/protocol"
   },
   "files": [
-    "dist"
+    "dist",
+    "schemas",
+    "fixtures",
+    "spec.md"
   ],
   "type": "module",
   "sideEffects": false,
@@ -16,11 +20,18 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    }
+    },
+    "./schemas/*.json": "./schemas/*.json",
+    "./fixtures/*": "./fixtures/*",
+    "./spec.md": "./spec.md"
   },
   "scripts": {
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "schemas": "node scripts/schemas.ts"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
   }
 }

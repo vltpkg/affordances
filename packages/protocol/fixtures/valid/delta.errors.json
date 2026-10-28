@@ -1,0 +1,28 @@
+[
+  {
+    "ok": false,
+    "error": { "code": "not_found", "message": "No action named addToKart on /products/[slug]" }
+  },
+  {
+    "ok": false,
+    "error": {
+      "code": "invalid_input",
+      "message": "Input does not match the action's schema",
+      "issues": [{ "path": ["quantity"], "message": "Expected a number greater than 0" }]
+    }
+  },
+  { "ok": false, "error": { "code": "unauthorized", "message": "This action needs a session" } },
+  {
+    "ok": false,
+    "error": {
+      "code": "confirm_required",
+      "message": "Place an order for 2 items totalling $60.00. Resend with confirm: true."
+    }
+  },
+  { "ok": false, "error": { "code": "unavailable", "message": "Size L is out of stock" } },
+  {
+    "ok": false,
+    "error": { "code": "rate_limited", "message": "Too many calls to addToCart; retry in 10s" }
+  },
+  { "ok": false, "error": { "code": "internal", "message": "Something went wrong" } }
+]

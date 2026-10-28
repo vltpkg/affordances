@@ -1,0 +1,9 @@
+{
+  "v": "0",
+  "name": "Afford Supply",
+  "routes": [
+    { "route": "/products/[slug]", "actions": ["addToCart", "notifyWhenInStock"] },
+    { "route": "/checkout", "actions": ["placeOrder"] }
+  ],
+  "auth": ["cookie", "bearer"]
+}

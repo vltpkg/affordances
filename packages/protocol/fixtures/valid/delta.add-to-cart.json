@@ -1,0 +1,5 @@
+{
+  "ok": true,
+  "changed": { "cart": { "count": 2, "subtotal": { "amount": 6000, "currency": "USD" } } },
+  "message": "Added Heavyweight Tee (M) to your cart"
+}

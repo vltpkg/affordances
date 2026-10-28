@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/SiteIndex",
+  "$defs": {
+    "SiteIndex": {
+      "type": "object",
+      "properties": {
+        "v": {
+          "type": "string",
+          "const": "0"
+        },
+        "name": {
+          "type": "string"
+        },
+        "routes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "route": {
+                "type": "string"
+              },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["route", "actions"],
+            "additionalProperties": false
+          }
+        },
+        "auth": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["cookie", "bearer"]
+          }
+        },
+        "mcp": {
+          "description": "URL of an MCP endpoint for this site",
+          "type": "string"
+        }
+      },
+      "required": ["v", "routes", "auth"],
+      "additionalProperties": false
+    }
+  }
+}

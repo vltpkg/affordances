@@ -1,0 +1,1 @@
+{ "action": "placeOrder", "input": { "shipping": "standard" }, "confirm": true }

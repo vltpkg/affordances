@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/Call",
+  "$defs": {
+    "Call": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "input": {},
+        "confirm": {
+          "type": "boolean"
+        }
+      },
+      "required": ["action"],
+      "additionalProperties": false
+    }
+  }
+}
