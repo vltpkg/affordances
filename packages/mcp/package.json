@@ -1,11 +1,15 @@
 {
   "name": "@afford/mcp",
   "version": "0.0.0",
+  "description": "Afford over MCP: any Afford site as two tools, for Claude, Cursor, and other MCP clients",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/afford/afford.git",
     "directory": "packages/mcp"
+  },
+  "bin": {
+    "afford-mcp": "dist/cli.js"
   },
   "files": [
     "dist"
@@ -22,5 +26,13 @@
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@afford/protocol": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@afford/core": "workspace:*"
   }
 }

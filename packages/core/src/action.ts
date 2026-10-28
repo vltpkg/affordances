@@ -6,6 +6,7 @@ export const AFFORD = Symbol.for('afford.action')
 const STATE = Symbol.for('afford.state')
 
 export type Ctx<Session = unknown> = {
+  // an action that starts a session (e.g. an anonymous cart) assigns it here, so the state reload sees it
   session: Session | null
   request?: Request
   // 'ui' when a component called the server action, 'agent' when the call came through the handler
