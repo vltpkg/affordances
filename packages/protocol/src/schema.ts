@@ -69,6 +69,10 @@ export const Delta = z
       .record(z.string(), z.unknown())
       .optional()
       .describe("Only the action's effects keys"),
+    output: z
+      .unknown()
+      .optional()
+      .describe("The action's return value, matching its output schema"),
     actionsAdded: z.array(ActionDescriptor).optional(),
     actionsRemoved: z.array(z.string()).optional(),
     redirect: z.string().optional(),

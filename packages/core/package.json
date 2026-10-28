@@ -22,5 +22,12 @@
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@afford/protocol": "workspace:*",
+    "@standard-schema/spec": "^1.1.0"
+  },
+  "devDependencies": {
+    "zod": "^4.6.7"
   }
 }

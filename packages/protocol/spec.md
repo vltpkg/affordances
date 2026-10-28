@@ -92,10 +92,10 @@ The server processes a call in this order, and stops at the first failure:
 
 1. Resolve the action by name on the page's route. Failure: `not_found`.
 2. Check the CSRF rule below and `expose` against the caller. Failure: `unauthorized`.
-3. Validate `input` against the action's input schema. Failure: `invalid_input`, with `issues`.
-4. Evaluate the guard. Failure: `unavailable`, with the guard's reason as `message`.
-5. For `confirm` actions without `confirm: true`: `confirm_required`, with a summary of what will happen as `message`. Nothing runs.
-6. Apply the rate limit. Failure: `rate_limited`.
+3. Apply the rate limit. Failure: `rate_limited`.
+4. Validate `input` against the action's input schema. Failure: `invalid_input`, with `issues`.
+5. Evaluate the guard. Failure: `unavailable`, with the guard's reason as `message`.
+6. For `confirm` actions without `confirm: true`: `confirm_required`, with a summary of what will happen as `message`. Nothing runs.
 7. Run the action, reload the page's state, and respond with a delta.
 
 ## Delta
@@ -104,6 +104,7 @@ The server processes a call in this order, and stops at the first failure:
 type Delta = {
   ok: boolean
   changed?: Record<string, unknown>
+  output?: unknown
   actionsAdded?: ActionDescriptor[]
   actionsRemoved?: string[]
   redirect?: string
@@ -113,6 +114,7 @@ type Delta = {
 ```
 
 - `changed` holds the new value of each entity in the action's `effects`. When an action declares no effects, `changed` holds every top-level entity whose value differs after the action ran.
+- `output` is the action's return value, described by the descriptor's `output` schema when it has one.
 - `actionsAdded` and `actionsRemoved` describe changes to the action list, including availability changes. An action whose `available` flipped appears in `actionsAdded` with its new descriptor.
 - `redirect` is a path the person would have been sent to. The agent should request it next.
 - `message` is a short sentence suitable to repeat to the user.

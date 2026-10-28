@@ -16,6 +16,9 @@
           },
           "additionalProperties": {}
         },
+        "output": {
+          "description": "The action's return value, matching its output schema"
+        },
         "actionsAdded": {
           "type": "array",
           "items": {
