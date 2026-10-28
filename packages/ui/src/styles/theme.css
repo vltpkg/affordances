@@ -38,6 +38,13 @@
   /* code cards: the editor panel sits a step off the card, the ring a hair past the border */
   --illustration: oklch(1 0 0);
   --border-illustration: oklch(0 0 0 / 8%);
+  /* json view: keys carry the weight, values recede, strings get the one cool hue */
+  --json-key: var(--foreground);
+  --json-string: oklch(0.48 0.08 255);
+  --json-literal: var(--muted-foreground);
+  --json-punctuation: oklch(0.6 0 0);
+  /* a changed value: the ::selection blue, faint enough to read through */
+  --json-changed: oklch(0.62 0.19 255 / 12%);
 }
 
 [data-theme='dark'] {
@@ -67,6 +74,9 @@
   --progress: oklch(0.62 0.19 255);
   --illustration: oklch(0.1 0 0);
   --border-illustration: oklch(1 0 0 / 8%);
+  --json-string: oklch(0.8 0.06 255);
+  --json-punctuation: oklch(0.52 0 0);
+  --json-changed: oklch(0.62 0.19 255 / 18%);
 }
 
 @theme inline {
@@ -93,6 +103,11 @@
   --color-progress: var(--progress);
   --color-illustration: var(--illustration);
   --color-border-illustration: var(--border-illustration);
+  --color-json-key: var(--json-key);
+  --color-json-string: var(--json-string);
+  --color-json-literal: var(--json-literal);
+  --color-json-punctuation: var(--json-punctuation);
+  --animate-json-changed: json-changed 1s cubic-bezier(0.2, 0.8, 0.2, 1);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-primary: var(--primary);
@@ -103,6 +118,17 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+}
+
+/* holds the tint, then fades it over the last 200ms */
+@keyframes json-changed {
+  0%,
+  80% {
+    background-color: var(--json-changed);
+  }
+  100% {
+    background-color: transparent;
+  }
 }
 
 /* the article's typeset preset; unlayered so it overrides typeset.css's layered defaults */
