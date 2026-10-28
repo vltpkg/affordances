@@ -33,6 +33,9 @@ export const createClient = (site: string | URL, options: ClientOptions = {}) =>
   }
 
   return {
+    // a cookie the site set, e.g. to hand the same session to another client
+    cookie: (name: string) => cookies.get(name),
+
     index: async () => SiteIndex.parse(await (await request(WELL_KNOWN_PATH)).response.json()),
 
     open: async (path: string) => {

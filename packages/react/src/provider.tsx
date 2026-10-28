@@ -9,6 +9,8 @@ type AffordContext = {
   graph: Graph | null
   // calls an action on this page as an agent would, confirming `confirm` actions with the person first
   call: (action: string, input?: unknown) => Promise<Delta>
+  // the most recent call's delta, for the dev overlay
+  lastDelta: Delta | null
 }
 
 const Context = createContext<AffordContext | null>(null)
@@ -37,6 +39,7 @@ export const AffordProvider = ({
   confirm = (message) => window.confirm(message),
 }: AffordProviderProps) => {
   const [graph, setGraph] = useState<Graph | null>(null)
+  const [lastDelta, setLastDelta] = useState<Delta | null>(null)
   // read in callbacks without re-registering every tool when a parent re-renders
   const handlers = useRef({ onDelta, confirm })
   useEffect(() => {
@@ -68,6 +71,7 @@ export const AffordProvider = ({
         (await handlers.current.confirm(delta.error.message))
       )
         delta = await post(path, { action, input, confirm: true })
+      setLastDelta(delta)
       handlers.current.onDelta?.(delta)
       await load().catch(() => {})
       return delta
@@ -105,7 +109,7 @@ export const AffordProvider = ({
     return () => controller.abort()
   }, [graph, call])
 
-  return <Context value={{ graph, call }}>{children}</Context>
+  return <Context value={{ graph, call, lastDelta }}>{children}</Context>
 }
 
 export const useAfford = () => {
