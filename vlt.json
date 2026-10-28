@@ -1,0 +1,13 @@
+{
+  "workspaces": {
+    "packages": "packages/*",
+    "apps": "apps/*"
+  },
+  "config": {
+    "registry": "https://registry.npmjs.org/",
+    "registries": {
+      "npm": "https://registry.npmjs.org/"
+    },
+    "allow-scripts": "#tailwindcss, #esbuild, #sharp, #@tailwindcss/oxide, #oxc-parser"
+  }
+}

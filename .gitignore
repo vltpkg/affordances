@@ -1,0 +1,13 @@
+# MacOS Artifacts
+.DS_Store
+node_modules
+dist
+.next
+.afford
+.source
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+test-results
+playwright-report
+coverage

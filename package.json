@@ -1,0 +1,30 @@
+{
+  "name": "afford-monorepo",
+  "private": true,
+  "author": {
+    "name": "Jason Korol",
+    "email": "ejkorol@gmail.com"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "vlr --recursive --if-present --bail build",
+    "test": "vlr --recursive --if-present --bail test",
+    "typecheck": "vlr --recursive --if-present --bail typecheck",
+    "lint": "oxlint",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check",
+    "changeset": "changeset"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^3.0.3",
+    "@types/node": "^24",
+    "oxfmt": "^0.75.0",
+    "oxlint": "^1.90.0",
+    "tsdown": "^0.23.3",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

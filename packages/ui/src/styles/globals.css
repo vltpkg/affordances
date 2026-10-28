@@ -1,0 +1,13 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+@import './typeset.css';
+@import './theme.css';
+@import './base.css';
+@import './prose.css';
+
+/* next-themes writes data-theme on <html> */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+@source '../../../../apps/*/src/**/*.{ts,tsx,mdx}';
+@source '../**/*.{ts,tsx}';
