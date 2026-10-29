@@ -128,7 +128,7 @@ const plugin = {
 // eslint.config.js: import affordances from '@affordances/lint'; export default [affordances.configs.recommended]
 plugin.configs.recommended = {
   plugins: { affordances: plugin },
-  rules: { 'afford/require-affordance': 'warn', 'affordances/static-action-name': 'error' },
+  rules: { 'affordances/require-affordance': 'warn', 'affordances/static-action-name': 'error' },
 }
 
 export default plugin

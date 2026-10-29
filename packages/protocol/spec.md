@@ -22,7 +22,7 @@ Link: <?affordances=1>; rel="affordances"
 <link rel="affordances" href="?affordances=1" />
 ```
 
-`?affordances=1` is an alias for the `Accept` header, for clients that cannot set headers. A server that supports it must treat `GET <url>?affordances=1` like `GET <url>` with the Affordances `Accept` header, and must leave `afford` out of the `searchParams` it gives the page's state.
+`?affordances=1` is an alias for the `Accept` header, for clients that cannot set headers. A server that supports it must treat `GET <url>?affordances=1` like `GET <url>` with the Affordances `Accept` header, and must leave `affordances` out of the `searchParams` it gives the page's state.
 
 **Per site.** `GET /.well-known/affordances.json` returns a [site index](#site-index): the protocol version, the route patterns that have graphs and their action names, the supported auth modes, and optionally an MCP endpoint.
 

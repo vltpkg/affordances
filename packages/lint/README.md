@@ -2,7 +2,7 @@
 
 Two lint rules for Affordances apps, for ESLint and oxlint's JS plugins:
 
-- `afford/require-affordance` warns when a control calls a server action (`action`, `formAction`, `onClick`, or `onSubmit` using an import from an `actions` module) outside an `<Affordance>`.
+- `affordances/require-affordance` warns when a control calls a server action (`action`, `formAction`, `onClick`, or `onSubmit` using an import from an `actions` module) outside an `<Affordance>`.
 - `affordances/static-action-name` errors when `defineAction` has no `name`, or a name that isn't a string literal, which codegen can't read.
 
 ```bash

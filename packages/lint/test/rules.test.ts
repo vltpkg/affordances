@@ -1,4 +1,5 @@
 import { RuleTester } from 'eslint'
+import { expect, test } from 'vitest'
 import plugin from '../src/index.ts'
 
 // RuleTester finds vitest's describe/it as globals (vitest.config.ts: globals)
@@ -12,12 +13,22 @@ const imports = `import { addToCart, removeItem } from './actions'\nimport { tra
 tester.run('require-affordance', plugin.rules['require-affordance'], {
   valid: [
     imports + `<Affordance action={addToCart}><form action={addToCart} /></Affordance>`,
+    // the button carries the action, so marking just the button is enough (the Next.js getting started guide)
+    imports +
+      `<form><Affordance action={addToCart}><button formAction={addToCart} /></Affordance></form>`,
     imports +
       `<Affordance name="removeItem"><div><button onClick={() => removeItem({ id })} /></div></Affordance>`,
     imports + `<button onClick={() => track('x')} />`,
     `const el = <form action={addToCart} />`,
   ],
   invalid: [
+    {
+      // a marked button doesn't cover the form's own action
+      code:
+        imports +
+        `<form action={addToCart}><Affordance action={addToCart}><button /></Affordance></form>`,
+      errors: [{ messageId: 'missing' }],
+    },
     {
       code: imports + `<form action={addToCart} />`,
       errors: [{ messageId: 'missing', data: { name: 'addToCart' } }],
@@ -48,4 +59,16 @@ tester.run('static-action-name', plugin.rules['static-action-name'], {
     { code: 'defineAction({ name: `a${b}` })', errors: [{ messageId: 'literal' }] },
     { code: `defineAction({ run() {} })`, errors: [{ messageId: 'missing' }] },
   ],
+})
+
+test('the recommended config only names rules the plugin has, under its own prefix', () => {
+  const { plugins, rules } = plugin.configs.recommended as {
+    plugins: Record<string, unknown>
+    rules: Record<string, string>
+  }
+  const [prefix] = Object.keys(plugins)
+  expect(prefix).toBe(plugin.meta.name)
+  for (const id of Object.keys(rules))
+    expect(Object.keys(plugin.rules)).toContain(id.replace(`${prefix}/`, ''))
+  expect(Object.keys(rules).every((id) => id.startsWith(`${prefix}/`))).toBe(true)
 })
