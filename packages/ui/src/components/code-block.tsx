@@ -26,6 +26,13 @@ const highlight = async ({ code: raw, lang = 'text', title }: CodeSource) => {
     themes,
     defaultColor: false,
   }).children
+  // the language rides on <code> as language-*, the html convention markdown converters (@afford/md) read
+  for (const child of pre?.type === 'element' ? pre.children : [])
+    if (child.type === 'element' && child.tagName === 'code')
+      child.properties.className = [
+        ...[child.properties.className ?? []].flat(),
+        `language-${lang}`,
+      ] as string[]
   // CodeCard owns the <pre>; keep shiki's <code> and its token spans
   const content = toJsxRuntime(
     { type: 'root', children: pre?.type === 'element' ? pre.children : [] },

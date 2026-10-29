@@ -87,6 +87,13 @@ const prune = (parent: HastRoot | Element) => {
     prune(child)
     return [child]
   })
+  // links laid out side by side with css gaps have no text between them; give them a space
+  parent.children = parent.children.flatMap((child, i, all): ElementContent[] => {
+    const next = all[i + 1]
+    return isElement(child) && child.tagName === 'a' && isElement(next) && next.tagName === 'a'
+      ? [child as ElementContent, { type: 'text', value: ' ' }]
+      : [child as ElementContent]
+  })
 }
 
 // react streams resolved <Suspense> boundaries as <div hidden id="S:n"> after the shell, plus a $RC("B:n","S:n")
@@ -275,10 +282,12 @@ const form: Handle = (state, node) => {
   ] as never
 }
 
-const link: Handle = (state, node) => {
+const link: Handle = (state, node, parent) => {
   const href = String(node.properties.href ?? '').trim()
   const children = state.all(node) as PhrasingContent[]
   if (!href || href === '#' || /^javascript:/i.test(href)) return children
+  // a heading's link to its own anchor (the usual self-link) is the heading, not a link
+  if (href.startsWith('#') && isElement(parent) && /^h[1-6]$/.test(parent.tagName)) return children
   return { type: 'link', url: href, title: (node.properties.title as string) ?? null, children }
 }
 
