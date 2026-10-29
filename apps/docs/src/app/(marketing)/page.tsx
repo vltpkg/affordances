@@ -13,7 +13,6 @@ import { HowItWorks, SOURCE, SURFACES } from '@/components/marketing/how'
 import { Proof } from '@/components/marketing/proof'
 import { benchRuns, modelName, type BenchRun } from '@/lib/bench'
 import { siteUrl } from '@/lib/site-url'
-import { exec, packageManagers } from '@/lib/package-managers'
 
 export const metadata: Metadata = {
   title: { absolute: 'Afford: every page, agent-operable' },
@@ -226,7 +225,7 @@ const Home = () => {
             <AgentText
               block
               md={
-                "```ts\nexport const placeOrder = defineAction({\n  name: 'placeOrder',\n  expose: 'confirm',\n  run: (input, ctx) => orders.place(ctx.session.id),\n})\n```\n\nAn agent's first call answers `409 confirm_required` with a summary (\"Place order · $244.00\"). Nothing runs until the person approves and the agent sends the call again with `confirm: true`."
+                "```ts\nexport const placeOrder = defineAction({\n  name: 'placeOrder',\n  expose: 'confirm',\n  run: (input, ctx) => orders.place(ctx.session.id),\n})\n```\n\nAn agent's first call answers `409 confirm_required` with a summary (\"Place order · $244.00\"). Nothing runs until the person approves. Then the agent sends the call again with `confirm: true` and gets the delta back: the emptied cart and a redirect to the orders page. If the person declines, nothing is charged and the agent doesn't call again."
               }
             >
               <Approvals />
@@ -340,39 +339,6 @@ const Home = () => {
                 </ul>
               </div>
             </AgentText>
-          </section>
-
-          <section
-            className={cn(sec, 'flex flex-col items-start')}
-            id="start"
-            aria-labelledby="h-cta"
-          >
-            <h2
-              id="h-cta"
-              className="max-w-[820px] text-[clamp(44px,6vw,72px)] leading-[1.02] font-semibold tracking-[-0.055em] text-balance"
-            >
-              Your UI is the API.
-            </h2>
-            <p className="mt-5 max-w-[620px] text-lg leading-[1.6] text-pretty text-(--fg2)">
-              Add Afford to an existing Next.js app. Start with one route.
-            </p>
-            <AgentText block md={'```bash\nvlx @afford/next init\n```'}>
-              <CopyCommand
-                className="mt-8 w-[440px] max-w-full"
-                command={Object.fromEntries(
-                  packageManagers.map((pm) => [pm, exec(pm, '@afford/next init')]),
-                )}
-                label="Copy install command"
-              />
-            </AgentText>
-            <div className="mt-4 flex flex-wrap gap-2.5">
-              <Button asChild className={btn}>
-                <Link href="/docs/quickstart">Get started</Link>
-              </Button>
-              <Button asChild variant="outline" className={btn}>
-                <Link href="/docs">Read the docs</Link>
-              </Button>
-            </div>
           </section>
         </main>
       </AgentMain>
