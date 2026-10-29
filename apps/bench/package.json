@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "bench": "node src/run.ts",
+    "bench": "node --env-file-if-exists=.env src/run.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

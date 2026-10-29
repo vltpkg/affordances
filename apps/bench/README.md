@@ -22,7 +22,7 @@ cd apps/example && vlr build          # the bench starts this build itself, fres
 npx playwright install chromium       # once
 cd ../bench
 vlr bench --dry                       # scripted oracle instead of the model: checks the tasks, costs nothing
-ANTHROPIC_API_KEY=… vlr bench --runs 5
+vlr bench --runs 5                    # reads ANTHROPIC_API_KEY from apps/bench/.env (gitignored; see .env.example)
 ```
 
 A run writes `results/<date>.json`, which holds every row plus a per-agent summary (success rate, median turns, tokens, and milliseconds). The docs site's bench page reads these files. Commit the file the numbers came from.

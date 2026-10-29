@@ -11,3 +11,8 @@ next-env.d.ts
 test-results
 playwright-report
 coverage
+
+# secrets (apps/bench/.env holds ANTHROPIC_API_KEY)
+.env
+.env.*
+!.env.example
