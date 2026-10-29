@@ -100,6 +100,8 @@ export const CodeCard = ({ tabs, className, ...props }: CodeCardProps) => {
         'flex-1 overflow-x-auto rounded-xl border bg-(--code-editor-background) p-4 font-mono text-[13px] leading-snug text-foreground [&_span]:text-(--shiki-light) dark:[&_span]:text-(--shiki-dark)',
         className,
       )}
+      // a real title (a file name) rides along for markdown converters; the tab bar itself is chrome
+      data-title={tab.title}
       {...props}
     >
       {tab.content}
@@ -115,14 +117,14 @@ export const CodeCard = ({ tabs, className, ...props }: CodeCardProps) => {
     >
       {tabs.length === 1 ? (
         <>
-          <figcaption data-active="" className="group relative h-11 w-fit">
+          <figcaption data-active="" data-afford-md="skip" className="group relative h-11 w-fit">
             <TabFace tab={active} first />
           </figcaption>
           {pre(active)}
         </>
       ) : (
         <TabsPrimitive.Root value={value} onValueChange={(v: number) => setValue(v)}>
-          <TabsPrimitive.List className="flex h-11 pr-9">
+          <TabsPrimitive.List data-afford-md="skip" className="flex h-11 pr-9">
             {tabs.map((tab, i) => (
               <TabsPrimitive.Tab
                 key={i}

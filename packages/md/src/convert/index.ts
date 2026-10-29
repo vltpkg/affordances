@@ -365,8 +365,19 @@ const verbatim =
       ? fallback(state, node, parent)
       : ({ type: 'html', value: String(node.properties.dataAffordMdText) } as never)
 
+// <pre data-title="route.ts"> keeps its title as fence meta: ```ts title="route.ts"
+const pre: Handle = (state, node) => {
+  const result = defaultHandlers.pre(state, node) as
+    | { type: string; meta?: string | null }
+    | undefined
+  const title = node.properties.dataTitle
+  if (result?.type === 'code' && title) result.meta = `title=${JSON.stringify(String(title))}`
+  return result as never
+}
+
 const handlers: Handlers = {
   form,
+  pre,
   a: link,
   img,
   details,
