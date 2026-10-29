@@ -1,0 +1,129 @@
+---
+title: Markdown
+description: "@afford/md serves every page as Markdown, at /page.md and to Accept: text/markdown, from the page's own render."
+---
+
+Agents that don't speak the Afford protocol still read pages, and most of a page's HTML is chrome they have to wade through. `@afford/md` gives every page a Markdown twin: the page's content, without its navigation, scripts, or controls.
+
+It doesn't need a second source of truth. When an agent asks for Markdown, the handler requests the page's HTML from your own app, the way a browser would, and converts it. Whatever the page renders, including data fetched on the server and content streamed into `<Suspense>` boundaries, is what the Markdown says.
+
+This site runs on it: add `.md` to any page's URL, or request it with `Accept: text/markdown`.
+
+## Setup
+
+With the graph, add it to `withAfford`'s plugins:
+
+```ts title="next.config.ts"
+import { withAfford } from '@afford/next/config'
+import { md } from '@afford/md/next'
+
+export default withAfford(nextConfig, { name: 'Store', plugins: [md()] })
+```
+
+Without it, wrap the config with `withMd`:
+
+```ts title="next.config.ts"
+import { withMd } from '@afford/md/next'
+
+export default withMd(nextConfig)
+```
+
+Then add the route handler. `npx @afford/md init` writes it:
+
+```ts title="app/api/afford/md/[[...path]]/route.ts"
+export { GET } from '@afford/md/next'
+```
+
+The config adds rewrites, and nothing runs per request until an agent asks:
+
+- A request for a page with `Accept: text/markdown` is rewritten to the handler. API routes, `/_next`, and URLs with a file extension are left alone.
+- `/blog/post.md` and `/index.md` (for `/`) are rewritten after Next's own files, so a real `.md` file in `public/` still wins.
+
+Next's `Accept` matching is a pattern, so a header that lists `text/markdown` with a low q-value still gets Markdown. Browsers never send it, so in practice only agents do.
+
+## Markers
+
+The converter finds the content on its own: the page's `<main>`, or failing that the body without its `nav`, `header`, `footer`, `aside`, and dialogs. Markers from `@afford/md/react` say exactly what to keep. They're server components that render an `<afford-md>` element with `display: contents`, so they don't change layout and ship no JavaScript.
+
+| Marker                  | Effect on the Markdown                                                       |
+| ----------------------- | ---------------------------------------------------------------------------- |
+| `<AgentMain>`           | When any are present, only these subtrees become the Markdown, in page order |
+| `<AgentSkip>`           | Leaves its children out: menus, promos, widgets inside the content           |
+| `<AgentOnly>`           | Includes its children, hidden from people                                    |
+| `<AgentText md block?>` | Replaces its children with `md`, verbatim; `block` makes it its own block    |
+
+```tsx title="app/products/[slug]/page.tsx"
+import { AgentMain, AgentSkip, AgentText } from '@afford/md/react'
+
+;<AgentMain>
+  <h1>{product.name}</h1>
+  <AgentSkip>
+    <ShareMenu />
+  </AgentSkip>
+  <AgentText md={product.variants.map((v) => v.sku).join(', ')}>
+    <VariantSwatches variants={product.variants} />
+  </AgentText>
+</AgentMain>
+```
+
+`AgentOnly` must say what the page already shows people, in a form an agent can read. It's not for content people can't see. A `data-afford-md="skip"` attribute on any element works like `<AgentSkip>`, for components you can't wrap.
+
+`AgentText` is also how this site keeps code fences' languages: the highlighted code card is replaced with the fenced source, since the highlighter's markup doesn't carry the language.
+
+## What the converter keeps
+
+- Headings, paragraphs, lists, blockquotes, tables, and rules, with GitHub-flavored Markdown for tables, strikethrough, and task lists.
+- Code blocks. A `<pre><code class="language-ts">` becomes a `ts` fence.
+- Links, with absolute URLs. A link to `#` or `javascript:` keeps only its text.
+- Images that have both a `src` and alt text.
+- `<details>` as its summary in bold followed by its content, and `<dl>` as `**term**: definition`.
+- Content streamed into `<Suspense>` boundaries. The handler waits for the whole response, and the converter moves each resolved boundary into place, as the browser would.
+- Content marked with `<AgentOnly>`.
+
+At the top, YAML frontmatter carries the page's `title`, `description`, canonical `url`, `image`, and `lang`, from its metadata. If the content has no `#` heading, the title becomes one. JSON-LD scripts are appended as fenced JSON.
+
+## What it drops
+
+- Scripts, styles, SVG, media, iframes, and anything hidden from people with `hidden` or `aria-hidden`.
+- Buttons. What a page lets you do belongs in its [Afford graph](/concepts/actions), where it's typed and guarded.
+- Form values. A form becomes a list of what it asks for: each field's label (and type, when it isn't text), and each choice group with its options and which are selected or unavailable. Values, placeholders, hidden inputs, and tokens never appear.
+- Content rendered only on the client, in an effect. The handler converts what the server sent.
+
+## Caching and privacy
+
+The handler forwards the caller's `cookie`, `authorization`, and `accept-language` headers, so a signed-in agent gets the page that person would see. Everything about that response stays personal:
+
+- With a cookie or bearer token, or when the page itself is `private` or `no-store`, or sets a cookie, the Markdown is sent with `Cache-Control: private, no-store`.
+- Otherwise it keeps the page's own `Cache-Control`.
+- Every response has `Vary: Accept`, `X-Afford-Tokens` with an estimate of its length in tokens, and a `Link` to the canonical page when it has one.
+
+The status code is the page's. A redirect to the same site is kept in Markdown (to the target's `.md`); one to another origin is passed on, never followed. A page that takes longer than 10 seconds answers `504`, and one larger than 6 MB answers `413`.
+
+The handler marks its own request with an `x-afford-md-render` header, which the rewrites skip, so it can't loop. Behind a proxy that changes the origin, set `AFFORD_MD_ORIGIN`, or build the handler yourself:
+
+```ts title="app/api/afford/md/[[...path]]/route.ts"
+import { createMdHandler } from '@afford/md/next'
+
+export const GET = createMdHandler({ origin: 'http://localhost:3000', timeout: 5000 })
+```
+
+`append` adds Markdown after the page's, for example a summary of the page's actions.
+
+## Advertise it
+
+`mdAlternate(path)` returns metadata alternates that point at a page's Markdown twin:
+
+```ts title="app/blog/[slug]/page.tsx"
+import { mdAlternate } from '@afford/md/next'
+
+export const generateMetadata = async ({ params }) => {
+  const { slug } = await params
+  return { alternates: { canonical: `/blog/${slug}`, ...mdAlternate(`/blog/${slug}`) } }
+}
+```
+
+That renders `<link rel="alternate" type="text/markdown" href="/blog/post.md">` in the page's head. For `/`, it points at `/index.md`.
+
+## Without Next.js
+
+`htmlToMarkdown(html, options)` from `@afford/md` is the converter on its own, with no React or Next dependency. It returns `{ markdown, title, url, tokens }`. Pass `url` to absolutize links, `extract: 'none'` to convert the whole body, or `frontmatter: false` and `jsonLd: false` to leave those out.

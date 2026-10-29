@@ -25,7 +25,7 @@ app/
     page.tsx
     state.ts          → /products/[slug]
     actions.ts        → /products/[slug]
-  api/afford/[[...path]]/
+  api/afford/graph/[[...path]]/
     route.ts          (written by afford init)
 ```
 
@@ -48,9 +48,22 @@ The same URL answers people and agents. `withAfford` adds rewrites that run befo
 - `Content-Type: application/vnd.afford+json` (calling an action);
 - the query parameter `afford=1`, for clients that can't set headers.
 
-`/.well-known/afford.json` is rewritten to the handler too. Requests to `/api/afford` itself and to `/_next` are never rewritten. Everything else, including every browser request for HTML, reaches your pages as before.
+`/.well-known/afford.json` is rewritten to the handler too. Requests to `/api/` routes (the handler's own `/api/afford/graph` included) and to `/_next` are never rewritten. Everything else, including every browser request for HTML, reaches your pages as before.
 
-Your own rewrites are kept: `withAfford` puts its rules first in `beforeFiles` and leaves the rest alone. This site adds `Accept: text/markdown` rewrites next to them, and the two don't collide, because each matches only its own media type.
+Your own rewrites are kept: `withAfford` puts its rules first in `beforeFiles` and leaves the rest alone.
+
+## Plugins
+
+More capabilities ride on the same config through `plugins`. Each plugin is a config wrapper that adds its own rewrites and headers after the graph's, and owns a route under `/api/afford/<name>`, so plugins and the graph never answer for each other:
+
+```ts title="next.config.ts"
+import { withAfford } from '@afford/next/config'
+import { md } from '@afford/md/next'
+
+export default withAfford(nextConfig, { name: 'Store', plugins: [md()] })
+```
+
+This site runs with `md()`: every page is also served as Markdown, at `/<page>.md` and to `Accept: text/markdown`. Its rewrites match only that media type, so they don't collide with the graph's. See [Markdown](/markdown).
 
 For each route in the manifest, `withAfford` also adds a header to the HTML page, so clients can discover the graph:
 
@@ -82,9 +95,9 @@ The resolver is where Auth.js, Better Auth, Clerk, or your own sessions plug in.
 
 ## The route handler
 
-```ts title="app/api/afford/[[...path]]/route.ts"
+```ts title="app/api/afford/graph/[[...path]]/route.ts"
 import { createRouteHandler } from '@afford/next/route'
-import { manifest } from '../../../../.afford/manifest'
+import { manifest } from '../../../../../.afford/manifest'
 
 const handler = createRouteHandler(manifest, {
   rateLimit: ({ action, session }) => limiter.check(`${action}:${session ?? 'anon'}`),

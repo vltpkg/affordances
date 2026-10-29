@@ -20,6 +20,8 @@ import {
   TerminalIcon,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { mdAlternate } from '@afford/md/next'
+import { AgentMain, AgentText } from '@afford/md/react'
 import { AffordProvider } from '@afford/react'
 import { CodeBlock } from '@afford/ui/components/code-block'
 import { Button } from '@/components/ui/button'
@@ -35,7 +37,7 @@ const lede =
 export const metadata: Metadata = {
   title: { absolute: 'Afford docs' },
   description: lede,
-  alternates: { canonical: '/' },
+  alternates: { canonical: '/', ...mdAlternate('/') },
 }
 
 const docs = siteUrl.origin
@@ -245,99 +247,116 @@ const sections: { title: string; cards: Card[] }[] = [
   },
 ]
 
+// card grids and the book shelf, as the markdown twin has them: a plain list of links
+const mdLinks = (items: Card[]) =>
+  items.map(({ title, href, description }) => `- [${title}](${href}): ${description}`).join('\n')
+
+const hero = `**One URL, two views.** \`GET /products/heavyweight-tee\` answers a person with the product page (\`text/html\`) and an agent with the page's graph (\`application/vnd.afford+json\`): the product, the cart, and the \`addToCart\` and \`notifyWhenInStock\` actions. Adding to the cart, from either view, returns a delta with the new cart.`
+
 const CardGrid = ({ items }: { items: Card[] }) => (
-  <ul className="mt-6 grid gap-4 md:grid-cols-3">
-    {items.map(({ icon: Icon, title, description, href }) => (
-      <li key={title}>
-        <Link
-          href={href}
-          // llms.txt and friends are route handlers, not pages
-          prefetch={href.includes('.') ? false : undefined}
-          className="flex h-full flex-col rounded-xl border p-6 transition-colors hover:bg-card focus-visible:outline-2 focus-visible:outline-ring"
-        >
-          <Icon aria-hidden className="size-5" />
-          <h3 className="mt-6 font-medium">{title}</h3>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{description}</p>
-        </Link>
-      </li>
-    ))}
-  </ul>
+  <AgentText block md={mdLinks(items)}>
+    <ul className="mt-6 grid gap-4 md:grid-cols-3">
+      {items.map(({ icon: Icon, title, description, href }) => (
+        <li key={title}>
+          <Link
+            href={href}
+            // llms.txt and friends are route handlers, not pages
+            prefetch={href.includes('.') ? false : undefined}
+            className="flex h-full flex-col rounded-xl border p-6 transition-colors hover:bg-card focus-visible:outline-2 focus-visible:outline-ring"
+          >
+            <Icon aria-hidden className="size-5" />
+            <h3 className="mt-6 font-medium">{title}</h3>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{description}</p>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  </AgentText>
 )
 
 const Home = () => (
   // the docs root has a graph of its own (searchDocs, getPage); the provider registers it as WebMCP tools
   <AffordProvider path="/">
     <div className="typeset-docs mx-auto w-full max-w-6xl">
-      <section className="max-w-3xl">
-        <h1 className="text-5xl font-semibold tracking-tighter text-balance sm:text-6xl sm:leading-[1.05]">
-          {/* a non-breaking hyphen, so the compound never splits across lines */}
-          Make every page agent‑operable
-        </h1>
-        <p className="mt-6 text-lg text-pretty text-muted-foreground sm:text-xl">{lede}</p>
-        <div className="mt-8 flex flex-wrap gap-3">
-          <Button asChild size="lg" className="px-4">
-            <Link href="/quickstart">Quickstart</Link>
-          </Button>
-          <Button asChild size="lg" variant="outline" className="px-4">
-            <Link href="/why">Why Afford</Link>
-          </Button>
-        </div>
-      </section>
-
-      {/* one url, two views of it, then the one action behind both */}
-      <section className="mt-16" aria-label="One URL, two views, one action">
-        <TwoViews />
-        <p className="mt-10 mb-4 text-sm text-muted-foreground">
-          All it took: one action, next to the page.
-        </p>
-        <CodeBlock lang="ts" title="actions.ts">
-          {action}
-        </CodeBlock>
-      </section>
-
-      <section className="mt-24">
-        <h2 className="text-2xl font-semibold tracking-tight">Set up your agent</h2>
-        <p className="mt-3 max-w-[65ch] text-pretty text-muted-foreground">
-          Every page on this site is also available as Markdown, and{' '}
-          <code className="font-mono text-[0.875em] text-foreground">/llms.txt</code> indexes them
-          all. Paste this prompt into your agent to point it at the docs:
-        </p>
-        <div className="mt-6">
-          <AgentPrompt prompt={prompt} />
-        </div>
-        <div className="mt-4">
-          <CardGrid items={cards} />
-        </div>
-      </section>
-
-      <section className="mt-24">
-        <h2 className="text-2xl font-semibold tracking-tight">Guides</h2>
-        <p className="mt-3 max-w-[65ch] text-pretty text-muted-foreground">
-          Walkthroughs for the things teams set out to do first.
-        </p>
-        {/* two to a row on phones, four on desktop; each book shrinks with the breakpoint to fit */}
-        <ul className="mt-10 grid grid-cols-2 gap-x-4 gap-y-12 md:grid-cols-4 md:gap-x-8">
-          {guides.map(({ icon: Icon, title, description, href, color }) => (
-            <li key={href + title} className="flex flex-col">
-              <Book
-                href={href}
-                title={title}
-                color={color}
-                icon={<Icon />}
-                width={{ xs: 150, sm: 160, md: 170, lg: 196 }}
-                description={description}
-              />
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      {sections.map((section) => (
-        <section key={section.title} className="mt-24">
-          <h2 className="text-2xl font-semibold tracking-tight">{section.title}</h2>
-          <CardGrid items={section.cards} />
+      {/* the whole page is content; the interactive parts are described for the markdown twin below */}
+      <AgentMain>
+        <section className="max-w-3xl">
+          <h1 className="text-5xl font-semibold tracking-tighter text-balance sm:text-6xl sm:leading-[1.05]">
+            {/* a non-breaking hyphen, so the compound never splits across lines */}
+            Make every page agent‑operable
+          </h1>
+          <p className="mt-6 text-lg text-pretty text-muted-foreground sm:text-xl">{lede}</p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Button asChild size="lg" className="px-4">
+              <Link href="/quickstart">Quickstart</Link>
+            </Button>
+            <Button asChild size="lg" variant="outline" className="px-4">
+              <Link href="/why">Why Afford</Link>
+            </Button>
+          </div>
         </section>
-      ))}
+
+        {/* one url, two views of it, then the one action behind both */}
+        <section className="mt-16" aria-label="One URL, two views, one action">
+          <AgentText block md={hero}>
+            <TwoViews />
+          </AgentText>
+          <p className="mt-10 mb-4 text-sm text-muted-foreground">
+            All it took: one action, next to the page.
+          </p>
+          <CodeBlock lang="ts" title="actions.ts">
+            {action}
+          </CodeBlock>
+        </section>
+
+        <section className="mt-24">
+          <h2 className="text-2xl font-semibold tracking-tight">Set up your agent</h2>
+          <p className="mt-3 max-w-[65ch] text-pretty text-muted-foreground">
+            Every page on this site is also available as Markdown, and{' '}
+            <code className="font-mono text-[0.875em] text-foreground">/llms.txt</code> indexes them
+            all. Paste this prompt into your agent to point it at the docs:
+          </p>
+          <div className="mt-6">
+            <AgentText block md={`\`\`\`text\n${prompt}\n\`\`\``}>
+              <AgentPrompt prompt={prompt} />
+            </AgentText>
+          </div>
+          <div className="mt-4">
+            <CardGrid items={cards} />
+          </div>
+        </section>
+
+        <section className="mt-24">
+          <h2 className="text-2xl font-semibold tracking-tight">Guides</h2>
+          <p className="mt-3 max-w-[65ch] text-pretty text-muted-foreground">
+            Walkthroughs for the things teams set out to do first.
+          </p>
+          {/* two to a row on phones, four on desktop; each book shrinks with the breakpoint to fit */}
+          <AgentText block md={mdLinks(guides)}>
+            <ul className="mt-10 grid grid-cols-2 gap-x-4 gap-y-12 md:grid-cols-4 md:gap-x-8">
+              {guides.map(({ icon: Icon, title, description, href, color }) => (
+                <li key={href + title} className="flex flex-col">
+                  <Book
+                    href={href}
+                    title={title}
+                    color={color}
+                    icon={<Icon />}
+                    width={{ xs: 150, sm: 160, md: 170, lg: 196 }}
+                    description={description}
+                  />
+                </li>
+              ))}
+            </ul>
+          </AgentText>
+        </section>
+
+        {sections.map((section) => (
+          <section key={section.title} className="mt-24">
+            <h2 className="text-2xl font-semibold tracking-tight">{section.title}</h2>
+            <CardGrid items={section.cards} />
+          </section>
+        ))}
+      </AgentMain>
     </div>
   </AffordProvider>
 )

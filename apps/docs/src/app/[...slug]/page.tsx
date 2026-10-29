@@ -2,6 +2,8 @@ import type { Metadata } from 'next'
 import { Fragment, Suspense } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { AgentMain, AgentSkip } from '@afford/md/react'
+import { mdAlternate } from '@afford/md/next'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -30,7 +32,8 @@ export const generateMetadata = async ({ params }: PageProps<'/[...slug]'>): Pro
   return {
     title,
     description,
-    alternates: { canonical: page.url },
+    // the markdown twin at /<page>.md, served by @afford/md
+    alternates: { canonical: page.url, ...mdAlternate(page.url) },
     openGraph: { type: 'article', url: page.url, title, description, images: [image] },
     twitter: { card: 'summary_large_image', title, description, images: [image] },
   }
@@ -58,7 +61,9 @@ const DocPage = async ({ params }: Pick<PageProps<'/[...slug]'>, 'params'>) => {
     <div className="grid gap-x-16 xl:grid-cols-[minmax(0,1fr)_auto]">
       {/* the wrapper is the toc bar's sticky range; --toc-bar takes the bar's h-12 off the column's min-height */}
       <div className="min-w-0 max-xl:has-[[data-toc-bar]]:[--toc-bar:--spacing(12)]">
-        <TocBar toc={page.data.toc} />
+        <AgentSkip>
+          <TocBar toc={page.data.toc} />
+        </AgentSkip>
         <div aria-hidden className="page-fade page-fade-top" />
         {/* at least one screen tall, so on short pages the pagination sits at the bottom of the viewport */}
         <div className="mx-auto flex min-h-[calc(100svh-var(--header-height)-4rem-var(--toc-bar,0px))] w-full max-w-[37em] min-w-0 flex-col md:min-h-[calc(100svh-var(--header-height)-6rem-var(--toc-bar,0px))]">
@@ -84,21 +89,28 @@ const DocPage = async ({ params }: Pick<PageProps<'/[...slug]'>, 'params'>) => {
               </BreadcrumbList>
             </Breadcrumb>
           )}
-          <article className="typeset typeset-docs">
-            <div className="flex items-start justify-between gap-4">
-              <h1 className="min-w-0 [overflow-wrap:anywhere]">{page.data.title}</h1>
-              <CopyPage url={page.url} />
-            </div>
-            {page.data.description && (
-              <p className="mt-4 text-base leading-[1.6] text-muted-foreground">
-                {page.data.description}
-              </p>
-            )}
-            <MDX components={components} />
-          </article>
+          {/* the markdown twin is the article: title, description, and body, without the page's chrome */}
+          <AgentMain>
+            <article className="typeset typeset-docs">
+              <div className="flex items-start justify-between gap-4">
+                <h1 className="min-w-0 [overflow-wrap:anywhere]">{page.data.title}</h1>
+                <AgentSkip>
+                  <CopyPage url={page.url} />
+                </AgentSkip>
+              </div>
+              {page.data.description && (
+                <p className="mt-4 text-base leading-[1.6] text-muted-foreground">
+                  {page.data.description}
+                </p>
+              )}
+              <MDX components={components} />
+            </article>
+          </AgentMain>
           {/* pt-16 keeps the old minimum gap on long pages */}
           <div className="mt-auto pt-16">
-            <PageNav url={page.url} />
+            <AgentSkip>
+              <PageNav url={page.url} />
+            </AgentSkip>
           </div>
         </div>
         <div aria-hidden className="page-fade page-fade-bottom" />
@@ -107,7 +119,9 @@ const DocPage = async ({ params }: Pick<PageProps<'/[...slug]'>, 'params'>) => {
       {/* under the sticky navbar, and under the toc bar (h-12) below xl */}
       <ScrollToTop className="top-[calc(var(--header-height)+4rem)] z-30 xl:top-[calc(var(--header-height)+1rem)]" />
       <div className="hidden xl:block">
-        <Toc toc={page.data.toc} editUrl={editUrl(page.path)} />
+        <AgentSkip>
+          <Toc toc={page.data.toc} editUrl={editUrl(page.path)} />
+        </AgentSkip>
       </div>
     </div>
   )

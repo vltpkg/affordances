@@ -14,16 +14,16 @@ npx @afford/next init
 
 `init` does four things, and skips any that are already done:
 
-- writes the route handler at `app/api/afford/[[...path]]/route.ts` (or under `src/app`);
+- writes the route handler at `app/api/afford/graph/[[...path]]/route.ts` (or under `src/app`);
 - wraps the default export of `next.config.ts` with `withAfford`;
 - adds `.afford` to `.gitignore`;
 - generates `.afford/manifest.ts` from your `actions.ts` and `state.ts` files.
 
 The route handler it writes looks like this:
 
-```ts title="app/api/afford/[[...path]]/route.ts"
+```ts title="app/api/afford/graph/[[...path]]/route.ts"
 import { createRouteHandler } from '@afford/next/route'
-import { manifest } from '../../../../.afford/manifest'
+import { manifest } from '../../../../../.afford/manifest'
 
 const handler = createRouteHandler(manifest)
 

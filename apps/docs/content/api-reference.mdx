@@ -58,12 +58,12 @@ import { createHandler } from '@afford/core'
 import { createRouteHandler } from '@afford/next/route'
 ```
 
-`createHandler` is the framework-agnostic handler: `(request: Request) => Promise<Response>`. `createRouteHandler(manifest, options)` wraps it for Next, setting `manifest`, `basePath: '/api/afford'`, and `redirectFrom` for Next's `redirect()`.
+`createHandler` is the framework-agnostic handler: `(request: Request) => Promise<Response>`. `createRouteHandler(manifest, options)` wraps it for Next, setting `manifest`, `basePath: '/api/afford/graph'`, and `redirectFrom` for Next's `redirect()`.
 
 | Option           | Type                                               | Description                                                                                          |
 | ---------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `manifest`       | `Manifest`                                         | Required. Route patterns mapped to their state and actions. `@afford/next` generates it.             |
-| `basePath`       | `string`                                           | Stripped from the request path before matching, such as `/api/afford`.                               |
+| `basePath`       | `string`                                           | Stripped from the request path before matching, such as `/api/afford/graph`.                         |
 | `auth`           | `(request: Request) => Session \| null`            | Defaults to the `auth` the actions were defined with.                                                |
 | `rateLimit`      | `({ request, action, session }) => true \| number` | `true` allows the call; a number of seconds answers `rate_limited` with `Retry-After`. May be async. |
 | `allowedOrigins` | `string[]`                                         | Origins besides the request's own that may make cookie-authenticated calls.                          |
@@ -73,20 +73,22 @@ import { createRouteHandler } from '@afford/next/route'
 
 ```ts
 import { withAfford } from '@afford/next/config'
+import { md } from '@afford/md/next'
 
-export default withAfford(nextConfig, { name: 'Store' })
+export default withAfford(nextConfig, { name: 'Store', plugins: [md()] })
 ```
 
-Returns the same config, with Afford's rewrites put first in `beforeFiles` and a `Link` header on every page that has a graph. Your own `rewrites` and `headers` are kept.
+Returns the same config, with Afford's rewrites put first in `beforeFiles` and a `Link` header on every page that has a graph, then each plugin applied in order. Your own `rewrites` and `headers` are kept.
 
-| Option | Type     | Description                                                                                |
-| ------ | -------- | ------------------------------------------------------------------------------------------ |
-| `name` | `string` | The site's name in `/.well-known/afford.json`.                                             |
-| `root` | `string` | The project root to scan for `app/` or `src/app/`. Defaults to the directory Next runs in. |
+| Option    | Type                     | Description                                                                                                                                     |
+| --------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`    | `string`                 | The site's name in `/.well-known/afford.json`.                                                                                                  |
+| `root`    | `string`                 | The project root to scan for `app/` or `src/app/`. Defaults to the directory Next runs in.                                                      |
+| `plugins` | `((config) => config)[]` | More Afford capabilities, applied in order after the graph, e.g. `[md()]` from `@afford/md/next`. Each owns a route under `/api/afford/<name>`. |
 
 ## CLI
 
-| Command        | Description                                                                                    |
-| -------------- | ---------------------------------------------------------------------------------------------- |
-| `afford init`  | Writes the route handler, wraps `next.config`, ignores `.afford`, and generates the manifest.  |
-| `afford build` | Regenerates `.afford/manifest.ts`. `withAfford` does this on its own; use it in scripts or CI. |
+| Command        | Description                                                                                                                                  |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `afford init`  | Writes the route handler at `app/api/afford/graph/[[...path]]/route.ts`, wraps `next.config`, ignores `.afford`, and generates the manifest. |
+| `afford build` | Regenerates `.afford/manifest.ts`. `withAfford` does this on its own; use it in scripts or CI.                                               |
