@@ -142,7 +142,7 @@ test('every page reads as markdown: .md urls and Accept: text/markdown', async (
   // streamed (Suspense) content is in, the agent-only SKU list is clean, and the site chrome is out
   expect(markdown).toContain('Size: S (selected), M, L (unavailable), XL')
   expect(markdown).toContain('**SKU**: TEE-BLK-S, TEE-BLK-M, TEE-BLK-L, TEE-BLK-XL')
-  expect(markdown).not.toContain('Afford Supply is a demo')
+  expect(markdown).not.toContain('A demo store: nothing ships')
   expect(markdown).not.toContain('$ACTION_ID')
 
   const viaAccept = await request.get('/products/heavyweight-tee', {

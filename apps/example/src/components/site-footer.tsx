@@ -79,7 +79,7 @@ export const SiteFooter = () => (
     <div className="border-t">
       <div className="mx-auto flex max-w-5xl flex-col gap-4 px-4 py-6 text-xs text-muted-foreground sm:px-6 md:flex-row md:items-center md:justify-between">
         <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
-          <p>© 2026 Afford Supply. A demo store: nothing ships.</p>
+          <p>© 2026 Acme Store. A demo store: nothing ships.</p>
           <ul aria-label="Legal" className="flex flex-wrap gap-x-4 gap-y-2">
             {legal.map(([label, href]) => (
               <li key={label}>

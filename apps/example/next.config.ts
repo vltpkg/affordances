@@ -13,4 +13,4 @@ const nextConfig: NextConfig = {
   turbopack: { root: path.join(import.meta.dirname, '../..') },
 }
 
-export default withAffordances(nextConfig, { name: 'Afford Supply', plugins: [md()] })
+export default withAffordances(nextConfig, { name: 'Acme Store', plugins: [md()] })

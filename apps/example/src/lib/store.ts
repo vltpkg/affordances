@@ -139,8 +139,8 @@ const seed = (): Db => ({
 })
 
 // one store per process, so dev HMR doesn't wipe carts and orders
-const g = globalThis as typeof globalThis & { affordSupply?: Db }
-const db = (g.affordSupply ??= seed())
+const g = globalThis as typeof globalThis & { acmeStore?: Db }
+const db = (g.acmeStore ??= seed())
 
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
 export const formatPrice = (cents: number) => usd.format(cents / 100)

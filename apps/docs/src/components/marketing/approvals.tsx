@@ -190,7 +190,7 @@ export const Approvals = () => {
           inert={step === 'idle' || step === 'calling'}
         >
           <div className="flex items-center justify-between text-[13px] text-(--fg3)">
-            <span>Afford Supply · approval</span>
+            <span>Acme Store · approval</span>
             <span>now</span>
           </div>
 

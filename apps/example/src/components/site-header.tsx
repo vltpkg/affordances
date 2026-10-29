@@ -9,7 +9,6 @@ import {
   NavigationMenuList,
   NavigationMenuTrigger,
 } from '@affordances/ui/components/navigation-menu'
-import { Wordmark } from '@affordances/ui/components/wordmark'
 import { categories, categoryBlurbs, categoryHref } from '@/lib/content'
 import { getSessionId } from '@/lib/session'
 import { cartCount } from '@/lib/store'
@@ -77,8 +76,7 @@ export const SiteHeader = () => (
     <header className="sticky top-0 z-10 border-b bg-background">
       <div className="mx-auto flex h-14 max-w-5xl items-center gap-4 px-4 sm:px-6">
         <Link href="/" className={`flex items-baseline gap-2 rounded-md ${focus}`}>
-          <Wordmark />
-          <span className="font-medium">Supply</span>
+          <span className="text-[17px] font-semibold tracking-tight">Acme Store</span>
         </Link>
         <Categories />
         <div className="-mr-2 ml-auto flex items-center gap-1">

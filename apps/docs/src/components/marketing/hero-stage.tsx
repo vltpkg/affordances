@@ -41,7 +41,7 @@ const actions = (name: string, input: string, guard: string, nav: string) => [
 const SC: Record<'store' | 'saas' | 'booking', Scenario> = {
   store: {
     label: 'Store',
-    head: 'Afford Supply',
+    head: 'Acme Store',
     path: '/products/court-runner-2',
     meta: 'White / Gum',
     name: 'Court Runner 2',

@@ -9,7 +9,7 @@ import { SiteHeader } from '@/components/site-header'
 import '@affordances/ui/globals.css'
 
 export const metadata: Metadata = {
-  title: { default: 'Afford Supply', template: '%s · Afford Supply' },
+  title: { default: 'Acme Store', template: '%s · Acme Store' },
   description: 'Studio goods in small runs. A demo store that agents can operate.',
 }
 

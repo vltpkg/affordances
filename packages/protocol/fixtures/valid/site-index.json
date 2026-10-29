@@ -1,6 +1,6 @@
 {
   "v": "0",
-  "name": "Afford Supply",
+  "name": "Acme Store",
   "routes": [
     {
       "route": "/products/[slug]",
