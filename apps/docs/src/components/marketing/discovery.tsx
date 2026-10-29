@@ -14,91 +14,89 @@ type Step = {
   name: string
   arg: string
   ms?: number
-  error?: string
   // where the result left the agent, and the tools that page registered over WebMCP
   page?: string
   tools?: string[]
+  lit?: boolean
 }
 type Run = { end: number; turns: number; steps: Step[]; title: string; sub: string }
 
-// one recorded run, apps/demo/recordings/2026-10-29T2035-add-to-cart-claude-opus-5-5-webmcp.json: both
-// agents on one clock, in ms since it started
-const LINK = 'link "Heavyweight Tee Apparel 4 sizes $48.00"'
+// one recorded run, apps/demo/recordings/2026-10-29T2351-add-to-cart-claude-opus-5-5-webmcp.json: both
+// agents on one clock, in ms since it started. `lit` marks the calls the story turns on
 const TEE = '/products/heavyweight-tee'
 const WEBMCP: Run = {
-  end: 9207,
+  end: 9894,
   turns: 4,
   title: 'Four turns.',
-  sub: 'One call to addToCart, a tool the page offered. 9.2s.',
+  sub: 'One call to addToCart, a tool the page offered. 9.9s.',
   steps: [
     {
       turn: 1,
-      at: 2313,
-      done: 2943,
+      at: 1940,
+      done: 2712,
       name: 'goto',
       arg: '/',
-      ms: 630,
+      ms: 772,
       page: '/',
       tools: ['search'],
     },
     {
       turn: 2,
-      at: 5441,
-      done: 5487,
-      name: 'click',
-      arg: LINK,
-      ms: 46,
+      at: 3941,
+      done: 4552,
+      name: 'goto',
+      arg: TEE,
+      ms: 611,
       page: TEE,
       tools: ['addToCart'],
     },
     {
       turn: 3,
-      at: 7410,
-      done: 7427,
+      at: 6740,
+      done: 6762,
       name: 'addToCart',
       arg: '{ sku: "TEE-BLK-M", quantity: 1 }',
-      ms: 17,
+      ms: 22,
+      lit: true,
     },
     {
       turn: 4,
-      at: 9204,
+      at: 9887,
       name: 'answer',
-      arg: 'I added one Heavyweight Tee in size M (SKU TEE-BLK-M, $48.00) to your cart, which now has 1 item.',
+      arg: 'I added 1 Heavyweight Tee in size M (SKU TEE-BLK-M, $48.00) to your cart, which now holds 1 item.',
     },
   ],
 }
 const BROWSER: Run = {
-  end: 20635,
-  turns: 7,
-  title: 'Seven turns.',
-  sub: 'Clicks, a reload and a click that timed out. 20.6s.',
+  end: 13240,
+  turns: 6,
+  title: 'Six turns.',
+  sub: 'Two clicks to add it, then a trip to the cart to check. 13.2s.',
   steps: [
-    { turn: 1, at: 1915, done: 2692, name: 'goto', arg: '/', ms: 778, page: '/' },
-    { turn: 2, at: 4650, done: 4693, name: 'click', arg: LINK, ms: 43, page: TEE },
-    { turn: 3, at: 6538, done: 7129, name: 'goto', arg: TEE, ms: 591, page: TEE },
-    { turn: 4, at: 9141, done: 9162, name: 'click', arg: 'radio "M"', ms: 21 },
-    { turn: 4, at: 9141, done: 9199, name: 'click', arg: 'button "Add to cart"', ms: 37 },
+    { turn: 1, at: 2029, done: 2714, name: 'goto', arg: '/', ms: 685, page: '/' },
+    { turn: 2, at: 4447, done: 5045, name: 'goto', arg: TEE, ms: 598, page: TEE },
+    { turn: 3, at: 6741, done: 6773, name: 'click', arg: 'radio "M"', ms: 32, lit: true },
     {
-      turn: 5,
-      at: 11458,
-      done: 16461,
+      turn: 4,
+      at: 9171,
+      done: 9216,
       name: 'click',
-      arg: 'link "Cart"',
-      ms: 5002,
-      error: 'timeout',
+      arg: 'button "Add to cart"',
+      ms: 45,
+      lit: true,
     },
-    { turn: 6, at: 17929, done: 18558, name: 'goto', arg: '/cart', ms: 629, page: '/cart' },
+    { turn: 5, at: 10971, done: 11651, name: 'goto', arg: '/cart', ms: 680, page: '/cart' },
     {
-      turn: 7,
-      at: 20628,
+      turn: 6,
+      at: 13236,
       name: 'answer',
       arg: 'I added one Heavyweight Tee in size M (TEE-BLK-M, $48.00) to your cart, and it’s the only item there.',
     },
   ],
 }
-const END = 20641
-// the replay runs three times faster than the recording
-const SPEED = 3
+const END = 13244
+// the replay runs twice as fast as the recording
+const SPEED = 2
 
 const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`)
 const dur = (ms: number) => (ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`)
@@ -206,7 +204,7 @@ const Agent = ({ run, t, webmcp }: { run: Run; t: number; webmcp?: boolean }) =>
 
       <div className="flex flex-col">
         {run.steps.map((s, i) => {
-          const lit = webmcp ? s.name === 'addToCart' : s.turn === 4
+          const { lit } = s
           return (
             <div
               key={i}
@@ -224,19 +222,8 @@ const Agent = ({ run, t, webmcp }: { run: Run; t: number; webmcp?: boolean }) =>
                 {s.name}
               </span>
               <span className="truncate text-(--fg2)">{s.arg}</span>
-              <span
-                className={cn(
-                  'text-[11.5px] tabular-nums',
-                  s.error ? 'text-(--fg)' : 'text-(--fg3)',
-                )}
-              >
-                {s.done === undefined
-                  ? ''
-                  : t < s.done
-                    ? '…'
-                    : s.error
-                      ? `${s.error} ${dur(s.ms!)}`
-                      : dur(s.ms!)}
+              <span className="text-[11.5px] text-(--fg3) tabular-nums">
+                {s.done === undefined ? '' : t < s.done ? '…' : dur(s.ms!)}
               </span>
             </div>
           )
@@ -303,20 +290,19 @@ export const Discovery = () => {
       </div>
       <div className="sr-only">
         <p>
-          With WebMCP: it went to the home page, which offered a search tool. It clicked the
-          Heavyweight Tee link. The product page offered addToCart instead, and the agent called it
-          with sku TEE-BLK-M and quantity 1. Done in 9.2 seconds, 4 turns.
+          With WebMCP: it went to the home page, which offered a search tool, then to the
+          Heavyweight Tee’s page. That page offered addToCart instead, and the agent called it with
+          sku TEE-BLK-M and quantity 1. Done in 9.9 seconds, 4 turns.
         </p>
         <p>
-          Without WebMCP: it went to the home page, clicked the product link, reloaded the product
-          page, clicked size M and Add to cart, timed out clicking the Cart link, then went to the
-          cart. Done in 20.6 seconds, 7 turns.
+          Without WebMCP: it went to the home page, then the product page, clicked size M, clicked
+          Add to cart, then went to the cart to check. Done in 13.2 seconds, 6 turns.
         </p>
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-1 text-sm text-(--fg2)">
         <p className="text-pretty">
           One recorded run on Claude Opus 5.5: the same task, both agents on one clock
-          {motion && ', replayed at 3× speed'}.
+          {motion && `, replayed at ${SPEED}× speed`}.
         </p>
         <div className="flex items-center gap-4">
           <Link

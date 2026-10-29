@@ -81,11 +81,14 @@ export type BenchAgent = {
   msRange?: [number, number]
   tokenSplit?: TokenSplit
 }
+// the agents a run can have. vision, the screenshot agent, joined on October 29, 2026; older files lack it
+export type AgentKey = 'browser' | 'vision' | 'afford'
 export type BenchTask = {
   id: string
   name: string
   prompt?: string
   browser: BenchAgent
+  vision?: BenchAgent
   afford: BenchAgent
 }
 export type BenchRun = {
@@ -96,6 +99,7 @@ export type BenchRun = {
   commit?: string
   dirty?: boolean
   browser: BenchAgent
+  vision?: BenchAgent
   afford: BenchAgent
   tasks: BenchTask[]
 }
@@ -166,8 +170,8 @@ export const benchRuns = (): BenchRun[] => {
     finishedAt?: string
     commit?: { sha?: string; dirty?: boolean }
     tasks?: { id?: string; prompt?: string }[]
-    summary?: { browser?: unknown; afford?: unknown }
-    perTask?: Record<string, { browser?: unknown; afford?: unknown }>
+    summary?: { browser?: unknown; vision?: unknown; afford?: unknown }
+    perTask?: Record<string, { browser?: unknown; vision?: unknown; afford?: unknown }>
     rows?: RawRow[]
     // a --tasks subset: shown on the bench page, never as a model's headline run
     partial?: boolean
@@ -189,7 +193,7 @@ export const benchRuns = (): BenchRun[] => {
   return [...newest.values()]
     .map(({ file, data }) => {
       const rows = data.rows ?? []
-      const agent = (id: string, kind: 'browser' | 'afford') => {
+      const agent = (id: string, kind: AgentKey) => {
         const side = data.perTask?.[id]?.[kind]
         return isSide(side)
           ? fromSide(side as RawSide)
@@ -199,7 +203,10 @@ export const benchRuns = (): BenchRun[] => {
         if (!id) return []
         const browser = agent(id, 'browser')
         const afford = agent(id, 'afford')
-        return browser && afford ? [{ id, name: taskName(id), prompt, browser, afford }] : []
+        const vision = agent(id, 'vision') ?? undefined
+        return browser && afford
+          ? [{ id, name: taskName(id), prompt, browser, vision, afford }]
+          : []
       })
       return {
         file,
@@ -209,6 +216,7 @@ export const benchRuns = (): BenchRun[] => {
         commit: data.commit?.sha?.slice(0, 7),
         dirty: data.commit?.dirty,
         browser: fromSide(data.summary!.browser as RawSide),
+        vision: isSide(data.summary?.vision) ? fromSide(data.summary.vision as RawSide) : undefined,
         afford: fromSide(data.summary!.afford as RawSide),
         tasks,
       }
@@ -221,10 +229,14 @@ export const benchRuns = (): BenchRun[] => {
 }
 
 // every committed file, newest first: what it ran, against which commit, and its overall medians where the
-// file has them. partial runs (a --tasks subset) included, so the index's iterations read in order
+// file has them. partial runs (a --tasks subset) included, so the index's iterations read in order.
 // runs that finished before this measured the browser agent without its radio and Agent view fixes (8b57e79,
 // see the Benchmarks page's changes to the method), so they're marked rather than compared as is
 const FAIRER_BROWSER_SINCE = '2026-10-29T20:30'
+
+// which method a run was measured under, newest 0: the realistic store with seven tasks and the screenshot
+// agent; the simpler store after the browser agent's fixes; before those fixes
+export type Era = 0 | 1 | 2
 
 export type BenchFile = {
   file: string
@@ -235,43 +247,57 @@ export type BenchFile = {
   dirty?: boolean
   partial: boolean
   tasks: string[]
-  // measured against the browser agent before its fixes
-  earlierBaseline: boolean
+  era: Era
   browser?: Side
+  vision?: Side
   afford?: Side
 }
 const str = (v: unknown) => (typeof v === 'string' ? v : undefined)
-export const benchHistory = (): BenchFile[] =>
-  benchResults()
-    .map(({ file, data }) => {
-      const run = data as {
-        model?: unknown
-        runs?: unknown
-        finishedAt?: unknown
-        commit?: { sha?: unknown; dirty?: unknown }
-        partial?: unknown
-        tasks?: { id?: unknown }[]
-        summary?: { browser?: unknown; afford?: unknown }
-      }
-      return {
-        file,
-        model: str(run.model),
-        runs: typeof run.runs === 'number' ? run.runs : undefined,
-        finishedAt: str(run.finishedAt),
-        commit: str(run.commit?.sha)?.slice(0, 7),
-        dirty: typeof run.commit?.dirty === 'boolean' ? run.commit.dirty : undefined,
-        partial: run.partial === true,
-        earlierBaseline: (str(run.finishedAt) ?? '') < FAIRER_BROWSER_SINCE,
-        tasks: (Array.isArray(run.tasks) ? run.tasks : []).flatMap((t) => str(t?.id) ?? []),
-        browser: isSide(run.summary?.browser) ? run.summary.browser : undefined,
-        afford: isSide(run.summary?.afford) ? run.summary.afford : undefined,
-      }
+export const benchHistory = (): BenchFile[] => {
+  const files = benchResults()
+  // the realistic store and the screenshot agent landed together, so the first run with a screenshot agent
+  // starts the current method
+  const since = files
+    .flatMap(({ data }) => {
+      const run = data as { finishedAt?: unknown; summary?: { vision?: unknown } }
+      return isSide(run.summary?.vision) ? (str(run.finishedAt) ?? []) : []
     })
-    // newest first; files from before finishedAt was recorded go last, by name
-    .toSorted(
-      (a, b) =>
-        (b.finishedAt ?? '').localeCompare(a.finishedAt ?? '') || b.file.localeCompare(a.file),
-    )
+    .toSorted()[0]
+  return (
+    files
+      .map(({ file, data }): BenchFile => {
+        const run = data as {
+          model?: unknown
+          runs?: unknown
+          finishedAt?: unknown
+          commit?: { sha?: unknown; dirty?: unknown }
+          partial?: unknown
+          tasks?: { id?: unknown }[]
+          summary?: { browser?: unknown; vision?: unknown; afford?: unknown }
+        }
+        const at = str(run.finishedAt) ?? ''
+        return {
+          file,
+          model: str(run.model),
+          runs: typeof run.runs === 'number' ? run.runs : undefined,
+          finishedAt: str(run.finishedAt),
+          commit: str(run.commit?.sha)?.slice(0, 7),
+          dirty: typeof run.commit?.dirty === 'boolean' ? run.commit.dirty : undefined,
+          partial: run.partial === true,
+          era: at < FAIRER_BROWSER_SINCE ? 2 : since && at < since ? 1 : 0,
+          tasks: (Array.isArray(run.tasks) ? run.tasks : []).flatMap((t) => str(t?.id) ?? []),
+          browser: isSide(run.summary?.browser) ? run.summary.browser : undefined,
+          vision: isSide(run.summary?.vision) ? run.summary.vision : undefined,
+          afford: isSide(run.summary?.afford) ? run.summary.afford : undefined,
+        }
+      })
+      // newest first; files from before finishedAt was recorded go last, by name
+      .toSorted(
+        (a, b) =>
+          (b.finishedAt ?? '').localeCompare(a.finishedAt ?? '') || b.file.localeCompare(a.file),
+      )
+  )
+}
 
 // add-to-cart → Add to cart
 export const taskName = (id: string) => id[0]!.toUpperCase() + id.slice(1).replaceAll('-', ' ')

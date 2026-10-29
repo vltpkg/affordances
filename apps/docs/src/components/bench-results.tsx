@@ -16,67 +16,90 @@ import {
   benchRuns,
   modelName,
   taskName,
+  type AgentKey,
   type BenchAgent,
   type BenchRun,
   type TokenSplit,
 } from '@/lib/bench'
-import { headline, int, passed, pct, sec, usd } from '@/lib/bench-format'
+import { agentName, agentsOf, headline, int, passed, pct, sec, usd } from '@/lib/bench-format'
 
 // the docs' table cells (see mdx-components), with numbers right-aligned on tabular figures
 const th = 'px-3 text-xs font-medium'
 const td = 'px-3 py-2.5 text-[0.8125rem]'
 const num = 'text-right tabular-nums'
-const AGENTS = ['browser', 'afford'] as const
+const short: Record<AgentKey, string> = {
+  browser: 'Browser',
+  vision: 'Screenshot',
+  afford: 'Affordances',
+}
 
-const Agent = ({ k }: { k: (typeof AGENTS)[number] }) => (
+const Agent = ({ k }: { k: AgentKey }) => (
   <span className="flex items-center gap-2">
-    <Dot agent={k === 'afford'} />
-    {k === 'afford' ? 'Affordances' : 'Browser'}
+    <Dot k={k} />
+    {short[k]}
   </span>
 )
 
-// the headline figures in one sentence, for the markdown twin
+// the headline figures in sentences, for the markdown twin
 const summaryMd = (r: BenchRun) => {
-  const { browser: b, afford: a } = r
-  const cost =
-    a.costPerSuccessUsd !== undefined && b.costPerSuccessUsd !== undefined
-      ? `, ${usd(b.costPerSuccessUsd)} against ${usd(a.costPerSuccessUsd)} per successful task`
-      : ''
-  return `Median per run, browser agent against Affordances agent: ${int(b.tokens)} against ${int(a.tokens)} tokens, ${sec(b.ms)} against ${sec(a.ms)}, ${b.turns} against ${a.turns} turns${cost}. Tasks completed: ${pct(b.successRate)} against ${pct(a.successRate)}.`
+  const ks = agentsOf(r)
+  const each = (f: (x: BenchAgent) => string) =>
+    ks.map((k) => `${f(r[k]!)} for the ${agentName[k]}`).join(', ')
+  const cost = ks.every((k) => r[k]!.costPerSuccessUsd !== undefined)
+    ? ` Cost per successful task: ${each((x) => usd(x.costPerSuccessUsd!))}.`
+    : ''
+  const ratios = headline(r)
+    .filter((s) => s.against)
+    .map((s) => `${s.big} ${s.label} ${s.against}${s.also ? ` (${s.also})` : ''}`)
+    .join('; ')
+  return `Median per run: ${each((x) => `${int(x.tokens)} tokens`)}; ${each((x) => sec(x.ms))}; ${each((x) => `${x.turns} turns`)}.${cost} Tasks completed: ${each((x) => pct(x.successRate))}. Against the stronger baseline on each measure: ${ratios}.`
 }
 
-const Headline = ({ run }: { run: BenchRun }) => (
-  <AgentText block md={summaryMd(run)}>
-    <dl className="not-typeset grid grid-cols-4 border-t max-sm:grid-cols-2">
-      {headline(run).map((s) => (
-        <div key={s.label} className="flex flex-col gap-1 border-b py-4 pr-4">
-          <dt className="order-2 text-[0.8125rem] leading-snug text-pretty">{s.label}</dt>
-          <dd className="order-1 text-2xl leading-none font-semibold tracking-tight tabular-nums">
-            {s.big}
-          </dd>
-          <dd className="order-3 mt-1 flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs text-muted-foreground tabular-nums">
-            <span className="flex items-center gap-1.5">
-              <Dot agent />
-              <span className="sr-only">Affordances agent </span>
-              {s.a}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Dot />
-              <span className="sr-only">browser agent </span>
-              {s.b}
-            </span>
-          </dd>
-        </div>
-      ))}
-    </dl>
-  </AgentText>
-)
+const Headline = ({ run }: { run: BenchRun }) => {
+  const order = ['afford', ...agentsOf(run).filter((k) => k !== 'afford')] as AgentKey[]
+  return (
+    <AgentText block md={summaryMd(run)}>
+      <dl className="not-typeset grid grid-cols-4 border-t max-sm:grid-cols-2">
+        {headline(run).map((s) => (
+          <div key={s.label} className="flex flex-col gap-1 border-b py-4 pr-4">
+            <dt className="order-2 text-[0.8125rem] leading-snug text-pretty">
+              {s.label}
+              {s.against && <span className="text-muted-foreground"> {s.against}</span>}
+            </dt>
+            <dd className="order-1 text-2xl leading-none font-semibold tracking-tight tabular-nums">
+              {s.big}
+            </dd>
+            {s.also && (
+              <dd className="order-3 text-xs leading-snug text-pretty text-muted-foreground">
+                {s.also}
+              </dd>
+            )}
+            <dd className="order-4 mt-1 flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs text-muted-foreground tabular-nums">
+              {order.map(
+                (k) =>
+                  s.values[k] && (
+                    <span key={k} className="flex items-center gap-1.5">
+                      <Dot k={k} />
+                      <span className="sr-only">{agentName[k]} </span>
+                      {s.values[k]}
+                    </span>
+                  ),
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </AgentText>
+  )
+}
 
-// a task's two rows sit close, so the pair reads as one group
-const pair = { browser: 'pt-2.5 pb-1', afford: 'pt-1 pb-2.5' }
+// a task's rows sit close, so the group reads as one
+const pad = (i: number, n: number) =>
+  i === 0 ? 'pt-2.5 pb-1' : i === n - 1 ? 'pt-1 pb-2.5' : 'py-1'
 
 // one row group per task: the task names the group, each agent heads its own row
 const TaskTable = ({ run, name }: { run: BenchRun; name: string }) => {
+  const ks = agentsOf(run)
   const cost = run.tasks.some((t) => t.browser.costPerSuccessUsd ?? t.afford.costPerSuccessUsd)
   const cells = (x: BenchAgent) => {
     const ok = passed(x, run.runs)
@@ -95,8 +118,9 @@ const TaskTable = ({ run, name }: { run: BenchRun; name: string }) => {
       },
     ]
   }
+  // with three agents, tighter gutters keep every column in the article's width
   return (
-    <TypeTable>
+    <TypeTable className="[&_td]:px-2 [&_th]:px-2">
       <caption className="sr-only">
         Per task on {name}: medians of {run.runs} runs
         {cost ? ', cost per successful run' : ''}
@@ -118,12 +142,12 @@ const TaskTable = ({ run, name }: { run: BenchRun; name: string }) => {
       </TableHeader>
       {run.tasks.map((t) => (
         <tbody key={t.id} className="border-b last:border-0">
-          {AGENTS.map((k) => (
+          {ks.map((k, i) => (
             <TableRow key={k} className="border-0 hover:bg-transparent">
-              {k === 'browser' && (
+              {i === 0 && (
                 <TableHead
                   scope="rowgroup"
-                  rowSpan={2}
+                  rowSpan={ks.length}
                   className={cn(th, 'h-auto pt-2.5 align-top text-[0.8125rem]')}
                 >
                   {t.name}
@@ -131,12 +155,12 @@ const TaskTable = ({ run, name }: { run: BenchRun; name: string }) => {
               )}
               <TableHead
                 scope="row"
-                className={cn(th, pair[k], 'h-auto text-[0.8125rem] font-normal')}
+                className={cn(th, pad(i, ks.length), 'h-auto text-[0.8125rem] font-normal')}
               >
                 <Agent k={k} />
               </TableHead>
-              {cells(t[k]).map((c) => (
-                <TableCell key={c.key} className={cn(td, pair[k], num, c.className)}>
+              {cells(t[k]!).map((c) => (
+                <TableCell key={c.key} className={cn(td, pad(i, ks.length), num, c.className)}>
                   {c.v}
                 </TableCell>
               ))}
@@ -171,14 +195,14 @@ const SplitTable = ({ run, name }: { run: BenchRun; name: string }) => (
       </TableRow>
     </TableHeader>
     <TableBody>
-      {AGENTS.map((k) => (
+      {agentsOf(run).map((k) => (
         <TableRow key={k} className="hover:bg-transparent">
           <TableHead scope="row" className={cn(th, 'text-[0.8125rem] font-normal')}>
             <Agent k={k} />
           </TableHead>
           {SPLIT.map(([s]) => (
             <TableCell key={s} className={cn(td, num)}>
-              {int(run[k].tokenSplit![s])}
+              {int(run[k]!.tokenSplit![s])}
             </TableCell>
           ))}
         </TableRow>
@@ -222,7 +246,7 @@ export const BenchResults = () => {
               />
             </AgentSkip>
             <TaskTable run={run} name={name} />
-            {run.browser.tokenSplit && run.afford.tokenSplit && (
+            {agentsOf(run).every((k) => run[k]!.tokenSplit) && (
               <>
                 <p>
                   Where the tokens go, median per run. Every turn re-reads the conversation so far
@@ -238,36 +262,52 @@ export const BenchResults = () => {
   )
 }
 
-// every committed results file, newest first
+// what changed at each divider in the history, newest first
+const ERA_NOTE = [
+  '',
+  'Earlier runs used the simpler store and five tasks, without the screenshot agent',
+  'Earlier runs measured the browser agent before its fixes',
+]
+
+// every committed results file, newest first. a dash in an agent's column means the run didn't have it
 export const BenchHistory = () => {
   const files = benchHistory()
   if (!files.length) return null
-  // seven columns: tighter gutters, so it fits the article column without scrolling
+  // seven columns, tighter gutters, runs folded into tasks and the year left off the time, so it fits the
+  // article column without scrolling (every run so far is from 2026; the file link carries the full date)
   return (
-    <TypeTable className="[&_td]:px-2 [&_th]:px-2 [&_tr>*:first-child]:pl-3 [&_tr>*:last-child]:pr-3">
+    <TypeTable className="[&_td]:px-2 [&_th]:px-2">
       <caption className="sr-only">
         Every committed bench run, newest first, with median tokens per run
       </caption>
       <TableHeader>
         <TableRow className="hover:bg-transparent">
-          {['Finished', 'Model', 'Tasks', 'Runs', 'Commit', 'Browser', 'Affordances'].map(
-            (h, i) => (
-              <TableHead key={h} scope="col" className={cn(th, i > 2 && i !== 4 && 'text-right')}>
-                {h}
-              </TableHead>
-            ),
-          )}
+          {[
+            'Finished',
+            'Model',
+            'Tasks × runs',
+            'Commit',
+            'Browser',
+            'Screenshot',
+            'Affordances',
+          ].map((h, i) => (
+            <TableHead key={h} scope="col" className={cn(th, i > 3 && 'text-right')}>
+              {h}
+            </TableHead>
+          ))}
         </TableRow>
       </TableHeader>
       <TableBody>
         {files.map((f, i) => (
           <Fragment key={f.file}>
-            {/* one divider above the first run measured against the earlier browser agent */}
-            {f.earlierBaseline && !files[i - 1]?.earlierBaseline && (
+            {/* a divider above the first run of each earlier method */}
+            {f.era > 0 && f.era !== (files[i - 1]?.era ?? 0) && (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={7} className={cn(td, 'text-muted-foreground')}>
-                  Earlier runs measured the browser agent before its fixes; see{' '}
-                  <a href="#changes-to-the-method">changes to the method</a>.
+                <TableCell
+                  colSpan={7}
+                  className={cn(td, 'whitespace-normal text-muted-foreground')}
+                >
+                  {ERA_NOTE[f.era]}; see <a href="#changes-to-the-method">changes to the method</a>.
                 </TableCell>
               </TableRow>
             )}
@@ -280,31 +320,28 @@ export const BenchHistory = () => {
                   href={`https://github.com/affordances/affordances/blob/main/apps/bench/results/${f.file}`}
                 >
                   {f.finishedAt
-                    ? `${day(f.finishedAt)} ${f.finishedAt.slice(11, 16)}`
-                    : f.file.slice(0, 10)}
+                    ? `${f.finishedAt.slice(5, 10)} ${f.finishedAt.slice(11, 16)}`
+                    : f.file.slice(5, 10)}
                 </a>
               </TableHead>
               {/* the column is narrow, and every model here is a Claude */}
               <TableCell className={td}>
                 {f.model ? modelName(f.model).replace(/^Claude /, '') : '–'}
               </TableCell>
-              <TableCell className={td}>
-                {f.partial ? (
-                  <>
-                    {f.tasks.map(taskName).join(', ')}{' '}
-                    <span className="text-muted-foreground">(partial)</span>
-                  </>
-                ) : (
-                  `All ${f.tasks.length}`
-                )}
+              <TableCell className={cn(td, 'tabular-nums')}>
+                {f.partial ? f.tasks.map(taskName).join(', ') : `All ${f.tasks.length}`} ×{' '}
+                {f.runs ?? '–'}
+                {f.partial && <span className="block text-muted-foreground">partial</span>}
               </TableCell>
-              <TableCell className={cn(td, num)}>{f.runs ?? '–'}</TableCell>
               <TableCell className={cn(td, 'font-mono')}>
                 {f.commit ?? <span className="text-muted-foreground">–</span>}
                 {f.dirty && <span className="text-muted-foreground"> dirty</span>}
               </TableCell>
               <TableCell className={cn(td, num)}>
                 {f.browser ? int(f.browser.medianTokens) : '–'}
+              </TableCell>
+              <TableCell className={cn(td, num)}>
+                {f.vision ? int(f.vision.medianTokens) : '–'}
               </TableCell>
               <TableCell className={cn(td, num)}>
                 {f.afford ? int(f.afford.medianTokens) : '–'}

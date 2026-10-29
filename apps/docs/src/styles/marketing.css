@@ -15,6 +15,8 @@
   --fg3: var(--muted-foreground);
   --line: var(--border);
   --line2: color-mix(in oklch, var(--foreground) 16%, var(--background));
+  /* the bench's second baseline, the screenshot agent: the browser agent's grey, lighter */
+  --shot: color-mix(in oklch, var(--fg3) 62%, var(--bg));
   --red: var(--fg);
   /* the agent accent: the one colour on the page, for everything an agent reads */
   /* AA for small text on white and on its own 11% tint */

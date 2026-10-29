@@ -12,7 +12,17 @@ import { Discovery } from '@/components/marketing/discovery'
 import { HeroStage } from '@/components/marketing/hero-stage'
 import { HowItWorks, SOURCE, SURFACES } from '@/components/marketing/how'
 import { Proof } from '@/components/marketing/proof'
-import { benchRuns, modelName, type BenchRun } from '@/lib/bench'
+import { benchRuns, modelName, type AgentKey, type BenchAgent, type BenchRun } from '@/lib/bench'
+import {
+  agentName,
+  agentsOf,
+  headline,
+  int,
+  passed,
+  pct,
+  sec as seconds,
+  usd,
+} from '@/lib/bench-format'
 import { siteUrl } from '@/lib/site-url'
 
 export const metadata: Metadata = {
@@ -22,26 +32,38 @@ export const metadata: Metadata = {
   alternates: { canonical: '/', ...mdAlternate('/') },
 }
 
-const int = (n: number) => Math.round(n).toLocaleString('en-US')
-const sec1 = (ms: number) => `${(ms / 1000).toFixed(1)}s`
-const usd = (n?: number) =>
-  n === undefined
-    ? '–'
-    : n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumSignificantDigits: 2 })
+// "Browser", "Screenshot", "Affordances": a column header's agent
+const short = (k: AgentKey) => {
+  const n = agentName[k].replace(' agent', '')
+  return n[0]!.toUpperCase() + n.slice(1)
+}
 
 // the proof section for agents: each model's medians, then every task, from the same results files
 const proofMd = (runs: BenchRun[]) =>
   runs
     .map((r) => {
-      const { browser: b, afford: a } = r
-      const ok = (x: { successRate: number }) => Math.round(x.successRate * r.runs)
+      const ks = agentsOf(r)
+      const ok = (x?: BenchAgent) => (x ? `${passed(x, r.runs)}/${r.runs}` : '–')
+      const each = (f: (x: BenchAgent) => string) =>
+        ks.map((k) => `${f(r[k]!)} for the ${agentName[k]}`).join(', ')
+      const ratios = headline(r)
+        .filter((s) => s.against)
+        .map((s) => `${s.big} ${s.label} ${s.against}${s.also ? ` (${s.also})` : ''}`)
+        .join('; ')
+      const cols = (['tokens', 'time', 'passed'] as const).flatMap((m) =>
+        ks.map((k) => `${short(k)} ${m}`),
+      )
       return [
-        `**${modelName(r.model)}**, ${r.runs} runs per task. Median per task, browser agent against Affordances agent: ${int(b.tokens)} against ${int(a.tokens)} tokens, ${sec1(b.ms)} against ${sec1(a.ms)}, ${b.turns} against ${a.turns} steps, ${usd(b.costPerSuccessUsd)} against ${usd(a.costPerSuccessUsd)} per successful task. Tasks completed: ${Math.round(b.successRate * 100)}% against ${Math.round(a.successRate * 100)}%.`,
-        '| Task | Browser tokens | Affordances tokens | Browser time | Affordances time | Browser passed | Affordances passed |\n| --- | --: | --: | --: | --: | --: | --: |\n' +
+        `**${modelName(r.model)}**, ${r.runs} runs per task. Median per task: ${each((x) => `${int(x.tokens)} tokens`)}; ${each((x) => seconds(x.ms))}; ${each((x) => `${x.turns} steps`)}; ${each((x) => (x.costPerSuccessUsd === undefined ? '–' : usd(x.costPerSuccessUsd)))} per successful task. Tasks completed: ${each((x) => pct(x.successRate))}. The Affordances agent against the stronger baseline on each measure: ${ratios}.`,
+        `| Task | ${cols.join(' | ')} |\n| --- |${' --: |'.repeat(cols.length)}\n` +
           r.tasks
             .map(
               (t) =>
-                `| ${t.name} | ${int(t.browser.tokens)} | ${int(t.afford.tokens)} | ${sec1(t.browser.ms)} | ${sec1(t.afford.ms)} | ${ok(t.browser)}/${r.runs} | ${ok(t.afford)}/${r.runs} |`,
+                `| ${t.name} | ${[
+                  ...ks.map((k) => (t[k] ? int(t[k].tokens) : '–')),
+                  ...ks.map((k) => (t[k] ? seconds(t[k].ms) : '–')),
+                  ...ks.map((k) => ok(t[k])),
+                ].join(' | ')} |`,
             )
             .join('\n'),
       ].join('\n\n')
@@ -241,7 +263,7 @@ const Home = () => {
             </SectionHead>
             <AgentText
               block
-              md={`One recorded run on Claude Opus 5.5, the task "Add a Heavyweight Tee in size M to my cart.", two browser agents on one clock. Both start with the same built-in tools: \`goto\`, \`click\`, \`fill\` and \`press\`.\n\n- **With WebMCP** (its prompt says only that pages can register tools): \`goto("/")\`, where the home page registered \`search\`. It clicked the Heavyweight Tee link. The product page registered \`addToCart\`, and \`search\` went away. It called \`addToCart({ sku: "TEE-BLK-M", quantity: 1 })\` and answered. 9.2s, 4 turns.\n- **Plain browser**: \`goto("/")\`, clicked the product link, reloaded the product page, clicked size M and Add to cart, timed out clicking the Cart link, then went to \`/cart\` and answered. 20.6s, 7 turns.\n\nBoth added the tee to the cart. The [React and WebMCP guide](/docs/guides/react) shows how a page registers its actions.`}
+              md={`One recorded run on Claude Opus 5.5, the task "Add a Heavyweight Tee in size M to my cart.", two browser agents on one clock. Both start with the same built-in tools: \`goto\`, \`click\`, \`fill\` and \`press\`.\n\n- **With WebMCP** (its prompt says only that pages can register tools): \`goto("/")\`, where the home page registered \`search\`. It went to the Heavyweight Tee's page, which registered \`addToCart\`, and \`search\` went away. It called \`addToCart({ sku: "TEE-BLK-M", quantity: 1 })\` and answered. 9.9s, 4 turns.\n- **Plain browser**: \`goto("/")\`, then the product page, clicked size M, clicked Add to cart, then went to \`/cart\` to check and answered. 13.2s, 6 turns.\n\nBoth added the tee to the cart. The [React and WebMCP guide](/docs/guides/react) shows how a page registers its actions.`}
             >
               <Discovery />
             </AgentText>
@@ -249,8 +271,9 @@ const Home = () => {
 
           <section className={sec} id="proof" aria-labelledby="h-proof">
             <SectionHead eyebrow="Proof" id="h-proof" title="Measured, not claimed.">
-              The same shopping tasks on the same model: a browser agent reading accessibility
-              snapshots, against an Affordances agent reading the graph.{' '}
+              The same shopping tasks on the same model, against two baselines: a browser agent
+              reading accessibility snapshots and a screenshot agent clicking on pixels. The
+              Affordances agent reads the graph.{' '}
               {runs.length ? (
                 <>
                   From the latest committed runs; the{' '}

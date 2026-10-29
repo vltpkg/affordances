@@ -25,7 +25,7 @@ html:not([data-pm='deno']) [data-pm-only='deno'] {
 }
 
 /* the bench page draws the marketing proof chart; its tokens, as the docs' neutrals. the Affordances agent is
-   the foreground, the browser agent recedes */
+   the foreground, the browser agent recedes, and the screenshot agent recedes further */
 .bench {
   --bg: var(--background);
   --fg: var(--foreground);
@@ -34,4 +34,5 @@ html:not([data-pm='deno']) [data-pm-only='deno'] {
   --line: var(--border);
   --line2: var(--border);
   --agent: var(--foreground);
+  --shot: color-mix(in oklch, var(--muted-foreground) 62%, var(--background));
 }
