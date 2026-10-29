@@ -1,8 +1,9 @@
 'use client'
 
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { cn } from 'cn'
 import { CodeCard, type CodeTab } from '@affordances/ui/components/code-card'
+import { fan, Origin, Pulse, useConnectors } from './connectors'
 
 type Surface = {
   id: string
@@ -22,35 +23,14 @@ const ORIGIN_LINE = 2
 // definition it reads, sends one pulse down its connector, and shows what it produces
 export const Surfaces = ({ source, surfaces }: { source: CodeTab; surfaces: Surface[] }) => {
   const [sel, setSel] = useState(2)
-  const [paths, setPaths] = useState<string[]>([])
   const root = useRef<HTMLDivElement>(null)
   const svg = useRef<SVGSVGElement>(null)
   const tabs = useRef<(HTMLButtonElement | null)[]>([])
   const current = surfaces[sel]!
 
-  // the connectors are measured, not assumed, so they follow the code card's real line positions
-  useLayoutEffect(() => {
-    const measure = () => {
-      const box = svg.current?.getBoundingClientRect()
-      const lines = root.current?.querySelectorAll('.how-src .line')
-      const line = lines?.[ORIGIN_LINE]?.getBoundingClientRect()
-      if (!box?.width || !line) return setPaths([])
-      const y0 = line.top + line.height / 2 - box.top
-      const w = box.width
-      setPaths(
-        tabs.current.map((tab) => {
-          const r = tab!.getBoundingClientRect()
-          const y = r.top + r.height / 2 - box.top
-          return `M0 ${y0} C ${w * 0.55} ${y0}, ${w * 0.45} ${y}, ${w} ${y}`
-        }),
-      )
-    }
-    measure()
-    const ro = new ResizeObserver(measure)
-    if (root.current) ro.observe(root.current)
-    document.fonts?.ready.then(measure, () => {})
-    return () => ro.disconnect()
-  }, [])
+  const paths = useConnectors(root, () =>
+    fan(svg.current, root.current?.querySelectorAll('.src .line')[ORIGIN_LINE], tabs.current),
+  )
 
   const onKey = (e: React.KeyboardEvent) => {
     const last = surfaces.length - 1
@@ -66,7 +46,7 @@ export const Surfaces = ({ source, surfaces }: { source: CodeTab; surfaces: Surf
     .filter((s) => s.lines.length)
     .map(
       (s) =>
-        `${s.lines.map((n) => `.how[data-s='${s.id}'] .how-src .line:nth-of-type(${n + 1})`).join(',')}{opacity:1;background:var(${s.agent ? '--agent-soft' : '--hl'});box-shadow:inset 2px 0 0 var(${s.agent ? '--agent' : '--fg'})}`,
+        `${s.lines.map((n) => `.how[data-s='${s.id}'] .src .line:nth-of-type(${n + 1})`).join(',')}{opacity:1;background:var(${s.agent ? '--agent-soft' : '--hl'});box-shadow:inset 2px 0 0 var(${s.agent ? '--agent' : '--fg'})}`,
     )
     .join('')
 
@@ -80,7 +60,7 @@ export const Surfaces = ({ source, surfaces }: { source: CodeTab; surfaces: Surf
       {/* desktop: the definition and, under it, what the selected surface does with it. on a phone both
           columns dissolve into the grid, and order puts the note between the list and the output */}
       <div className="flex min-w-0 flex-col max-[899px]:contents min-[900px]:self-stretch">
-        <div className="how-src flex min-w-0 flex-1 flex-col max-[899px]:order-1">
+        <div className="src flex min-w-0 flex-1 flex-col max-[899px]:order-1">
           <CodeCard tabs={[source]} />
         </div>
         <p
@@ -123,24 +103,13 @@ export const Surfaces = ({ source, surfaces }: { source: CodeTab; surfaces: Surf
           />
         ))}
         {paths[sel] && (
-          <path
+          <Pulse
             key={`pulse-${sel}`}
             d={paths[sel]}
-            fill="none"
-            pathLength={1}
-            strokeWidth={3}
-            strokeLinecap="round"
-            className={cn('how-pulse', current.agent ? 'stroke-(--agent)' : 'stroke-(--fg)')}
+            className={current.agent ? 'stroke-(--agent)' : 'stroke-(--fg)'}
           />
         )}
-        {paths[0] && (
-          <circle
-            cx={0}
-            cy={Number(paths[0].split(' ')[1])}
-            r={3.5}
-            className={current.agent ? 'fill-(--agent)' : 'fill-(--fg)'}
-          />
-        )}
+        <Origin paths={paths} className={current.agent ? 'fill-(--agent)' : 'fill-(--fg)'} />
       </svg>
 
       <div className="flex min-w-0 flex-col gap-4 max-[899px]:contents">

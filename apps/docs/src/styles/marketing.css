@@ -25,6 +25,8 @@
   --agent-mid: color-mix(in srgb, var(--agent) 55%, var(--bg));
   --agent-low: color-mix(in srgb, var(--agent) 30%, var(--bg));
   --agent-min: color-mix(in srgb, var(--agent) 16%, var(--bg));
+  /* a lit line in a definition */
+  --hl: color-mix(in oklch, var(--fg) 7%, transparent);
   overflow-x: clip;
 }
 
@@ -238,7 +240,7 @@
   transition-duration: 0.1s;
 }
 
-/* before / after: file rows, meters, calls, surfaces, captions */
+/* before / after: file rows, meters, calls, captions */
 .afd .frow {
   display: flex;
   align-items: center;
@@ -368,23 +370,6 @@
 .afd .call.cur .no {
   color: var(--agent);
 }
-.afd .sf {
-  opacity: 0.35;
-  transition:
-    opacity 0.3s,
-    color 0.3s,
-    border-color 0.3s;
-}
-.afd .sf.on {
-  opacity: 1;
-  color: var(--fg);
-  border-color: var(--line2);
-}
-.afd .sf.on.ag {
-  color: var(--agent);
-  border-color: var(--agent-line);
-}
-
 /* while scrolling drives the panels: a tall track with the panels pinned, centred below the header */
 .afd .live .track {
   height: 1700px;
@@ -436,19 +421,12 @@
   }
 }
 
-/* how it works: the selected surface lights the definition's lines it reads (rules generated in
-   surfaces.tsx), and one pulse runs down its connector */
-.afd .how {
-  --hl: color-mix(in oklch, var(--fg) 7%, transparent);
-}
-/* the definition's card runs as tall as the surfaces beside it, so the two columns end together */
-.afd .how-src > figure {
-  flex: 1;
-}
-.afd .how-src .line {
+/* a definition's lines (how it works' actions.ts, after's state.ts) sit dimmed until something reads
+   them. how it works lights its lines with rules generated in surfaces.tsx */
+.afd .src .line {
   display: inline-block;
   box-sizing: border-box;
-  /* full-bleed across the pre's 1rem padding */
+  /* full-bleed across the card's 1rem padding */
   min-width: calc(100% + 2rem);
   margin-inline: -1rem;
   padding-inline: 1rem;
@@ -458,15 +436,56 @@
     background-color 0.2s,
     box-shadow 0.2s;
 }
-.afd .how-pulse {
-  stroke-dasharray: 0.12 1;
-  stroke-dashoffset: 0.12;
-  animation: how-pulse 0.7s var(--out) forwards;
+.afd .src .line.lit {
+  opacity: 1;
+  background: var(--hl);
+  box-shadow: inset 2px 0 0 var(--fg);
 }
-@keyframes how-pulse {
+/* the definition's card runs as tall as the surfaces beside it, so the two columns end together */
+.afd .how .src > figure {
+  flex: 1;
+}
+/* one pulse down a connector. it starts and ends just off the path, so its round caps never leave a
+   dot at either end */
+.afd .pulse {
+  stroke-dasharray: 0.12 2;
+  stroke-dashoffset: 0.13;
+  animation: pulse-run 0.7s var(--out) forwards;
+}
+@keyframes pulse-run {
   to {
-    stroke-dashoffset: -1;
+    stroke-dashoffset: -1.01;
   }
+}
+
+/* after: the surfaces arrive once the copies are gone. a surface's price swaps as its pulse lands */
+.afd .reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 0.4s var(--out),
+    opacity 0.3s;
+}
+.afd .reveal.on {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.afd .reveal > * {
+  min-height: 0;
+  overflow: hidden;
+}
+.afd .fan-v > span {
+  grid-area: 1 / 1;
+  opacity: 0;
+  transform: translateY(3px);
+  transition:
+    opacity 0.2s 0.3s,
+    transform 0.25s var(--out) 0.3s;
+}
+.afd .fan-v > span.on {
+  opacity: 1;
+  transform: none;
 }
 
 @media (max-width: 899px) {

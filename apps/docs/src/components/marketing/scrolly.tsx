@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { cn } from 'cn'
+import { fan, Origin, Pulse, useConnectors } from './connectors'
 import { Code, SectionHead } from './section-head'
 
 const clamp = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v)
@@ -321,7 +322,27 @@ export const Before = () => {
     if (on) shown++
     if (dr) drifted++
     const s = !on ? '' : i === 0 ? (edited ? '$140' : '$160') : dr ? 'still $160' : '$160'
-    return { d: d!, n: n!, s, cls: cn(on && 'on', dr && 'drift', i === 0 && edited && 'edited') }
+    return {
+      d: d!,
+      n: n!,
+      s,
+      on,
+      cls: cn(on && 'on', dr && 'drift', i === 0 && edited && 'edited', i > 0 && 'pl-7'),
+    }
+  })
+
+  // the copies hang off page.tsx by hand: dashed, and none of them quite reaches its file. offsets, not
+  // rects, so the rows' slide-in doesn't skew them
+  const list = useRef<HTMLDivElement>(null)
+  const stubs = useConnectors(list, () => {
+    const [page, ...copies] = list.current?.children ?? []
+    if (!(page instanceof HTMLElement)) return []
+    const y0 = page.offsetTop + page.offsetHeight / 2 + 11
+    return copies.flatMap((c) => {
+      if (!(c instanceof HTMLElement)) return []
+      const y = c.offsetTop + c.offsetHeight / 2
+      return `M7 ${y0} V${y - 6} Q7 ${y} 13 ${y} H19`
+    })
   })
 
   const steps = Math.min(25, Math.floor(clamp(pbA / 0.82) * 25))
@@ -347,10 +368,27 @@ export const Before = () => {
           <Split>
             <div className={panel} ref={left}>
               <PanelHead title="Developer" count={`${shown} files · 1 route`} />
-              <div className="flex flex-col">
+              <div className="relative flex flex-col" ref={list}>
                 {rows.map((r) => (
                   <Row key={r.d + r.n} {...r} />
                 ))}
+                <svg
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 size-full overflow-visible"
+                >
+                  {stubs.map((d, i) => (
+                    <path
+                      key={i}
+                      d={d}
+                      fill="none"
+                      strokeDasharray="3 3"
+                      className={cn(
+                        'stroke-(--line2) transition-opacity duration-300',
+                        !rows[i + 1]?.on && 'opacity-0',
+                      )}
+                    />
+                  ))}
+                </svg>
               </div>
               <div
                 className={cn(
@@ -404,12 +442,117 @@ export const Before = () => {
   )
 }
 
+// the surfaces state.ts reaches, and whether an agent reads them
+const SURFACES = [
+  ['Server action', false],
+  ['WebMCP', true],
+  ['HTTP graph', true],
+  ['MCP', true],
+  ['Markdown', true],
+] as const
+const PRICES = [160, 140]
+
+// state.ts's price line, one origin, and the five surfaces it reaches. an edit sends a pulse down every
+// connector at once, and each surface's price swaps as its pulse lands (.fan-v's delay). edits counts
+// the changes, so nothing pulses on load
+const Fan = ({ price, edits, onEdit }: { price: number; edits: number; onEdit: () => void }) => {
+  const root = useRef<HTMLDivElement>(null)
+  const svg = useRef<SVGSVGElement>(null)
+  const line = useRef<HTMLSpanElement>(null)
+  const rows = useRef<(HTMLLIElement | null)[]>([])
+  const paths = useConnectors(root, () => fan(svg.current, line.current, rows.current))
+  const next = PRICES.find((v) => v !== price)
+
+  return (
+    <div ref={root} className="grid grid-cols-[auto_minmax(20px,1fr)_minmax(0,232px)] items-center">
+      <div className="src flex min-w-0 flex-col rounded-[10px] border border-(--line) bg-(--bg2) px-4 py-3 font-mono text-xs leading-5">
+        <div className="mb-1 text-[11.5px] text-(--fg3)">state.ts</div>
+        <span className="line">stock: 12,</span>
+        <span ref={line} className="line lit">
+          price:{' '}
+          <button
+            type="button"
+            onClick={onEdit}
+            aria-label={`Change the price to $${next}`}
+            className="press cursor-pointer rounded-[3px] tabular-nums underline decoration-(--fg3) decoration-dotted underline-offset-[3px] hover:decoration-(--fg)"
+          >
+            {price}
+          </button>
+          ,
+        </span>
+        <span className="line">new: true,</span>
+      </div>
+
+      <svg ref={svg} aria-hidden className="h-full w-full self-stretch overflow-visible">
+        {paths.map((d, i) => (
+          <path key={i} d={d} fill="none" strokeWidth={1} className="stroke-(--line2)" />
+        ))}
+        {edits > 0 &&
+          paths.map((d, i) => (
+            <Pulse
+              key={`${edits}-${i}`}
+              d={d}
+              className={SURFACES[i]![1] ? 'stroke-(--agent)' : 'stroke-(--fg)'}
+            />
+          ))}
+        <Origin paths={paths} className="fill-(--fg)" />
+      </svg>
+
+      <ul className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-(--line2)">
+        {SURFACES.map(([name, agent], i) => (
+          <li
+            key={name}
+            ref={(el) => {
+              rows.current[i] = el
+            }}
+            className="flex h-8 items-center gap-2.5 border-t border-(--line) px-3 first:border-t-0 max-[420px]:px-2.5"
+          >
+            {/* on a phone the price's colour says the same as the dot */}
+            <span
+              aria-hidden
+              className={cn(
+                'size-[7px] flex-none rounded-full max-[420px]:hidden',
+                agent ? 'bg-(--agent)' : 'bg-(--fg)',
+              )}
+            />
+            <span className="truncate text-[13px] font-medium tracking-[-0.01em]">{name}</span>
+            <span
+              className={cn(
+                'fan-v ml-auto grid font-mono text-xs tabular-nums',
+                agent ? 'text-(--agent)' : 'text-(--fg)',
+              )}
+            >
+              {PRICES.map((v) => (
+                <span key={v} aria-hidden={v !== price} className={cn(v === price && 'on')}>
+                  ${v}
+                </span>
+              ))}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 // after: three files per route, every surface derived from them, and an agent that finishes in five calls
 export const After = () => {
   const { live, p, track, sticky, left, right } = useScrolly()
   const [pa, paA] = p
 
+  // scrolling makes the edit; the price in state.ts can also be clicked, and the last one wins
   const edit = pa > 0.5
+  const [price, setPrice] = useState(140)
+  const [edits, setEdits] = useState(0)
+  const [was, setWas] = useState(edit)
+  const change = (v: number) => {
+    setPrice(v)
+    setEdits((n) => n + 1)
+  }
+  if (edit !== was) {
+    setWas(edit)
+    change(edit ? 140 : 160)
+  }
   let count = 0
   const files: { d: string; n: string; keep?: boolean; g?: number; at?: number }[] = [
     { d: 'app/products/[slug]/', n: 'page.tsx', keep: true },
@@ -436,17 +579,10 @@ export const After = () => {
     return {
       d: f.d,
       n: f.n,
-      s: f.n === 'state.ts' ? (edit ? 'price: $140' : 'price: $160') : '5 surfaces',
+      s: f.n === 'state.ts' ? `price: $${price}` : '5 surfaces',
       cls: on ? 'on fresh' : '',
     }
   })
-  let synced = 0
-  const surfaces = ['Server Action', 'WebMCP', 'HTTP graph', 'MCP', 'Markdown'].map((t, j) => {
-    const on = pa > 0.55 + j * 0.05
-    if (on) synced++
-    return { t, v: on ? ' $140' : '', cls: cn(on && 'on', j > 0 && j < 4 && 'ag') }
-  })
-
   // a confirm action is called twice: the first answers confirm_required, the second carries confirm: true
   const C = [
     ['GET', '/products/court-runner-2', '200 graph'],
@@ -479,29 +615,18 @@ export const After = () => {
                   <Row key={r.d + r.n} {...r} />
                 ))}
               </div>
-              <div>
-                <div className="mb-3 flex items-baseline justify-between gap-2.5 font-mono text-xs text-(--fg3)">
-                  <span>derived from actions.ts</span>
-                  <span>{synced} / 5 in sync</span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {surfaces.map((s) => (
-                    <span
-                      key={s.t}
-                      className={cn(
-                        'sf inline-flex h-7 items-center gap-1.5 rounded-md border border-(--line) px-2.5 font-mono text-xs text-(--fg3)',
-                        s.cls,
-                      )}
-                    >
-                      {s.t}
-                      <span className="text-(--fg3)">{s.v}</span>
-                    </span>
-                  ))}
+              <div className={cn('reveal', pa > 0.42 && 'on')} inert={pa <= 0.42}>
+                <div>
+                  <Fan
+                    price={price}
+                    edits={edits}
+                    onEdit={() => change(price === 140 ? 160 : 140)}
+                  />
                 </div>
               </div>
               <Caption
                 on={pa > 0.86}
-                sub="Change the price in state. Humans and agents see $140 together."
+                sub={`Change the price in state. Humans and agents see $${price} together.`}
               >
                 One edit. Every surface.
               </Caption>
