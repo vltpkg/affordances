@@ -218,11 +218,11 @@ const sections: { title: string; cards: Card[] }[] = [
       },
       {
         icon: bench.length ? GaugeIcon : FlaskConicalIcon,
-        title: 'Bench',
+        title: 'Benchmarks',
         description: bench.length
           ? 'A browser agent and an Afford agent on the same tasks, with committed results.'
           : 'A browser agent and an Afford agent on the same tasks. Results will appear after the first committed bench run.',
-        href: '/docs/guides/bench',
+        href: '/docs/benchmarks',
       },
     ],
   },

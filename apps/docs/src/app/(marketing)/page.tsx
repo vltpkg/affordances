@@ -240,7 +240,7 @@ const Home = () => {
                 <>
                   From the latest committed runs; the{' '}
                   <Link
-                    href="/docs/guides/bench"
+                    href="/docs/benchmarks"
                     className="text-(--fg) underline decoration-(--line2) underline-offset-4 transition-colors duration-150 hover:decoration-(--fg)"
                   >
                     bench page

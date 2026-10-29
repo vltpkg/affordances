@@ -17,7 +17,7 @@ export const SiteFooter = () => (
       <Link href="/docs" className={link}>
         Docs
       </Link>
-      <Link href="/docs/guides/bench" className={link}>
+      <Link href="/docs/benchmarks" className={link}>
         Methodology
       </Link>
       <Link href="/agents" className={link}>
