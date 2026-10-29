@@ -74,16 +74,27 @@ const art: Record<string, React.ReactNode> = {
   ),
 }
 
-export const ProductArt = ({ slug, className }: { slug: string; className?: string }) => (
+// decorative by default; pass alt where the drawing stands in for a product photo
+export const ProductArt = ({
+  slug,
+  alt,
+  viewBox = '0 0 96 96',
+  className,
+}: {
+  slug: string
+  alt?: string
+  viewBox?: string
+  className?: string
+}) => (
   <div className={cn('aspect-square rounded-md bg-muted text-foreground', className)}>
     <svg
-      viewBox="0 0 96 96"
+      viewBox={viewBox}
       fill="none"
       stroke="currentColor"
       strokeWidth="1.25"
       strokeLinecap="round"
       strokeLinejoin="round"
-      aria-hidden
+      {...(alt ? { role: 'img', 'aria-label': alt } : { 'aria-hidden': true })}
       className="size-full [&_*]:[vector-effect:non-scaling-stroke]"
     >
       {art[slug]}

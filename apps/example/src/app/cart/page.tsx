@@ -6,9 +6,12 @@ import { Affordance } from '@affordances/react'
 import { buttonVariants } from '@affordances/ui/components/button'
 import { cn } from 'cn'
 import { ProductArt } from '@/components/product-art'
+import { ProductList } from '@/components/product-list'
 import { SubmitButton } from '@/components/submit-button'
 import { Totals } from '@/components/totals'
 import { getSessionId } from '@/lib/session'
+import { listProducts } from '@/lib/store'
+import { listing } from '../state'
 import { removeItem, updateQuantity } from './actions'
 import { loadCart } from './state'
 
@@ -86,22 +89,58 @@ const Cart = async () => {
           </li>
         ))}
       </ul>
-      <aside className="self-start md:sticky md:top-24">
-        <Totals count={cart.count} total={cart.subtotal} />
+      <aside aria-labelledby="summary" className="self-start md:sticky md:top-24">
+        <h2 id="summary" className="text-sm font-medium">
+          Order summary
+        </h2>
+        <div className="mt-2">
+          <Totals count={cart.count} total={cart.subtotal} />
+        </div>
         <Link
           href="/checkout"
           className={cn(buttonVariants({ size: 'lg' }), 'mt-6 h-9 w-full text-sm')}
         >
           Check out
         </Link>
+        <ul className="mt-6 space-y-1.5 text-xs text-muted-foreground">
+          <li>Free shipping on every order</li>
+          <li>Free returns within 30 days</li>
+          <li>Taxes included where they apply</li>
+        </ul>
       </aside>
+      <Upsell inCart={cart.items.map((item) => item.href)} />
     </div>
+  )
+}
+
+// what isn't in the cart yet and can still be bought
+const Upsell = ({ inCart }: { inCart: string[] }) => {
+  const picks = listProducts()
+    .map(listing)
+    .filter((p) => p.inStock && !inCart.includes(p.href))
+    .slice(0, 4)
+  if (!picks.length) return null
+  return (
+    <section aria-labelledby="upsell" className="mt-10 border-t pt-10 md:col-span-2">
+      <h2 id="upsell" className="text-lg font-semibold tracking-tight">
+        Pairs well with
+      </h2>
+      <ProductList products={picks} className="mt-6" />
+    </section>
   )
 }
 
 const Page = () => (
   <>
-    <h1 className="text-2xl font-semibold tracking-tight">Cart</h1>
+    <div className="flex items-baseline justify-between gap-4">
+      <h1 className="text-2xl font-semibold tracking-tight">Cart</h1>
+      <Link
+        href="/"
+        className="rounded-sm text-sm text-muted-foreground underline-offset-4 outline-none transition-colors duration-150 ease-out hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30"
+      >
+        Continue shopping
+      </Link>
+    </div>
     <Suspense>
       <Cart />
     </Suspense>

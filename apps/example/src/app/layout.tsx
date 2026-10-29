@@ -4,6 +4,7 @@ import { fontVariables } from '@affordances/ui/lib/fonts'
 import { AffordancesDevtools } from '@affordances/react/dev'
 import { Affordances } from '@/components/affordances-provider'
 import { AgentFrame } from '@/components/agent-view'
+import { SiteFooter } from '@/components/site-footer'
 import { SiteHeader } from '@/components/site-header'
 import '@affordances/ui/globals.css'
 
@@ -23,13 +24,10 @@ const RootLayout = ({ children }: LayoutProps<'/'>) => (
       <ThemeProvider>
         <Affordances>
           <SiteHeader />
-          <main className="mx-auto w-full max-w-5xl flex-1 px-4 pt-10 pb-20 sm:px-6 sm:pt-14">
+          <main className="mx-auto w-full max-w-5xl flex-1 px-4 pt-6 pb-20 sm:px-6 sm:pt-8">
             <AgentFrame>{children}</AgentFrame>
           </main>
-          <footer className="mx-auto w-full max-w-5xl px-4 pb-8 text-xs text-muted-foreground sm:px-6">
-            Afford Supply is a demo. Nothing ships, and every page can be read and operated by
-            agents.
-          </footer>
+          <SiteFooter />
           {process.env.NODE_ENV === 'development' && <AffordancesDevtools />}
         </Affordances>
       </ThemeProvider>

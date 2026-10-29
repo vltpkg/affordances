@@ -74,7 +74,7 @@ test('the agent view shows the live graph at the same url', async ({ page }) => 
   await expect(page.getByRole('heading', { name: 'Heavyweight Tee' })).toBeHidden()
 
   // it survives navigation
-  await page.getByRole('link', { name: 'Orders' }).click()
+  await page.getByRole('banner').getByRole('link', { name: 'Account' }).click()
   await expect(view).toContainText('"route": "/account/orders"')
 
   await toggle.click()
