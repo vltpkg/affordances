@@ -34,6 +34,8 @@ export const AgentViewToggle = () => {
   const on = useAgentView()
   return (
     <Toggle
+      // a demo control, not part of the store: the bench hides it from the browser agent
+      data-demo-only
       pressed={on}
       onPressedChange={write}
       className="h-7 px-2 font-pixel text-[13.16px] font-normal text-muted-foreground hover:text-foreground aria-pressed:text-foreground"

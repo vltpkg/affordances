@@ -63,6 +63,14 @@ export const browserAgent = async (site: string, sid: string) => {
   browser ??= await chromium.launch()
   const context = await browser.newContext({ baseURL: site })
   await context.addCookies([{ name: 'sid', value: sid, url: site }])
+  // the store's Agent view toggle is a demo control no real store has; it would hand this agent the graph
+  await context.addInitScript(() => {
+    addEventListener('DOMContentLoaded', () => {
+      const style = document.createElement('style')
+      style.textContent = '[data-demo-only] { display: none !important }'
+      document.head.append(style)
+    })
+  })
   const page = await context.newPage()
   const snapshot = async () => {
     await page.waitForLoadState('networkidle').catch(() => {})
@@ -92,10 +100,11 @@ export const browserAgent = async (site: string, sid: string) => {
         required: ['role', 'name'],
       },
       run: async ({ role, name }) => {
-        await page
-          .getByRole(role as never, { name: name as string, exact: true })
-          .first()
-          .click({ timeout: 5000 })
+        const target = page.getByRole(role as never, { name: name as string, exact: true }).first()
+        // styled radios and checkboxes are usually a visually hidden input under its label, which takes the
+        // pointer; check() with force selects it the way a person clicking the label would
+        if (role === 'radio' || role === 'checkbox') await target.check({ force: true, timeout: 5000 })
+        else await target.click({ timeout: 5000 })
         return snapshot()
       },
     },
