@@ -25,5 +25,6 @@ export const loadCart = (sid: string | null) => {
 export type CartState = ReturnType<typeof loadCart>
 
 export default defineState(({ ctx }) => loadCart(ctx.session?.id ?? null), {
+  description: 'The cart: items, quantities and subtotal',
   nav: ({ cart }) => (cart.count ? [{ to: '/checkout', label: 'Checkout' }] : []),
 })

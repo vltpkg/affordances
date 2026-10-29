@@ -18,4 +18,7 @@ export const listing = (product: Product) => {
 
 export const loadIndex = () => ({ products: listProducts().map(listing) })
 
-export default defineState(loadIndex)
+export default defineState(loadIndex, {
+  description:
+    'Every product with its price, options and stock; search finds products by name or category',
+})

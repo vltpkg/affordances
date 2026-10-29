@@ -6,4 +6,6 @@ export const loadSearch = (query: string) => ({
   search: { query, results: searchProducts(query).map(listing) },
 })
 
-export default defineState(({ searchParams }) => loadSearch(searchParams.get('q')?.trim() ?? ''))
+export default defineState(({ searchParams }) => loadSearch(searchParams.get('q')?.trim() ?? ''), {
+  description: 'Products matching ?q=',
+})

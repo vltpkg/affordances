@@ -10,4 +10,6 @@ export const loadOrders = (sid: string | null) => ({
   })),
 })
 
-export default defineState(({ ctx }) => loadOrders(ctx.session?.id ?? null))
+export default defineState(({ ctx }) => loadOrders(ctx.session?.id ?? null), {
+  description: 'Orders placed in this session, newest first, with items and totals',
+})

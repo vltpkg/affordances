@@ -39,5 +39,8 @@ export default defineState(
     if (!state) throw new AffordError('not_found', `No product at ${params.slug}`)
     return state
   },
-  { nav: ({ cart }) => (cart.count ? [{ to: '/cart', label: 'Cart' }] : []) },
+  {
+    description: 'One product: its variants (SKUs), prices and stock, and the cart count',
+    nav: ({ cart }) => (cart.count ? [{ to: '/cart', label: 'Cart' }] : []),
+  },
 )
