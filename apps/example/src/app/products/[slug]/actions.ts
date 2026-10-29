@@ -31,7 +31,8 @@ export const addToCart = defineAction({
       ? `Every ${what} in stock is already in the cart`
       : `Only ${left} left of ${what}`
   },
-  effects: ['product', 'cart'],
+  // the cart is what an add changes for the caller; the page's own render picks up the rest
+  effects: ['cart'],
   run: async ({ sku, quantity }, ctx) => {
     // the handler reloads state with this ctx after run, so the new session shows up in the delta
     ctx.session ??= { id: await ensureSession() }
