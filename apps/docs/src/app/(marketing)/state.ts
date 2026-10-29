@@ -7,7 +7,7 @@ export default defineState(
       name: 'Affordances',
       summary:
         'An open protocol and Next.js toolkit. Declare what a page shows (state.ts) and what can be done there (actions.ts); people, browser agents, headless agents, and MCP clients all use the same definition.',
-      install: 'vlx @affordances/next init',
+      install: 'vlx @affordances/cli init',
     },
     start: [
       { title: 'Quickstart', url: '/docs/quickstart' },

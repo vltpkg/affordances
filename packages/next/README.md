@@ -4,7 +4,7 @@ Affordances for Next.js: `withAffordances` for `next.config.ts`, codegen that fi
 
 ```bash
 vlt install @affordances/next @affordances/react zod
-vlx @affordances/next init
+vlx @affordances/cli init
 ```
 
 `init` writes `app/api/affordances/graph/[[...path]]/route.ts`, wraps your config, and generates `.affordances/manifest.ts`. Then describe a page next to it:

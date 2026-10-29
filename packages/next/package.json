@@ -8,9 +8,6 @@
     "url": "git+https://github.com/affordances/affordances.git",
     "directory": "packages/next"
   },
-  "bin": {
-    "affordances": "./dist/cli.js"
-  },
   "files": [
     "dist"
   ],
@@ -32,6 +29,10 @@
     "./manifest": {
       "types": "./dist/manifest.d.ts",
       "default": "./dist/manifest.js"
+    },
+    "./codegen": {
+      "types": "./dist/codegen.d.ts",
+      "default": "./dist/codegen.js"
     }
   },
   "scripts": {

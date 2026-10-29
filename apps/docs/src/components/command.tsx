@@ -37,12 +37,12 @@ const Command = async ({ commands }: { commands: Record<PackageManager, string> 
   )
 }
 
-// <Run cmd="@affordances/next init" />: run a package's bin, vlx @affordances/next init for vlt
+// <Run cmd="@affordances/cli init" />: run a package's bin, vlx @affordances/cli init for vlt
 export const Run = ({ cmd }: { cmd: string }) => (
   <Command commands={forEach((pm) => exec(pm, cmd))} />
 )
 
-// <Install pkgs="@affordances/next zod" dev run="@affordances/next init" />: add packages, then (optionally) run one
+// <Install pkgs="@affordances/next zod" dev run="@affordances/cli init" />: add packages, then (optionally) run one
 export const Install = ({ pkgs, dev, run }: { pkgs: string; dev?: boolean; run?: string }) => (
   <Command
     commands={forEach((pm) =>

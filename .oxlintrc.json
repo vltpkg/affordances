@@ -12,6 +12,12 @@
       {
         "allow": ["**/*.css"]
       }
+    ],
+    "eslint/no-underscore-dangle": [
+      "warn",
+      {
+        "allow": ["_tag"]
+      }
     ]
   },
   "overrides": [

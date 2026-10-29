@@ -18,7 +18,7 @@ const typeOf = (schema: Schema): string =>
         : (schema.type ?? 'unknown')
 
 // addToCart(sku: string, quantity?: integer): the input schema as a one-line signature
-const signature = (name: string, input: Schema) => {
+export const signature = (name: string, input: Schema) => {
   const required = new Set(input.required ?? [])
   const params = Object.entries(input.properties ?? {}).map(
     ([key, schema]) => `${key}${required.has(key) ? '' : '?'}: ${typeOf(schema)}`,

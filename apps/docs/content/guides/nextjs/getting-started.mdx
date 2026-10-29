@@ -58,7 +58,7 @@ The handler finds the generated manifest on its own: `withAffordances` points it
 
 Or skip steps 2 to 4 and let `init` do them:
 
-<Run cmd="@affordances/next init" />
+<Run cmd="@affordances/cli init" />
 
 ### 5. Describe a page
 
@@ -144,6 +144,13 @@ curl localhost:3000/guestbook \
 ```
 
 The response is a [delta](/docs/concepts/deltas) with the new `entries`.
+
+The [CLI](/docs/reference/cli) does both with a readable summary, including roughly how many tokens the page costs an agent:
+
+```bash
+vlx @affordances/cli open localhost:3000/guestbook
+vlx @affordances/cli call localhost:3000/guestbook sign --input '{"name":"Ada","message":"Hello"}'
+```
 
 ## Next
 

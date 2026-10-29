@@ -62,7 +62,7 @@ curl -X POST -H 'Content-Type: application/vnd.affordances+json' -H 'Authorizati
 
 ```bash
 npm install @affordances/next @affordances/react zod
-npx affordances init
+npx @affordances/cli init
 ```
 
 `init` writes `app/api/affordances/graph/[[...path]]/route.ts`, wraps `next.config` with `withAffordances`, and adds `.affordances` to `.gitignore`. Then:
@@ -90,7 +90,8 @@ export default withAffordances(nextConfig, { plugins: [md()] })
 | ----------------------- | --------------------------------------------------------------------------------- |
 | `@affordances/protocol` | The [spec](packages/protocol/spec.md), its types, JSON Schemas, and fixtures      |
 | `@affordances/core`     | `defineAction`, `defineState`, and a framework-agnostic `createHandler`           |
-| `@affordances/next`     | `withAffordances`, codegen, the route handler, and `affordances init`             |
+| `@affordances/next`     | `withAffordances`, codegen, and the route handler                                 |
+| `@affordances/cli`      | `affordances init`, and `open` and `call` to see a page the way an agent does     |
 | `@affordances/react`    | `<AffordancesProvider>` (WebMCP), `<Affordance>`, and the `⌥A` dev overlay        |
 | `@affordances/md`       | Any page as clean markdown at the same url, with `AgentMain`/`Skip`/`Only`/`Text` |
 | `@affordances/mcp`      | Any Affordances site as an MCP server, plus the client the bench agent uses       |
