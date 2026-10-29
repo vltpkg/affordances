@@ -7,6 +7,7 @@ import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@afford/
 import { Heading } from '@/components/heading'
 import { TypeTable } from '@/components/type-table'
 import { BenchResults } from '@/components/bench-results'
+import { Install, Run } from '@/components/command'
 
 type Children = { children?: React.ReactNode }
 // a fence arrives as <pre><code className="language-x" title?>text</code></pre> (see rehypeCodeMeta in lib/source.ts)
@@ -64,4 +65,6 @@ export const components: MDXComponents = {
     />
   ),
   BenchResults,
+  Install,
+  Run,
 }

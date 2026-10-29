@@ -1,0 +1,12 @@
+---
+title: Concepts
+description: The few ideas Afford is built on. A page says what it shows and what can be done there, once, for people and agents alike.
+---
+
+An Afford page has two files next to it. `state.ts` says what the page shows, and `actions.ts` says what can be done there. Everything an agent sees is derived from those two files.
+
+- [**Actions**](/docs/concepts/actions): one `defineAction` call describes something a person or an agent can do on a page, and returns the server action that does it.
+- [**State**](/docs/concepts/state): a route's `state.ts` says what the page shows, as entities. It's loaded for the graph and again after every action.
+- [**Expose**](/docs/concepts/expose): nothing reaches agents until an action says who may call it. `expose` is `public`, `session`, or `confirm`.
+- [**Guards and confirm**](/docs/concepts/guards): a guard is the precondition an action checks before it runs. Agents see it before they call, and get its reason when it fails.
+- [**Deltas**](/docs/concepts/deltas): calling an action returns what changed on the page, so the agent doesn't have to read it again.

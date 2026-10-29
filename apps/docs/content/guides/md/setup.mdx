@@ -20,7 +20,11 @@ import { withMd } from '@afford/md/next'
 export default withMd(nextConfig)
 ```
 
-Then add the route handler. `npx @afford/md init` writes it:
+Then add the route handler. `init` writes it:
+
+<Run cmd="@afford/md init" />
+
+It's one line:
 
 ```ts title="app/api/afford/md/[[...path]]/route.ts"
 export { GET } from '@afford/md/next'

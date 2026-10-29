@@ -3,7 +3,7 @@
 The framework-agnostic core of Afford: `defineAction` and `defineState` (or `createAfford` for a shared session resolver), and `createHandler`, which answers graph and call requests as a `(request: Request) => Promise<Response>`. Framework adapters such as `@afford/next` build on it.
 
 ```bash
-npm install @afford/core zod
+vlt install @afford/core zod
 ```
 
 ```ts

@@ -44,9 +44,9 @@ export const generateMetadata = async ({
 // the protocol page includes spec.md, so that's the file to edit; the API reference is generated from the
 // packages' source by scripts/typedoc.mts, so its pages have no file to edit
 const editUrl = (path: string) =>
-  path.startsWith('api-reference/')
+  path.startsWith('reference/api-reference/')
     ? undefined
-    : `https://github.com/afford/afford/edit/main/${path === 'protocol.mdx' ? 'packages/protocol/spec.md' : `apps/docs/content/${path}`}`
+    : `https://github.com/afford/afford/edit/main/${path === 'reference/protocol.mdx' ? 'packages/protocol/spec.md' : `apps/docs/content/${path}`}`
 
 // the layout's navbar and sidebar paint at once; the slug read sits behind Suspense and the page streams in
 const Page = ({ params }: PageProps<'/docs/[[...slug]]'>) => (

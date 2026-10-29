@@ -16,8 +16,12 @@ export type CodeSource = {
   title?: string
 }
 
-// a tab for CodeCard: the code without its trailing newline, and shiki's tokens for it
-const highlight = async ({ code: raw, lang = 'text', title }: CodeSource) => {
+// a tab for CodeCard: the code without its trailing newline, and shiki's tokens for it. `properties` go on
+// the <code> (hast names: { dataPm: 'npm' } renders data-pm="npm")
+export const highlight = async (
+  { code: raw, lang = 'text', title }: CodeSource,
+  properties: Record<string, string> = {},
+) => {
   const code = raw.replace(/\n$/, '')
   const shiki = await highlighter
   // no default colour: tokens carry --shiki-light / --shiki-dark, CodeCard picks one per theme
@@ -29,10 +33,9 @@ const highlight = async ({ code: raw, lang = 'text', title }: CodeSource) => {
   // the language rides on <code> as language-*, the html convention markdown converters (@afford/md) read
   for (const child of pre?.type === 'element' ? pre.children : [])
     if (child.type === 'element' && child.tagName === 'code')
-      child.properties.className = [
-        ...[child.properties.className ?? []].flat(),
-        `language-${lang}`,
-      ] as string[]
+      Object.assign(child.properties, properties, {
+        className: [...[child.properties.className ?? []].flat(), `language-${lang}`] as string[],
+      })
   // CodeCard owns the <pre>; keep shiki's <code> and its token spans
   const content = toJsxRuntime(
     { type: 'root', children: pre?.type === 'element' ? pre.children : [] },
@@ -54,5 +57,5 @@ export const CodeBlock = async ({
 // several blocks as one card, one tab each
 export const CodeTabs = async ({ tabs }: { tabs: CodeSource[] }) => {
   'use cache'
-  return <CodeCard tabs={await Promise.all(tabs.map(highlight))} />
+  return <CodeCard tabs={await Promise.all(tabs.map((tab) => highlight(tab)))} />
 }

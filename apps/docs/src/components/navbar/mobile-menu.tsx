@@ -1,7 +1,6 @@
 'use client'
 
-import { Fragment, useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import {
   Sheet,
@@ -12,43 +11,13 @@ import {
   SheetTrigger,
 } from '@afford/ui/components/sheet'
 import { Button } from '@/components/ui/button'
+import { links } from './data'
 import { Logo } from './logo'
-import { toSections } from './types'
-import type { MenuData, MenuItem } from './types'
 
-const renderItem = (item: MenuItem, onNavigate: () => void): ReactNode => {
-  const isExternal = item.target === '_blank'
-  const Icon = item.icon
-
-  return (
-    <Button
-      key={item.path}
-      asChild
-      variant="ghost"
-      className="w-full justify-start font-medium text-foreground hover:text-foreground"
-    >
-      <Link
-        href={item.path}
-        target={item.target}
-        rel={isExternal ? 'noopener noreferrer' : undefined}
-        onClick={onNavigate}
-      >
-        {Icon && (
-          <div className="flex size-5 shrink-0 items-center justify-center rounded-sm outline-1 outline-border">
-            <Icon className="size-3.5 text-muted-foreground" aria-hidden="true" />
-          </div>
-        )}
-        <span>{item.label}</span>
-      </Link>
-    </Button>
-  )
-}
-
-// vlt.io's mobile drawer, as a bottom sheet; no auth or socials
-export const MobileMenu = ({ menuData }: { menuData: MenuData[] }) => {
+// vlt.io's mobile drawer, as a bottom sheet: the header's links, one per row
+export const MobileMenu = () => {
   const [open, setOpen] = useState(false)
   const close = () => setOpen(false)
-  const sections = useMemo(() => toSections(menuData), [menuData])
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -69,19 +38,18 @@ export const MobileMenu = ({ menuData }: { menuData: MenuData[] }) => {
           <Logo onClick={close} />
         </SheetHeader>
 
-        <nav className="flex flex-1 flex-col overflow-y-auto p-3" aria-label="Mobile navigation">
-          {sections.map((section, i) => (
-            <Fragment key={section.label ?? `__standalone-${i}`}>
-              {i > 0 && <hr className="-mx-3 my-2 border-border" />}
-              {section.label && (
-                <div className="px-4 py-2 text-sm font-medium text-muted-foreground">
-                  {section.label}
-                </div>
-              )}
-              <div className="flex flex-col gap-0.5">
-                {section.items.map((item) => renderItem(item, close))}
-              </div>
-            </Fragment>
+        <nav className="flex flex-col gap-0.5 overflow-y-auto p-3" aria-label="Mobile navigation">
+          {links.map(({ label, href }) => (
+            <Button
+              key={href}
+              asChild
+              variant="ghost"
+              className="w-full justify-start font-medium text-foreground hover:text-foreground"
+            >
+              <Link href={href} onClick={close}>
+                {label}
+              </Link>
+            </Button>
           ))}
         </nav>
       </SheetContent>

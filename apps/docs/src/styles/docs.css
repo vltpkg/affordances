@@ -2,6 +2,22 @@
 @import './sidebar.css';
 @import './book.css';
 
+/* the header's height, vlt docs' 3.5rem; the navbar, sidebar, toc, and sticky panels all offset by it */
+:root {
+  --header-height: 3.5rem;
+}
+
+/* a command renders once per package manager; only the one <html data-pm> names shows, vlt when none is
+   set (see lib/package-managers.ts) */
+html[data-pm]:not([data-pm='vlt']) [data-pm-only='vlt'],
+html:not([data-pm='npm']) [data-pm-only='npm'],
+html:not([data-pm='pnpm']) [data-pm-only='pnpm'],
+html:not([data-pm='yarn']) [data-pm-only='yarn'],
+html:not([data-pm='bun']) [data-pm-only='bun'],
+html:not([data-pm='deno']) [data-pm-only='deno'] {
+  display: none;
+}
+
 /* @afford/ui's overlays are darker than the vlt docs'; match the reference's light dim (the blur stays) */
 [data-slot='sheet-overlay'],
 [data-slot='dialog-overlay'] {

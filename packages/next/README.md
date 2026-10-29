@@ -3,8 +3,8 @@
 Afford for Next.js: `withAfford` for `next.config.ts`, codegen that finds each route's `actions.ts` and `state.ts`, the route handler, and the `afford` CLI.
 
 ```bash
-npm install @afford/next @afford/react zod
-npx @afford/next init
+vlt install @afford/next @afford/react zod
+vlx @afford/next init
 ```
 
 `init` writes `app/api/afford/graph/[[...path]]/route.ts`, wraps your config, and generates `.afford/manifest.ts`. Then describe a page next to it:

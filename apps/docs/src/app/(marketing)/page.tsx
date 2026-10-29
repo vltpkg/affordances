@@ -11,6 +11,7 @@ import { CopyCommand } from '@/components/marketing/copy-command'
 import { HeroStage } from '@/components/marketing/hero-stage'
 import { latestBench, type BenchSummary } from '@/lib/bench'
 import { siteUrl } from '@/lib/site-url'
+import { exec, packageManagers } from '@/lib/package-managers'
 
 export const metadata: Metadata = {
   title: { absolute: 'Afford: every page, agent-operable' },
@@ -100,10 +101,6 @@ const Home = () => {
             aria-labelledby="h-hero"
           >
             <div className="min-w-0 flex-[1_1_400px] pt-[52px] max-[899px]:pt-0">
-              <p className="mb-6 flex items-center gap-2 text-[15px] text-(--fg2)">
-                <Dot agent />
-                Open protocol and Next.js toolkit
-              </p>
               <h1
                 id="h-hero"
                 className="text-[clamp(46px,6vw,76px)] leading-[0.98] font-semibold tracking-[-0.055em] text-balance"
@@ -278,7 +275,7 @@ const Home = () => {
                   From the latest committed run ({bench.tasks} tasks
                   {bench.runs ? `, ${bench.runs} ${bench.runs === 1 ? 'run' : 'runs'} each` : ''}
                   {bench.model ? `, ${bench.model}` : ''}); the{' '}
-                  <Link href="/docs/bench" className="underline underline-offset-4">
+                  <Link href="/docs/guides/bench" className="underline underline-offset-4">
                     bench page
                   </Link>{' '}
                   has every row.
@@ -390,11 +387,14 @@ const Home = () => {
               Your UI is the API.
             </h2>
             <p className={lede}>Add Afford to an existing Next.js app. Start with one route.</p>
-            <AgentText block md={'```bash\nnpx @afford/next init\n```'}>
+            <AgentText block md={'```bash\nvlx @afford/next init\n```'}>
               <div className="w-[440px] max-w-full">
-                <CopyCommand command="npx @afford/next init" label="Copy install command">
-                  npx @afford/next init
-                </CopyCommand>
+                <CopyCommand
+                  command={Object.fromEntries(
+                    packageManagers.map((pm) => [pm, exec(pm, '@afford/next init')]),
+                  )}
+                  label="Copy install command"
+                />
               </div>
             </AgentText>
             <div className="mt-4 flex flex-wrap gap-2.5">

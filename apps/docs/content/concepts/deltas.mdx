@@ -13,15 +13,15 @@ After an action runs, the handler reloads the page's state and compares it with 
 }
 ```
 
-| Field            | Present when                                                                     |
-| ---------------- | -------------------------------------------------------------------------------- |
-| `changed`        | Some entity changed. With `effects`, it holds those keys; without, the diff      |
-| `output`         | `run` returned something other than `undefined`                                  |
-| `actionsAdded`   | An action appeared, or its descriptor changed (for example, `available` flipped) |
-| `actionsRemoved` | An action is no longer listed                                                    |
-| `redirect`       | The action redirected; the agent should request this path next                   |
-| `message`        | The action has a `message` option                                                |
-| `error`          | `ok` is `false`; see the [protocol](/docs/protocol#error-codes) for codes        |
+| Field            | Present when                                                                        |
+| ---------------- | ----------------------------------------------------------------------------------- |
+| `changed`        | Some entity changed. With `effects`, it holds those keys; without, the diff         |
+| `output`         | `run` returned something other than `undefined`                                     |
+| `actionsAdded`   | An action appeared, or its descriptor changed (for example, `available` flipped)    |
+| `actionsRemoved` | An action is no longer listed                                                       |
+| `redirect`       | The action redirected; the agent should request this path next                      |
+| `message`        | The action has a `message` option                                                   |
+| `error`          | `ok` is `false`; see the [protocol](/docs/reference/protocol#error-codes) for codes |
 
 ## Effects
 

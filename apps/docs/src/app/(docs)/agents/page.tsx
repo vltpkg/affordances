@@ -41,9 +41,9 @@ const docs = siteUrl.origin
 
 const prompt = `Help me make this Next.js app agent-operable with Afford. Start by reading ${docs}/llms.txt, which lists every page of the Afford docs. Any page is available as Markdown by adding .md to its URL (for example ${docs}/docs/quickstart.md), and ${docs}/llms-full.txt has the whole site in one file.
 
-1. Follow ${docs}/docs/quickstart.md: install @afford/next, @afford/react, and zod, then run \`npx @afford/next init\`. It writes the route handler, wraps next.config.ts with withAfford, and generates the manifest.
+1. Follow ${docs}/docs/quickstart.md: install @afford/next, @afford/react, and zod, then run \`vlx @afford/next init\`. It writes the route handler, wraps next.config.ts with withAfford, and generates the manifest.
 2. Next to each page an agent should operate, add a state.ts (what the page shows) and an actions.ts with defineAction. Set \`expose\` on every action an agent may call, and use 'confirm' for anything that spends money or can't be undone.
-3. Check your work with curl -H 'Accept: application/vnd.afford+json' on the page's URL, and read ${docs}/docs/security.md before exposing anything that needs a session.
+3. Check your work with curl -H 'Accept: application/vnd.afford+json' on the page's URL, and read ${docs}/docs/guides/security.md before exposing anything that needs a session.
 
 Only use APIs that appear in the docs.`
 
@@ -81,7 +81,7 @@ const cards: Card[] = [
     icon: CableIcon,
     title: 'MCP',
     description: 'Serve any Afford site to Claude, Cursor, and other MCP clients as two tools.',
-    href: '/docs/mcp',
+    href: '/docs/guides/mcp',
   },
 ]
 
@@ -98,7 +98,7 @@ const guides: (Card & { color: string })[] = [
     icon: KeyRoundIcon,
     title: 'Share your session with agents',
     description: 'One auth resolver for the UI and the agent path.',
-    href: '/docs/nextjs',
+    href: '/docs/guides/nextjs',
     color: 'oklch(0.72 0.13 250)',
   },
   {
@@ -112,14 +112,14 @@ const guides: (Card & { color: string })[] = [
     icon: MousePointerClickIcon,
     title: 'Give browser agents tools',
     description: 'WebMCP tools from the page’s own graph.',
-    href: '/docs/react',
+    href: '/docs/guides/react',
     color: 'oklch(0.72 0.13 20)',
   },
   {
     icon: TerminalIcon,
     title: 'Connect Claude to your site',
     description: 'Two MCP tools over any Afford site.',
-    href: '/docs/mcp',
+    href: '/docs/guides/mcp',
     color: 'oklch(0.72 0.13 300)',
   },
   {
@@ -140,7 +140,7 @@ const guides: (Card & { color: string })[] = [
     icon: SquareCodeIcon,
     title: 'Catch unmarked controls',
     description: 'Lint rules for Affordance and action names.',
-    href: '/docs/lint',
+    href: '/docs/guides/lint',
     color: 'oklch(0.72 0.13 340)',
   },
 ]
@@ -195,26 +195,26 @@ const sections: { title: string; cards: Card[] }[] = [
         title: 'Protocol',
         description:
           'The normative Afford protocol, version 0: discovery, graphs, calls, deltas, and error codes.',
-        href: '/docs/protocol',
+        href: '/docs/reference/protocol',
       },
       {
         icon: ShieldCheckIcon,
         title: 'Security',
         description:
           'Default deny, explicit confirmation, Origin checks for cookies, and a fixed order of checks on every call.',
-        href: '/docs/security',
+        href: '/docs/guides/security',
       },
       {
         icon: ListChecksIcon,
         title: 'Options',
         description: 'Every option of defineAction, createHandler, and withAfford, in one place.',
-        href: '/docs/options',
+        href: '/docs/reference/options',
       },
       {
         icon: NetworkIcon,
         title: 'API reference',
         description: 'Every export of every package, with its types, generated from the source.',
-        href: '/docs/api-reference',
+        href: '/docs/reference/api-reference',
       },
       {
         icon: bench.length ? GaugeIcon : FlaskConicalIcon,
@@ -222,7 +222,7 @@ const sections: { title: string; cards: Card[] }[] = [
         description: bench.length
           ? 'A screenshot-driven agent and an Afford agent on the same tasks, with committed results.'
           : 'A screenshot-driven agent and an Afford agent on the same tasks. Results will appear after the first committed bench run.',
-        href: '/docs/bench',
+        href: '/docs/guides/bench',
       },
     ],
   },

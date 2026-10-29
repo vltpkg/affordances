@@ -7,10 +7,7 @@ You need a Next.js 16 app using the App Router, and zod 4 (or any schema library
 
 ## Install and initialize
 
-```bash
-npm install @afford/next @afford/react zod
-npx @afford/next init
-```
+<Install pkgs="@afford/next @afford/react zod" run="@afford/next init" />
 
 `init` does four things, and skips any that are already done:
 
@@ -183,5 +180,5 @@ The response is a [delta](/docs/concepts/deltas): the new value of each entity t
 ## Next
 
 - [Actions](/docs/concepts/actions) covers every `defineAction` option.
-- [Expose](/docs/concepts/expose) explains `session` and `confirm`, and [Next.js](/docs/nextjs) shows how to share a session resolver with `createAfford`.
-- [MCP](/docs/mcp) connects Claude or Cursor to the site.
+- [Expose](/docs/concepts/expose) explains `session` and `confirm`, and [Next.js](/docs/guides/nextjs) shows how to share a session resolver with `createAfford`.
+- [MCP](/docs/guides/mcp) connects Claude or Cursor to the site.

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { cn } from 'cn'
 
 // three example pages, each as a person sees it and as its graph; the graph's lines are the protocol's
@@ -301,6 +301,8 @@ const text = (b: { t: number; l: number; f: number }) => ({ top: b.t, left: b.l,
 // watch the page's parts move to where the graph says them
 export const HeroStage = () => {
   const [sc, setSc] = useState<Id>('store')
+  // the tab selects at once; the stage swaps scenario behind a short fade
+  const [tab, setTab] = useState<Id>('store')
   const [fading, setFading] = useState(false)
   const [agent, setAgent] = useState(false)
   const [counts, setCounts] = useState<Record<Id, number>>({ store: 2, saas: 1, booking: 0 })
@@ -356,8 +358,24 @@ export const HeroStage = () => {
     }
   }
 
+  // the underline slides and resizes to the selected tab; until it's measured, the tab draws its own
+  const tabs = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const root = tabs.current
+    const el = root?.querySelector<HTMLElement>(`[data-tab="${tab}"]`)
+    const bar = root?.querySelector<HTMLElement>('[data-bar]')
+    if (!root || !el || !bar) return
+    bar.style.transform = `translateX(${el.offsetLeft}px) scaleX(${el.offsetWidth})`
+    if ('measured' in root.dataset) return
+    root.dataset.measured = ''
+    requestAnimationFrame(() => (bar.dataset.ready = ''))
+  }, [tab])
+
+  // a new scenario starts on the page a person sees
   const pick = (id: Id) => {
-    if (id === sc) return
+    if (id === tab) return
+    setTab(id)
+    setAgent(false)
     if (reduced()) {
       setSc(id)
       setDelta('')
@@ -373,24 +391,35 @@ export const HeroStage = () => {
 
   return (
     <div className="flex min-w-0 flex-[0_1_540px] flex-col gap-3.5">
-      <div role="tablist" aria-label="Example app" className="flex gap-5 border-b border-(--line)">
+      <div
+        ref={tabs}
+        role="tablist"
+        aria-label="Example app"
+        className="group/tabs relative flex gap-5 border-b border-(--line)"
+      >
         {ORDER.map((id) => (
           <button
             key={id}
             type="button"
             role="tab"
-            aria-selected={sc === id}
+            data-tab={id}
+            aria-selected={tab === id}
             onClick={() => pick(id)}
             className={cn(
               'relative h-10 text-sm font-medium transition-colors duration-150 hover:text-(--fg)',
-              sc === id
-                ? 'text-(--fg) after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-(--fg)'
+              tab === id
+                ? 'text-(--fg) after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-(--fg) group-data-measured/tabs:after:hidden'
                 : 'text-(--fg3)',
             )}
           >
             {SC[id].label}
           </button>
         ))}
+        <span
+          data-bar
+          aria-hidden
+          className="absolute -bottom-px left-0 h-0.5 w-px origin-left bg-(--fg) opacity-0 ease-out group-data-measured/tabs:opacity-100 data-ready:transition-transform data-ready:duration-200 motion-reduce:transition-none"
+        />
       </div>
 
       <div

@@ -215,7 +215,7 @@
   border-radius: 3px;
 }
 
-/* before / after: file rows, the screenshot pile, meters, calls, surfaces, captions */
+/* before / after: file rows, meters, calls, surfaces, captions */
 .afd .frow {
   display: flex;
   align-items: center;
@@ -320,21 +320,6 @@
   opacity: 1;
   transform: none;
 }
-.afd .th {
-  opacity: 0;
-  transform: translateY(-10px) scale(0.96);
-  transition:
-    opacity 0.25s,
-    transform 0.35s var(--out),
-    border-color 0.2s;
-}
-.afd .th.on {
-  opacity: 1;
-  transform: none;
-}
-.afd .th.cur {
-  border-color: var(--agent);
-}
 .afd .seg-m {
   transition: width 0.3s var(--out);
 }
@@ -383,7 +368,7 @@
 }
 .afd .live .sticky {
   position: sticky;
-  top: calc(var(--header-height, 3.5rem) + 32px);
+  top: calc(var(--header-height) + 32px);
 }
 .afd .live .panel {
   min-height: 480px;

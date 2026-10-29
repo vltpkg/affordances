@@ -19,8 +19,8 @@ curl https://site.com/blog/post.md
 ## Setup
 
 ```bash
-npm install @afford/md
-npx afford-md init        # writes app/api/afford/md/[[...path]]/route.ts
+vlt install @afford/md
+vlx afford-md init        # writes app/api/afford/md/[[...path]]/route.ts
 ```
 
 ```ts

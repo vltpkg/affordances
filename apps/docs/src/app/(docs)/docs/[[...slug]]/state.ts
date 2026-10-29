@@ -20,7 +20,7 @@ export default defineState(({ params }) => {
     sections: sections().map((section) => ({
       ...section,
       pages: section.pages.filter(
-        (entry) => entry.url === '/docs/api-reference' || !isApiReference(entry.url),
+        (entry) => entry.url === '/docs/reference/api-reference' || !isApiReference(entry.url),
       ),
     })),
   }

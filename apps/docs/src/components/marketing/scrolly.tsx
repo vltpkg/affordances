@@ -251,6 +251,84 @@ const STEPS = [
   'screenshot()  // did it work?',
 ]
 
+// where each click landed, on the 1280×800 page the agent screenshots
+const CLICKS = STEPS.map((step) => {
+  const [, x, y] = step.match(/^click\((\d+), (\d+)\)/) ?? []
+  return x && y ? { left: `${(+x / 1280) * 100}%`, top: `${(+y / 800) * 100}%` } : undefined
+})
+
+// one screenshot: the product page as a thumbnail (image, title, price, size chips, add to cart), its
+// step number, and a ring where that step clicked
+const Shot = ({ n, depth, click }: { n: number; depth: number; click?: React.CSSProperties }) => (
+  <div
+    className={cn(
+      'flex h-full flex-col overflow-hidden rounded-md border bg-(--bg)',
+      depth === 0 ? 'border-(--agent)' : 'border-(--line2)',
+    )}
+  >
+    {/* the card stays opaque so the stack occludes cleanly; what's on it fades with age */}
+    <div className="flex flex-1 flex-col" style={{ opacity: 1 - depth * 0.16 }}>
+      <div className="flex h-4 flex-none items-center gap-[3px] border-b border-(--line) px-1.5">
+        <span
+          className={cn(
+            'mr-auto font-mono text-[9px] leading-none tabular-nums',
+            depth === 0 ? 'text-(--agent)' : 'text-(--fg3)',
+          )}
+        >
+          #{pad(n)}
+        </span>
+        {[0, 1, 2].map((d) => (
+          <i key={d} className="size-[3px] rounded-full bg-(--line2)" />
+        ))}
+      </div>
+      <div className="relative flex flex-1 gap-2 p-2">
+        <i className="w-[42%] rounded-[3px] bg-(--bg3)" />
+        <div className="flex flex-1 flex-col gap-[5px]">
+          <i className="h-1 w-full rounded-full bg-(--line2)" />
+          <i className="h-1 w-2/3 rounded-full bg-(--line2)" />
+          <i className="mt-0.5 h-[5px] w-2/5 rounded-full bg-(--fg3)" />
+          <div className="mt-0.5 flex gap-1">
+            <i className="h-2.5 w-3.5 rounded-[2px] border border-(--fg2)" />
+            <i className="h-2.5 w-3.5 rounded-[2px] border border-(--line2)" />
+          </div>
+          <i className="mt-auto h-3 w-full rounded-[2px] bg-(--fg)" />
+        </div>
+        {click && (
+          <i
+            className="absolute size-2.5 -translate-1/2 rounded-full border-2 border-(--agent)"
+            style={click}
+          />
+        )}
+      </div>
+    </div>
+  </div>
+)
+
+// the loop as a stack: each new screenshot lands in front, and the last few recede behind it across the
+// strip's width (cqw, so it holds from 1440 to 375)
+const DEPTH = 5
+const Shots = ({ steps }: { steps: number }) => (
+  <div className="relative h-[108px] [container-type:inline-size]" aria-hidden>
+    {STEPS.map((_, i) => {
+      const age = steps - 1 - i
+      const depth = Math.min(Math.max(age, 0), DEPTH)
+      return (
+        <div
+          key={i}
+          className="absolute top-0 left-0 h-[100px] w-[148px] origin-left transition-[transform,opacity] duration-250 ease-out"
+          style={{
+            transform: `translateX(calc((100cqw - 148px) * ${1 - depth / DEPTH} + ${age < 0 ? 16 : 0}px)) scale(${1 - depth * 0.04})`,
+            opacity: age < 0 || age > DEPTH ? 0 : 1,
+            zIndex: STEPS.length - depth,
+          }}
+        >
+          <Shot n={i + 1} depth={depth} click={CLICKS[i]} />
+        </div>
+      )
+    })}
+  </div>
+)
+
 // before: one price edit leaves five hand-written agent surfaces wrong, and the screenshot agent burns
 // its context window finding a button
 export const Before = () => {
@@ -325,23 +403,7 @@ export const Before = () => {
             </div>
             <div className={cn(panel, second)} ref={right}>
               <PanelHead title="Agent · screenshot loop" count={`step ${pad(steps)} / 25`} agent />
-              <div className="relative h-[84px]">
-                {Array.from({ length: 25 }, (_, i) => (
-                  <div
-                    key={i}
-                    className={cn(
-                      'th absolute top-2 box-border flex h-16 w-[18%] flex-col gap-[5px] rounded-md border border-(--line2) bg-(--bg2) p-[7px]',
-                      i < steps && 'on',
-                      i === steps - 1 && 'cur',
-                    )}
-                    style={{ left: `${(i * 3.4).toFixed(1)}%` }}
-                  >
-                    <i className="block h-[5px] w-3/5 rounded-[2px] bg-(--line2)" />
-                    <i className="block h-3.5 rounded-[2px] bg-(--bg3)" />
-                    <i className="block h-[5px] w-2/5 rounded-[2px] bg-(--line2)" />
-                  </div>
-                ))}
-              </div>
+              <Shots steps={steps} />
               <div className="min-h-[84px] font-mono text-xs leading-[1.75] text-(--fg3)">
                 {log.map((l) => (
                   <div key={l.t} className={cn(l.cur && 'text-(--fg)')}>

@@ -6,7 +6,7 @@ Two lint rules for Afford apps, for ESLint and oxlint's JS plugins:
 - `afford/static-action-name` errors when `defineAction` has no `name`, or a name that isn't a string literal, which codegen can't read.
 
 ```bash
-npm install -D @afford/lint
+vlt install -D @afford/lint
 ```
 
 ```js

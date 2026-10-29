@@ -27,6 +27,8 @@ export type CodeTab = {
 
 type CodeCardProps = Omit<React.ComponentProps<'pre'>, 'children'> & {
   tabs: CodeTab[]
+  // controls that sit in the tab bar, before the copy button (a package manager picker)
+  toolbar?: React.ReactNode
 }
 
 // the concave corner where the active tab meets the panel's top edge (16px, matching the panel's rounded-xl)
@@ -89,7 +91,7 @@ const TabFace = ({
 }
 
 // an editor card; more than one tab becomes a tablist whose active tab flows into the panel
-export const CodeCard = ({ tabs, className, ...props }: CodeCardProps) => {
+export const CodeCard = ({ tabs, toolbar, className, ...props }: CodeCardProps) => {
   const { copied, copy } = useCopy(1500)
   const [value, setValue] = useState(0)
   const active = tabs[value] ?? tabs[0]
@@ -140,15 +142,18 @@ export const CodeCard = ({ tabs, className, ...props }: CodeCardProps) => {
           ))}
         </TabsPrimitive.Root>
       )}
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={() => copy(active.code)}
-        aria-label={copied ? 'Copied' : 'Copy code'}
-        className="absolute top-2 right-1.5 text-muted-foreground"
-      >
-        {copied ? <CheckIcon aria-hidden /> : <CopyIcon aria-hidden />}
-      </Button>
+      <div data-afford-md="skip" className="absolute top-2 right-1.5 flex items-center gap-1">
+        {toolbar}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => copy(active.code)}
+          aria-label={copied ? 'Copied' : 'Copy code'}
+          className="text-muted-foreground"
+        >
+          {copied ? <CheckIcon aria-hidden /> : <CopyIcon aria-hidden />}
+        </Button>
+      </div>
     </figure>
   )
 }

@@ -3,7 +3,7 @@
 The Afford protocol: TypeScript types and zod schemas for graphs, calls, deltas, and the site index, the JSON Schemas generated from them, the protocol constants, and the normative `spec.md`. The other Afford packages import their types from here.
 
 ```bash
-npm install @afford/protocol
+vlt install @afford/protocol
 ```
 
 ```ts

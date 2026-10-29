@@ -14,7 +14,7 @@ import { MarkdownPageEvent, type PluginOptions } from 'typedoc-plugin-markdown'
 import typedocWorkspace from '../typedoc.workspace.mjs'
 
 const packagesDir = resolve(import.meta.dirname, '../../../packages')
-const target = resolve(import.meta.dirname, '../content/api-reference')
+const target = resolve(import.meta.dirname, '../content/reference/api-reference')
 // typedoc writes into a scratch folder, then only changed files are copied over: rewriting all ~50 pages on
 // every run (predev included) makes a running dev server reload over and over while modules vanish under it
 const out = mkdtempSync(join(tmpdir(), 'afford-typedoc-'))
@@ -161,7 +161,7 @@ if (!check && !failed) {
       .join('\n')}\n`,
   )
 }
-// mirror the scratch folder into content/api-reference, touching only what differs
+// mirror the scratch folder into content/reference/api-reference, touching only what differs
 const files = (dir: string): string[] =>
   existsSync(dir)
     ? readdirSync(dir, { withFileTypes: true, recursive: true })

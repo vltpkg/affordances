@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { fontVariables } from '@afford/ui/lib/fonts'
 import { Providers } from '@/providers'
 import { description, siteUrl } from '@/lib/site-url'
+import { prePaintScript } from '@/lib/package-managers'
 import '@/styles/docs.css'
 
 export const metadata: Metadata = {
@@ -20,6 +21,10 @@ const RootLayout = ({ children }: LayoutProps<'/'>) => (
     className={`${fontVariables} h-full antialiased`}
     suppressHydrationWarning
   >
+    <head>
+      {/* every command shows the reader's package manager from the first paint, and pages stay static */}
+      <script dangerouslySetInnerHTML={{ __html: prePaintScript }} />
+    </head>
     <body className="flex min-h-full flex-col text-body">
       <Providers>{children}</Providers>
     </body>
