@@ -26,6 +26,6 @@ vlr bench -- --runs 20                   # reads ANTHROPIC_API_KEY from apps/ben
 vlr bench -- --runs 20 --model claude-haiku-5-5
 ```
 
-A run writes `results/<date>-<model>.json`: every row with its trace, a per-agent and per-task summary (success rate; median, min and max of turns, tokens, time and time to first action; the token split; bytes read; cost and cost per successful task), and the commit it ran against (with a `dirty` flag if `apps/` or `packages/` had uncommitted changes). The docs site's bench page reads these files. Commit the file the numbers came from.
+A run writes `results/<date>T<time>-<model>.json` (UTC, so runs never overwrite each other): every row with its trace, a per-agent and per-task summary (success rate; median, min and max of turns, tokens, time and time to first action; the token split; bytes read; cost and cost per successful task), and the commit it ran against (with a `dirty` flag if `apps/` or `packages/` had uncommitted changes). The docs site's bench page reads these files. Commit the file the numbers came from.
 
 The store keeps stock in memory, so each run starts a fresh `next start` on port 3100 (change it with `--port`). A model refusal or an exhausted 40-turn budget counts as a failed task. There are no refusal fallbacks, because a fallback would let a different model finish the task.

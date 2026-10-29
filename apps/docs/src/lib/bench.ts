@@ -47,7 +47,7 @@ export const latestBench = (model = HEADLINE_MODEL): BenchSummary | null => {
     summary?: { browser?: unknown; afford?: unknown }
   }
   const latest = benchResults()
-    .filter(({ data }) => (data as Run).model === model)
+    .filter(({ data }) => (data as Run).model === model && !(data as { partial?: boolean }).partial)
     .toSorted(
       (a, b) =>
         ((a.data as Run).finishedAt ?? '').localeCompare((b.data as Run).finishedAt ?? '') ||
@@ -154,12 +154,15 @@ export const benchRuns = (): BenchRun[] => {
     summary?: { browser?: unknown; afford?: unknown }
     perTask?: Record<string, { browser?: unknown; afford?: unknown }>
     rows?: RawRow[]
+    // a --tasks subset: shown on the bench page, never as a model's headline run
+    partial?: boolean
   }
   const newest = new Map<string, { file: string; data: Run }>()
   for (const { file, data } of benchResults()) {
     const run = data as Run
     if (
       typeof run.model !== 'string' ||
+      run.partial ||
       !isSide(run.summary?.browser) ||
       !isSide(run.summary?.afford)
     )

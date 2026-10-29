@@ -27,18 +27,19 @@ const signature = (name: string, input: Schema) => {
 }
 
 // the site index as compact text for a model's context (MCP instructions, a system prompt): every route, what
-// it's for, and every action as a signature. Enough to plan, and to call an action without opening its page
+// it's for, and every action as a signature. Enough to plan, and to call an action without opening its page.
+// it rides in every turn's prompt, so it stays terse: action descriptions and guards are in the page's graph
 export const describeSite = (index: SiteIndex) =>
   [
-    `${index.name ?? 'This site'} is operable through Afford. Routes and their actions:`,
+    `${index.name ?? 'This site'}: routes and their actions`,
     ...index.routes.map(({ route, description, actions }) =>
       [
         `- ${route}${description ? `: ${description}` : ''}`,
         ...actions.map(
           (a) =>
-            `  - ${signature(a.name, a.input as Schema)} [${a.expose}${a.readOnly ? ', read-only' : ''}]: ${a.description}${a.guard ? ` Requires: ${a.guard}.` : ''}`,
+            `  - ${signature(a.name, a.input as Schema)} [${a.expose}${a.readOnly ? ', read-only' : ''}]`,
         ),
       ].join('\n'),
     ),
-    'Call an action on a concrete path of its route (e.g. /products/[slug] → /products/tee) without opening the page first; open a page when you need what it shows.',
+    'Call actions on a concrete path (/products/[slug] → /products/tee) without opening it first.',
   ].join('\n')

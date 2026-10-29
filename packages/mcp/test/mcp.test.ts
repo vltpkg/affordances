@@ -117,11 +117,11 @@ test('describeSite turns the index into a compact plan, and the server hands it 
   const text = describeSite(index)
   expect(text).toBe(
     [
-      'Shop is operable through Afford. Routes and their actions:',
+      'Shop: routes and their actions',
       '- /',
-      '  - add() [public]: Add one',
-      '  - order() [confirm]: Order',
-      'Call an action on a concrete path of its route (e.g. /products/[slug] → /products/tee) without opening the page first; open a page when you need what it shows.',
+      '  - add() [public]',
+      '  - order() [confirm]',
+      'Call actions on a concrete path (/products/[slug] → /products/tee) without opening it first.',
     ].join('\n'),
   )
   const [a, b] = InMemoryTransport.createLinkedPair()
@@ -169,7 +169,9 @@ test('describeSite renders inputs as signatures: required, optional, enums, arra
   })
   expect(text).toContain('- /products/[slug]: One product')
   expect(text).toContain(
-    '  - addToCart(sku: string, quantity?: integer, size?: "M" | "L", tags?: string[]) [public]: Add a variant Requires: The variant is in stock.',
+    '  - addToCart(sku: string, quantity?: integer, size?: "M" | "L", tags?: string[]) [public]',
   )
-  expect(text).toContain('  - search(q: string) [public, read-only]: Find products')
+  expect(text).toContain('  - search(q: string) [public, read-only]')
+  // descriptions and guards live in the page graph, not in every turn's prompt
+  expect(text).not.toContain('Add a variant')
 })

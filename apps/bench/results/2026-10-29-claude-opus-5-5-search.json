@@ -1,0 +1,503 @@
+{
+  "model": "claude-opus-5-5",
+  "effort": "medium",
+  "runs": 5,
+  "partial": true,
+  "commit": {
+    "sha": "787f51cefa5c073be3679f0d429f19a08ea1e968",
+    "dirty": false
+  },
+  "finishedAt": "2026-10-29T18:04:47.872Z",
+  "node": "v24.14.1",
+  "tasks": [
+    {
+      "id": "search",
+      "prompt": "What's the cheapest product in stock right now? Tell me its name and price."
+    }
+  ],
+  "summary": {
+    "browser": {
+      "successRate": 1,
+      "medianTurns": 3,
+      "medianTokens": 4982,
+      "medianMs": 9953,
+      "turns": {
+        "median": 3,
+        "min": 3,
+        "max": 3
+      },
+      "tokens": {
+        "median": 4982,
+        "min": 4975,
+        "max": 5073
+      },
+      "ms": {
+        "median": 9953,
+        "min": 7370,
+        "max": 10453
+      },
+      "firstActionMs": {
+        "median": 8058,
+        "min": 8058,
+        "max": 8058
+      },
+      "tokenSplit": {
+        "input": 8,
+        "cacheRead": 4352,
+        "cacheWrite": 433,
+        "output": 188
+      },
+      "readBytes": {
+        "median": 3143,
+        "min": 2348,
+        "max": 3143
+      },
+      "costUsd": 0.039714400000000004,
+      "costPerSuccessUsd": 0.007942880000000001
+    },
+    "afford": {
+      "successRate": 1,
+      "medianTurns": 2,
+      "medianTokens": 2690,
+      "medianMs": 3298,
+      "turns": {
+        "median": 2,
+        "min": 2,
+        "max": 2
+      },
+      "tokens": {
+        "median": 2690,
+        "min": 2672,
+        "max": 2699
+      },
+      "ms": {
+        "median": 3298,
+        "min": 3245,
+        "max": 3559
+      },
+      "firstActionMs": {
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "tokenSplit": {
+        "input": 6,
+        "cacheRead": 2570,
+        "cacheWrite": 0,
+        "output": 114
+      },
+      "readBytes": {
+        "median": 1462,
+        "min": 1462,
+        "max": 1462
+      },
+      "costUsd": 0.0216572,
+      "costPerSuccessUsd": 0.004331440000000001
+    }
+  },
+  "perTask": {
+    "search": {
+      "browser": {
+        "successRate": 1,
+        "medianTurns": 3,
+        "medianTokens": 4982,
+        "medianMs": 9953,
+        "turns": {
+          "median": 3,
+          "min": 3,
+          "max": 3
+        },
+        "tokens": {
+          "median": 4982,
+          "min": 4975,
+          "max": 5073
+        },
+        "ms": {
+          "median": 9953,
+          "min": 7370,
+          "max": 10453
+        },
+        "firstActionMs": {
+          "median": 8058,
+          "min": 8058,
+          "max": 8058
+        },
+        "tokenSplit": {
+          "input": 8,
+          "cacheRead": 4352,
+          "cacheWrite": 433,
+          "output": 188
+        },
+        "readBytes": {
+          "median": 3143,
+          "min": 2348,
+          "max": 3143
+        },
+        "costUsd": 0.039714400000000004,
+        "costPerSuccessUsd": 0.007942880000000001
+      },
+      "afford": {
+        "successRate": 1,
+        "medianTurns": 2,
+        "medianTokens": 2690,
+        "medianMs": 3298,
+        "turns": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "tokens": {
+          "median": 2690,
+          "min": 2672,
+          "max": 2699
+        },
+        "ms": {
+          "median": 3298,
+          "min": 3245,
+          "max": 3559
+        },
+        "firstActionMs": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "tokenSplit": {
+          "input": 6,
+          "cacheRead": 2570,
+          "cacheWrite": 0,
+          "output": 114
+        },
+        "readBytes": {
+          "median": 1462,
+          "min": 1462,
+          "max": 1462
+        },
+        "costUsd": 0.0216572,
+        "costPerSuccessUsd": 0.004331440000000001
+      }
+    }
+  },
+  "rows": [
+    {
+      "run": 1,
+      "agent": "browser",
+      "task": "search",
+      "turns": 3,
+      "toolCalls": 2,
+      "tokens": 5073,
+      "inputTokens": 8,
+      "cacheReadTokens": 2546,
+      "cacheWriteTokens": 2283,
+      "outputTokens": 236,
+      "costUsd": 0.016676200000000002,
+      "ms": 10153,
+      "firstActionMs": 8058,
+      "stop": "end_turn",
+      "answer": "The cheapest product in stock is the **Sticker Sheet** at **$8.00**. Its product page says \"In stock,\" and it costs half as much as the next cheapest item, the Dot Grid Notebook, which starts at $16.00.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 781,
+          "bytes": 2348
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "link",
+            "name": "Sticker Sheet Paper One size $8.00"
+          },
+          "ms": 75,
+          "bytes": 809
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 1,
+      "agent": "afford",
+      "task": "search",
+      "turns": 2,
+      "toolCalls": 1,
+      "tokens": 2699,
+      "inputTokens": 6,
+      "cacheReadTokens": 956,
+      "cacheWriteTokens": 1614,
+      "outputTokens": 123,
+      "costUsd": 0.0107452,
+      "ms": 3245,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "The cheapest product in stock right now is the **Sticker Sheet**, at **$8.00**. It comes in one size and is in the Paper category.\n\nThe next cheapest is the Dot Grid Notebook, from $16.00.",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/"
+          },
+          "ms": 5,
+          "bytes": 1462
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 2,
+      "agent": "browser",
+      "task": "search",
+      "turns": 3,
+      "toolCalls": 2,
+      "tokens": 4975,
+      "inputTokens": 8,
+      "cacheReadTokens": 4352,
+      "cacheWriteTokens": 433,
+      "outputTokens": 182,
+      "costUsd": 0.0067074,
+      "ms": 9953,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "The cheapest product in stock is the Sticker Sheet at $8.00. Its product page says \"In stock.\" The next cheapest is the Dot Grid Notebook, from $16.00.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 716,
+          "bytes": 2348
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/products/sticker-sheet"
+          },
+          "ms": 569,
+          "bytes": 795
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 2,
+      "agent": "afford",
+      "task": "search",
+      "turns": 2,
+      "toolCalls": 1,
+      "tokens": 2690,
+      "inputTokens": 6,
+      "cacheReadTokens": 2570,
+      "cacheWriteTokens": 0,
+      "outputTokens": 114,
+      "costUsd": 0.002818,
+      "ms": 3287,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "The cheapest product in stock is the **Sticker Sheet**, at **$8.00** (it comes in one size). The next cheapest is the Dot Grid Notebook, starting at $16.00.",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/"
+          },
+          "ms": 4,
+          "bytes": 1462
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 3,
+      "agent": "browser",
+      "task": "search",
+      "turns": 3,
+      "toolCalls": 2,
+      "tokens": 4982,
+      "inputTokens": 8,
+      "cacheReadTokens": 4352,
+      "cacheWriteTokens": 434,
+      "outputTokens": 188,
+      "costUsd": 0.0068324,
+      "ms": 10453,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "The cheapest product in stock is the **Sticker Sheet at $8.00**. Its product page says \"In stock,\" and the next-cheapest item is the Dot Grid Notebook, from $16.00.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 740,
+          "bytes": 2348
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/products/sticker-sheet"
+          },
+          "ms": 591,
+          "bytes": 795
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 3,
+      "agent": "afford",
+      "task": "search",
+      "turns": 2,
+      "toolCalls": 1,
+      "tokens": 2690,
+      "inputTokens": 6,
+      "cacheReadTokens": 2570,
+      "cacheWriteTokens": 0,
+      "outputTokens": 114,
+      "costUsd": 0.002818,
+      "ms": 3298,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "The cheapest in-stock product is the **Sticker Sheet** at **$8.00**. It comes in one size. The next cheapest is the Dot Grid Notebook, starting at $16.00.",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/"
+          },
+          "ms": 5,
+          "bytes": 1462
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 4,
+      "agent": "browser",
+      "task": "search",
+      "turns": 3,
+      "toolCalls": 2,
+      "tokens": 4983,
+      "inputTokens": 8,
+      "cacheReadTokens": 4786,
+      "cacheWriteTokens": 0,
+      "outputTokens": 189,
+      "costUsd": 0.0047691999999999995,
+      "ms": 7370,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "The cheapest product in stock is the Sticker Sheet at $8.00. Its product page says \"In stock,\" and the next lowest price in the catalog is $16.00, for the Dot Grid Notebook.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 697,
+          "bytes": 2348
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/products/sticker-sheet"
+          },
+          "ms": 548,
+          "bytes": 795
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 4,
+      "agent": "afford",
+      "task": "search",
+      "turns": 2,
+      "toolCalls": 1,
+      "tokens": 2672,
+      "inputTokens": 6,
+      "cacheReadTokens": 2570,
+      "cacheWriteTokens": 0,
+      "outputTokens": 96,
+      "costUsd": 0.002458,
+      "ms": 3379,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "The cheapest product in stock right now is the **Sticker Sheet** at **$8.00**. It comes in one size and is in the Paper category.",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/"
+          },
+          "ms": 5,
+          "bytes": 1462
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 5,
+      "agent": "browser",
+      "task": "search",
+      "turns": 3,
+      "toolCalls": 2,
+      "tokens": 4981,
+      "inputTokens": 8,
+      "cacheReadTokens": 4786,
+      "cacheWriteTokens": 0,
+      "outputTokens": 187,
+      "costUsd": 0.0047292,
+      "ms": 7829,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "The cheapest product in stock is the **Sticker Sheet** at **$8.00**. Its product page says \"In stock.\" The next cheapest is the Dot Grid Notebook, from $16.00.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 740,
+          "bytes": 2348
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/products/sticker-sheet"
+          },
+          "ms": 592,
+          "bytes": 795
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 5,
+      "agent": "afford",
+      "task": "search",
+      "turns": 2,
+      "toolCalls": 1,
+      "tokens": 2690,
+      "inputTokens": 6,
+      "cacheReadTokens": 2570,
+      "cacheWriteTokens": 0,
+      "outputTokens": 114,
+      "costUsd": 0.002818,
+      "ms": 3559,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "The cheapest product in stock right now is the **Sticker Sheet** at **$8.00**. It comes in one size, and the next cheapest is the Dot Grid Notebook, from $16.00.",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/"
+          },
+          "ms": 3,
+          "bytes": 1462
+        }
+      ],
+      "success": true
+    }
+  ]
+}

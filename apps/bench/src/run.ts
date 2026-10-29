@@ -5,22 +5,29 @@ import { parseArgs } from 'node:util'
 import { createClient } from '@afford/mcp'
 import { affordAgent, browserAgent, closeBrowser } from './agents.ts'
 import { DEFAULT_MODEL, EFFORT, emptyStats, runAgent, type RunStats } from './loop.ts'
-import { newSession, tasks } from './tasks.ts'
+import { newSession, tasks as allTasks } from './tasks.ts'
 
 // vlr bench -- --runs 20                            every task × both agents × 20 runs, a fresh apps/example each run
 // vlr bench -- --runs 20 --model claude-haiku-5-5   the same, on another model
 // vlr bench -- --dry                                the scripted oracle instead of the model: checks the tasks, free
+// vlr bench -- --runs 5 --tasks search              one task only, to check a change cheaply (its own results file)
 const { values } = parseArgs({
   options: {
     runs: { type: 'string', default: '3' },
     model: { type: 'string', default: DEFAULT_MODEL },
     dry: { type: 'boolean', default: false },
+    // a comma-separated subset, to check one change cheaply; the results file says which ran
+    tasks: { type: 'string' },
     port: { type: 'string', default: '3100' },
   },
 })
 const runs = Number(values.runs)
 const git = (args: string) => execSync(`git ${args}`, { encoding: 'utf8' }).trim()
 const model = values.model!
+const wanted = values.tasks?.split(',').map((t) => t.trim())
+const tasks = wanted ? allTasks.filter((t) => wanted.includes(t.id)) : allTasks
+if (wanted && tasks.length !== wanted.length)
+  throw new Error(`unknown task in --tasks; known: ${allTasks.map((t) => t.id).join(', ')}`)
 const site = `http://localhost:${values.port}`
 const example = path.join(import.meta.dirname, '../../example')
 
@@ -144,7 +151,8 @@ if (values.dry) {
   const out = path.join(
     import.meta.dirname,
     '../results',
-    `${new Date().toISOString().slice(0, 10)}-${model}.json`,
+    // a partial run gets its own name, so it never stands in for a full sweep
+    `${new Date().toISOString().slice(0, 16).replace(':', '')}-${model}${wanted ? `-${tasks.map((t) => t.id).join('+')}` : ''}.json`,
   )
   // enough to reproduce: the code (and whether it had uncommitted changes), the model, and when
   const commit = {
@@ -154,7 +162,7 @@ if (values.dry) {
   mkdirSync(path.dirname(out), { recursive: true })
   writeFileSync(
     out,
-    `${JSON.stringify({ model, effort: EFFORT, runs, commit, finishedAt: new Date().toISOString(), node: process.version, tasks: tasks.map(({ id, prompt }) => ({ id, prompt })), summary, perTask, rows }, null, 2)}\n`,
+    `${JSON.stringify({ model, effort: EFFORT, runs, ...(wanted && { partial: true }), commit, finishedAt: new Date().toISOString(), node: process.version, tasks: tasks.map(({ id, prompt }) => ({ id, prompt })), summary, perTask, rows }, null, 2)}\n`,
   )
   console.log(JSON.stringify(summary, null, 2), `\n→ ${path.relative(process.cwd(), out)}`)
 }

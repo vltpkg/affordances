@@ -26,7 +26,7 @@ export const ProductList = ({
     </div>
     <ul className="border-t">
       {products.map((product) => {
-        const status = product.soldOut ? 'Sold out' : product.options
+        const status = !product.inStock ? 'Sold out' : product.options
         return (
           <li key={product.href} className="border-b">
             <Link
@@ -52,7 +52,7 @@ export const ProductList = ({
               <p
                 className={cn(
                   'text-right font-mono text-sm tabular-nums',
-                  product.soldOut && 'text-muted-foreground line-through',
+                  !product.inStock && 'text-muted-foreground line-through',
                 )}
               >
                 {product.price}
