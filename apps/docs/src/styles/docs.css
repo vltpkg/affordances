@@ -23,3 +23,15 @@ html:not([data-pm='deno']) [data-pm-only='deno'] {
 [data-slot='dialog-overlay'] {
   background: oklch(0 0 0 / 10%);
 }
+
+/* the bench page draws the marketing proof chart; its tokens, as the docs' neutrals. the Afford agent is
+   the foreground, the browser agent recedes */
+.bench {
+  --bg: var(--background);
+  --fg: var(--foreground);
+  --fg2: color-mix(in oklch, var(--foreground) 72%, var(--background));
+  --fg3: var(--muted-foreground);
+  --line: var(--border);
+  --line2: var(--border);
+  --agent: var(--foreground);
+}

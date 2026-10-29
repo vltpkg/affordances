@@ -67,7 +67,10 @@ export const latestBench = (model = HEADLINE_MODEL): BenchSummary | null => {
   }
 }
 
-// one agent's numbers, per task or overall. ranges and cost only when the run recorded them
+// medians per run, by how the model was billed for them
+export type TokenSplit = { input: number; cacheRead: number; cacheWrite: number; output: number }
+
+// one agent's numbers, per task or overall. ranges, cost, and the split only when the run recorded them
 export type BenchAgent = {
   tokens: number
   ms: number
@@ -76,6 +79,7 @@ export type BenchAgent = {
   costPerSuccessUsd?: number
   tokenRange?: [number, number]
   msRange?: [number, number]
+  tokenSplit?: TokenSplit
 }
 export type BenchTask = {
   id: string
@@ -90,13 +94,19 @@ export type BenchRun = {
   runs: number
   finishedAt?: string
   commit?: string
+  dirty?: boolean
   browser: BenchAgent
   afford: BenchAgent
   tasks: BenchTask[]
 }
 
 type Spread = { min?: unknown; max?: unknown }
-type RawSide = Side & { costPerSuccessUsd?: unknown; tokens?: Spread; ms?: Spread }
+type RawSide = Side & {
+  costPerSuccessUsd?: unknown
+  tokens?: Spread
+  ms?: Spread
+  tokenSplit?: Record<string, unknown>
+}
 type RawRow = {
   agent?: string
   task?: string
@@ -126,6 +136,11 @@ const fromSide = (side: RawSide): BenchAgent => ({
     typeof side.costPerSuccessUsd === 'number' ? side.costPerSuccessUsd : undefined,
   tokenRange: range(side.tokens),
   msRange: range(side.ms),
+  tokenSplit: (['input', 'cacheRead', 'cacheWrite', 'output'] as const).every(
+    (k) => typeof side.tokenSplit?.[k] === 'number',
+  )
+    ? (side.tokenSplit as TokenSplit)
+    : undefined,
 })
 // older runs have no perTask; their rows hold the same measurements, so take the medians from those
 const fromRows = (rows: RawRow[]): BenchAgent | null => {
@@ -149,7 +164,7 @@ export const benchRuns = (): BenchRun[] => {
     model?: string
     runs?: number
     finishedAt?: string
-    commit?: { sha?: string }
+    commit?: { sha?: string; dirty?: boolean }
     tasks?: { id?: string; prompt?: string }[]
     summary?: { browser?: unknown; afford?: unknown }
     perTask?: Record<string, { browser?: unknown; afford?: unknown }>
@@ -184,9 +199,7 @@ export const benchRuns = (): BenchRun[] => {
         if (!id) return []
         const browser = agent(id, 'browser')
         const afford = agent(id, 'afford')
-        // add-to-cart → Add to cart
-        const name = id[0]!.toUpperCase() + id.slice(1).replaceAll('-', ' ')
-        return browser && afford ? [{ id, name, prompt, browser, afford }] : []
+        return browser && afford ? [{ id, name: taskName(id), prompt, browser, afford }] : []
       })
       return {
         file,
@@ -194,6 +207,7 @@ export const benchRuns = (): BenchRun[] => {
         runs: data.runs ?? 1,
         finishedAt: data.finishedAt,
         commit: data.commit?.sha?.slice(0, 7),
+        dirty: data.commit?.dirty,
         browser: fromSide(data.summary!.browser as RawSide),
         afford: fromSide(data.summary!.afford as RawSide),
         tasks,
@@ -205,6 +219,55 @@ export const benchRuns = (): BenchRun[] => {
         a.model.localeCompare(b.model),
     )
 }
+
+// every committed file, newest first: what it ran, against which commit, and its overall medians where the
+// file has them. partial runs (a --tasks subset) included, so the index's iterations read in order
+export type BenchFile = {
+  file: string
+  model?: string
+  runs?: number
+  finishedAt?: string
+  commit?: string
+  dirty?: boolean
+  partial: boolean
+  tasks: string[]
+  browser?: Side
+  afford?: Side
+}
+const str = (v: unknown) => (typeof v === 'string' ? v : undefined)
+export const benchHistory = (): BenchFile[] =>
+  benchResults()
+    .map(({ file, data }) => {
+      const run = data as {
+        model?: unknown
+        runs?: unknown
+        finishedAt?: unknown
+        commit?: { sha?: unknown; dirty?: unknown }
+        partial?: unknown
+        tasks?: { id?: unknown }[]
+        summary?: { browser?: unknown; afford?: unknown }
+      }
+      return {
+        file,
+        model: str(run.model),
+        runs: typeof run.runs === 'number' ? run.runs : undefined,
+        finishedAt: str(run.finishedAt),
+        commit: str(run.commit?.sha)?.slice(0, 7),
+        dirty: typeof run.commit?.dirty === 'boolean' ? run.commit.dirty : undefined,
+        partial: run.partial === true,
+        tasks: (Array.isArray(run.tasks) ? run.tasks : []).flatMap((t) => str(t?.id) ?? []),
+        browser: isSide(run.summary?.browser) ? run.summary.browser : undefined,
+        afford: isSide(run.summary?.afford) ? run.summary.afford : undefined,
+      }
+    })
+    // newest first; files from before finishedAt was recorded go last, by name
+    .toSorted(
+      (a, b) =>
+        (b.finishedAt ?? '').localeCompare(a.finishedAt ?? '') || b.file.localeCompare(a.file),
+    )
+
+// add-to-cart → Add to cart
+export const taskName = (id: string) => id[0]!.toUpperCase() + id.slice(1).replaceAll('-', ' ')
 
 // claude-haiku-5-5 → Claude Haiku 5.5; anything else as written
 export const modelName = (model: string) => {

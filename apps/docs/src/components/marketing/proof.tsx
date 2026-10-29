@@ -6,6 +6,7 @@ import { cn } from 'cn'
 import { EvilBarChart } from '@/components/evilcharts/charts/recharts-bar-chart'
 import { ChartTooltip, ChartTooltipContent } from '@/components/evilcharts/ui/recharts-tooltip'
 import type { BenchAgent, BenchRun } from '@/lib/bench'
+import { headline, int, passed, pct, sec } from '@/lib/bench-format'
 
 export type ProofRun = BenchRun & { name: string }
 type Metric = 'tokens' | 'ms'
@@ -15,19 +16,7 @@ const config = {
   afford: { label: 'Afford agent', colors: { light: ['var(--agent)'] } },
 }
 
-const int = (n: number) => Math.round(n).toLocaleString('en-US')
-const sec = (ms: number) => `${(ms / 1000).toFixed(1)}s`
-const usd = (n: number) =>
-  n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumSignificantDigits: 2 })
-const pct = (r: number) => `${Math.round(r * 100)}%`
-const passed = (a: BenchAgent, runs: number) => Math.round(a.successRate * runs)
-// "2.6×", and whether that's in the Afford agent's favour (lower is better for every metric here)
-const times = (browser: number, afford: number) =>
-  afford <= browser
-    ? { x: `${(browser / afford).toFixed(1)}×`, better: true }
-    : { x: `${(afford / browser).toFixed(1)}×`, better: false }
-
-const Dot = ({ agent }: { agent?: boolean }) => (
+export const Dot = ({ agent }: { agent?: boolean }) => (
   <span
     aria-hidden
     className={cn(
@@ -137,7 +126,7 @@ const Toggle = <T extends string | number>({
         aria-pressed={o.value === value}
         onClick={() => onChange(o.value)}
         className={cn(
-          'press h-7 rounded-md px-2.5 text-[13px] font-medium whitespace-nowrap duration-150',
+          'press h-7 rounded-md px-2.5 text-[13px] font-medium whitespace-nowrap duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--fg)',
           o.value === value ? 'bg-(--fg) text-(--bg)' : 'text-(--fg2) hover:text-(--fg)',
         )}
       >
@@ -147,9 +136,9 @@ const Toggle = <T extends string | number>({
   </fieldset>
 )
 
-// the bench, as numbers first and then per task: browser agent against Afford agent on one model, with a
-// toggle when more than one model has a committed run. every figure is computed from the results files
-export const Proof = ({ runs }: { runs: ProofRun[] }) => {
+// one run per task, browser agent against Afford agent, as tokens or seconds. the marketing proof section and
+// the bench page both draw it
+export const TaskChart = ({ run, className }: { run: ProofRun; className?: string }) => {
   // the chart mounts in the browser only: it measures its box, and stamps Date.now() as it renders,
   // which a prerender rejects. its box keeps the same height either way, so nothing shifts
   const mounted = useSyncExternalStore(
@@ -167,61 +156,7 @@ export const Proof = ({ runs }: { runs: ProofRun[] }) => {
     () => matchMedia('(max-width: 599px)').matches,
     () => false,
   )
-  const [m, setM] = useState(0)
   const [metric, setMetric] = useState<Metric>('tokens')
-  const run = runs[m]!
-  const { browser: b, afford: a } = run
-
-  const tok = (1 - a.tokens / b.tokens) * 100
-  const time = times(b.ms, a.ms)
-  const cost =
-    a.costPerSuccessUsd !== undefined && b.costPerSuccessUsd !== undefined
-      ? times(b.costPerSuccessUsd, a.costPerSuccessUsd)
-      : null
-  const stats = [
-    {
-      big: `${Math.abs(Math.round(tok))}%`,
-      label: tok >= 0 ? 'fewer tokens' : 'more tokens',
-      a: int(a.tokens),
-      b: int(b.tokens),
-    },
-    { big: time.x, label: time.better ? 'faster' : 'slower', a: sec(a.ms), b: sec(b.ms) },
-    ...(cost
-      ? [
-          {
-            big: cost.x,
-            label: cost.better ? 'cheaper per success' : 'costlier per success',
-            a: usd(a.costPerSuccessUsd!),
-            b: usd(b.costPerSuccessUsd!),
-          },
-        ]
-      : [
-          {
-            big: `${a.turns}`,
-            label: `steps, not ${b.turns}`,
-            a: `${a.turns}`,
-            b: `${b.turns}`,
-          },
-        ]),
-    {
-      big: pct(a.successRate),
-      label: 'tasks completed',
-      a: pct(a.successRate),
-      b: pct(b.successRate),
-    },
-  ]
-
-  // where an agent didn't finish, in words: the one thing a median hides
-  const misses = (side: 'browser' | 'afford') =>
-    run.tasks
-      .filter((t) => t[side].successRate < 1)
-      .map(
-        (t) =>
-          `${t.name.toLowerCase()} in ${run.runs - passed(t[side], run.runs)} of ${run.runs} runs`,
-      )
-  const bMiss = misses('browser')
-  const aMiss = misses('afford')
-  const other = runs.findIndex((r) => r.browser.successRate < r.afford.successRate)
 
   const value = (x: BenchAgent) => (metric === 'tokens' ? x.tokens : Math.round(x.ms / 100) / 10)
   const label = (x: BenchAgent) => (metric === 'tokens' ? int(x.tokens) : sec(x.ms))
@@ -247,6 +182,155 @@ export const Proof = ({ runs }: { runs: ProofRun[] }) => {
     browserRange: fmtRange(metric === 'tokens' ? t.browser.tokenRange : t.browser.msRange),
     affordRange: fmtRange(metric === 'tokens' ? t.afford.tokenRange : t.afford.msRange),
   }))
+
+  return (
+    <figure
+      className={cn(
+        'rounded-2xl border border-(--line2) p-6 max-[599px]:px-4 max-[599px]:py-5',
+        className,
+      )}
+    >
+      <figcaption className="mb-5 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <div>
+          <p className="text-[15px] font-medium">Per task</p>
+          <p className="mt-0.5 text-[13px] text-(--fg3)">
+            {metric === 'tokens' ? 'Tokens' : 'Seconds'}, median of {run.runs}{' '}
+            {run.runs === 1 ? 'run' : 'runs'}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+          <div className="flex items-center gap-4 text-[13px] text-(--fg2)">
+            <span className="flex items-center gap-1.5">
+              <Dot />
+              Browser agent
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Dot agent />
+              Afford agent
+            </span>
+          </div>
+          <Toggle
+            label="Metric"
+            value={metric}
+            options={[
+              { value: 'tokens', label: 'Tokens' },
+              { value: 'ms', label: 'Time' },
+            ]}
+            onChange={setMetric}
+          />
+        </div>
+      </figcaption>
+      <div className="h-[340px] max-[599px]:h-[380px]">
+        {mounted && (
+          <EvilBarChart
+            config={config}
+            data={data}
+            layout="horizontal"
+            animationType="none"
+            barRadius={3}
+            barGap={3}
+            barCategoryGap={14}
+            className="aspect-auto h-full"
+            chartProps={{ margin: { top: 0, bottom: 0, left: 0, right: narrow ? 60 : 64 } }}
+          >
+            <EvilBarChart.XAxis hide domain={[0, 'dataMax']} />
+            <EvilBarChart.YAxis
+              dataKey="task"
+              width={narrow ? 108 : 128}
+              tick={<AxisTick rows={data} />}
+            />
+            {(['browser', 'afford'] as const).map((k) => (
+              <EvilBarChart.Bar
+                key={k}
+                dataKey={k}
+                enableHoverHighlight
+                barProps={{
+                  children: (
+                    <LabelList
+                      dataKey={`${k}Label`}
+                      position="right"
+                      offset={8}
+                      className={cn(
+                        'font-mono text-xs tabular-nums',
+                        k === 'afford' ? 'fill-(--agent)' : 'fill-(--fg2)',
+                      )}
+                    />
+                  ),
+                }}
+              />
+            ))}
+            <ChartTooltip
+              cursor={false}
+              content={
+                <ChartTooltipContent
+                  className="min-w-52"
+                  labelFormatter={tooltipLabel}
+                  formatter={tooltipRow}
+                />
+              }
+            />
+          </EvilBarChart>
+        )}
+      </div>
+      {/* sr-only on the wrapper: a table never shrinks below its content, so it would widen the page */}
+      <div className="sr-only">
+        <table>
+          <caption>
+            Per task medians on {run.name}, {run.runs} runs each
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Task</th>
+              <th scope="col">Browser agent tokens</th>
+              <th scope="col">Afford agent tokens</th>
+              <th scope="col">Browser agent time</th>
+              <th scope="col">Afford agent time</th>
+              <th scope="col">Browser agent passed</th>
+              <th scope="col">Afford agent passed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {run.tasks.map((t) => (
+              <tr key={t.id}>
+                <th scope="row">{t.name}</th>
+                <td>{int(t.browser.tokens)}</td>
+                <td>{int(t.afford.tokens)}</td>
+                <td>{sec(t.browser.ms)}</td>
+                <td>{sec(t.afford.ms)}</td>
+                <td>
+                  {passed(t.browser, run.runs)} of {run.runs}
+                </td>
+                <td>
+                  {passed(t.afford, run.runs)} of {run.runs}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </figure>
+  )
+}
+
+// the bench, as numbers first and then per task: browser agent against Afford agent on one model, with a
+// toggle when more than one model has a committed run. every figure is computed from the results files
+export const Proof = ({ runs }: { runs: ProofRun[] }) => {
+  const [m, setM] = useState(0)
+  const run = runs[m]!
+  const b = run.browser
+  const stats = headline(run)
+
+  // where an agent didn't finish, in words: the one thing a median hides
+  const misses = (side: 'browser' | 'afford') =>
+    run.tasks
+      .filter((t) => t[side].successRate < 1)
+      .map(
+        (t) =>
+          `${t.name.toLowerCase()} in ${run.runs - passed(t[side], run.runs)} of ${run.runs} runs`,
+      )
+  const bMiss = misses('browser')
+  const aMiss = misses('afford')
+  const other = runs.findIndex((r) => r.browser.successRate < r.afford.successRate)
 
   return (
     <div className="flex flex-col gap-10">
@@ -309,123 +393,7 @@ export const Proof = ({ runs }: { runs: ProofRun[] }) => {
         </p>
       )}
 
-      <figure className="rounded-2xl border border-(--line2) p-6 max-[599px]:px-4 max-[599px]:py-5">
-        <figcaption className="mb-5 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-          <div>
-            <p className="text-[15px] font-medium">Per task</p>
-            <p className="mt-0.5 text-[13px] text-(--fg3)">
-              {metric === 'tokens' ? 'Tokens' : 'Seconds'}, median of {run.runs}{' '}
-              {run.runs === 1 ? 'run' : 'runs'}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-            <div className="flex items-center gap-4 text-[13px] text-(--fg2)">
-              <span className="flex items-center gap-1.5">
-                <Dot />
-                Browser agent
-              </span>
-              <span className="flex items-center gap-1.5">
-                <Dot agent />
-                Afford agent
-              </span>
-            </div>
-            <Toggle
-              label="Metric"
-              value={metric}
-              options={[
-                { value: 'tokens', label: 'Tokens' },
-                { value: 'ms', label: 'Time' },
-              ]}
-              onChange={setMetric}
-            />
-          </div>
-        </figcaption>
-        <div className="h-[340px] max-[599px]:h-[380px]">
-          {mounted && (
-            <EvilBarChart
-              config={config}
-              data={data}
-              layout="horizontal"
-              animationType="none"
-              barRadius={3}
-              barGap={3}
-              barCategoryGap={14}
-              className="aspect-auto h-full"
-              chartProps={{ margin: { top: 0, bottom: 0, left: 0, right: narrow ? 60 : 64 } }}
-            >
-              <EvilBarChart.XAxis hide domain={[0, 'dataMax']} />
-              <EvilBarChart.YAxis
-                dataKey="task"
-                width={narrow ? 108 : 128}
-                tick={<AxisTick rows={data} />}
-              />
-              {(['browser', 'afford'] as const).map((k) => (
-                <EvilBarChart.Bar
-                  key={k}
-                  dataKey={k}
-                  enableHoverHighlight
-                  barProps={{
-                    children: (
-                      <LabelList
-                        dataKey={`${k}Label`}
-                        position="right"
-                        offset={8}
-                        className={cn(
-                          'font-mono text-xs tabular-nums',
-                          k === 'afford' ? 'fill-(--agent)' : 'fill-(--fg2)',
-                        )}
-                      />
-                    ),
-                  }}
-                />
-              ))}
-              <ChartTooltip
-                cursor={false}
-                content={
-                  <ChartTooltipContent
-                    className="min-w-52"
-                    labelFormatter={tooltipLabel}
-                    formatter={tooltipRow}
-                  />
-                }
-              />
-            </EvilBarChart>
-          )}
-        </div>
-        <table className="sr-only">
-          <caption>
-            Per task medians on {run.name}, {run.runs} runs each
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">Task</th>
-              <th scope="col">Browser agent tokens</th>
-              <th scope="col">Afford agent tokens</th>
-              <th scope="col">Browser agent time</th>
-              <th scope="col">Afford agent time</th>
-              <th scope="col">Browser agent passed</th>
-              <th scope="col">Afford agent passed</th>
-            </tr>
-          </thead>
-          <tbody>
-            {run.tasks.map((t) => (
-              <tr key={t.id}>
-                <th scope="row">{t.name}</th>
-                <td>{int(t.browser.tokens)}</td>
-                <td>{int(t.afford.tokens)}</td>
-                <td>{sec(t.browser.ms)}</td>
-                <td>{sec(t.afford.ms)}</td>
-                <td>
-                  {passed(t.browser, run.runs)} of {run.runs}
-                </td>
-                <td>
-                  {passed(t.afford, run.runs)} of {run.runs}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </figure>
+      <TaskChart run={run} />
 
       <p className="-mt-4 flex flex-wrap gap-x-3 font-mono text-xs whitespace-nowrap text-(--fg3)">
         <span>{run.name}</span>

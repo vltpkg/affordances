@@ -10,4 +10,14 @@ The bench runs the same tasks against the example store with two agents, using t
 
 The tasks are the ones a shopper does: find a product and add it to the cart, change a quantity, check out (including the confirm step), search, and look up an order. Each run records turns, tool calls, tokens (input, cache reads, cache writes, output), dollar cost, wall time, time to first action, a trace of every tool call, and whether the task succeeded, checked against the store rather than the agent's word. Results are committed as JSON in `apps/bench/results`, one file per model, with the commit they ran against.
 
+## Results
+
+The newest full run of each model.
+
 <BenchResults />
+
+## Run history
+
+Every committed results file, newest first, with each agent's median tokens per run. A partial run re-ran some of the tasks (`--tasks`) and isn't used above.
+
+<BenchHistory />

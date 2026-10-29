@@ -6,7 +6,7 @@ import { CodeBlock } from '@afford/ui/components/code-block'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@afford/ui/components/table'
 import { Heading } from '@/components/heading'
 import { TypeTable } from '@/components/type-table'
-import { BenchResults } from '@/components/bench-results'
+import { BenchHistory, BenchResults } from '@/components/bench-results'
 import { Install, Run } from '@/components/command'
 
 type Children = { children?: React.ReactNode }
@@ -64,6 +64,7 @@ export const components: MDXComponents = {
       {...props}
     />
   ),
+  BenchHistory,
   BenchResults,
   Install,
   Run,
