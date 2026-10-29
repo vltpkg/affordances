@@ -1,7 +1,7 @@
 'use server'
 
 import { redirect } from '@afford/core'
-import { refresh } from 'next/cache'
+import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { defineAction } from '@/lib/afford'
 import * as store from '@/lib/store'
@@ -27,7 +27,8 @@ export const placeOrder = defineAction({
   run: (_, ctx) => {
     if (!ctx.session) throw new Error('No session')
     store.placeOrder(ctx.session.id)
-    if (ctx.via === 'ui') refresh()
+    // every page shows the cart count; refresh() leaves streamed holes stale in production builds
+    revalidatePath('/', 'layout')
     redirect('/account/orders')
   },
   message: () => 'Order placed. It is listed under your orders.',

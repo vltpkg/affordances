@@ -1,6 +1,6 @@
 'use server'
 
-import { refresh } from 'next/cache'
+import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { defineAction } from '@/lib/afford'
 import { ensureSession } from '@/lib/session'
@@ -36,7 +36,8 @@ export const addToCart = defineAction({
     // the handler reloads state with this ctx after run, so the new session shows up in the delta
     ctx.session ??= { id: await ensureSession() }
     store.addToCart(ctx.session.id, sku, quantity)
-    if (ctx.via === 'ui') refresh()
+    // every page shows the cart count; refresh() leaves streamed holes stale in production builds
+    revalidatePath('/', 'layout')
   },
   message: ({ input }) => `Added ${input.quantity} × ${store.skuName(input.sku)} to the cart`,
 })

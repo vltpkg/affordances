@@ -3,6 +3,7 @@ import { Suspense } from 'react'
 import { Wordmark } from '@afford/ui/components/wordmark'
 import { getSessionId } from '@/lib/session'
 import { cartCount } from '@/lib/store'
+import { AgentViewToggle } from './agent-view'
 
 const CartCount = async () => {
   const count = cartCount(await getSessionId())
@@ -23,7 +24,7 @@ export const SiteHeader = () => (
         <span className="font-medium">Supply</span>
       </Link>
       <nav className="-mr-2 flex items-center gap-1">
-        {/* agent-view toggle */}
+        <AgentViewToggle />
         <Link href="/account/orders" className={link}>
           Orders
         </Link>

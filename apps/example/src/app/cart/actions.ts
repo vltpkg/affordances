@@ -1,6 +1,6 @@
 'use server'
 
-import { refresh } from 'next/cache'
+import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { defineAction } from '@/lib/afford'
 import * as store from '@/lib/store'
@@ -23,7 +23,8 @@ export const updateQuantity = defineAction({
   run: ({ sku, quantity }, ctx) => {
     if (!ctx.session) throw new Error('No session')
     store.setQuantity(ctx.session.id, sku, quantity)
-    if (ctx.via === 'ui') refresh()
+    // every page shows the cart count; refresh() leaves streamed holes stale in production builds
+    revalidatePath('/', 'layout')
   },
   message: ({ input }) =>
     input.quantity
@@ -48,7 +49,7 @@ export const removeItem = defineAction({
   run: ({ sku }, ctx) => {
     if (!ctx.session) throw new Error('No session')
     store.removeFromCart(ctx.session.id, sku)
-    if (ctx.via === 'ui') refresh()
+    revalidatePath('/', 'layout')
   },
   message: ({ input }) => `Removed ${store.skuName(input.sku)} from the cart`,
 })

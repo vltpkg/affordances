@@ -2,6 +2,7 @@ import { MinusIcon, PlusIcon } from 'lucide-react'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Suspense } from 'react'
+import { Affordance } from '@afford/react'
 import { buttonVariants } from '@afford/ui/components/button'
 import { cn } from 'cn'
 import { ProductArt } from '@/components/product-art'
@@ -43,38 +44,42 @@ const Cart = async () => {
                 <span className="font-mono text-xs">{item.sku}</span>
               </p>
               <div className="mt-3 flex items-center gap-2">
-                <form action={updateQuantity} className="flex h-7 items-center rounded-md border">
-                  <input type="hidden" name="sku" value={item.sku} />
-                  <SubmitButton
-                    name="quantity"
-                    value={item.quantity - 1}
-                    variant="ghost"
-                    size="icon"
-                    disabled={item.quantity <= 1}
-                    aria-label={`One fewer ${item.name}`}
-                  >
-                    <MinusIcon />
-                  </SubmitButton>
-                  <output className="w-6 text-center font-mono text-xs tabular-nums">
-                    {item.quantity}
-                  </output>
-                  <SubmitButton
-                    name="quantity"
-                    value={item.quantity + 1}
-                    variant="ghost"
-                    size="icon"
-                    disabled={item.quantity >= Math.min(item.stock, 10)}
-                    aria-label={`One more ${item.name}`}
-                  >
-                    <PlusIcon />
-                  </SubmitButton>
-                </form>
-                <form action={removeItem}>
-                  <input type="hidden" name="sku" value={item.sku} />
-                  <SubmitButton variant="ghost" className="text-muted-foreground">
-                    Remove
-                  </SubmitButton>
-                </form>
+                <Affordance action={updateQuantity} input={{ sku: item.sku }}>
+                  <form action={updateQuantity} className="flex h-7 items-center rounded-md border">
+                    <input type="hidden" name="sku" value={item.sku} />
+                    <SubmitButton
+                      name="quantity"
+                      value={item.quantity - 1}
+                      variant="ghost"
+                      size="icon"
+                      disabled={item.quantity <= 1}
+                      aria-label={`One fewer ${item.name}`}
+                    >
+                      <MinusIcon />
+                    </SubmitButton>
+                    <output className="w-6 text-center font-mono text-xs tabular-nums">
+                      {item.quantity}
+                    </output>
+                    <SubmitButton
+                      name="quantity"
+                      value={item.quantity + 1}
+                      variant="ghost"
+                      size="icon"
+                      disabled={item.quantity >= Math.min(item.stock, 10)}
+                      aria-label={`One more ${item.name}`}
+                    >
+                      <PlusIcon />
+                    </SubmitButton>
+                  </form>
+                </Affordance>
+                <Affordance action={removeItem} input={{ sku: item.sku }}>
+                  <form action={removeItem}>
+                    <input type="hidden" name="sku" value={item.sku} />
+                    <SubmitButton variant="ghost" className="text-muted-foreground">
+                      Remove
+                    </SubmitButton>
+                  </form>
+                </Affordance>
               </div>
             </div>
             <p className="font-mono text-sm tabular-nums">{item.total}</p>

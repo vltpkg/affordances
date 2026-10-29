@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Suspense } from 'react'
+import { Affordance } from '@afford/react'
 import { SubmitButton } from '@/components/submit-button'
 import { Totals } from '@/components/totals'
 import { getSessionId } from '@/lib/session'
@@ -43,11 +44,13 @@ const Checkout = async () => {
       <div className="mt-4">
         <Totals count={cart.count} total={cart.subtotal} />
       </div>
-      <form action={placeOrder} className="mt-8">
-        <SubmitButton size="lg" className="h-9 w-full text-sm" disabled={!!short}>
-          Place order
-        </SubmitButton>
-      </form>
+      <Affordance action={placeOrder}>
+        <form action={placeOrder} className="mt-8">
+          <SubmitButton size="lg" className="h-9 w-full text-sm" disabled={!!short}>
+            Place order
+          </SubmitButton>
+        </form>
+      </Affordance>
       <p className="mt-3 text-sm text-muted-foreground">
         {short
           ? `Only ${short.stock} left of ${short.name}. Change the quantity in your cart.`

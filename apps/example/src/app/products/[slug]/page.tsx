@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Suspense } from 'react'
+import { Affordance } from '@afford/react'
 import { cn } from 'cn'
 import { ProductArt } from '@/components/product-art'
 import { SubmitButton } from '@/components/submit-button'
@@ -41,54 +42,56 @@ const Purchase = async ({ slug }: { slug: string }) => {
   const pricesDiffer = new Set(product.variants.map((v) => v.price)).size > 1
 
   return (
-    <form action={addToCart} className="mt-8">
-      {product.option ? (
-        <fieldset>
-          <legend className="text-sm font-medium">{product.option}</legend>
-          <div className="mt-2 grid grid-cols-[repeat(auto-fill,minmax(4.5rem,1fr))] gap-2">
-            {product.variants.map((v) => (
-              <label
-                key={v.sku}
-                className={cn(
-                  'flex h-11 cursor-pointer flex-col items-center justify-center rounded-md border text-sm transition-colors duration-150 ease-out',
-                  'hover:border-ring has-checked:border-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/30',
-                  'has-disabled:cursor-not-allowed has-disabled:border-border has-disabled:text-muted-foreground has-disabled:line-through',
-                )}
-              >
-                <input
-                  type="radio"
-                  name="sku"
-                  value={v.sku}
-                  defaultChecked={v === open}
-                  disabled={remaining(v) <= 0}
-                  className="sr-only"
-                />
-                {v.label}
-                {pricesDiffer && (
-                  <span className="font-mono text-xs text-muted-foreground tabular-nums">
-                    {v.price}
-                  </span>
-                )}
-              </label>
-            ))}
-          </div>
-        </fieldset>
-      ) : (
-        open && <input type="hidden" name="sku" value={open.sku} />
-      )}
-      <p className="mt-3 text-sm text-muted-foreground">{availability(product)}</p>
-      <SubmitButton size="lg" className="mt-6 h-9 w-full text-sm" disabled={!open}>
-        {open ? 'Add to cart' : 'Sold out'}
-      </SubmitButton>
-      {inCart > 0 && (
-        <p className="mt-3 text-sm text-muted-foreground motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200">
-          {inCart} in your cart.{' '}
-          <Link href="/cart" className="text-foreground underline underline-offset-4">
-            View cart
-          </Link>
-        </p>
-      )}
-    </form>
+    <Affordance action={addToCart} input={product.option || !open ? undefined : { sku: open.sku }}>
+      <form action={addToCart} className="mt-8">
+        {product.option ? (
+          <fieldset>
+            <legend className="text-sm font-medium">{product.option}</legend>
+            <div className="mt-2 grid grid-cols-[repeat(auto-fill,minmax(4.5rem,1fr))] gap-2">
+              {product.variants.map((v) => (
+                <label
+                  key={v.sku}
+                  className={cn(
+                    'flex h-11 cursor-pointer flex-col items-center justify-center rounded-md border text-sm transition-colors duration-150 ease-out',
+                    'hover:border-ring has-checked:border-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/30',
+                    'has-disabled:cursor-not-allowed has-disabled:border-border has-disabled:text-muted-foreground has-disabled:line-through',
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="sku"
+                    value={v.sku}
+                    defaultChecked={v === open}
+                    disabled={remaining(v) <= 0}
+                    className="sr-only"
+                  />
+                  {v.label}
+                  {pricesDiffer && (
+                    <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                      {v.price}
+                    </span>
+                  )}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        ) : (
+          open && <input type="hidden" name="sku" value={open.sku} />
+        )}
+        <p className="mt-3 text-sm text-muted-foreground">{availability(product)}</p>
+        <SubmitButton size="lg" className="mt-6 h-9 w-full text-sm" disabled={!open}>
+          {open ? 'Add to cart' : 'Sold out'}
+        </SubmitButton>
+        {inCart > 0 && (
+          <p className="mt-3 text-sm text-muted-foreground motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200">
+            {inCart} in your cart.{' '}
+            <Link href="/cart" className="text-foreground underline underline-offset-4">
+              View cart
+            </Link>
+          </p>
+        )}
+      </form>
+    </Affordance>
   )
 }
 
