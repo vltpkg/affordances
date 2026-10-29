@@ -65,23 +65,36 @@ npm install @afford/next @afford/react zod
 npx afford init
 ```
 
-`init` writes `app/api/afford/[[...path]]/route.ts`, wraps `next.config` with `withAfford`, and adds `.afford` to `.gitignore`. Then:
+`init` writes `app/api/afford/graph/[[...path]]/route.ts`, wraps `next.config` with `withAfford`, and adds `.afford` to `.gitignore`. Then:
 
 1. Create `lib/afford.ts`: `export const { defineAction, defineState } = createAfford({ auth })`, where `auth(request)` returns the session (or `null`). It resolves both people and agents.
 2. Put `actions.ts` (`'use server'`) and `state.ts` next to any `page.tsx`.
 3. Set `expose` on each action: `public`, `session`, or `confirm`. Actions without it stay invisible to agents.
 4. Wrap the app in `<AffordProvider path={pathname + search}>` from `@afford/react` to register WebMCP tools. Mark controls with `<Affordance action={addToCart}>` for DOM-reading agents.
 
+To serve every page as markdown as well (at `/x.md`, or with `Accept: text/markdown`), add the md plugin:
+
+```ts
+// next.config.ts
+import { withAfford } from '@afford/next/config'
+import { md } from '@afford/md/next'
+
+export default withAfford(nextConfig, { plugins: [md()] })
+```
+
+`npx afford-md init` writes its route. `@afford/md` also works on its own, with `withMd(nextConfig)` and no actions.
+
 ## Packages
 
-| Package            | What it does                                                                 |
-| ------------------ | ---------------------------------------------------------------------------- |
-| `@afford/protocol` | The [spec](packages/protocol/spec.md), its types, JSON Schemas, and fixtures |
-| `@afford/core`     | `defineAction`, `defineState`, and a framework-agnostic `createHandler`      |
-| `@afford/next`     | `withAfford`, codegen, the route handler, and `afford init`                  |
-| `@afford/react`    | `<AffordProvider>` (WebMCP), `<Affordance>`, and the `⌥A` dev overlay        |
-| `@afford/mcp`      | Any Afford site as an MCP server, plus the client the bench agent uses       |
-| `@afford/lint`     | `require-affordance` and `static-action-name`, for ESLint and oxlint         |
+| Package            | What it does                                                                      |
+| ------------------ | --------------------------------------------------------------------------------- |
+| `@afford/protocol` | The [spec](packages/protocol/spec.md), its types, JSON Schemas, and fixtures      |
+| `@afford/core`     | `defineAction`, `defineState`, and a framework-agnostic `createHandler`           |
+| `@afford/next`     | `withAfford`, codegen, the route handler, and `afford init`                       |
+| `@afford/react`    | `<AffordProvider>` (WebMCP), `<Affordance>`, and the `⌥A` dev overlay             |
+| `@afford/md`       | Any page as clean markdown at the same url, with `AgentMain`/`Skip`/`Only`/`Text` |
+| `@afford/mcp`      | Any Afford site as an MCP server, plus the client the bench agent uses            |
+| `@afford/lint`     | `require-affordance` and `static-action-name`, for ESLint and oxlint              |
 
 ## Security
 

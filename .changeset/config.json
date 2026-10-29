@@ -9,7 +9,8 @@
       "@afford/react",
       "@afford/next",
       "@afford/mcp",
-      "@afford/lint"
+      "@afford/lint",
+      "@afford/md"
     ]
   ],
   "access": "public",

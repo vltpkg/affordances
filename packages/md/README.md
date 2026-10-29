@@ -1,0 +1,67 @@
+# @afford/md
+
+Serve any Next.js page as clean markdown at the same URL. Authors mark intent with four components, and heuristics fill the gaps.
+
+```tsx
+// page.tsx
+import { AgentMain, AgentSkip, AgentText } from '@afford/md/react'
+
+<AgentSkip><PromoBanner /></AgentSkip>
+<AgentMain><Article /></AgentMain>
+<AgentText md="$160"><Price value={160} /></AgentText>
+```
+
+```bash
+curl -H 'Accept: text/markdown' https://site.com/blog/post
+curl https://site.com/blog/post.md
+```
+
+## Setup
+
+```bash
+npm install @afford/md
+npx afford-md init        # writes app/api/afford/md/[[...path]]/route.ts
+```
+
+```ts
+// next.config.ts: on its own
+import { withMd } from '@afford/md/next'
+export default withMd(nextConfig)
+
+// or next to the Afford graph
+import { withAfford } from '@afford/next/config'
+import { md } from '@afford/md/next'
+export default withAfford(nextConfig, { plugins: [md()] })
+```
+
+Add `alternates: mdAlternate(path)` to `generateMetadata` so crawlers and agents can find the markdown.
+
+## How it works
+
+`md()` adds rewrites (no `proxy.ts`): `Accept: text/markdown` at a page's url, `/x.md`, and `/index.md` all go to the route handler. The handler fetches the page from its own origin as HTML, forwarding the caller's cookies, so the markdown is the real render: RSC, data, auth, and streamed `<Suspense>` content included. It then converts the HTML. Content rendered only on the client (in `useEffect`) isn't included.
+
+| Marker               | Effect                                                                                   |
+| -------------------- | ---------------------------------------------------------------------------------------- |
+| `<AgentSkip>`        | Left out. `data-afford-md="skip"` on any element does the same.                          |
+| `<AgentMain>`        | If any are present, only these subtrees are used, in document order.                     |
+| `<AgentOnly>`        | Included for agents and hidden from people. It must say what the page already shows.     |
+| `<AgentText md="…">` | People see the children; the markdown gets `md` verbatim. Add `block` for its own block. |
+
+Markers render `<afford-md style="display:contents">`, so they don't affect layout and ship no client JS.
+
+Without markers, the converter uses `<main>` (or `[role=main]`); failing that, it uses the body minus `nav`, `header`, `footer`, `aside`, dialogs, and hidden content.
+
+- **Forms:** listed as the fields they ask for, with radio groups labelled by their legend. Values, hidden inputs, and tokens are never output.
+- **Never output:** buttons, scripts, styles, comments, and `data-*` attributes.
+- **Frontmatter:** title, description, canonical url, og:image, and lang.
+- **JSON-LD:** appended as fenced blocks.
+
+`htmlToMarkdown(html, options)` from `@afford/md` is the converter on its own: pure and deterministic, with no React or Next.
+
+## Caching and privacy
+
+Markdown rendered with the caller's cookies or authorization, or from a page that is `private`/`no-store` or sets cookies, is sent as `private, no-store`. Otherwise it mirrors the page's `cache-control`.
+
+- **Redirects:** a same-origin redirect becomes a redirect to the `.md` url. A cross-origin redirect is passed through, never followed.
+- **Limits:** a page has 10s to render (`timeout`) and at most 6 MiB of HTML (`maxBytes`).
+- **Origin:** set `AFFORD_MD_ORIGIN` when the server can't reach itself at the request's origin.
