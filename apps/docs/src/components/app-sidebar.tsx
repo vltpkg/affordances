@@ -8,13 +8,8 @@ import type * as PageTree from 'fumadocs-core/page-tree'
 import { cn } from 'cn'
 import { SearchDialog, SearchTrigger } from '@/components/search'
 import type { SuggestionGroup } from '@/components/search'
-import { ThemeSwitcher } from '@/components/theme-switcher'
 import { Rule } from '@/components/rule'
-import { Github } from '@/components/icons/github'
-import { Linkedin } from '@/components/icons/linkedin'
-import { TwitterX } from '@/components/icons/twitterx'
-import { Bluesky } from '@/components/icons/bluesky'
-import { Discord } from '@/components/icons/discord'
+import { SocialStrip } from '@/components/social-strip'
 import {
   Collapsible,
   CollapsibleContent,
@@ -67,6 +62,9 @@ const text = (name: React.ReactNode) =>
 const keyOf = (stack: Folder[]) => stack.at(-1)?.$id ?? text(stack.at(-1)?.name ?? 'root')
 
 // root-level `---Label---` separators from meta.json start a new labelled group
+// the agents' start page isn't a docs page, but it leads the sidebar
+const agents: PageTree.Item = { type: 'page', name: 'For agents', url: '/agents' }
+
 const toGroups = (nodes: PageTree.Node[]) =>
   nodes
     .reduce<{ name?: React.ReactNode; children: PageTree.Node[] }[]>(
@@ -186,7 +184,7 @@ const View = ({ tree, stack, go, focusBack, returnTo, className, ...props }: Vie
   return (
     <div className={cn('col-start-1 row-start-1 min-w-0 px-2 pb-4', className)} {...props}>
       {!folder ? (
-        toGroups(tree.children.filter(isVisible)).map((group, i) => (
+        toGroups([agents, ...tree.children.filter(isVisible)]).map((group, i) => (
           <SidebarGroup key={i} className="px-0">
             {i > 0 && <Rule className="mb-2" />}
             {group.name && (
@@ -234,31 +232,6 @@ const View = ({ tree, stack, go, focusBack, returnTo, className, ...props }: Vie
     </div>
   )
 }
-
-// from vlt.io's content/marketing/socials.ts
-const socials = [
-  {
-    href: 'https://github.com/vltpkg/vltpkg',
-    label: 'vltpkg on GitHub',
-    Icon: Github,
-  },
-  {
-    href: 'https://www.linkedin.com/company/vltpkg/',
-    label: 'vlt on LinkedIn',
-    Icon: Linkedin,
-  },
-  { href: 'https://x.com/vltpkg', label: 'vlt on X', Icon: TwitterX },
-  {
-    href: 'https://bsky.app/profile/vlt.sh',
-    label: 'vlt on Bluesky',
-    Icon: Bluesky,
-  },
-  {
-    href: 'https://discord.gg/qdbXTqxZzZ',
-    label: 'vlt on Discord',
-    Icon: Discord,
-  },
-]
 
 // a folder's index, else its first page (depth-first)
 const firstUrl = (folder?: Folder): string | undefined => {
@@ -351,22 +324,7 @@ export function AppSidebar({ tree, ...props }: AppSidebarProps) {
           </div>
         </SidebarContent>
         <SidebarFooter className="px-4">
-          <div className="bg-card flex items-center rounded-xl border p-1">
-            {socials.map(({ href, label, Icon }) => (
-              <a
-                key={href}
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={label}
-                className="text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring/50 grid size-8 place-items-center rounded-md transition-colors outline-none focus-visible:ring-2"
-              >
-                <Icon aria-hidden className="size-4" />
-              </a>
-            ))}
-            <div aria-hidden className="bg-border mr-1 ml-auto h-5 w-px" />
-            <ThemeSwitcher />
-          </div>
+          <SocialStrip />
         </SidebarFooter>
       </Sidebar>
       <SearchDialog

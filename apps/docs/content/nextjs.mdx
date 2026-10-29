@@ -63,7 +63,7 @@ import { md } from '@afford/md/next'
 export default withAfford(nextConfig, { name: 'Store', plugins: [md()] })
 ```
 
-This site runs with `md()`: every page is also served as Markdown, at `/<page>.md` and to `Accept: text/markdown`. Its rewrites match only that media type, so they don't collide with the graph's. See [Markdown](/md).
+This site runs with `md()`: every page is also served as Markdown, at `/<page>.md` and to `Accept: text/markdown`. Its rewrites match only that media type, so they don't collide with the graph's. See [Markdown](/docs/md).
 
 For each route in the manifest, `withAfford` also adds a header to the HTML page, so clients can discover the graph:
 
@@ -107,7 +107,7 @@ const handler = createRouteHandler(manifest, {
 export { handler as GET, handler as POST }
 ```
 
-`createRouteHandler` takes the [handler options](/options#createhandler) except `manifest` and `basePath`, which it sets. It also translates Next's `redirect()` into the delta's `redirect`.
+`createRouteHandler` takes the [handler options](/docs/options#createhandler) except `manifest` and `basePath`, which it sets. It also translates Next's `redirect()` into the delta's `redirect`.
 
 ## Caching
 

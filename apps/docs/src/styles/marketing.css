@@ -1,0 +1,469 @@
+/* the marketing page's illustrations: their moving parts (the hero stage's morph, the scrollytelling
+   panels, the approval card) keep the design's own state classes and timing here; layout and type are
+   tailwind in the components. every colour is one of our tokens, or the agent accent below */
+
+.afd {
+  --ease: cubic-bezier(0.65, 0, 0.35, 1);
+  --out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* the design's neutrals, as our tokens */
+  --bg: var(--background);
+  --bg2: var(--card);
+  --bg3: var(--muted);
+  --img: color-mix(in oklch, var(--muted) 70%, var(--background));
+  --fg: var(--foreground);
+  --fg2: color-mix(in oklch, var(--foreground) 72%, var(--background));
+  --fg3: var(--muted-foreground);
+  --line: var(--border);
+  --line2: color-mix(in oklch, var(--foreground) 16%, var(--background));
+  --red: var(--fg);
+  /* the agent accent: the one colour on the page, for everything an agent reads */
+  --agent: #c4470b;
+  --agent-ink: #fff;
+  --agent-soft: color-mix(in srgb, var(--agent) 11%, transparent);
+  --agent-line: color-mix(in srgb, var(--agent) 55%, transparent);
+  --agent-mid: color-mix(in srgb, var(--agent) 55%, var(--bg));
+  --agent-low: color-mix(in srgb, var(--agent) 30%, var(--bg));
+  --agent-min: color-mix(in srgb, var(--agent) 16%, var(--bg));
+  overflow-x: clip;
+}
+
+[data-theme='dark'] .afd {
+  --agent: #ff6a1f;
+  --agent-ink: #140600;
+}
+
+.afd :focus-visible {
+  outline: 2px solid var(--agent);
+  outline-offset: 2px;
+}
+
+/* hero: the human/agent switch */
+.afd .seg-ind {
+  transition:
+    transform 0.5s var(--ease),
+    background-color 0.35s;
+}
+.afd .seg-ind.is-agent {
+  transform: translateX(100%);
+  background: var(--agent);
+}
+.afd .seg-b.act-h {
+  color: var(--bg);
+}
+.afd .seg-b.act-a {
+  color: var(--agent-ink);
+}
+.afd .accept b {
+  transition: color 0.3s;
+}
+.afd .is-agent-row .accept b {
+  color: var(--agent);
+}
+
+/* hero: the stage, where the product page's parts move into the graph's lines */
+.afd .stage {
+  transition: border-color 0.5s;
+}
+.afd .stage.is-agent {
+  border-color: var(--agent);
+}
+.afd .swap {
+  transition: opacity 0.16s;
+}
+.afd .fading .swap {
+  opacity: 0;
+}
+.afd .hum {
+  transition: opacity 0.3s 0.22s;
+}
+.afd .is-agent .hum {
+  opacity: 0;
+  transition-delay: 0s;
+  pointer-events: none;
+}
+.afd .agt {
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+.afd .is-agent .agt {
+  opacity: 1;
+  transition: opacity 0.35s 0.35s;
+}
+.afd .m {
+  position: absolute;
+  box-sizing: border-box;
+  transition:
+    top 0.62s var(--ease),
+    left 0.62s var(--ease),
+    width 0.62s var(--ease),
+    height 0.62s var(--ease),
+    font-size 0.62s var(--ease),
+    background-color 0.45s,
+    border-color 0.45s,
+    border-radius 0.62s var(--ease),
+    color 0.45s,
+    opacity 0.3s;
+}
+.afd .ghost {
+  white-space: nowrap;
+  line-height: 1.6;
+  transition:
+    top 0.62s var(--ease),
+    left 0.62s var(--ease),
+    font-size 0.62s var(--ease),
+    opacity 0.25s 0.1s;
+}
+.afd .is-agent .ghost {
+  opacity: 0;
+  transition:
+    top 0.62s var(--ease),
+    left 0.62s var(--ease),
+    font-size 0.62s var(--ease),
+    opacity 0.25s 0.38s;
+}
+.afd .box {
+  background: var(--img);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.afd .is-agent .box {
+  background: var(--agent-soft);
+  border-color: var(--agent-line);
+  border-radius: 6px;
+}
+.afd .hf {
+  transition: opacity 0.2s 0.28s;
+}
+.afd .is-agent .hf {
+  opacity: 0;
+  transition-delay: 0s;
+}
+.afd .pill {
+  border: 1px solid var(--line2);
+  background: transparent;
+  border-radius: 8px;
+  color: var(--fg);
+  font: 500 14px/1 var(--font-sans);
+  padding: 0;
+  white-space: nowrap;
+}
+.afd .pill.sel {
+  border-color: var(--fg);
+}
+.afd .pill.out {
+  border-style: dashed;
+  color: var(--fg3);
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+.afd .is-agent .pill {
+  border-style: solid;
+  border-color: var(--agent-line);
+  background: var(--agent-soft);
+  border-radius: 4px;
+  pointer-events: none;
+}
+.afd .cta {
+  border: 1px solid var(--fg);
+  background: var(--fg);
+  color: var(--bg);
+  border-radius: 8px;
+  font: 500 15px/1 var(--font-sans);
+  cursor: pointer;
+  padding: 0;
+}
+.afd .is-agent .cta {
+  background: var(--agent-soft);
+  border-color: var(--agent-line);
+  border-radius: 6px;
+  pointer-events: none;
+}
+.afd .gl {
+  height: 20px;
+  white-space: pre;
+  font: 12.5px/20px var(--font-mono);
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 0.12s,
+    transform 0.12s;
+}
+.afd .is-agent .gl {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 0.32s var(--d),
+    transform 0.4s var(--out) var(--d);
+}
+.afd .gk {
+  color: var(--fg);
+}
+.afd .gs,
+.afd .gn {
+  color: var(--agent);
+}
+.afd .gp {
+  color: var(--fg3);
+}
+.afd .gl.flash .gn {
+  background: var(--agent-soft);
+  border-radius: 3px;
+}
+
+/* before / after: file rows, the screenshot pile, meters, calls, surfaces, captions */
+.afd .frow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateX(-6px);
+  font: 13px/1 var(--font-mono);
+  border-bottom: 1px solid transparent;
+  transition:
+    height 0.4s var(--out),
+    opacity 0.3s,
+    transform 0.4s var(--out),
+    color 0.3s,
+    border-color 0.3s;
+}
+.afd .frow.on {
+  height: 38px;
+  opacity: 1;
+  transform: none;
+  border-bottom-color: var(--line);
+}
+.afd .frow.gone {
+  height: 0;
+  opacity: 0;
+  transform: translateX(8px);
+  border-bottom-color: transparent;
+}
+.afd .frow .fd {
+  color: var(--fg3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.afd .frow .fn {
+  color: var(--fg);
+  white-space: nowrap;
+}
+.afd .frow .fs {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--fg3);
+  white-space: nowrap;
+  padding: 3px 7px;
+  border-radius: 5px;
+  transition:
+    color 0.3s,
+    background 0.3s;
+}
+.afd .frow.drift .fn {
+  color: var(--red);
+}
+.afd .frow.drift .fs {
+  color: var(--bg);
+  background: var(--fg);
+}
+.afd .frow.drift .fd {
+  text-decoration: line-through;
+  text-decoration-color: var(--fg3);
+}
+.afd .frow.edited .fs,
+.afd .frow.fresh .fs {
+  color: var(--fg);
+  background: var(--bg3);
+}
+.afd .snip {
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 0.35s,
+    transform 0.45s var(--out);
+}
+.afd .snip.on {
+  opacity: 1;
+  transform: none;
+}
+.afd .snip .old {
+  color: var(--fg3);
+  transition: color 0.3s;
+}
+.afd .snip.done .old {
+  text-decoration: line-through;
+  color: var(--red);
+}
+.afd .snip .new {
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.afd .snip.done .new {
+  opacity: 1;
+}
+.afd .cap {
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 0.4s,
+    transform 0.5s var(--out);
+}
+.afd .cap.on {
+  opacity: 1;
+  transform: none;
+}
+.afd .th {
+  opacity: 0;
+  transform: translateY(-10px) scale(0.96);
+  transition:
+    opacity 0.25s,
+    transform 0.35s var(--out),
+    border-color 0.2s;
+}
+.afd .th.on {
+  opacity: 1;
+  transform: none;
+}
+.afd .th.cur {
+  border-color: var(--agent);
+}
+.afd .seg-m {
+  transition: width 0.3s var(--out);
+}
+.afd .spill {
+  background: repeating-linear-gradient(-45deg, var(--red) 0 2px, transparent 2px 6px);
+  transition: width 0.3s var(--out);
+}
+.afd .call {
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  border-bottom: 1px solid transparent;
+  transition:
+    height 0.4s var(--out),
+    opacity 0.3s;
+}
+.afd .call.on {
+  height: 40px;
+  opacity: 1;
+  border-bottom-color: var(--line);
+}
+.afd .call.cur .re,
+.afd .call.cur .no {
+  color: var(--agent);
+}
+.afd .sf {
+  opacity: 0.35;
+  transition:
+    opacity 0.3s,
+    color 0.3s,
+    border-color 0.3s;
+}
+.afd .sf.on {
+  opacity: 1;
+  color: var(--fg);
+  border-color: var(--line2);
+}
+.afd .sf.on.ag {
+  color: var(--agent);
+  border-color: var(--agent-line);
+}
+
+/* while scrolling drives the panels: a tall track with the panels pinned under the header */
+.afd .live .track {
+  height: 2100px;
+}
+.afd .live .sticky {
+  position: sticky;
+  top: calc(var(--header-height, 3.5rem) + 32px);
+}
+.afd .live .panel {
+  min-height: 480px;
+}
+
+/* approvals */
+.afd .blink {
+  display: inline-block;
+  width: 7px;
+  height: 13px;
+  background: var(--agent);
+  vertical-align: -2px;
+  animation: afd-blink 1s steps(2) infinite;
+}
+@keyframes afd-blink {
+  50% {
+    opacity: 0;
+  }
+}
+.afd .ask {
+  opacity: 0;
+  transform: translateY(14px);
+  transition:
+    opacity 0.4s,
+    transform 0.55s var(--out);
+}
+.afd .ask.on {
+  opacity: 1;
+  transform: none;
+}
+
+/* the fan-out from defineAction to its five surfaces */
+.afd .fan-card::before {
+  content: '';
+  position: absolute;
+  top: -33px;
+  left: 50%;
+  height: 32px;
+  border-left: 1px solid var(--line2);
+}
+.afd .fan-card.ag::before {
+  border-left-color: var(--agent-line);
+}
+
+@media (max-width: 899px) {
+  .afd .live .track {
+    height: auto;
+  }
+  .afd .live .sticky {
+    position: static;
+  }
+  .afd .fan-card::before {
+    top: 50%;
+    left: -28px;
+    height: 0;
+    width: 28px;
+    border-left: 0;
+    border-top: 1px solid var(--line2);
+  }
+  .afd .fan-card.ag::before {
+    border-top-color: var(--agent-line);
+  }
+}
+@media (max-width: 600px) {
+  .afd .stage-wrap {
+    zoom: 0.74;
+  }
+}
+@media (max-width: 420px) {
+  .afd .stage-wrap {
+    zoom: 0.64;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .afd *,
+  .afd *::before,
+  .afd *::after {
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+    animation: none !important;
+  }
+}

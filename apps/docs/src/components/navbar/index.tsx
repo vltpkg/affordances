@@ -21,7 +21,12 @@ const isExternalLink = (href: string) => href.startsWith('http://') || href.star
 const menuContent = getMenuContent()
 
 // vlt.io's marketing header in its flat `disableScrollEffect` form: no float-on-scroll, auth, or package search
-export const Navbar = ({ className, ...props }: React.ComponentProps<'header'>) => (
+// `sidebar`: the docs shell, whose SidebarProvider the mobile trigger needs; the marketing page has none
+export const Navbar = ({
+  className,
+  sidebar,
+  ...props
+}: React.ComponentProps<'header'> & { sidebar?: boolean }) => (
   <header className={cn('sticky top-0 z-50 w-full', className)} {...props}>
     <nav
       className="flex h-(--header-height) w-full items-center justify-between gap-3 border-b border-border bg-background px-3"
@@ -29,12 +34,20 @@ export const Navbar = ({ className, ...props }: React.ComponentProps<'header'>) 
     >
       <div className="flex items-center gap-2">
         {/* opens the docs sidebar sheet on mobile */}
-        <SidebarTrigger className="md:hidden" />
+        {sidebar && <SidebarTrigger className="md:hidden" />}
         <Logo />
       </div>
       <div className="hidden items-center gap-2 lg:flex">
         <NavigationMenu popupClassName="bg-white dark:bg-black">
           <NavigationMenuList>
+            <NavigationMenuItem>
+              <NavigationMenuLink
+                className="rounded-md px-4 py-2 font-medium hover:bg-accent"
+                render={<Link href="/docs" />}
+              >
+                Docs
+              </NavigationMenuLink>
+            </NavigationMenuItem>
             {menuContent.map((item, i) => {
               if (isGroup(item))
                 return (

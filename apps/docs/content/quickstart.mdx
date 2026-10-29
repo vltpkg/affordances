@@ -178,10 +178,10 @@ curl localhost:3000/guestbook \
 }
 ```
 
-The response is a [delta](/concepts/deltas): the new value of each entity the action declared in `effects`, and the message to repeat to the user. `/.well-known/afford.json` now lists `/guestbook` and its `sign` action.
+The response is a [delta](/docs/concepts/deltas): the new value of each entity the action declared in `effects`, and the message to repeat to the user. `/.well-known/afford.json` now lists `/guestbook` and its `sign` action.
 
 ## Next
 
-- [Actions](/concepts/actions) covers every `defineAction` option.
-- [Expose](/concepts/expose) explains `session` and `confirm`, and [Next.js](/nextjs) shows how to share a session resolver with `createAfford`.
-- [MCP](/mcp) connects Claude or Cursor to the site.
+- [Actions](/docs/concepts/actions) covers every `defineAction` option.
+- [Expose](/docs/concepts/expose) explains `session` and `confirm`, and [Next.js](/docs/nextjs) shows how to share a session resolver with `createAfford`.
+- [MCP](/docs/mcp) connects Claude or Cursor to the site.

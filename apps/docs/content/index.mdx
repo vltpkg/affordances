@@ -24,10 +24,10 @@ Agents don't get a parallel world. A graph is built for whoever asked, with thei
 
 ## Safe by default
 
-Nothing is reachable by agents until you say so. An action without `expose` stays a plain server action. Actions that spend money or can't be undone use `expose: 'confirm'`, which refuses to run until the caller resends with `confirm: true`, after showing the person a summary. Every agent call is validated, then guarded, then run, in that order. See [Security](/security).
+Nothing is reachable by agents until you say so. An action without `expose` stays a plain server action. Actions that spend money or can't be undone use `expose: 'confirm'`, which refuses to run until the caller resends with `confirm: true`, after showing the person a summary. Every agent call is validated, then guarded, then run, in that order. See [Security](/docs/security).
 
 ## What Afford is not
 
 - It isn't a browser automation tool. Agents that can't speak Afford still see your HTML, and `<Affordance>` marks the controls for them.
 - It isn't a replacement for your API. It describes pages, so it's shaped like your UI.
-- It isn't tied to Next.js. The [protocol](/protocol) is plain HTTP and JSON, and `@afford/core` is framework-agnostic. Next.js is the first adapter.
+- It isn't tied to Next.js. The [protocol](/docs/protocol) is plain HTTP and JSON, and `@afford/core` is framework-agnostic. Next.js is the first adapter.

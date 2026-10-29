@@ -3,7 +3,8 @@ import { siteUrl } from '@/lib/site-url'
 
 const abs = (path: string) => new URL(path, siteUrl).href
 
-// the llms.txt shape: a title, a summary, how to use the docs, then the page index, linking the markdown twins
+// the llms.txt shape: a title, a summary, how to use the docs, then the page index (the home page, the
+// agents' page, and every docs page), linking the markdown twins
 export const GET = () =>
   new Response(
     `# Afford
@@ -12,7 +13,12 @@ export const GET = () =>
 
 Every page is available as Markdown: append \`.md\` to its URL, or request it with \`Accept: text/markdown\`. [llms-full.txt](${abs('/llms-full.txt')}) holds every page in one file.
 
-This site is itself Afford-enabled: \`GET ${abs('/')}\` with \`Accept: application/vnd.afford+json\` returns a graph with \`searchDocs\` and \`getPage\` actions, and [/.well-known/afford.json](${abs('/.well-known/afford.json')}) is the site index.
+This site is itself Afford-enabled: \`GET ${abs('/docs')}\` (or any docs page) with \`Accept: application/vnd.afford+json\` returns a graph with \`searchDocs\` and \`getPage\` actions, and [/.well-known/afford.json](${abs('/.well-known/afford.json')}) is the site index.
+
+## Start here
+
+- [Afford](${abs('/index.md')}): what Afford is, in one page.
+- [For agents](${abs('/agents.md')}): how an agent gets started with these docs and with Afford.
 
 ${sections()
   .map(

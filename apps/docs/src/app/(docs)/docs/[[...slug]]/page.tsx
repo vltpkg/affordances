@@ -23,7 +23,9 @@ import { ScrollToTop } from '@/components/scroll-to-top'
 
 export const generateStaticParams = () => source.generateParams()
 
-export const generateMetadata = async ({ params }: PageProps<'/[...slug]'>): Promise<Metadata> => {
+export const generateMetadata = async ({
+  params,
+}: PageProps<'/docs/[[...slug]]'>): Promise<Metadata> => {
   const page = source.getPage((await params).slug)
   if (!page) notFound()
   const { title } = page.data
@@ -47,13 +49,13 @@ const editUrl = (path: string) =>
     : `https://github.com/afford/afford/edit/main/${path === 'protocol.mdx' ? 'packages/protocol/spec.md' : `apps/docs/content/${path}`}`
 
 // the layout's navbar and sidebar paint at once; the slug read sits behind Suspense and the page streams in
-const Page = ({ params }: PageProps<'/[...slug]'>) => (
+const Page = ({ params }: PageProps<'/docs/[[...slug]]'>) => (
   <Suspense>
     <DocPage params={params} />
   </Suspense>
 )
 
-const DocPage = async ({ params }: Pick<PageProps<'/[...slug]'>, 'params'>) => {
+const DocPage = async ({ params }: Pick<PageProps<'/docs/[[...slug]]'>, 'params'>) => {
   const page = source.getPage((await params).slug)
   if (!page) notFound()
 

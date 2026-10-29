@@ -11,7 +11,7 @@ An action without `expose` isn't part of the protocol. It's missing from graphs 
 
 ## Confirm
 
-`expose: 'confirm'` actions never run on the first call. The handler answers `confirm_required` with the action's `summary`, and runs only when the same call comes back with `confirm: true`. Clients acting for a person should show the summary and ask first. `@afford/react` and `@afford/mcp` both do. See [Expose](/concepts/expose#confirm).
+`expose: 'confirm'` actions never run on the first call. The handler answers `confirm_required` with the action's `summary`, and runs only when the same call comes back with `confirm: true`. Clients acting for a person should show the summary and ask first. `@afford/react` and `@afford/mcp` both do. See [Expose](/docs/concepts/expose#confirm).
 
 ## Origin and CSRF
 
@@ -23,7 +23,7 @@ Next's server actions protect themselves with an Origin check, but Afford calls 
 
 ## Order of checks
 
-Every agent call follows the same sequence and stops at the first failure: resolve the action, check Origin and `expose`, rate-limit, validate the input, run the guard, require confirmation, then run. Input is validated before the guard sees it, and the guard passes before `run` is called. See [Guards and confirm](/concepts/guards#order).
+Every agent call follows the same sequence and stops at the first failure: resolve the action, check Origin and `expose`, rate-limit, validate the input, run the guard, require confirmation, then run. Input is validated before the guard sees it, and the guard passes before `run` is called. See [Guards and confirm](/docs/concepts/guards#order).
 
 ## Errors
 

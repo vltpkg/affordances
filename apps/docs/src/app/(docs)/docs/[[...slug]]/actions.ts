@@ -3,7 +3,7 @@
 import { z } from 'zod'
 import { AffordError, defineAction } from '@afford/next'
 import { GET as renderMarkdown, MD_PATH } from '@afford/md/next'
-import { search, source } from '@/lib/source'
+import { pageFor, search } from '@/lib/source'
 
 const result = z.object({
   title: z.string(),
@@ -25,7 +25,7 @@ export const searchDocs = defineAction({
     const pages: z.infer<typeof result>[] = []
     for (const hit of await search(query)) {
       if (hit.type === 'page') {
-        const page = source.getPage(hit.url.split('/').filter(Boolean))
+        const page = pageFor(hit.url)
         pages.push({
           title: page?.data.title ?? hit.content,
           url: hit.url,
@@ -40,7 +40,7 @@ export const searchDocs = defineAction({
 
 export const getPage = defineAction({
   name: 'getPage',
-  description: 'Read one page of the Afford docs as Markdown, by its url, e.g. /quickstart',
+  description: 'Read one page of the Afford docs as Markdown, by its url, e.g. /docs/quickstart',
   input: z.object({
     url: z.string().startsWith('/').describe('The page url, as listed in sections'),
   }),
@@ -48,7 +48,7 @@ export const getPage = defineAction({
   expose: 'public',
   readOnly: true,
   run: async ({ url }, ctx) => {
-    const page = source.getPage(url.split('/').filter(Boolean))
+    const page = pageFor(url)
     if (!page || !ctx.request) throw new AffordError('not_found', `No docs page at ${url}`)
     // the page's markdown twin, as /<page>.md serves it: same render, same converter
     const response = await renderMarkdown(new Request(new URL(MD_PATH + page.url, ctx.request.url)))

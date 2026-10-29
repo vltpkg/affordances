@@ -1,13 +1,11 @@
 import { ThemeProvider } from '@afford/ui/components/theme-provider'
 import { Toaster } from '@afford/ui/components/sonner'
 import { TooltipProvider } from '@afford/ui/components/tooltip'
-import { SidebarProvider } from './sidebar-provider'
 
+// what every page needs; the docs shell adds its own SidebarProvider (providers/sidebar-provider.tsx)
 export const Providers = ({ children }: Readonly<{ children: React.ReactNode }>) => (
   <ThemeProvider>
-    <TooltipProvider>
-      <SidebarProvider>{children}</SidebarProvider>
-    </TooltipProvider>
+    <TooltipProvider>{children}</TooltipProvider>
     <Toaster />
   </ThemeProvider>
 )

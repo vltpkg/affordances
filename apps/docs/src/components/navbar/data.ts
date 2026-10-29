@@ -94,6 +94,15 @@ export const getMenuContent = (): MenuData[] => {
   }
 
   return [
+    // this site's own docs, for the mobile menu (the desktop header links them on its own)
+    {
+      group: 'Afford',
+      hiddenDesktop: true,
+      children: [
+        { label: 'Docs', path: '/docs' },
+        { label: 'For agents', path: '/agents' },
+      ],
+    },
     platformGroup,
     openSourceGroup,
     {
