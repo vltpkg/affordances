@@ -3,5 +3,5 @@
   "semi": false,
   "singleQuote": true,
   "printWidth": 100,
-  "ignorePatterns": ["vlt-lock.json", "PLAN.md", "**/fixtures/snapshots/**"]
+  "ignorePatterns": ["vlt-lock.json", "PLAN.md", "**/test/fixtures/**", "**/__snapshots__/**"]
 }
