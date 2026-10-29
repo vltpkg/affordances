@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import {
+  createLlmsFullHandler,
   createMdHandler,
   md,
   mdAlternate,
@@ -181,4 +182,24 @@ test('md() composes with existing rewrites in either shape', async () => {
 test('mdAlternate', () => {
   expect(mdAlternate('/')).toEqual({ types: { 'text/markdown': '/index.md' } })
   expect(mdAlternate('/blog/post/')).toEqual({ types: { 'text/markdown': '/blog/post.md' } })
+})
+
+test('llms-full joins every page as public markdown, headed with its url, skipping failures', async () => {
+  upstream = (url) =>
+    url.pathname === '/gone'
+      ? new Response('', { status: 404, headers: { 'content-type': 'text/html' } })
+      : new Response(page(`<h1>Page ${url.pathname}</h1><p>Body.</p>`), {
+          headers: { 'content-type': 'text/html' },
+        })
+  const full = createLlmsFullHandler({ pages: () => ['/', '/a', '/gone'] })
+  const response = await full(
+    new Request(`${site}/llms-full.txt`, { headers: { cookie: 'sid=1' } }),
+  )
+  expect(response.headers.get('content-type')).toBe('text/plain; charset=utf-8')
+  expect(await response.text()).toBe(
+    `# Page / (${site}/)\n\nBody.\n\n# Page /a (${site}/a)\n\nBody.\n`,
+  )
+  expect(seen.map((call) => call.url.pathname)).toEqual(['/', '/a', '/gone'])
+  // the public site: the caller's cookies are not forwarded
+  expect(seen.every((call) => !call.headers.has('cookie'))).toBe(true)
 })

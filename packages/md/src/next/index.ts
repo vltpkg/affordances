@@ -150,3 +150,36 @@ export const createMdHandler =
 
 // app/api/afford/md/[[...path]]/route.ts: export { GET } from '@afford/md/next'
 export const GET = createMdHandler()
+
+export type LlmsFullOptions = Omit<MdHandlerOptions, 'append'> & {
+  // the paths to include, in order, e.g. from your sitemap or content source
+  pages: (request: Request) => string[] | Promise<string[]>
+}
+
+// app/llms-full.txt/route.ts: every page's markdown in one file, from the same render and converter as /x.md.
+// rendered without the caller's cookies, so it's the public site; each page is headed `# Title (url)`
+export const createLlmsFullHandler =
+  ({ pages, ...options }: LlmsFullOptions) =>
+  async (request: Request): Promise<Response> => {
+    const render = createMdHandler(options)
+    const parts = await Promise.all(
+      (await pages(request)).map(async (path) => {
+        const response = await render(
+          new Request(new URL(`${MD_PATH}${path === '/' ? '' : path}`, request.url)),
+        )
+        if (!response.ok || !response.headers.get('content-type')?.startsWith('text/markdown'))
+          return ''
+        const url = new URL(path, request.url).href
+        return (await response.text())
+          .replace(/^---\n[\s\S]*?\n---\n\n/, '')
+          .replace(/^# (.+)$/m, `# $1 (${url})`)
+          .trim()
+      }),
+    )
+    return new Response(`${parts.filter(Boolean).join('\n\n')}\n`, {
+      headers: {
+        'content-type': 'text/plain; charset=utf-8',
+        'cache-control': 'public, max-age=0, s-maxage=3600',
+      },
+    })
+  }
