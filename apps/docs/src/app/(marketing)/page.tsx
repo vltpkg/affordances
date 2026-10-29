@@ -116,7 +116,7 @@ const Dot = ({ agent }: { agent?: boolean }) => (
   />
 )
 
-const curl = `curl -H 'Accept: application/vnd.afford+json' ${siteUrl.host}`
+const curl = `curl -H 'Accept: application/vnd.afford+json' ${siteUrl.origin}`
 
 const Home = () => {
   const runs = benchRuns()
@@ -313,7 +313,7 @@ const Home = () => {
                   >
                     curl -H &apos;Accept:{' '}
                     <span className="text-(--agent)">application/vnd.afford+json</span>&apos;{' '}
-                    {siteUrl.host}
+                    {siteUrl.origin}
                   </CopyCommand>
                 </div>
                 <ul className="flex flex-col border-l border-(--line) max-[899px]:border-t max-[899px]:border-l-0">

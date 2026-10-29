@@ -77,8 +77,27 @@ export const Surfaces = ({ source, surfaces }: { source: CodeTab; surfaces: Surf
       className="how grid grid-cols-[minmax(0,1fr)_56px_minmax(0,1fr)] items-start max-[899px]:grid-cols-1 max-[899px]:gap-6"
     >
       <style>{css}</style>
-      <div className="how-src min-w-0">
-        <CodeCard tabs={[source]} />
+      {/* desktop: the definition and, under it, what the selected surface does with it. on a phone both
+          columns dissolve into the grid, and order puts the note between the list and the output */}
+      <div className="flex min-w-0 flex-col max-[899px]:contents min-[900px]:self-stretch">
+        <div className="how-src flex min-w-0 flex-1 flex-col max-[899px]:order-1">
+          <CodeCard tabs={[source]} />
+        </div>
+        <p
+          id="how-note"
+          className="mt-3 min-h-[2lh] px-1 text-sm leading-normal text-pretty text-(--fg2) max-[899px]:order-3 max-[899px]:mt-0"
+        >
+          {/* `backticks` in a note are code, as they are in its markdown */}
+          {current.note.split('`').map((part, i) =>
+            i % 2 ? (
+              <code key={i} className="font-mono text-[0.9em] text-(--fg)">
+                {part}
+              </code>
+            ) : (
+              part
+            ),
+          )}
+        </p>
       </div>
 
       <svg
@@ -124,12 +143,12 @@ export const Surfaces = ({ source, surfaces }: { source: CodeTab; surfaces: Surf
         )}
       </svg>
 
-      <div className="flex min-w-0 flex-col gap-4">
+      <div className="flex min-w-0 flex-col gap-4 max-[899px]:contents">
         <div
           role="tablist"
           aria-label="Surfaces"
           aria-orientation="vertical"
-          className="flex flex-col overflow-hidden rounded-xl border border-(--line2)"
+          className="flex flex-col overflow-hidden rounded-xl border border-(--line2) max-[899px]:order-2"
         >
           {surfaces.map((s, i) => (
             <button
@@ -178,20 +197,14 @@ export const Surfaces = ({ source, surfaces }: { source: CodeTab; surfaces: Surf
           ))}
         </div>
 
-        <div role="tabpanel" id="how-panel" aria-labelledby={`how-tab-${current.id}`}>
+        <div
+          role="tabpanel"
+          id="how-panel"
+          aria-labelledby={`how-tab-${current.id}`}
+          aria-describedby="how-note"
+          className="min-w-0 max-[899px]:order-4"
+        >
           <CodeCard tabs={[current.tab]} className="min-h-[200px] text-[12.5px]" />
-          <p className="mt-3 px-1 text-sm leading-normal text-pretty text-(--fg2)">
-            {/* `backticks` in a note are code, as they are in its markdown */}
-            {current.note.split('`').map((part, i) =>
-              i % 2 ? (
-                <code key={i} className="font-mono text-[0.9em] text-(--fg)">
-                  {part}
-                </code>
-              ) : (
-                part
-              ),
-            )}
-          </p>
         </div>
       </div>
     </div>

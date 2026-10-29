@@ -25,11 +25,13 @@ export const CopyCommand = ({
   return (
     <div
       className={cn(
-        'box-border flex h-12 max-w-[520px] items-center gap-1.5 rounded-[10px] border border-(--line2) bg-(--bg2) pr-1.5 pl-4',
+        'box-border flex h-12 max-w-[520px] items-center gap-1.5 rounded-[10px] border border-(--line2) bg-(--bg2) pr-1.5',
         className,
       )}
     >
-      <span className="min-w-0 flex-1 overflow-x-auto font-mono text-[13px] leading-none whitespace-nowrap text-(--fg) [scrollbar-width:none]">
+      {/* a command longer than the box scrolls, and fades out at the edges instead of being cut; the padding
+          sits under the fades, so a command that fits is never dimmed */}
+      <span className="min-w-0 flex-1 self-stretch overflow-x-auto pr-6 pl-4 font-mono text-[13px] leading-[46px] whitespace-nowrap text-(--fg) [mask-image:linear-gradient(to_right,transparent,#000_12px,#000_calc(100%-24px),transparent)] [scrollbar-width:none]">
         <span className="text-(--fg3)">$ </span>
         {perPm ? <PerPackageManager render={(pm) => command[pm]} /> : children}
       </span>

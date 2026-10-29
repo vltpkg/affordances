@@ -412,6 +412,10 @@
 .afd .how {
   --hl: color-mix(in oklch, var(--fg) 7%, transparent);
 }
+/* the definition's card runs as tall as the surfaces beside it, so the two columns end together */
+.afd .how-src > figure {
+  flex: 1;
+}
 .afd .how-src .line {
   display: inline-block;
   box-sizing: border-box;
