@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { createAfford, createHandler } from '@afford/core'
 import { createClient } from '../src/client.ts'
 import { createServer } from '../src/server.ts'
+import { describeSite } from '../src/describe.ts'
 
 // a one-page site: a cookie session is created by the first call, and orders need confirm
 const carts = new Map<string, number>()
@@ -109,4 +110,66 @@ test('over MCP: open, call, confirm', async () => {
 
   const missing = await mcp.callTool({ name: 'afford_open', arguments: { path: '/nope' } })
   expect(missing.isError).toBe(true)
+})
+
+test('describeSite turns the index into a compact plan, and the server hands it to clients as instructions', async () => {
+  const index = await createClient(site, { fetch: fetcher }).index()
+  const text = describeSite(index)
+  expect(text).toBe(
+    [
+      'Shop is operable through Afford. Routes and their actions:',
+      '- /',
+      '  - add() [public]: Add one',
+      '  - order() [confirm]: Order',
+      'Call an action on a concrete path of its route (e.g. /products/[slug] → /products/tee) without opening the page first; open a page when you need what it shows.',
+    ].join('\n'),
+  )
+  const [a, b] = InMemoryTransport.createLinkedPair()
+  await createServer(site, { fetch: fetcher, instructions: text }).connect(a)
+  const mcp = new Client({ name: 'test', version: '0' })
+  await mcp.connect(b)
+  expect(mcp.getInstructions()).toBe(text)
+})
+
+test('describeSite renders inputs as signatures: required, optional, enums, arrays', () => {
+  const text = describeSite({
+    v: '0',
+    routes: [
+      {
+        route: '/products/[slug]',
+        description: 'One product',
+        actions: [
+          {
+            name: 'addToCart',
+            description: 'Add a variant',
+            expose: 'public',
+            guard: 'The variant is in stock',
+            input: {
+              type: 'object',
+              properties: {
+                sku: { type: 'string' },
+                quantity: { type: 'integer' },
+                size: { enum: ['M', 'L'] },
+                tags: { type: 'array', items: { type: 'string' } },
+              },
+              required: ['sku'],
+            },
+          },
+          {
+            name: 'search',
+            description: 'Find products',
+            expose: 'public',
+            readOnly: true,
+            input: { type: 'object', properties: { q: { type: 'string' } }, required: ['q'] },
+          },
+        ],
+      },
+    ],
+    auth: ['cookie'],
+  })
+  expect(text).toContain('- /products/[slug]: One product')
+  expect(text).toContain(
+    '  - addToCart(sku: string, quantity?: integer, size?: "M" | "L", tags?: string[]) [public]: Add a variant Requires: The variant is in stock.',
+  )
+  expect(text).toContain('  - search(q: string) [public, read-only]: Find products')
 })

@@ -12,9 +12,17 @@ const failure = (error: unknown) => ({
 })
 
 // two generic tools over any Afford site: read a page's graph, call one of its actions
-export const createServer = (site: string, options: ClientOptions = {}) => {
+// `instructions` (e.g. describeSite(index)) reach the model through the MCP client, so it knows the routes and
+// actions before its first call
+export const createServer = (
+  site: string,
+  options: ClientOptions & { instructions?: string } = {},
+) => {
   const client = createClient(site, options)
-  const server = new McpServer({ name: 'afford', version: '0.0.0' })
+  const server = new McpServer(
+    { name: 'afford', version: '0.0.0' },
+    options.instructions ? { instructions: options.instructions } : undefined,
+  )
   const origin = new URL(site).origin
 
   server.registerTool(
