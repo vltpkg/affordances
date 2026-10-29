@@ -29,6 +29,13 @@
         "vitest/require-mock-type-parameters": "off",
         "react/globals": "off"
       }
+    },
+    {
+      "files": ["apps/docs/src/components/evilcharts/**"],
+      "rules": {
+        "react/no-unstable-nested-components": "off",
+        "eslint/no-shadow": "off"
+      }
     }
   ],
   "ignorePatterns": ["**/dist/**", "**/.next/**", "**/.afford/**", "**/.source/**"]
