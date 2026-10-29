@@ -2,7 +2,7 @@ import { headers } from 'next/headers'
 import { redirect as nextRedirect } from 'next/navigation'
 import { createAfford as createCore, type AffordOptions } from '@afford/core'
 
-export { AffordError, redirect, type Ctx } from '@afford/core'
+export { AffordError, redirect, type Ctx, type Manifest } from '@afford/core'
 
 // the UI path reads the request from next's headers() and redirects with next's redirect()
 const request = async () => {

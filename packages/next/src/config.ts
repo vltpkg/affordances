@@ -18,7 +18,7 @@ const escaped = MEDIA_TYPE.replace(/[.+]/g, '\\$&')
 // every page but our own handler and next's internals
 const page = `/:path((?!${API_PATH.slice(1)}(?:/|$)|_next/).+)`
 
-// the same url answers html or a graph: agents ask with Accept (GET), Content-Type (POST), or ?afford
+// the same url answers html or a graph: agents ask with Accept (GET), Content-Type (POST), or ?afford=1
 const conditions: NonNullable<Rewrite['has']>[] = [
   [{ type: 'header', key: 'accept', value: `.*${escaped}.*` }],
   [{ type: 'header', key: 'content-type', value: `.*${escaped}.*` }],
@@ -58,7 +58,13 @@ export type AffordConfig = {
   root?: string
 }
 
-export const withAfford = (nextConfig: NextConfig = {}, options: AffordConfig = {}): NextConfig => {
+// the slice of NextConfig withAfford touches; generic so it accepts whichever copy of next the app has
+type Config = Pick<NextConfig, 'rewrites' | 'headers'>
+
+export const withAfford = <C extends Config>(
+  nextConfig: C = {} as C,
+  options: AffordConfig = {},
+): C => {
   const root = options.root ?? process.cwd()
   const entries = generate(root, options)
 
@@ -87,10 +93,7 @@ export const withAfford = (nextConfig: NextConfig = {}, options: AffordConfig = 
     headers: async () => [
       ...entries.map(({ route }) => ({
         source: toSource(route),
-        headers: [
-          { key: 'Link', value: '<?afford>; rel="afford"' },
-          { key: 'Vary', value: 'Accept' },
-        ],
+        headers: [{ key: 'Link', value: '<?afford=1>; rel="afford"' }],
       })),
       ...((await nextConfig.headers?.()) ?? []),
     ],

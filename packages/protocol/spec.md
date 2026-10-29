@@ -15,18 +15,18 @@ All Afford documents use `application/vnd.afford+json`. A server must not return
 HTML responses for pages with a graph should advertise it in both places:
 
 ```http
-Link: <?afford>; rel="afford"
+Link: <?afford=1>; rel="afford"
 ```
 
 ```html
-<link rel="afford" href="?afford" />
+<link rel="afford" href="?afford=1" />
 ```
 
-`?afford` is an alias for the `Accept` header, for clients that cannot set headers. A server that supports it must treat `GET <url>?afford` like `GET <url>` with the Afford `Accept` header.
+`?afford=1` is an alias for the `Accept` header, for clients that cannot set headers. A server that supports it must treat `GET <url>?afford=1` like `GET <url>` with the Afford `Accept` header, and must leave `afford` out of the `searchParams` it gives the page's state.
 
 **Per site.** `GET /.well-known/afford.json` returns a [site index](#site-index): the protocol version, the route patterns that have graphs and their action names, the supported auth modes, and optionally an MCP endpoint.
 
-Responses that vary by `Accept` must send `Vary: Accept`. Graphs must send `Cache-Control: private, no-store`.
+A shared cache must never serve one representation for the other: graphs send `Vary: Accept` and `Cache-Control: private, no-store`, and a server must make sure cached HTML is keyed on `Accept` too (with `Vary: Accept`, or by routing Afford requests before the cache, as `@afford/next` does with rewrites).
 
 ## Graph
 

@@ -28,10 +28,13 @@ test('withAfford prepends its rewrites and keeps the user config', async () => {
     { root: path.join(import.meta.dirname, 'fixture') },
   )
   expect(config.reactCompiler).toBe(true)
-  const r = (await config.rewrites!()) as { beforeFiles: unknown[]; afterFiles: unknown[] }
+  const r = (await config.rewrites!()) as unknown as {
+    beforeFiles: unknown[]
+    afterFiles: unknown[]
+  }
   expect(r.beforeFiles).toEqual(rewrites)
   expect(r.afterFiles).toEqual([{ source: '/old', destination: '/new' }])
   const h = await config.headers!()
   expect(h.map((x) => x.source)).toEqual(['/cart', '/products/:slug', '/x'])
-  expect(h[0]!.headers).toContainEqual({ key: 'Link', value: '<?afford>; rel="afford"' })
+  expect(h[0]!.headers).toContainEqual({ key: 'Link', value: '<?afford=1>; rel="afford"' })
 })
