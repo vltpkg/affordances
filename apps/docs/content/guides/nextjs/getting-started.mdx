@@ -11,7 +11,7 @@ Paste this prompt into Claude Code, Cursor, or any coding agent. It points the a
 
 <SetupPrompt />
 
-When it's done, check its work the same way you would your own: [read a graph with curl](#6-check-it).
+When it's done, check its work the same way you would your own: [read a graph with curl](#7-check-it).
 
 ## By hand
 
@@ -90,9 +90,44 @@ export const sign = defineAction({
 })
 ```
 
-`sign` is still a server action: pass it to a `<form action>` as you would any other. The [quickstart](/docs/quickstart) builds this page out, with the form and the WebMCP provider.
+`sign` is still a server action, so the page uses it like any other.
 
-### 6. Check it
+### 6. Mark the controls
+
+Wrap the control a person uses for an action in `<Affordance>`, so agents that read the DOM, and the devtools, know which button does what:
+
+```tsx title="app/guestbook/page.tsx"
+import { Affordance } from '@affordances/react'
+import { sign } from './actions'
+
+export default function Page() {
+  return (
+    <form>
+      <input name="name" />
+      <textarea name="message" />
+      <Affordance action={sign}>
+        <button formAction={sign}>Sign</button>
+      </Affordance>
+    </form>
+  )
+}
+```
+
+`<Affordance>` renders no box of its own (`display: contents`) and changes nothing about the button. It adds `data-affordances-action="sign"` around it. The button carries the action with `formAction`, so what's marked is exactly what submits.
+
+When the whole form is the control, wrap the form instead. Pass `input` for values the control already fixes, such as the product a button adds:
+
+```tsx
+<Affordance action={addToCart} input={{ sku: variant.sku }}>
+  <form action={addToCart}>
+    <button>Add to cart</button>
+  </form>
+</Affordance>
+```
+
+In a client component, pass `name="sign"` instead of `action`: there, a server action arrives without the metadata `<Affordance>` reads its name from. The [`require-affordance`](/docs/guides/lint#require-affordance) lint rule warns about any control that calls a server action outside an `<Affordance>`, and [React and WebMCP](/docs/guides/react) adds the provider that turns these actions into browser tools.
+
+### 7. Check it
 
 Start the dev server and ask for the page as an agent would:
 
