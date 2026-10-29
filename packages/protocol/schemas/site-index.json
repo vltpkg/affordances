@@ -20,10 +20,14 @@
               "route": {
                 "type": "string"
               },
+              "description": {
+                "description": "What the page is for, in one line",
+                "type": "string"
+              },
               "actions": {
                 "type": "array",
                 "items": {
-                  "type": "string"
+                  "$ref": "#/$defs/ActionSummary"
                 }
               }
             },
@@ -44,6 +48,55 @@
         }
       },
       "required": ["v", "routes", "auth"],
+      "additionalProperties": false
+    },
+    "ActionSummary": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable, unique per route"
+        },
+        "description": {
+          "type": "string"
+        },
+        "input": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {},
+          "description": "A JSON Schema object"
+        },
+        "output": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {},
+          "description": "A JSON Schema object"
+        },
+        "expose": {
+          "type": "string",
+          "enum": ["public", "session", "confirm"]
+        },
+        "guard": {
+          "description": "Human-readable precondition",
+          "type": "string"
+        },
+        "effects": {
+          "description": "Entity keys this action changes",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "readOnly": {
+          "type": "boolean"
+        }
+      },
+      "required": ["name", "description", "input", "expose"],
       "additionalProperties": false
     }
   }

@@ -27,7 +27,10 @@ const product = defineState(
     product: { slug: params.slug, stock: { ...stock } },
     cart: { items: ctx.session ? (carts[ctx.session.id] ?? []) : [] },
   }),
-  { nav: ({ cart }) => (cart.items.length ? [{ to: '/checkout', label: 'Checkout' }] : []) },
+  {
+    description: 'One product and the cart',
+    nav: ({ cart }) => (cart.items.length ? [{ to: '/checkout', label: 'Checkout' }] : []),
+  },
 )
 
 const order = vi.fn<(step: string) => void>()
@@ -199,10 +202,36 @@ describe('graph', () => {
     expect((await delta(response)).error?.code).toBe('not_found')
   })
 
-  test('site index lists exposed actions only', async () => {
+  test('site index describes every route and its exposed actions, enough to call them unopened', async () => {
     const index = SiteIndex.parse(await (await get('/.well-known/afford.json')).json())
     expect(index.name).toBe('Test store')
-    expect(index.routes[0]!.actions).not.toContain('hidden')
+    const productRoute = index.routes.find((r) => r.route === '/products/[slug]')!
+    expect(productRoute.description).toBe('One product and the cart')
+    expect(productRoute.actions.map((a) => a.name)).toEqual([
+      'addToCart',
+      'lookup',
+      'placeOrder',
+      'restock',
+      'crash',
+      'teapot',
+    ])
+    // the static descriptor, without this request's availability, and without the noise of $schema
+    expect(productRoute.actions[0]).toEqual({
+      name: 'addToCart',
+      description: 'Add a size to the cart',
+      input: expect.objectContaining({
+        type: 'object',
+        properties: { size: { type: 'string', enum: ['M', 'L'] } },
+      }),
+      expose: 'session',
+      guard: 'The size is in stock',
+      effects: ['cart'],
+    })
+    expect(JSON.stringify(index)).not.toContain('$schema')
+
+    // calling straight from the index works: no GET of the page first
+    const direct = await post({ action: 'addToCart', input: { size: 'M' } }, { session: 'z' })
+    expect((await direct.json()).ok).toBe(true)
   })
 })
 

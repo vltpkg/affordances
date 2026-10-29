@@ -85,11 +85,22 @@ export const Delta = z
 
 export const AuthMode = z.enum(['cookie', 'bearer'])
 
+// what an action is, without this request's availability: enough to call it straight from the site index
+export const ActionSummary = ActionDescriptor.omit({ available: true, reason: true }).meta({
+  id: 'ActionSummary',
+})
+
 export const SiteIndex = z
   .object({
     v: z.literal(PROTOCOL_VERSION),
     name: z.string().optional(),
-    routes: z.array(z.object({ route: z.string(), actions: z.array(z.string()) })),
+    routes: z.array(
+      z.object({
+        route: z.string(),
+        description: z.string().optional().describe('What the page is for, in one line'),
+        actions: z.array(ActionSummary),
+      }),
+    ),
     auth: z.array(AuthMode),
     mcp: z.string().optional().describe('URL of an MCP endpoint for this site'),
   })
@@ -103,4 +114,5 @@ export type Call = z.infer<typeof Call>
 export type ErrorCode = z.infer<typeof ErrorCode>
 export type Delta = z.infer<typeof Delta>
 export type AuthMode = z.infer<typeof AuthMode>
+export type ActionSummary = z.infer<typeof ActionSummary>
 export type SiteIndex = z.infer<typeof SiteIndex>

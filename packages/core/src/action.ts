@@ -86,6 +86,8 @@ export type StateDef<State extends Entities = Entities> = {
   [STATE]: true
   load: StateLoader<State, unknown>
   nav?: (state: State) => NavItem[]
+  // what the page is for, in one line, for the site index
+  description?: string
 }
 
 export type InferState<S> = S extends StateDef<infer State> ? State : Entities
@@ -103,7 +105,9 @@ const toJsonSchema = (schema: StandardSchemaV1, override?: Record<string, unknow
     throw new TypeError(
       `This schema (${schema['~standard'].vendor}) can't produce JSON Schema; pass \`jsonSchema\` to defineAction`,
     )
-  return converter.input({ target: 'draft-2020-12' })
+  // $schema repeats on every action in every graph and tells an agent nothing; drop it
+  const { $schema: _, ...rest } = converter.input({ target: 'draft-2020-12' })
+  return rest
 }
 
 export const validate = async <Schema extends StandardSchemaV1>(schema: Schema, value: unknown) => {
@@ -175,7 +179,7 @@ export const createAfford = <Session = never>(options: AffordOptions<Session> = 
 
   const defineState = <State extends Entities>(
     load: StateLoader<State, Session>,
-    extra: { nav?: (state: State) => NavItem[] } = {},
+    extra: { nav?: (state: State) => NavItem[]; description?: string } = {},
   ): StateDef<State> => ({ [STATE]: true, load: load as StateLoader<State, unknown>, ...extra })
 
   return { defineAction, defineState }

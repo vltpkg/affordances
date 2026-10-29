@@ -137,11 +137,16 @@ type Delta = {
 type SiteIndex = {
   v: '0'
   name?: string
-  routes: { route: string; actions: string[] }[]
+  routes: { route: string; description?: string; actions: ActionSummary[] }[]
   auth: ('cookie' | 'bearer')[]
   mcp?: string
 }
+
+// an action descriptor without this request's availability (no `available`, no `reason`)
+type ActionSummary = Omit<ActionDescriptor, 'available' | 'reason'>
 ```
+
+The index is enough to plan a task and to call an action without opening its page first: an agent that knows the route and the input can `POST` straight to a concrete URL of that route. It still gets `unavailable` or `unauthorized` if the guard or `expose` says no. Each route's `description` is one line on what the page is for. Input schemas may omit `$schema`; they are JSON Schema 2020-12.
 
 ## Security
 

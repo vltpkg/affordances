@@ -4,6 +4,7 @@ import {
   PROTOCOL_VERSION,
   WELL_KNOWN_PATH,
   type ActionDescriptor,
+  type ActionSummary,
   type Delta,
   type ErrorCode,
   type Graph,
@@ -74,23 +75,28 @@ const exposed = (actions: AnyAction[]) => actions.filter((action) => action[AFFO
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
-const describe = async (
-  action: AnyAction,
-  state: Record<string, unknown>,
-  ctx: Ctx,
-): Promise<ActionDescriptor> => {
+// an action as the site index lists it: everything but this request's availability
+const summarize = (action: AnyAction): ActionSummary => {
   const meta = action[AFFORD]
-  const descriptor: ActionDescriptor = {
+  return {
     name: meta.name,
     description: meta.description,
     input: meta.jsonSchema,
     ...(meta.outputSchema && { output: meta.outputSchema }),
     expose: meta.expose!,
     ...(meta.requires && { guard: meta.requires }),
-    available: true,
     ...(meta.effects && { effects: meta.effects }),
     ...(meta.readOnly && { readOnly: true }),
   }
+}
+
+const describe = async (
+  action: AnyAction,
+  state: Record<string, unknown>,
+  ctx: Ctx,
+): Promise<ActionDescriptor> => {
+  const meta = action[AFFORD]
+  const descriptor: ActionDescriptor = { ...summarize(action), available: true }
   if (meta.expose !== 'public' && !ctx.session)
     return { ...descriptor, available: false, reason: 'Requires a session' }
   const result = meta.guard ? await meta.guard({ input: undefined, state, ctx }) : true
@@ -123,9 +129,11 @@ export const createHandler = (options: HandlerOptions) => {
   const siteIndex = (): SiteIndex => ({
     v: PROTOCOL_VERSION,
     ...(manifest.name && { name: manifest.name }),
-    routes: Object.entries(manifest.routes).map(([route, { actions }]) => ({
+    // every route with its actions' static descriptors, so an agent can plan, and call, without opening pages
+    routes: Object.entries(manifest.routes).map(([route, { state, actions }]) => ({
       route,
-      actions: exposed(actions).map((action) => action[AFFORD].name),
+      ...(state?.description && { description: state.description }),
+      actions: exposed(actions).map(summarize),
     })),
     auth: ['cookie', 'bearer'],
     ...(manifest.mcp && { mcp: manifest.mcp }),
