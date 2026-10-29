@@ -38,16 +38,13 @@ export default withAffordances(nextConfig, { name: 'My app' })
 
 ### 3. Add the route handler
 
-Every agent request ends up here. The import climbs from the handler's folder to the project root, so add one more `../` if your app lives in `src/app`:
+Every agent request ends up here. It's one line, in `app/` or `src/app/`:
 
 ```ts title="app/api/affordances/graph/[[...path]]/route.ts"
-import { createRouteHandler } from '@affordances/next/route'
-import { manifest } from '../../../../../.affordances/manifest'
-
-const handler = createRouteHandler(manifest)
-
-export { handler as GET, handler as POST }
+export { GET, POST } from '@affordances/next/route'
 ```
+
+The handler finds the generated manifest on its own: `withAffordances` points it there.
 
 [Route handlers](/docs/guides/nextjs/route-handlers) covers its options.
 

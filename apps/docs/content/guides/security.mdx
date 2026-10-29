@@ -31,7 +31,7 @@ An error thrown from `run` that isn't an `AffordancesError` is logged on the ser
 
 ## Rate limits
 
-`createRouteHandler(manifest, { rateLimit })` is called for every call, after authorization and before validation, with the request, the action's name, and the session. Return `true` to allow it, or a number of seconds to answer `rate_limited` with `Retry-After`.
+`rateLimit`, passed to `createRouteHandler({ rateLimit })`, runs on every call, after authorization and before validation, with the request, the action's name, and the session. Return `true` to allow it, or a number of seconds to answer `rate_limited` with `Retry-After`.
 
 ## What stays yours
 

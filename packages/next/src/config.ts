@@ -1,4 +1,5 @@
 import { watch } from 'node:fs'
+import path from 'node:path'
 import type { NextConfig } from 'next'
 import { MEDIA_TYPE, WELL_KNOWN_PATH } from '@affordances/protocol'
 import { findAppDir, generate } from './codegen.ts'
@@ -64,7 +65,11 @@ export type AffordancesConfig = {
 }
 
 // the slice of NextConfig withAffordances touches; generic so it accepts whichever copy of next the app has
-export type Config = Pick<NextConfig, 'rewrites' | 'headers'>
+// webpack is typed loosely: its context drags in all of NextConfig, which two copies of next don't agree on
+export type Config = Pick<NextConfig, 'rewrites' | 'headers' | 'turbopack'> & {
+  // oxlint-disable-next-line no-explicit-any
+  webpack?: ((config: any, context: any) => any) | null
+}
 
 export const withAffordances = <C extends Config>(
   nextConfig: C = {} as C,
@@ -89,8 +94,22 @@ export const withAffordances = <C extends Config>(
     }).unref()
   }
 
+  // the route handler imports @affordances/next/manifest; point it at this app's generated one
+  const manifest = path.join(root, '.affordances', 'manifest.ts')
   const afforded: C = {
     ...nextConfig,
+    turbopack: {
+      ...nextConfig.turbopack,
+      // turbopack takes a path relative to the project, not an absolute one
+      resolveAlias: {
+        ...nextConfig.turbopack?.resolveAlias,
+        '@affordances/next/manifest': `./${path.relative(process.cwd(), manifest)}`,
+      },
+    },
+    webpack: (config, context) => {
+      config.resolve.alias['@affordances/next/manifest'] = manifest
+      return nextConfig.webpack ? nextConfig.webpack(config, context) : config
+    },
     rewrites: async () => {
       const user = normalize(await nextConfig.rewrites?.())
       return { ...user, beforeFiles: [...rewrites, ...user.beforeFiles] }

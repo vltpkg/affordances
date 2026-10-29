@@ -58,7 +58,7 @@ import { createHandler } from '@affordances/core'
 import { createRouteHandler } from '@affordances/next/route'
 ```
 
-`createHandler` is the framework-agnostic handler: `(request: Request) => Promise<Response>`. `createRouteHandler(manifest, options)` wraps it for Next, setting `manifest`, `basePath: '/api/affordances/graph'`, and `redirectFrom` for Next's `redirect()`.
+`createHandler` is the framework-agnostic handler: `(request: Request) => Promise<Response>`. `createRouteHandler(options)` wraps it for Next. It sets `basePath: '/api/affordances/graph'` and `redirectFrom` for Next's `redirect()`, and `manifest` defaults to the app's generated one. `GET` and `POST` from `@affordances/next/route` are `createRouteHandler()` with no options.
 
 | Option           | Type                                               | Description                                                                                          |
 | ---------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |

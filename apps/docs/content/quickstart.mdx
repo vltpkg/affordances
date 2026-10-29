@@ -16,15 +16,10 @@ You need a Next.js 16 app using the App Router, and zod 4 (or any schema library
 - adds `.affordances` to `.gitignore`;
 - generates `.affordances/manifest.ts` from your `actions.ts` and `state.ts` files.
 
-The route handler it writes looks like this:
+The route handler it writes is one line:
 
 ```ts title="app/api/affordances/graph/[[...path]]/route.ts"
-import { createRouteHandler } from '@affordances/next/route'
-import { manifest } from '../../../../../.affordances/manifest'
-
-const handler = createRouteHandler(manifest)
-
-export { handler as GET, handler as POST }
+export { GET, POST } from '@affordances/next/route'
 ```
 
 ## Wrap the config

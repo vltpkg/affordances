@@ -9,7 +9,7 @@ beforeAll(async () => {
   generate(path.join(import.meta.dirname, 'fixture'), { name: 'Fixture' })
   // @ts-ignore generated
   const { manifest } = await import('./fixture/.affordances/manifest.ts')
-  handler = createRouteHandler(manifest)
+  handler = createRouteHandler({ manifest })
 })
 
 const url = (p: string) => `http://shop.test/api/affordances/graph${p}`

@@ -59,3 +59,27 @@ test('withAffordances prepends its rewrites and keeps the user config', async ()
     value: '<?affordances=1>; rel="affordances"',
   })
 })
+
+test('the route handler finds the manifest through an alias, and user aliases survive', () => {
+  const root = path.join(import.meta.dirname, 'fixture')
+  const config = withAffordances(
+    {
+      turbopack: { resolveAlias: { lodash: 'lodash-es' } },
+      webpack: (c: object, _context: unknown) => ({ ...c, seen: true }),
+    },
+    { root },
+  )
+  // turbopack wants it relative to the project; webpack takes the absolute path
+  expect(config.turbopack!.resolveAlias).toEqual({
+    lodash: 'lodash-es',
+    '@affordances/next/manifest': `./${path.relative(process.cwd(), path.join(root, '.affordances/manifest.ts'))}`,
+  })
+  const webpack = config.webpack!({ resolve: { alias: {} } }, {}) as {
+    seen: boolean
+    resolve: { alias: Record<string, string> }
+  }
+  expect(webpack.seen).toBe(true)
+  expect(webpack.resolve.alias['@affordances/next/manifest']).toBe(
+    path.join(root, '.affordances/manifest.ts'),
+  )
+})

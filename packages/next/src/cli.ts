@@ -15,18 +15,8 @@ const init = () => {
   const file = routeFile()
   if (existsSync(file)) log(`kept ${path.relative(root, file)}`)
   else {
-    const manifest = path.relative(path.dirname(file), path.join(root, '.affordances', 'manifest'))
     mkdirSync(path.dirname(file), { recursive: true })
-    writeFileSync(
-      file,
-      `import { createRouteHandler } from '@affordances/next/route'
-import { manifest } from '${manifest}'
-
-const handler = createRouteHandler(manifest)
-
-export { handler as GET, handler as POST }
-`,
-    )
+    writeFileSync(file, "export { GET, POST } from '@affordances/next/route'\n")
     log(`wrote ${path.relative(root, file)}`)
   }
 

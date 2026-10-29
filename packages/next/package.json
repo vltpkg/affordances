@@ -28,6 +28,10 @@
     "./route": {
       "types": "./dist/route.d.ts",
       "default": "./dist/route.js"
+    },
+    "./manifest": {
+      "types": "./dist/manifest.d.ts",
+      "default": "./dist/manifest.js"
     }
   },
   "scripts": {

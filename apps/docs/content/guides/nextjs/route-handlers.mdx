@@ -7,30 +7,31 @@ Affordances answers agents from route handlers under `/api/affordances/`. The gr
 
 ## The graph handler
 
-`createRouteHandler` turns the manifest into a `GET` (read a graph) and `POST` (call an action) handler:
+One line answers both reading a graph (`GET`) and calling an action (`POST`):
 
 ```ts title="app/api/affordances/graph/[[...path]]/route.ts"
-import { createRouteHandler } from '@affordances/next/route'
-import { manifest } from '../../../../../.affordances/manifest'
-
-const handler = createRouteHandler(manifest)
-
-export { handler as GET, handler as POST }
+export { GET, POST } from '@affordances/next/route'
 ```
 
-It must live at that path, because the rewrites point there. The catch-all `[[...path]]` receives the page path the agent asked for. Under `src/app`, the manifest import needs one more `../`.
+It must live at that path, in `app/` or `src/app/`, because the rewrites point there. The catch-all `[[...path]]` receives the page path the agent asked for.
+
+The handler reads the manifest from `@affordances/next/manifest`. `withAffordances` aliases that import to your app's `.affordances/manifest.ts`, so there's no relative path to keep right. If the config isn't wrapped, the first agent request fails with an error that says so.
 
 ## Options
 
-The second argument takes the [handler options](/docs/reference/options#createhandler), except `manifest` and `basePath`, which it sets:
+To pass options, call `createRouteHandler` and export the handler as both methods. It takes the [handler options](/docs/reference/options#createhandler), except `basePath`, which it sets:
 
 ```ts title="app/api/affordances/graph/[[...path]]/route.ts"
-const handler = createRouteHandler(manifest, {
+import { createRouteHandler } from '@affordances/next/route'
+
+const handler = createRouteHandler({
   // true allows the call; a number of seconds answers rate_limited with Retry-After
   rateLimit: ({ action, session }) => limiter.check(`${action}:${session ?? 'anon'}`),
   // origins besides the app's own that may make cookie-authenticated calls
   allowedOrigins: ['https://admin.example.com'],
 })
+
+export { handler as GET, handler as POST }
 ```
 
 | Option           | What it's for                                                                                                                                                                    |
@@ -38,6 +39,7 @@ const handler = createRouteHandler(manifest, {
 | `rateLimit`      | Limit calls per action, per session, or per IP. Runs on every action call, after the session check and before validation.                                                        |
 | `allowedOrigins` | Let these origins make cookie-authenticated calls too. A cookie call from any other origin is refused; bearer-token calls aren't checked. See [Security](/docs/guides/security). |
 | `auth`           | Resolve the session here instead. Defaults to the `auth` your actions were defined with; see [Sessions](/docs/guides/nextjs/sessions).                                           |
+| `manifest`       | Use this manifest instead of the generated one, such as in tests.                                                                                                                |
 
 ## Redirects
 

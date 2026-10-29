@@ -1,6 +1,6 @@
 # @affordances/next
 
-Affordances for Next.js: `withAffordances` for `next.config.ts`, codegen that finds each route's `actions.ts` and `state.ts`, the route handler, and the `afford` CLI.
+Affordances for Next.js: `withAffordances` for `next.config.ts`, codegen that finds each route's `actions.ts` and `state.ts`, the route handler, and the `affordances` CLI.
 
 ```bash
 vlt install @affordances/next @affordances/react zod
