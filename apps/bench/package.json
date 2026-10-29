@@ -3,9 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./events": "./src/events.ts"
+  },
   "scripts": {
     "bench": "node --env-file-if-exists=.env src/run.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "record": "node --env-file-if-exists=.env src/record.ts"
   },
   "dependencies": {
     "@affordances/mcp": "workspace:*",

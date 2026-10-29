@@ -1,10 +1,11 @@
-import { execSync, spawn } from 'node:child_process'
+import { execSync } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { parseArgs } from 'node:util'
 import { createClient } from '@affordances/mcp'
 import { affordAgent, browserAgent, closeBrowser } from './agents.ts'
 import { DEFAULT_MODEL, EFFORT, emptyStats, runAgent, type RunStats } from './loop.ts'
+import { startStore } from './store.ts'
 import { newSession, tasks as allTasks } from './tasks.ts'
 
 // vlr bench -- --runs 20                            every task × both agents × 20 runs, a fresh apps/example each run
@@ -29,33 +30,13 @@ const tasks = wanted ? allTasks.filter((t) => wanted.includes(t.id)) : allTasks
 if (wanted && tasks.length !== wanted.length)
   throw new Error(`unknown task in --tasks; known: ${allTasks.map((t) => t.id).join(', ')}`)
 const site = `http://localhost:${values.port}`
-const example = path.join(import.meta.dirname, '../../example')
-
-// the store keeps stock in memory, so each run gets a fresh process (build apps/example first)
-const startStore = async () => {
-  const store = spawn('node_modules/.bin/next', ['start', '-p', values.port!], {
-    cwd: example,
-    stdio: 'ignore',
-  })
-  for (let i = 0; i < 60; i++) {
-    if (
-      await fetch(site).then(
-        (r) => r.ok,
-        () => false,
-      )
-    )
-      return store
-    await new Promise((resolve) => setTimeout(resolve, 250))
-  }
-  store.kill()
-  throw new Error(`apps/example didn't start on ${site}; run \`vlr build\` there first`)
-}
+// the store keeps stock in memory, so each run gets a fresh process (see store.ts)
 
 type Row = RunStats & { run: number; agent: 'browser' | 'afford'; task: string }
 const rows: Row[] = []
 
 for (let run = 1; run <= runs; run++) {
-  const store = await startStore()
+  const store = await startStore(values.port!)
   try {
     for (const task of tasks)
       for (const kind of values.dry ? (['afford'] as const) : (['browser', 'afford'] as const)) {

@@ -127,6 +127,8 @@ export const browserAgent = async (site: string, sid: string) => {
   ]
   return {
     name: 'browser' as const,
+    // the recorder screenshots it for the demo; the model only ever gets the snapshot text
+    page,
     system: `You operate the website at ${site} in a browser. Start with goto("/"). Each tool returns the page as an accessibility snapshot. When the task is done, reply with a one-line summary.`,
     tools,
     close: () => context.close(),

@@ -8,6 +8,7 @@
     "PLAN.md",
     "**/test/fixtures/**",
     "**/__snapshots__/**",
-    "apps/bench/results/**"
+    "apps/bench/results/**",
+    "apps/demo/recordings/**"
   ]
 }

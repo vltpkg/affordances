@@ -23,6 +23,27 @@ export type Tool = Anthropic.Tool & { run: (input: Record<string, unknown>) => P
 
 export type Call = { tool: string; input: unknown; ms: number; bytes: number; error?: string }
 
+// what the loop reports as it goes, for the recorder; the bench itself doesn't listen
+export type LoopEvent =
+  | {
+      type: 'turn'
+      turn: number
+      ms: number
+      usage: { input: number; cacheRead: number; cacheWrite: number; output: number }
+      text: string
+      calls: { id: string; name: string; input: unknown }[]
+    }
+  | {
+      type: 'tool'
+      turn: number
+      id: string
+      name: string
+      input: unknown
+      result: string
+      ms: number
+      error?: string
+    }
+
 export type RunStats = {
   success: boolean
   turns: number
@@ -69,6 +90,7 @@ export const runAgent = async (
   system: string,
   prompt: string,
   tools: Tool[],
+  onEvent?: (event: LoopEvent) => void,
 ): Promise<Omit<RunStats, 'success'>> => {
   const price = PRICES[model]
   if (!price) throw new Error(`No price for ${model}; add it to PRICES in src/loop.ts`)
@@ -83,6 +105,7 @@ export const runAgent = async (
   const stats = emptyStats({ stop: 'turn_cap' })
 
   while (stats.turns < MAX_TURNS) {
+    const asked = performance.now()
     const response = await client.messages.create({
       model,
       max_tokens: 16000,
@@ -103,6 +126,19 @@ export const runAgent = async (
     const text = response.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('\n')
     if (text) stats.answer = text
     const calls = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
+    onEvent?.({
+      type: 'turn',
+      turn: stats.turns,
+      ms: Math.round(performance.now() - asked),
+      usage: {
+        input: usage.input_tokens,
+        cacheRead: usage.cache_read_input_tokens ?? 0,
+        cacheWrite: usage.cache_creation_input_tokens ?? 0,
+        output: usage.output_tokens,
+      },
+      text,
+      calls: calls.map(({ id, name, input }) => ({ id, name, input })),
+    })
     // refusal, end_turn, max_tokens: the run is over (a truncated tool input is never executed)
     if (response.stop_reason !== 'tool_use' || !calls.length) {
       stats.stop = response.stop_reason ?? 'unknown'
@@ -125,6 +161,15 @@ export const runAgent = async (
           ms: Math.round(performance.now() - at),
           bytes: content.length,
         })
+        onEvent?.({
+          type: 'tool',
+          turn: stats.turns,
+          id: call.id,
+          name: call.name,
+          input: call.input,
+          result: content,
+          ms: Math.round(performance.now() - at),
+        })
         results.push({ type: 'tool_result', tool_use_id: call.id, content })
       } catch (error) {
         const message = (error as Error).message
@@ -133,6 +178,16 @@ export const runAgent = async (
           input: call.input,
           ms: Math.round(performance.now() - at),
           bytes: 0,
+          error: message,
+        })
+        onEvent?.({
+          type: 'tool',
+          turn: stats.turns,
+          id: call.id,
+          name: call.name,
+          input: call.input,
+          result: message,
+          ms: Math.round(performance.now() - at),
           error: message,
         })
         results.push({
