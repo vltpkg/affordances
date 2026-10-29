@@ -1,0 +1,16 @@
+{
+  "name": "@afford/bench",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bench": "node src/run.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@afford/mcp": "workspace:*",
+    "@afford/protocol": "workspace:*",
+    "@anthropic-ai/sdk": "^1.3.0",
+    "playwright": "^1.64.1"
+  }
+}
