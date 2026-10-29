@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { AppWindowIcon, BracesIcon, ShoppingBagIcon } from 'lucide-react'
 import { cn } from 'cn'
 import type { Delta, Graph } from '@afford/protocol'
@@ -55,20 +55,53 @@ const Tee = () => (
   </svg>
 )
 
-// the code card's dress, for cards that aren't code: one tab flowing into an editor panel inside a lifted,
-// ringed frame, and an optional status line under the panel in the tab bar's type
+// the concave corner where the active tab meets the panel's top edge, as in the code card
+const Corner = ({ side }: { side: 'left' | 'right' }) => (
+  <span
+    className={cn(
+      'absolute bottom-0 size-4 bg-(--code-editor-background)',
+      side === 'left' ? '-left-4' : '-right-4',
+    )}
+  >
+    <span
+      className={cn(
+        'block size-full border-b bg-card',
+        side === 'left' ? 'rounded-br-xl border-r' : 'rounded-bl-xl border-l',
+      )}
+    />
+  </span>
+)
+
+// a tab's face: the code card's, so the active one flows into the panel (`data-state` on the parent group)
+const TabFace = ({ first, children }: { first: boolean; children: React.ReactNode }) => (
+  <>
+    <span
+      aria-hidden
+      className="absolute inset-x-0 top-1 -bottom-px hidden rounded-t-xl border-x border-t bg-(--code-editor-background) group-data-[state=active]:block"
+    >
+      {/* the first tab lines up with the panel's edge, so that side runs straight down over its corner */}
+      {first ? (
+        <span className="absolute -bottom-4 -left-px size-4 border-l bg-(--code-editor-background)" />
+      ) : (
+        <Corner side="left" />
+      )}
+      <Corner side="right" />
+    </span>
+    <span className="relative mt-1 flex h-10 items-center gap-1.5 rounded-lg px-3 font-mono text-xs whitespace-nowrap text-muted-foreground group-focus-visible:ring-2 group-focus-visible:ring-ring/50 group-data-[state=active]:text-foreground/75 group-data-[state=inactive]:group-hover:bg-foreground/5 group-data-[state=inactive]:group-hover:text-foreground [&_svg]:size-3">
+      {children}
+    </span>
+  </>
+)
+
+// the code card's dress, for cards that aren't code: a tab bar over an editor panel inside a lifted, ringed
+// frame, and an optional status line under the panel in the tab bar's type
 const Frame = ({
-  icon,
-  title,
-  type,
+  bar,
   footer,
   className,
   children,
 }: {
-  icon: React.ReactNode
-  title: string
-  // the representation this view is, shown muted after the title
-  type?: string
+  bar: React.ReactNode
   footer?: React.ReactNode
   className?: string
   children: React.ReactNode
@@ -80,23 +113,8 @@ const Frame = ({
       className,
     )}
   >
-    <figcaption className="relative h-11 w-fit shrink-0">
-      <span
-        aria-hidden
-        className="absolute inset-x-0 top-1 -bottom-px rounded-t-xl border-x border-t bg-(--code-editor-background)"
-      >
-        {/* the tab lines up with the panel's edge, so its left side runs straight down */}
-        <span className="absolute -bottom-4 -left-px size-4 border-l bg-(--code-editor-background)" />
-        <span className="absolute -right-4 bottom-0 size-4 bg-(--code-editor-background)">
-          <span className="block size-full rounded-bl-xl border-b border-l bg-card" />
-        </span>
-      </span>
-      <span className="relative mt-1 flex h-10 items-center gap-1.5 rounded-lg px-3 font-mono text-xs whitespace-nowrap text-foreground/75 [&_svg]:size-3">
-        {icon}
-        {title}
-        {type && <span className="text-muted-foreground">· {type}</span>}
-      </span>
-    </figcaption>
+    {/* z-10: the active tab's 1px overlap and corner pieces paint over the panel's top border */}
+    <div className="relative z-10 flex h-11 shrink-0 items-center">{bar}</div>
     <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl border bg-(--code-editor-background)">
       {children}
     </div>
@@ -114,6 +132,30 @@ export const TwoViews = () => {
   const [graph, setGraph] = useState(initial)
   const [delta, setDelta] = useState<Delta | null>(null)
   const [calls, setCalls] = useState(0)
+  const [tab, setTab] = useState<'graph' | 'delta'>('graph')
+  const id = useId()
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const graphPanel = useRef<HTMLDivElement>(null)
+  const graphSeen = useRef(0)
+
+  // back on the graph after a call, bring `cart` into view so its tint is seen, not scrolled past
+  useEffect(() => {
+    if (tab !== 'graph' || graphSeen.current === calls) return
+    graphSeen.current = calls
+    const panel = graphPanel.current
+    const key = [...(panel?.querySelectorAll('.text-json-key') ?? [])].find(
+      (el) => el.textContent === '"cart"',
+    )
+    if (!panel || !key) return
+    const top =
+      key.getBoundingClientRect().top - panel.getBoundingClientRect().top + panel.scrollTop
+    panel.scrollTo({ top: top - 48 })
+  }, [tab, calls])
+  // the delta tab joins the bar with the first call and is reused after that
+  const tabs = [
+    { value: 'graph' as const, label: 'Graph' },
+    ...(delta ? [{ value: 'delta' as const, label: 'Delta · POST addToCart' }] : []),
+  ]
   const [sku, setSku] = useState(product.variants[0]!.sku)
 
   const cart = graph.entities.cart as Cart
@@ -124,6 +166,7 @@ export const TwoViews = () => {
     const next = deltaFor(cart, variant)
     setDelta(next)
     setCalls(calls + 1)
+    setTab('delta')
     setGraph({ ...graph, entities: { ...graph.entities, ...next.changed } })
   }
 
@@ -141,9 +184,14 @@ export const TwoViews = () => {
       </div>
       <div className="grid gap-4 @max-3xl:mt-4 @3xl:grid-cols-2">
         <Frame
-          icon={<AppWindowIcon aria-hidden className="text-muted-foreground" />}
-          title="Human"
-          type="text/html"
+          bar={
+            <div data-state="active" className="group relative h-11 w-fit">
+              <TabFace first>
+                <AppWindowIcon aria-hidden className="text-muted-foreground" />
+                Human<span className="text-muted-foreground">· text/html</span>
+              </TabFace>
+            </div>
+          }
         >
           <div className="flex h-full flex-col">
             <div className="flex h-11 shrink-0 items-center justify-between border-b px-4 text-xs">
@@ -227,11 +275,60 @@ export const TwoViews = () => {
         </Frame>
 
         <Frame
-          icon={<BracesIcon aria-hidden className="text-amber-600" />}
-          title="Agent"
-          type="application/vnd.afford+json"
           // side by side, the human card sets the height; stacked, the graph gets a window of its own
           className="@max-3xl:h-[28rem]"
+          bar={
+            <>
+              <div role="tablist" aria-label="Agent view" className="flex h-11 shrink-0">
+                {tabs.map(({ value, label }, i) => (
+                  <button
+                    key={value}
+                    ref={(el) => {
+                      tabRefs.current[i] = el
+                    }}
+                    type="button"
+                    role="tab"
+                    id={`${id}-${value}-tab`}
+                    aria-selected={tab === value}
+                    aria-controls={`${id}-${value}`}
+                    tabIndex={tab === value ? 0 : -1}
+                    data-state={tab === value ? 'active' : 'inactive'}
+                    onClick={() => setTab(value)}
+                    onKeyDown={(e) => {
+                      const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key]
+                      if (!step) return
+                      const next = (i + step + tabs.length) % tabs.length
+                      setTab(tabs[next]!.value)
+                      tabRefs.current[next]?.focus()
+                    }}
+                    className={cn(
+                      'group relative h-11 shrink-0 outline-none',
+                      // the delta tab slides in from its slot's left edge as it widens
+                      value === 'delta' &&
+                        'transition-[opacity,translate] duration-200 ease-out starting:-translate-x-2 starting:opacity-0 motion-reduce:transition-none',
+                    )}
+                  >
+                    <TabFace first={i === 0}>
+                      <BracesIcon aria-hidden className="text-amber-600" />
+                      {value === 'delta' ? (
+                        // width from 0 to auto (interpolate-size), so the bar makes room rather than jumping
+                        <span className="w-auto overflow-hidden transition-[width] duration-200 ease-out [interpolate-size:allow-keywords] starting:w-0 motion-reduce:transition-none">
+                          {label}
+                        </span>
+                      ) : (
+                        label
+                      )}
+                    </TabFace>
+                  </button>
+                ))}
+              </div>
+              {/* the representation, shown only while it fits: when the bar fills, it wraps onto a clipped line */}
+              <div className="flex h-4 min-w-0 flex-1 flex-wrap justify-end overflow-hidden pr-3 font-mono text-xs text-muted-foreground">
+                <span className="h-4 w-0" />
+                <span className="h-4 leading-4 whitespace-nowrap">application/vnd.afford+json</span>
+              </div>
+            </>
+          }
           footer={
             delta ? (
               <span
@@ -250,19 +347,35 @@ export const TwoViews = () => {
             )
           }
         >
-          {/* out of flow, so the graph scrolls inside the card instead of setting the row's height */}
-          <div className="absolute inset-0 overflow-y-auto p-4 pl-7">
-            {delta && (
-              // remounts per call, so the tint plays each time a delta lands
+          {/* out of flow, so the json scrolls inside the card instead of setting the row's height;
+              both panels stay mounted, so a tint that lands while one is hidden plays when it's shown */}
+          <div
+            role="tabpanel"
+            id={`${id}-graph`}
+            aria-labelledby={`${id}-graph-tab`}
+            ref={graphPanel}
+            hidden={tab !== 'graph'}
+            className="absolute inset-0 overflow-y-auto p-4 pl-7"
+          >
+            <JsonView value={graph} highlight={['entities.cart']} />
+          </div>
+          {delta && (
+            <div
+              role="tabpanel"
+              id={`${id}-delta`}
+              aria-labelledby={`${id}-delta-tab`}
+              hidden={tab !== 'delta'}
+              className="absolute inset-0 overflow-y-auto p-4 pl-7"
+            >
+              {/* remounts per call, so the tint re-flashes each time a delta lands */}
               <div
                 key={calls}
-                className="-mx-3 -mt-1 mb-4 rounded-lg px-3 pt-1 pb-1 animate-json-changed motion-reduce:[animation-timing-function:steps(1,end)]"
+                className="-mx-3 -mt-1 rounded-lg px-3 py-1 animate-json-changed motion-reduce:[animation-timing-function:steps(1,end)]"
               >
                 <JsonView value={delta} />
               </div>
-            )}
-            <JsonView value={graph} highlight={['entities.cart']} />
-          </div>
+            </div>
+          )}
         </Frame>
       </div>
     </div>
