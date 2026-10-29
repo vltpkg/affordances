@@ -11,6 +11,8 @@ type AffordContext = {
   call: (action: string, input?: unknown) => Promise<Delta>
   // the most recent call's delta, for the dev overlay
   lastDelta: Delta | null
+  // refetches the graph, e.g. after a person changed the page through a form
+  refresh: () => Promise<void>
 }
 
 const Context = createContext<AffordContext | null>(null)
@@ -109,7 +111,9 @@ export const AffordProvider = ({
     return () => controller.abort()
   }, [graph, call])
 
-  return <Context value={{ graph, call, lastDelta }}>{children}</Context>
+  const refresh = useCallback(() => load(), [load])
+
+  return <Context value={{ graph, call, lastDelta, refresh }}>{children}</Context>
 }
 
 export const useAfford = () => {

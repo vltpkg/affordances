@@ -95,7 +95,7 @@ The server processes a call in this order, and stops at the first failure:
 3. Apply the rate limit. Failure: `rate_limited`.
 4. Validate `input` against the action's input schema. Failure: `invalid_input`, with `issues`.
 5. Evaluate the guard. Failure: `unavailable`, with the guard's reason as `message`.
-6. For `confirm` actions without `confirm: true`: `confirm_required`, with a summary of what will happen as `message`. Nothing runs.
+6. For `confirm` actions without `confirm: true`: `confirm_required`, with a summary of what will happen as `message`, written for the person who approves it. Nothing runs.
 7. Run the action, reload the page's state, and respond with a delta.
 
 ## Delta

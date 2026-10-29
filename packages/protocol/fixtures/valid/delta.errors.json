@@ -16,7 +16,7 @@
     "ok": false,
     "error": {
       "code": "confirm_required",
-      "message": "Place an order for 2 items totalling $60.00. Resend with confirm: true."
+      "message": "Place an order for 2 items totalling $60.00"
     }
   },
   { "ok": false, "error": { "code": "unavailable", "message": "Size L is out of stock" } },

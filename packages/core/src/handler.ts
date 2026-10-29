@@ -180,7 +180,8 @@ export const createHandler = (options: HandlerOptions) => {
     if (meta.expose === 'confirm' && body.data.confirm !== true)
       throw new AffordError(
         'confirm_required',
-        `${(await meta.summary?.({ input, state: before.state })) ?? `Run ${meta.name}`}. Resend with confirm: true once the user approves.`,
+        // only the summary: confirm_required itself tells the agent to resend with confirm: true once approved
+        (await meta.summary?.({ input, state: before.state })) ?? `Run ${meta.name}`,
       )
 
     // 7. run, reload, diff
