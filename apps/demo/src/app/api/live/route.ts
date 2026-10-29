@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
-import { LIVE_MODELS, LIVE_TASKS } from '@/lib/live'
+import { LIVE_MODELS, LIVE_PAIRINGS } from '@/lib/live'
 
 const repo = path.join(process.cwd(), '../..')
 const bench = path.join(repo, 'apps/bench')
@@ -19,8 +19,14 @@ const hasKey = () =>
 // the recorder's stdout is NDJSON DemoEvents; it's passed through as is, plus one {type:'error'} line if the
 // recorder dies before its `end`
 export const POST = async (request: Request) => {
-  const { task, model } = (await request.json().catch(() => ({}))) as Record<string, unknown>
-  if (!LIVE_TASKS.some((t) => t.id === task)) return fail(400, `Unknown task: ${String(task)}`)
+  const { task, model, agents } = (await request.json().catch(() => ({}))) as Record<
+    string,
+    unknown
+  >
+  const pairing = LIVE_PAIRINGS.find((p) => p.agents === agents)
+  if (!pairing) return fail(400, `Unknown agents: ${String(agents)}`)
+  if (!(pairing.tasks as readonly unknown[]).includes(task))
+    return fail(400, `Unknown task for ${pairing.agents}: ${String(task)}`)
   if (!LIVE_MODELS.includes(model as string)) return fail(400, `Unknown model: ${String(model)}`)
   if (running) return fail(409, 'A live race is already running. Wait for it to finish.')
   if (!hasKey()) return fail(400, 'No ANTHROPIC_API_KEY. Add it to apps/bench/.env.')
@@ -36,6 +42,8 @@ export const POST = async (request: Request) => {
       task as string,
       '--model',
       model as string,
+      '--agents',
+      pairing.agents,
       '--stream',
       '--port',
       '3102',

@@ -8,7 +8,9 @@ import { Kbd } from '@affordances/ui/components/kbd'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@affordances/ui/components/select'
@@ -19,20 +21,33 @@ import { Summary } from '@/components/summary'
 import { Track } from '@/components/track'
 import { XRay } from '@/components/x-ray'
 import {
-  AGENTS,
+  agentsOf,
   duration,
   finalTokens,
+  LANE,
   lane,
   modelName,
   NAMES,
   sec,
+  SHORT,
   sorted,
+  STORIES,
+  storyOf,
+  type AgentKind,
   type DemoEvent,
+  type Story,
 } from '@/lib/race'
 import { LIVE_TASKS } from '@/lib/live'
 import type { Listing } from '@/lib/recordings'
 
 const SPEEDS = [1, 2, 4]
+
+// what the header says each lane was told, per story
+const FRAMING: Record<Story, string> = {
+  race: 'Same task, same model, same store, one clock',
+  discovery:
+    'The same browser agent twice, on one clock. Only the right one’s browser supports WebMCP. Neither is told Affordances exists.',
+}
 
 const time = (iso: string) =>
   new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
@@ -54,9 +69,15 @@ export const Demo = ({ recordings, initial }: { recordings: Listing[]; initial?:
   const end = duration(events)
   const run = events.find((e) => e.type === 'run')
   const model = run?.model ?? ''
-  const lanes = AGENTS.map((agent) => lane(events, agent, t, model))
-  const [browser, afford] = lanes as [(typeof lanes)[0], (typeof lanes)[0]]
-  const scale = Math.max(1, ...AGENTS.map((a) => finalTokens(events, a)))
+  const current = recordings.find((r) => r.id === id)
+  // the recording's own agents; before its events arrive, what was picked
+  const present = agentsOf(events)
+  const agents: AgentKind[] = present.length
+    ? present
+    : (live?.agents ?? current?.agents ?? ['browser', 'afford'])
+  const story = storyOf(agents)
+  const lanes = agents.map((agent) => lane(events, agent, t, model))
+  const scale = Math.max(1, ...agents.map((a) => finalTokens(events, a)))
   const finished = events.some((e) => e.type === 'end')
   const streaming = live?.status === 'starting' || live?.status === 'running'
   const loading = id !== null && loaded !== id
@@ -120,7 +141,8 @@ export const Demo = ({ recordings, initial }: { recordings: Listing[]; initial?:
     } else setPlaying(!playing)
   }
 
-  const startLive = async (task: string, liveModel: string) => {
+  const startLive = async (task: string, liveModel: string, pairing: string) => {
+    const racers = pairing.split(',') as AgentKind[]
     liveAbort.current?.abort()
     const abort = new AbortController()
     liveAbort.current = abort
@@ -129,12 +151,13 @@ export const Demo = ({ recordings, initial }: { recordings: Listing[]; initial?:
     setT(0)
     setPlaying(false)
     setDismissed(false)
-    setLive({ status: 'starting', task, model: liveModel })
-    const failed = (error: string) => setLive({ status: 'error', task, model: liveModel, error })
+    const base = { task, model: liveModel, agents: racers }
+    setLive({ ...base, status: 'starting' })
+    const failed = (error: string) => setLive({ ...base, status: 'error', error })
     try {
       const response = await fetch('/api/live', {
         method: 'POST',
-        body: JSON.stringify({ task, model: liveModel }),
+        body: JSON.stringify({ task, model: liveModel, agents: pairing }),
         signal: abort.signal,
       })
       if (!response.ok || !response.body) {
@@ -157,9 +180,9 @@ export const Demo = ({ recordings, initial }: { recordings: Listing[]; initial?:
           all = [...all, event]
           setEvents(all)
           if (event.type === 'run')
-            setLive({ status: 'running', task, model: liveModel, startedAt: performance.now() })
+            setLive({ ...base, status: 'running', startedAt: performance.now() })
           if (event.type === 'end') {
-            setLive({ status: 'done', task, model: liveModel })
+            setLive({ ...base, status: 'done' })
             setT(event.at)
           }
         }
@@ -215,15 +238,16 @@ export const Demo = ({ recordings, initial }: { recordings: Listing[]; initial?:
     }
   })
 
-  const current = recordings.find((r) => r.id === id)
   const prompt =
     run?.task.prompt ??
     current?.task.prompt ??
     LIVE_TASKS.find((task) => task.id === live?.task)?.prompt
   const doneAt = (l: (typeof lanes)[0]) =>
     l.activity.kind === 'done' ? l.activity.done.at : Number.POSITIVE_INFINITY
-  const behind = (me: (typeof lanes)[0], other: (typeof lanes)[0]) =>
-    doneAt(other) <= t && doneAt(other) < doneAt(me) ? me.elapsed - doneAt(other) : null
+  // how long ago the first finisher finished, for every lane still behind it
+  const first = Math.min(...lanes.map(doneAt))
+  const behind = (me: (typeof lanes)[0]) =>
+    first <= t && first < doneAt(me) ? me.elapsed - first : null
 
   return (
     <div className="flex min-h-dvh flex-col xl:h-dvh xl:overflow-hidden">
@@ -231,8 +255,13 @@ export const Demo = ({ recordings, initial }: { recordings: Listing[]; initial?:
         <div className="min-w-0 flex-1">
           <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[14px] text-muted-foreground">
             <Wordmark className="mr-1 text-foreground" />
+            {story === 'discovery' && (
+              <span className="rounded-full bg-webmcp/15 px-2 py-px text-[13px] text-webmcp">
+                Discovery
+              </span>
+            )}
             <span>
-              Same task, same model, same store, one clock
+              {FRAMING[story]}
               {model && (
                 <>
                   {' · '}
@@ -278,40 +307,50 @@ export const Demo = ({ recordings, initial }: { recordings: Listing[]; initial?:
               <SelectTrigger aria-label="Recording" className="h-9 min-w-72 px-3 text-sm">
                 <SelectValue placeholder="Pick a recording" />
               </SelectTrigger>
-              <SelectContent alignItemWithTrigger={false} align="end" className="min-w-96">
-                {recordings.map((r) => (
-                  <SelectItem key={r.id} value={r.id} className="min-h-9 gap-3 px-2.5 text-sm">
-                    <span>{r.task.id}</span>
-                    <span className="text-muted-foreground">
-                      {modelName(r.model)} · {time(r.startedAt)}
-                    </span>
-                    {/* each agent's finish, in lane order and colour */}
-                    <span className="ml-auto flex gap-3 pr-5 font-mono text-[13px] tabular-nums">
-                      {AGENTS.map((agent) => {
-                        const d = r.done.find((x) => x.agent === agent)
-                        return (
-                          <span
-                            key={agent}
-                            className={cn(
-                              'flex w-16 items-center justify-end gap-1.5',
-                              d?.success ? 'text-muted-foreground' : 'text-fail',
-                            )}
-                          >
-                            <span
-                              aria-hidden
-                              className={cn(
-                                'size-1.5 rounded-full',
-                                agent === 'afford' ? 'bg-afford' : 'bg-browser',
-                              )}
-                            />
-                            <span className="sr-only">{NAMES[agent]}</span>
-                            {d ? `${sec(d.at)}${d.success ? '' : '✗'}` : '—'}
+              <SelectContent alignItemWithTrigger={false} align="end" className="min-w-[30rem]">
+                {(['race', 'discovery'] as const).map((group) => {
+                  const list = recordings.filter((r) => storyOf(r.agents) === group)
+                  if (!list.length) return null
+                  return (
+                    <SelectGroup key={group}>
+                      <SelectLabel className="px-2.5 pt-2 text-[13px]">
+                        {STORIES[group]}
+                      </SelectLabel>
+                      {list.map((r) => (
+                        <SelectItem
+                          key={r.id}
+                          value={r.id}
+                          className="min-h-9 gap-3 px-2.5 text-sm"
+                        >
+                          <span>{r.task.id}</span>
+                          <span className="text-muted-foreground">
+                            {modelName(r.model)} · {time(r.startedAt)}
                           </span>
-                        )
-                      })}
-                    </span>
-                  </SelectItem>
-                ))}
+                          {/* each agent's finish, in lane order and colour */}
+                          <span className="ml-auto flex gap-3 pr-5 font-mono text-[13px] tabular-nums">
+                            {r.agents.map((agent) => {
+                              const d = r.done.find((x) => x.agent === agent)
+                              return (
+                                <span
+                                  key={agent}
+                                  className={cn(
+                                    'flex w-16 items-center justify-end gap-1.5',
+                                    LANE[agent],
+                                    d?.success ? 'text-muted-foreground' : 'text-fail',
+                                  )}
+                                >
+                                  <span aria-hidden className="size-1.5 rounded-full bg-(--lane)" />
+                                  <span className="sr-only">{NAMES[agent]}</span>
+                                  {d ? `${sec(d.at)}${d.success ? '' : '✗'}` : '—'}
+                                </span>
+                              )
+                            })}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )
+                })}
               </SelectContent>
             </Select>
           )}
@@ -331,12 +370,14 @@ export const Demo = ({ recordings, initial }: { recordings: Listing[]; initial?:
       <main
         aria-busy={loading}
         className={cn(
-          'relative grid flex-1 grid-cols-1 gap-px bg-border xl:min-h-0 xl:grid-cols-2',
+          'relative grid flex-1 grid-cols-1 gap-px bg-border xl:min-h-0',
+          lanes.length > 2 ? 'xl:grid-cols-3' : 'xl:grid-cols-2',
           loading && 'opacity-60',
         )}
       >
-        <Lane lane={browser} t={t} scale={scale} behind={behind(browser, afford)} started={t > 0} />
-        <Lane lane={afford} t={t} scale={scale} behind={behind(afford, browser)} started={t > 0} />
+        {lanes.map((l) => (
+          <Lane key={l.agent} lane={l} t={t} scale={scale} behind={behind(l)} started={t > 0} />
+        ))}
         {live?.status === 'error' && (
           <div className="absolute inset-0 grid place-items-center bg-background/80 p-6">
             <div role="alert" className="max-w-lg rounded-xl border border-fail/40 bg-card p-6">
@@ -354,9 +395,9 @@ export const Demo = ({ recordings, initial }: { recordings: Listing[]; initial?:
           </div>
         )}
         {finished && t >= end && !dismissed && !streaming && (
+          // ponytail: the summary compares the first two lanes; a three-way race shows lanes only
           <Summary
-            browser={browser}
-            afford={afford}
+            lanes={lanes}
             onClose={() => setDismissed(true)}
             onReplay={() => {
               seek(0)
@@ -387,12 +428,13 @@ export const Demo = ({ recordings, initial }: { recordings: Listing[]; initial?:
           <span className="text-muted-foreground">{streaming ? 'live' : `/ ${sec(end)}`}</span>
         </p>
         <div className="hidden shrink-0 flex-col gap-1.5 text-right text-xs text-muted-foreground sm:flex">
-          {AGENTS.map((a) => (
-            <span key={a}>{NAMES[a].replace(' agent', '')}</span>
+          {agents.map((a) => (
+            <span key={a}>{SHORT[a]}</span>
           ))}
         </div>
         {/* live, the axis grows with the clock */}
         <Track
+          agents={agents}
           events={events}
           t={t}
           end={streaming ? Math.max(end, t) : end}

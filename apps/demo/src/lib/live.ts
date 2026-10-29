@@ -14,3 +14,14 @@ export const LIVE_TASKS = [
 ]
 
 export const LIVE_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5']
+
+// which agents race. the discovery story leaves out checkout: placing an order through a page tool asks the
+// person in the browser to confirm, and nobody's there
+export const LIVE_PAIRINGS = [
+  { agents: 'browser,afford', story: 'race', tasks: LIVE_TASKS.map((t) => t.id) },
+  {
+    agents: 'browser,webmcp',
+    story: 'discovery',
+    tasks: ['add-to-cart', 'change-quantity', 'search'],
+  },
+] as const

@@ -18,10 +18,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@affordances/ui/components/select'
-import { LIVE_MODELS, LIVE_TASKS } from '@/lib/live'
-import { modelName } from '@/lib/race'
+import { LIVE_MODELS, LIVE_PAIRINGS, LIVE_TASKS } from '@/lib/live'
+import { modelName, STORIES, type AgentKind } from '@/lib/race'
 
-export type LiveState = { task: string; model: string } & (
+export type LiveState = { task: string; model: string; agents: AgentKind[] } & (
   | { status: 'starting' | 'done' }
   | { status: 'running'; startedAt: number }
   | { status: 'error'; error: string }
@@ -61,10 +61,12 @@ export const LiveDialog = ({
   onStart,
 }: {
   busy: boolean
-  onStart: (task: string, model: string) => void
+  onStart: (task: string, model: string, agents: string) => void
 }) => {
+  const [agents, setAgents] = useState<string>(LIVE_PAIRINGS[0].agents)
   const [task, setTask] = useState('add-to-cart')
   const [model, setModel] = useState(LIVE_MODELS[0]!)
+  const tasks = LIVE_PAIRINGS.find((p) => p.agents === agents)!.tasks as readonly string[]
   return (
     <Dialog>
       <DialogTrigger
@@ -77,15 +79,28 @@ export const LiveDialog = ({
         <div>
           <DialogTitle className="text-lg font-medium">Run a live race</DialogTitle>
           <DialogDescription className="mt-1 text-[14px] text-pretty">
-            Both agents race on a fresh store, calling the API for real. It costs a few cents and
+            Two agents race on a fresh store, calling the API for real. It costs a few cents and
             isn’t saved; record with <code className="font-mono">vlr record</code> to keep one.
           </DialogDescription>
         </div>
         <Field
+          label="Race"
+          value={agents}
+          onChange={(next) => {
+            setAgents(next)
+            const allowed = LIVE_PAIRINGS.find((p) => p.agents === next)!.tasks as readonly string[]
+            if (!allowed.includes(task)) setTask(allowed[0]!)
+          }}
+          items={LIVE_PAIRINGS.map((p) => ({ value: p.agents, label: STORIES[p.story] }))}
+        />
+        <Field
           label="Task"
           value={task}
           onChange={setTask}
-          items={LIVE_TASKS.map((t) => ({ value: t.id, label: t.prompt }))}
+          items={LIVE_TASKS.filter((t) => tasks.includes(t.id)).map((t) => ({
+            value: t.id,
+            label: t.prompt,
+          }))}
         />
         <Field
           label="Model"
@@ -94,7 +109,7 @@ export const LiveDialog = ({
           items={LIVE_MODELS.map((m) => ({ value: m, label: modelName(m) }))}
         />
         <DialogClose
-          render={<Button className="h-9 text-sm" onClick={() => onStart(task, model)} />}
+          render={<Button className="h-9 text-sm" onClick={() => onStart(task, model, agents)} />}
         >
           Start the race
         </DialogClose>

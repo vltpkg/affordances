@@ -1,6 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { DemoEvent, Done, Run } from './race'
+import { agentsOf, type AgentKind, type DemoEvent, type Done, type Run } from './race'
 
 // read at request time, never bundled: the recorder keeps adding files while the app runs
 export const DIR = path.join(process.cwd(), 'recordings')
@@ -10,6 +10,7 @@ export type Listing = {
   task: Run['task']
   model: string
   startedAt: string
+  agents: AgentKind[]
   done: Pick<Done, 'agent' | 'at' | 'success'>[]
 }
 
@@ -32,7 +33,14 @@ export const list = async (): Promise<Listing[]> => {
       const done = events.flatMap((e) =>
         e.type === 'done' ? [{ agent: e.agent, at: e.at, success: e.success }] : [],
       )
-      return { id, task: run.task, model: run.model, startedAt: run.startedAt, done }
+      return {
+        id,
+        task: run.task,
+        model: run.model,
+        startedAt: run.startedAt,
+        agents: agentsOf(events),
+        done,
+      }
     }),
   )
   return out.filter((r) => r !== null).toReversed()

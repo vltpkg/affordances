@@ -7,6 +7,7 @@ import {
   firstLine,
   int,
   kb,
+  LANE,
   NAMES,
   plain,
   sec,
@@ -18,6 +19,7 @@ import {
 const ABOUT = {
   browser: 'Drives Chromium. Reads accessibility snapshots, clicks by role and name.',
   afford: 'Reads the page graph. Calls actions by name.',
+  webmcp: 'The same browser agent. Its browser offers tools the page registers.',
 }
 
 type Props = {
@@ -38,7 +40,7 @@ export const Lane = ({ lane, t, scale, behind, started }: Props) => {
       aria-labelledby={`${agent}-name`}
       className={cn(
         'relative flex min-h-0 min-w-0 flex-col gap-4 bg-background p-5 2xl:p-6',
-        agent === 'afford' ? '[--lane:var(--afford)]' : '[--lane:var(--browser)]',
+        LANE[agent],
       )}
     >
       {/* the finish: the lane rings once in its colour as it resolves */}
@@ -54,12 +56,8 @@ export const Lane = ({ lane, t, scale, behind, started }: Props) => {
             <span aria-hidden className="size-2.5 rounded-full bg-(--lane)" />
             {NAMES[agent]}
           </h2>
-          <p className="mt-1 text-[15px] text-pretty text-muted-foreground">
-            {ABOUT[agent]}
-            <span className="mt-0.5 block font-mono text-[13px]">
-              {lane.setup?.tools.map((tool) => tool.name).join(' · ')}
-            </span>
-          </p>
+          <p className="mt-1 text-[15px] text-pretty text-muted-foreground">{ABOUT[agent]}</p>
+          <Toolbox lane={lane} />
         </div>
         <Status lane={lane} t={t} started={started} />
       </header>
@@ -101,6 +99,71 @@ export const Lane = ({ lane, t, scale, behind, started }: Props) => {
     </section>
   )
 }
+
+// what the model can call right now. built-ins are plain; a tool the page registered (WebMCP) slides in,
+// orange because it's an affordances action, and one the last navigation took away stays struck through
+const Toolbox = ({ lane }: { lane: LaneState }) => {
+  const page = lane.toolbox.filter((name) => !lane.builtins.has(name))
+  const lost = lane.lost.filter((name) => !lane.builtins.has(name))
+  return (
+    <ul
+      aria-label="Tools the model has"
+      className="mt-2 flex flex-wrap items-center gap-1.5 font-mono text-[14px]"
+    >
+      {lane.toolbox
+        .filter((name) => lane.builtins.has(name))
+        .map((name) => (
+          <li key={name} className="rounded-md border px-1.5 text-muted-foreground">
+            {name}
+          </li>
+        ))}
+      {page.map((name) => (
+        <li
+          key={name}
+          className="animate-tool-in rounded-md bg-afford/15 px-1.5 font-medium text-afford ring-1 ring-afford/60 ring-inset"
+        >
+          <span className="sr-only">new from the page: </span>+ {name}
+        </li>
+      ))}
+      {page.length > 0 && <li className="font-sans text-[13px] text-afford/80">from this page</li>}
+      {lost.map((name) => (
+        <li
+          key={`lost-${name}`}
+          className="animate-tool-out px-1 text-muted-foreground/60 line-through decoration-muted-foreground"
+        >
+          <span className="sr-only">gone after navigating: </span>
+          {name}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+// a turn's toolbox against the one before it: what the page added, and what leaving a page took away
+const Change = ({ added, lost }: { added: string[]; lost: string[] }) =>
+  added.length + lost.length > 0 && (
+    <p className="mt-1.5 flex flex-wrap items-center gap-1.5 font-mono text-[13px]">
+      {added.map((name) => (
+        <span key={name} className="rounded-md bg-afford/15 px-1.5 text-afford">
+          + {name}
+        </span>
+      ))}
+      {added.length > 0 && (
+        <span className="font-sans text-muted-foreground">new from the page</span>
+      )}
+      {lost.map((name) => (
+        <span key={name} className="px-1 text-muted-foreground line-through">
+          {name}
+        </span>
+      ))}
+      {!added.length && <span className="font-sans text-muted-foreground">gone with the page</span>}
+    </p>
+  )
+
+const diff = (before: string[], after: string[], builtins: Set<string>) => ({
+  added: after.filter((n) => !before.includes(n) && !builtins.has(n)),
+  lost: before.filter((n) => !after.includes(n) && !builtins.has(n)),
+})
 
 const Stat = ({
   label,
@@ -250,7 +313,12 @@ const Reads = ({ lane }: { lane: LaneState }) => {
 }
 
 const Timeline = ({ lane, t }: { lane: LaneState; t: number }) => {
-  const { steps, activity } = lane
+  const { steps, activity, builtins } = lane
+  const base = [...builtins]
+  const offered = (i: number) => steps[i]?.offered ?? base
+  // the turn in flight already has its toolbox: a page tool the model is thinking with shows here first
+  const thinking = activity.kind === 'thinking' && t > 0 ? activity : null
+  const coming = diff(steps.length ? offered(steps.length - 1) : base, lane.toolbox, builtins)
   // column-reverse pins the scroll to the newest row with no script, and without animating it: rows
   // arrive often
   return (
@@ -265,18 +333,22 @@ const Timeline = ({ lane, t }: { lane: LaneState; t: number }) => {
                 <span>thought {sec(step.ms)}</span>
                 <span className="ml-auto font-mono tabular-nums">{int(step.tokens)} tok</span>
               </p>
+              {step.offered && (
+                <Change {...diff(i ? offered(i - 1) : base, step.offered, builtins)} />
+              )}
               {step.text && (
                 <p className="mt-1 text-[14px]/snug text-pretty text-foreground/90">{step.text}</p>
               )}
-              {(step.tools.length > 0 || pending) && (
+              {(step.results.length > 0 || pending) && (
                 <ul className="mt-1.5 flex flex-col gap-1">
-                  {step.tools.map((tool) => (
+                  {step.results.map((tool) => (
                     <ToolRow
                       key={tool.id}
                       name={tool.name}
                       input={tool.input}
                       ms={tool.ms}
                       error={tool.error}
+                      page={!builtins.has(tool.name)}
                     />
                   ))}
                   {pending && (
@@ -284,6 +356,7 @@ const Timeline = ({ lane, t }: { lane: LaneState; t: number }) => {
                       name={pending.call.name}
                       input={pending.call.input}
                       ms={t - pending.since}
+                      page={!builtins.has(pending.call.name)}
                       pending
                     />
                   )}
@@ -292,11 +365,14 @@ const Timeline = ({ lane, t }: { lane: LaneState; t: number }) => {
             </li>
           )
         })}
-        {activity.kind === 'thinking' && t > 0 && (
-          <li className="flex items-center gap-2 font-mono text-[14px] text-muted-foreground">
-            <span aria-hidden className="size-2 animate-breathe rounded-full bg-(--lane)" />
-            thinking
-            <span className="ml-auto tabular-nums">{sec(t - activity.since)}</span>
+        {thinking && (
+          <li>
+            <p className="flex items-center gap-2 font-mono text-[14px] text-muted-foreground">
+              <span aria-hidden className="size-2 animate-breathe rounded-full bg-(--lane)" />
+              thinking
+              <span className="ml-auto tabular-nums">{sec(t - thinking.since)}</span>
+            </p>
+            <Change {...coming} />
           </li>
         )}
         {activity.kind === 'done' && (
@@ -324,12 +400,15 @@ const ToolRow = ({
   input,
   ms,
   error,
+  page,
   pending,
 }: {
   name: string
   input: unknown
   ms: number
   error?: string
+  // a tool the page registered: one call where a browser would click its way through the form
+  page?: boolean
   pending?: boolean
 }) => {
   const { verb, arg } = callLabel(name, input)
@@ -337,7 +416,11 @@ const ToolRow = ({
     <li
       className={cn(
         'animate-enter rounded-md px-2 py-1 font-mono text-[14px]',
-        error ? 'bg-fail/12 text-fail' : 'bg-muted/60',
+        error
+          ? 'bg-fail/12 text-fail'
+          : page
+            ? 'bg-afford/12 ring-1 ring-afford/50 ring-inset'
+            : 'bg-muted/60',
       )}
     >
       <div className="flex items-baseline gap-2">
@@ -351,7 +434,10 @@ const ToolRow = ({
         ) : (
           <CheckIcon aria-hidden className="size-3.5 shrink-0 self-center text-muted-foreground" />
         )}
-        <span className="font-medium">{verb}</span>
+        <span className={cn('font-medium', page && !error && 'text-afford')}>
+          {page && <span className="sr-only">page tool </span>}
+          {verb}
+        </span>
         <span className={cn('min-w-0 truncate', !error && 'text-muted-foreground')}>{arg}</span>
         <span
           className={cn(

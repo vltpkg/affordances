@@ -3,7 +3,7 @@
 import { cn } from 'cn'
 import { CheckIcon, RotateCcwIcon, XIcon } from 'lucide-react'
 import { Button } from '@affordances/ui/components/button'
-import { int, ratio, sec, usd, type Done, type Lane } from '@/lib/race'
+import { int, LANE, ratio, sec, SHORT, usd, type AgentKind, type Done, type Lane } from '@/lib/race'
 
 // lower is better for every row; the last column says by how much, whichever way it went
 type Row = {
@@ -20,32 +20,40 @@ const ROWS: Row[] = [
   { label: 'Cost', value: (d) => d.costUsd, format: usd, words: ['cheaper', 'pricier'] },
 ]
 
+// in a sentence; the discovery story races the browser agent against itself, so it needs telling apart
+const WHO: Record<AgentKind, string> = {
+  browser: 'The browser agent',
+  afford: 'The Affordances agent',
+  webmcp: 'The browser agent with WebMCP',
+}
+const who = (d: Done, other: Done) =>
+  d.agent === 'browser' && other.agent === 'webmcp' ? 'The browser agent without it' : WHO[d.agent]
+
+// b is the baseline (the left lane), a the challenger
 const headline = (b: Done, a: Done) => {
   if (!a.success && !b.success) return 'Neither agent finished the task'
-  if (!b.success)
-    return `The browser agent didn’t finish. The Affordances agent did, in ${sec(a.at)}.`
-  if (!a.success)
-    return `The Affordances agent didn’t finish. The browser agent did, in ${sec(b.at)}.`
+  if (!b.success) return `${who(b, a)} didn’t finish. ${who(a, b)} did, in ${sec(a.at)}.`
+  if (!a.success) return `${who(a, b)} didn’t finish. ${who(b, a)} did, in ${sec(b.at)}.`
   // a few hundred ms is model latency noise, not a result
   if (Math.abs(a.at - b.at) < 500) return `A dead heat: both finished in about ${sec(a.at)}`
-  if (a.at < b.at) return `The Affordances agent finished ${ratio(b.at, a.at)} faster`
-  return `The browser agent finished first, by ${sec(a.at - b.at)}`
+  if (a.at < b.at) return `${who(a, b)} finished ${ratio(b.at, a.at)} faster`
+  return `${who(b, a)} finished first, by ${sec(a.at - b.at)}`
 }
 
 export const Summary = ({
-  browser,
-  afford,
+  lanes: [base, other],
   onClose,
   onReplay,
 }: {
-  browser: Lane
-  afford: Lane
+  lanes: Lane[]
   onClose: () => void
   onReplay: () => void
 }) => {
-  if (browser.activity.kind !== 'done' || afford.activity.kind !== 'done') return null
-  const b = browser.activity.done
-  const a = afford.activity.done
+  if (base?.activity.kind !== 'done' || other?.activity.kind !== 'done') return null
+  const b = base.activity.done
+  const a = other.activity.done
+  // the page tools a lane was offered, and which it used: the honest footnote to the discovery story
+  const found = [base, other].filter((l) => l.offered.length > 0)
   return (
     <div className="absolute inset-0 z-10 grid place-items-center bg-background/75 p-6 backdrop-blur-[2px]">
       <section
@@ -64,16 +72,14 @@ export const Summary = ({
               <th className="pb-2 font-normal">
                 <span className="sr-only">Measure</span>
               </th>
-              <th className="pb-2 font-normal">
-                <span className="mr-2 inline-block size-2 rounded-full bg-browser" />
-                Browser
-              </th>
-              <th className="pb-2 font-normal">
-                <span className="mr-2 inline-block size-2 rounded-full bg-afford" />
-                Affordances
-              </th>
+              {[base, other].map((l) => (
+                <th key={l.agent} className={cn('pb-2 font-normal', LANE[l.agent])}>
+                  <span className="mr-2 inline-block size-2 rounded-full bg-(--lane)" />
+                  {SHORT[l.agent]}
+                </th>
+              ))}
               <th className="pb-2 text-right font-normal">
-                <span className="sr-only">Affordances agent, compared</span>
+                <span className="sr-only">{SHORT[other.agent]}, compared</span>
               </th>
             </tr>
           </thead>
@@ -88,7 +94,7 @@ export const Summary = ({
                     {row.label}
                   </th>
                   <td className="py-2.5">{row.format(vb)}</td>
-                  <td className="py-2.5 text-afford">{row.format(va)}</td>
+                  <td className={cn('py-2.5 text-(--lane)', LANE[a.agent])}>{row.format(va)}</td>
                   <td
                     className={cn(
                       'py-2.5 text-right text-xl',
@@ -122,6 +128,19 @@ export const Summary = ({
             </tr>
           </tbody>
         </table>
+        {found.map((l) => (
+          <p key={l.agent} className="mt-5 text-[15px] text-pretty text-muted-foreground">
+            The page offered <span className="font-mono text-afford">{l.offered.join(', ')}</span>.{' '}
+            {l.called.length ? (
+              <>
+                It called <span className="font-mono text-afford">{l.called.join(', ')}</span>{' '}
+                instead of clicking through.
+              </>
+            ) : (
+              'It never called one, and read the page instead.'
+            )}
+          </p>
+        ))}
         <div className="mt-7 flex gap-2">
           <Button variant="secondary" className="h-9 gap-2 px-3 text-sm" onClick={onReplay}>
             <RotateCcwIcon className="size-4" />

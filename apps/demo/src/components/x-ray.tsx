@@ -7,10 +7,10 @@ import {
   DialogDescription,
   DialogTitle,
 } from '@affordances/ui/components/dialog'
-import { AGENTS, kb, NAMES, type DemoEvent } from '@/lib/race'
+import { agentsOf, kb, LANE, NAMES, type DemoEvent } from '@/lib/race'
 
 // what each model is handed before the task: the system prompt (the affordances agent's carries the site
-// index) and its tools. the task prompt itself is the same for both
+// index; the webmcp agent's one sentence about page tools) and its tools. the task prompt is the same for all
 export const XRay = ({
   open,
   onOpenChange,
@@ -34,17 +34,22 @@ export const XRay = ({
           </DialogDescription>
         </div>
         <div className="grid gap-6 md:grid-cols-2">
-          {AGENTS.map((agent) => {
+          {agentsOf(events).map((agent) => {
             const setup = events.find((e) => e.type === 'agent' && e.agent === agent)
             if (setup?.type !== 'agent') return null
+            // tools pages registered along the way (WebMCP): never in the prompt, only in the toolbox
+            const builtins = new Set(setup.tools.map((tool) => tool.name))
+            const page = [
+              ...new Set(
+                events.flatMap((e) =>
+                  e.type === 'turn' && e.agent === agent
+                    ? (e.tools ?? []).filter((name) => !builtins.has(name))
+                    : [],
+                ),
+              ),
+            ]
             return (
-              <section
-                key={agent}
-                className={cn(
-                  'flex min-w-0 flex-col gap-4',
-                  agent === 'afford' ? '[--lane:var(--afford)]' : '[--lane:var(--browser)]',
-                )}
-              >
+              <section key={agent} className={cn('flex min-w-0 flex-col gap-4', LANE[agent])}>
                 <h3 className="flex items-center gap-2.5 text-lg font-medium">
                   <span aria-hidden className="size-2.5 rounded-full bg-(--lane)" />
                   {NAMES[agent]}
@@ -70,6 +75,20 @@ export const XRay = ({
                     ))}
                   </ul>
                 </div>
+                {page.length > 0 && (
+                  <div>
+                    <p className="text-[13px] text-muted-foreground">
+                      Registered by pages during the run, in the toolbox only while on that page
+                    </p>
+                    <p className="mt-1.5 flex flex-wrap gap-1.5 font-mono text-[14px]">
+                      {page.map((name) => (
+                        <span key={name} className="rounded-md bg-afford/15 px-1.5 text-afford">
+                          {name}
+                        </span>
+                      ))}
+                    </p>
+                  </div>
+                )}
               </section>
             )
           })}

@@ -9,10 +9,41 @@ export type Frame = Extract<DemoEvent, { type: 'frame' }>
 export type Done = Extract<DemoEvent, { type: 'done' }>
 export type Call = Turn['calls'][number]
 
-export const AGENTS = ['browser', 'afford'] as const
+// lane order, left to right: the baseline first
+const ORDER: AgentKind[] = ['browser', 'webmcp', 'afford']
+
+// the agents a recording races, from what each was given up front
+export const agentsOf = (events: DemoEvent[]): AgentKind[] => {
+  const present = new Set(events.flatMap((e) => (e.type === 'agent' ? [e.agent] : [])))
+  return ORDER.filter((a) => present.has(a))
+}
+
 export const NAMES: Record<AgentKind, string> = {
   browser: 'Browser agent',
   afford: 'Affordances agent',
+  webmcp: 'Browser agent + WebMCP',
+}
+export const SHORT: Record<AgentKind, string> = {
+  browser: 'Browser',
+  afford: 'Affordances',
+  webmcp: '+ WebMCP',
+}
+// each lane's colour; orange always means affordances, so webmcp's lane is blue and the page tools it
+// discovers (affordances actions, registered by the page) are orange inside it
+export const LANE: Record<AgentKind, string> = {
+  browser: '[--lane:var(--browser)]',
+  afford: '[--lane:var(--afford)]',
+  webmcp: '[--lane:var(--webmcp)]',
+}
+
+// two stories: the affordances agent against a browser agent, or the same browser agent with and without
+// a browser that offers the tools a page registers (WebMCP)
+export type Story = 'race' | 'discovery'
+export const storyOf = (agents: AgentKind[]): Story =>
+  agents.includes('webmcp') ? 'discovery' : 'race'
+export const STORIES: Record<Story, string> = {
+  race: 'Affordances agent vs browser',
+  discovery: 'Discovery: browser with and without WebMCP',
 }
 
 // mirrors PRICES in apps/bench/src/loop.ts (which can't be bundled: it builds an api client on import), so
@@ -36,11 +67,24 @@ export type Activity =
   | { kind: 'tool'; call: Call; since: number }
   | { kind: 'done'; done: Done }
 
-export type Step = Turn & { tools: ToolResult[]; tokens: number }
+// a turn and the results of the tools it called; `offered` is the toolbox the model had on that turn
+export type Step = Omit<Turn, 'tools'> & {
+  offered?: string[]
+  results: ToolResult[]
+  tokens: number
+}
 
 export type Lane = {
   agent: AgentKind
   setup?: Setup
+  // the tools every turn has; anything else was registered by the page the agent is on
+  builtins: Set<string>
+  // the toolbox right now: what the model has (or had) on its latest turn, and what that turn lost
+  toolbox: string[]
+  lost: string[]
+  // page tools across the run so far: offered at some point, and actually called
+  offered: string[]
+  called: string[]
   steps: Step[]
   read?: ToolResult
   frame?: Frame
@@ -57,6 +101,11 @@ export const lane = (events: DemoEvent[], agent: AgentKind, t: number, model: st
   const price = PRICES[model]
   const out: Lane = {
     agent,
+    builtins: new Set(),
+    toolbox: [],
+    lost: [],
+    offered: [],
+    called: [],
     steps: [],
     activity: { kind: 'thinking', since: 0 },
     turns: 0,
@@ -68,16 +117,29 @@ export const lane = (events: DemoEvent[], agent: AgentKind, t: number, model: st
   }
   let done: Done | undefined
   let last = 0
+  let before: string[] = []
   for (const e of events) {
     if (!('agent' in e) || e.agent !== agent) continue
     if (e.type === 'agent') {
       out.setup = e
+      out.builtins = new Set(e.tools.map((tool) => tool.name))
+      out.toolbox = [...out.builtins]
       continue
+    }
+    // the model has its toolbox from the moment its request goes out, before the answer comes back (live,
+    // that's when the turn arrives)
+    if (e.type === 'turn' && e.tools && e.at - e.ms <= t) {
+      before = out.toolbox
+      out.toolbox = e.tools
+      out.lost = before.filter((name) => !e.tools!.includes(name))
+      for (const name of e.tools)
+        if (!out.builtins.has(name) && !out.offered.includes(name)) out.offered.push(name)
     }
     if (e.at > t) continue
     if (e.type === 'turn') {
       const tokens = tokensOf(e)
-      out.steps.push({ ...e, tools: [], tokens })
+      const { tools: offered, ...turn } = e
+      out.steps.push({ ...turn, offered, results: [], tokens })
       out.turns++
       out.tokens += tokens
       if (price && out.costUsd !== null) {
@@ -91,9 +153,10 @@ export const lane = (events: DemoEvent[], agent: AgentKind, t: number, model: st
       }
       last = e.at
     } else if (e.type === 'tool') {
-      out.steps.at(-1)?.tools.push(e)
+      out.steps.at(-1)?.results.push(e)
       out.toolCalls++
       if (e.error) out.errors++
+      if (!out.builtins.has(e.name) && !out.called.includes(e.name)) out.called.push(e.name)
       out.read = e
       last = e.at
     } else if (e.type === 'frame') out.frame = e
@@ -107,21 +170,27 @@ export const lane = (events: DemoEvent[], agent: AgentKind, t: number, model: st
   }
   // tools run one after another, so the next unanswered call started when the previous one returned
   const step = out.steps.at(-1)
-  const call = step?.calls[step.tools.length]
+  const call = step?.calls[step.results.length]
   out.activity = call ? { kind: 'tool', call, since: last } : { kind: 'thinking', since: last }
   return out
 }
 
-// the whole race as spans, for the scrubber: model time, tool time, and where each agent finished
-export type Span = { from: number; to: number; kind: 'think' | 'tool' | 'error' }
+// the whole race as spans, for the scrubber: model time, tool time (page tools apart), and the finish
+export type Span = { from: number; to: number; kind: 'think' | 'tool' | 'page' | 'error' }
 export const spans = (events: DemoEvent[], agent: AgentKind) => {
   const out: Span[] = []
+  let builtins = new Set<string>()
   let done: Done | undefined
   for (const e of events) {
     if (!('agent' in e) || e.agent !== agent) continue
+    if (e.type === 'agent') builtins = new Set(e.tools.map((tool) => tool.name))
     if (e.type === 'turn') out.push({ from: e.at - e.ms, to: e.at, kind: 'think' })
     if (e.type === 'tool')
-      out.push({ from: e.at - e.ms, to: e.at, kind: e.error ? 'error' : 'tool' })
+      out.push({
+        from: e.at - e.ms,
+        to: e.at,
+        kind: e.error ? 'error' : builtins.has(e.name) ? 'tool' : 'page',
+      })
     if (e.type === 'done') done = e
   }
   return { spans: out, done }

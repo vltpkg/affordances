@@ -5,16 +5,23 @@
   --afford: #ff6a1f;
   --browser: oklch(0.8 0 0);
   --fail: oklch(0.7 0.19 22);
+  /* the same browser agent with WebMCP: cool, so the orange page tools it discovers stand out inside it */
+  --webmcp: oklch(0.74 0.13 245);
 }
 
 @theme inline {
   --color-afford: var(--afford);
   --color-browser: var(--browser);
   --color-fail: var(--fail);
+  --color-webmcp: var(--webmcp);
   --animate-enter: enter 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
   --animate-stamp: stamp 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
   --animate-breathe: breathe 1.2s ease-in-out infinite;
   --animate-finish: finish 1.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* a page tool arriving: slides in, then glows once so the room sees it */
+  --animate-tool-in:
+    tool-in 320ms cubic-bezier(0.2, 0.8, 0.2, 1), glow 1.6s cubic-bezier(0.2, 0.8, 0.2, 1) 200ms;
+  --animate-tool-out: tool-out 400ms ease-out;
 }
 
 /* a new row, result or frame: arrives, doesn't jump */
@@ -35,6 +42,29 @@
 @keyframes finish {
   from {
     opacity: 1;
+  }
+}
+
+@keyframes tool-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+
+@keyframes glow {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--afford) 70%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 10px transparent;
+  }
+}
+
+@keyframes tool-out {
+  from {
+    opacity: 1;
+    text-decoration-color: transparent;
   }
 }
 

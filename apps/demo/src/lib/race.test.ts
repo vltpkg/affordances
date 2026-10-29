@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { test } from 'node:test'
-import { AGENTS, duration, lane, sorted, type DemoEvent } from './race.ts'
+import { agentsOf, duration, lane, sorted, type DemoEvent } from './race.ts'
 
 const dir = path.join(import.meta.dirname, '../../recordings')
 
@@ -13,7 +13,7 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.json'))) {
       (JSON.parse(readFileSync(path.join(dir, file), 'utf8')) as { events: DemoEvent[] }).events,
     )
     const run = events.find((e) => e.type === 'run')!
-    for (const agent of AGENTS) {
+    for (const agent of agentsOf(events)) {
       const done = events.find((e) => e.type === 'done' && e.agent === agent)
       if (done?.type !== 'done' || done.error) continue
       const end = lane(events, agent, duration(events), run.model)
