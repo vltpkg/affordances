@@ -1,22 +1,26 @@
-import { spawn } from 'node:child_process'
+import { execSync, spawn } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { parseArgs } from 'node:util'
 import { createClient } from '@afford/mcp'
 import { affordAgent, browserAgent, closeBrowser } from './agents.ts'
-import { EFFORT, MODEL, runAgent, type RunStats } from './loop.ts'
+import { DEFAULT_MODEL, EFFORT, emptyStats, runAgent, type RunStats } from './loop.ts'
 import { newSession, tasks } from './tasks.ts'
 
-// vlr bench -- --runs 5      every task × both agents × 5 runs, against a fresh apps/example each run
-// vlr bench -- --dry         the scripted oracle instead of the model: checks the tasks and checks, costs nothing
+// vlr bench -- --runs 20                            every task × both agents × 20 runs, a fresh apps/example each run
+// vlr bench -- --runs 20 --model claude-haiku-5-5   the same, on another model
+// vlr bench -- --dry                                the scripted oracle instead of the model: checks the tasks, free
 const { values } = parseArgs({
   options: {
     runs: { type: 'string', default: '3' },
+    model: { type: 'string', default: DEFAULT_MODEL },
     dry: { type: 'boolean', default: false },
     port: { type: 'string', default: '3100' },
   },
 })
 const runs = Number(values.runs)
+const git = (args: string) => execSync(`git ${args}`, { encoding: 'utf8' }).trim()
+const model = values.model!
 const site = `http://localhost:${values.port}`
 const example = path.join(import.meta.dirname, '../../example')
 
@@ -51,38 +55,22 @@ for (let run = 1; run <= runs; run++) {
         const sid = await newSession(site)
         const client = createClient(site, { token: sid })
         await task.setup?.(client)
-        const agent = kind === 'afford' ? affordAgent(site, sid) : await browserAgent(site, sid)
+        const agent =
+          kind === 'afford' ? await affordAgent(site, sid) : await browserAgent(site, sid)
         let stats: Omit<RunStats, 'success'>
         try {
           stats = values.dry
-            ? {
-                turns: 0,
-                toolCalls: 0,
-                inputTokens: 0,
-                outputTokens: 0,
-                ms: 0,
-                stop: 'dry',
-                answer: await task.oracle(client),
-              }
-            : await runAgent(agent.system, task.prompt, agent.tools)
+            ? emptyStats({ stop: 'dry', answer: await task.oracle(client) })
+            : await runAgent(model, agent.system, task.prompt, agent.tools)
         } catch (error) {
-          stats = {
-            turns: 0,
-            toolCalls: 0,
-            inputTokens: 0,
-            outputTokens: 0,
-            ms: 0,
-            stop: 'error',
-            answer: '',
-            error: (error as Error).message,
-          }
+          stats = emptyStats({ stop: 'error', error: (error as Error).message })
         } finally {
           await agent.close()
         }
         const success = !stats.error && (await task.check(client, stats.answer))
         rows.push({ run, agent: kind, task: task.id, ...stats, success })
         console.log(
-          `run ${run}  ${kind.padEnd(7)}  ${task.id.padEnd(16)}  ${success ? 'pass' : 'FAIL'}  ${stats.turns} turns  ${stats.inputTokens + stats.outputTokens} tokens  ${stats.ms}ms`,
+          `run ${run}  ${kind.padEnd(7)}  ${task.id.padEnd(16)}  ${success ? 'pass' : 'FAIL'}  ${stats.turns} turns  ${stats.tokens} tokens  $${stats.costUsd.toFixed(4)}  ${stats.ms}ms`,
         )
       }
   } finally {
@@ -95,19 +83,57 @@ const median = (xs: number[]) => {
   const s = xs.toSorted((a, b) => a - b)
   return s.length ? (s[Math.floor((s.length - 1) / 2)]! + s[Math.ceil((s.length - 1) / 2)]!) / 2 : 0
 }
+// median plus the full range, so a reader sees the spread and not only the middle
+const spread = (xs: number[]) => ({
+  median: median(xs),
+  min: xs.length ? Math.min(...xs) : 0,
+  max: xs.length ? Math.max(...xs) : 0,
+})
+const summarize = (mine: Row[]) => {
+  const passed = mine.filter((r) => r.success)
+  const cost = mine.reduce((sum, r) => sum + r.costUsd, 0)
+  return {
+    // the four the site reads; medians across every run
+    successRate: mine.length ? passed.length / mine.length : 0,
+    medianTurns: median(mine.map((r) => r.turns)),
+    medianTokens: median(mine.map((r) => r.tokens)),
+    medianMs: median(mine.map((r) => r.ms)),
+    turns: spread(mine.map((r) => r.turns)),
+    tokens: spread(mine.map((r) => r.tokens)),
+    ms: spread(mine.map((r) => r.ms)),
+    firstActionMs: spread(mine.flatMap((r) => (r.firstActionMs === null ? [] : [r.firstActionMs]))),
+    tokenSplit: {
+      input: median(mine.map((r) => r.inputTokens)),
+      cacheRead: median(mine.map((r) => r.cacheReadTokens)),
+      cacheWrite: median(mine.map((r) => r.cacheWriteTokens)),
+      output: median(mine.map((r) => r.outputTokens)),
+    },
+    // what reading pages costs: bytes the agent's read tools returned, per run
+    readBytes: spread(
+      mine.map((r) =>
+        r.trace
+          .filter((c) => !['afford_call', 'click', 'fill', 'press'].includes(c.tool))
+          .reduce((sum, c) => sum + c.bytes, 0),
+      ),
+    ),
+    costUsd: cost,
+    costPerSuccessUsd: passed.length ? cost / passed.length : null,
+  }
+}
+const agents = values.dry ? (['afford'] as const) : (['browser', 'afford'] as const)
 const summary = Object.fromEntries(
-  (['browser', 'afford'] as const).map((agent) => {
-    const mine = rows.filter((row) => row.agent === agent)
-    return [
-      agent,
-      {
-        successRate: mine.length ? mine.filter((r) => r.success).length / mine.length : 0,
-        medianTurns: median(mine.map((r) => r.turns)),
-        medianTokens: median(mine.map((r) => r.inputTokens + r.outputTokens)),
-        medianMs: median(mine.map((r) => r.ms)),
-      },
-    ]
-  }),
+  agents.map((agent) => [agent, summarize(rows.filter((row) => row.agent === agent))]),
+)
+const perTask = Object.fromEntries(
+  tasks.map((task) => [
+    task.id,
+    Object.fromEntries(
+      agents.map((agent) => [
+        agent,
+        summarize(rows.filter((r) => r.agent === agent && r.task === task.id)),
+      ]),
+    ),
+  ]),
 )
 
 if (values.dry) {
@@ -118,12 +144,17 @@ if (values.dry) {
   const out = path.join(
     import.meta.dirname,
     '../results',
-    `${new Date().toISOString().slice(0, 10)}.json`,
+    `${new Date().toISOString().slice(0, 10)}-${model}.json`,
   )
+  // enough to reproduce: the code (and whether it had uncommitted changes), the model, and when
+  const commit = {
+    sha: git('rev-parse HEAD'),
+    dirty: git("status --porcelain -- apps packages ':!apps/bench/results'") !== '',
+  }
   mkdirSync(path.dirname(out), { recursive: true })
   writeFileSync(
     out,
-    `${JSON.stringify({ model: MODEL, effort: EFFORT, runs, tasks: tasks.map(({ id, prompt }) => ({ id, prompt })), summary, rows }, null, 2)}\n`,
+    `${JSON.stringify({ model, effort: EFFORT, runs, commit, finishedAt: new Date().toISOString(), node: process.version, tasks: tasks.map(({ id, prompt }) => ({ id, prompt })), summary, perTask, rows }, null, 2)}\n`,
   )
   console.log(JSON.stringify(summary, null, 2), `\n→ ${path.relative(process.cwd(), out)}`)
 }

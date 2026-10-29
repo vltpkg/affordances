@@ -1,14 +1,16 @@
 import { chromium, type Browser } from 'playwright'
-import { createClient } from '@afford/mcp'
+import { createClient, describeSite } from '@afford/mcp'
 import type { Tool } from './loop.ts'
 
 // each agent starts on a session the task set up, so the check can read that session's cart and orders
 
 const json = (value: unknown) => JSON.stringify(value)
 
-export const affordAgent = (site: string, sid: string) => {
+export const affordAgent = async (site: string, sid: string) => {
   // the same session a browser would carry as its sid cookie
   const client = createClient(site, { token: sid })
+  // what an MCP client would get as the server's instructions: every route and action, before the first call
+  const index = describeSite(await client.index())
   const tools: Tool[] = [
     {
       name: 'afford_open',
@@ -48,7 +50,7 @@ export const affordAgent = (site: string, sid: string) => {
   ]
   return {
     name: 'afford' as const,
-    system: `You operate the website at ${site} through its Afford graph. Use afford_open and afford_call. When the task is done, reply with a one-line summary.`,
+    system: `You operate the website at ${site} through its Afford graph. Use afford_open and afford_call. When the task is done, reply with a one-line summary.\n\n${index}`,
     tools,
     close: async () => {},
   }

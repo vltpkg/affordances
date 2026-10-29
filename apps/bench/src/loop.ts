@@ -1,33 +1,77 @@
 import Anthropic from '@anthropic-ai/sdk'
 
-export const MODEL = 'claude-opus-5-5'
-// pinned so both agents think the same amount; opus 5.5 defaults to medium anyway
+export const DEFAULT_MODEL = 'claude-opus-5-5'
+// pinned so both agents think the same amount (opus 5.5 and haiku 5.5 default to medium anyway)
 export const EFFORT = 'medium'
 const MAX_TURNS = 40
 
+// list prices, USD per million tokens; cache writes are the 5-minute kind (1.25× input)
+// ponytail: hand-copied list prices, update when they change (or read them from the models API)
+export const PRICES: Record<
+  string,
+  { input: number; output: number; cacheRead: number; cacheWrite: number }
+> = {
+  'claude-opus-5-5': { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 5 },
+  'claude-sonnet-5-5': { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+  'claude-haiku-5-5': { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 },
+}
+
+// tools that change or act on the page, as opposed to reading it: the first one is "time to first action"
+const ACTIONS = new Set(['afford_call', 'click', 'fill', 'press'])
+
 export type Tool = Anthropic.Tool & { run: (input: Record<string, unknown>) => Promise<string> }
+
+export type Call = { tool: string; input: unknown; ms: number; bytes: number; error?: string }
 
 export type RunStats = {
   success: boolean
   turns: number
   toolCalls: number
+  // every token the model read or wrote, as one number (what the summary's medianTokens is made of)
+  tokens: number
   inputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
   outputTokens: number
+  costUsd: number
   ms: number
+  // from the first request to the first tool call that acts (afford_call, click, fill, press)
+  firstActionMs: number | null
   stop: string
   // the model's last text, for tasks that ask a question
   answer: string
+  trace: Call[]
   error?: string
 }
 
 const client = new Anthropic()
 
+export const emptyStats = (extra: Partial<RunStats> = {}): Omit<RunStats, 'success'> => ({
+  turns: 0,
+  toolCalls: 0,
+  tokens: 0,
+  inputTokens: 0,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+  outputTokens: 0,
+  costUsd: 0,
+  ms: 0,
+  firstActionMs: null,
+  stop: 'none',
+  answer: '',
+  trace: [],
+  ...extra,
+})
+
 // one task, one agent: loop until the model stops calling tools (or a turn cap), counting everything
 export const runAgent = async (
+  model: string,
   system: string,
   prompt: string,
   tools: Tool[],
 ): Promise<Omit<RunStats, 'success'>> => {
+  const price = PRICES[model]
+  if (!price) throw new Error(`No price for ${model}; add it to PRICES in src/loop.ts`)
   const started = performance.now()
   const definitions: Anthropic.Tool[] = tools.map(({ name, description, input_schema }) => ({
     name,
@@ -36,18 +80,11 @@ export const runAgent = async (
   }))
   const byName = new Map(tools.map((tool) => [tool.name, tool]))
   const messages: Anthropic.MessageParam[] = [{ role: 'user', content: prompt }]
-  const stats = {
-    turns: 0,
-    toolCalls: 0,
-    inputTokens: 0,
-    outputTokens: 0,
-    stop: 'turn_cap',
-    answer: '',
-  }
+  const stats = emptyStats({ stop: 'turn_cap' })
 
   while (stats.turns < MAX_TURNS) {
     const response = await client.messages.create({
-      model: MODEL,
+      model,
       max_tokens: 16000,
       output_config: { effort: EFFORT },
       // tools + system never change within a run, so every turn after the first reads them from cache
@@ -58,10 +95,9 @@ export const runAgent = async (
     })
     stats.turns++
     const { usage } = response
-    stats.inputTokens +=
-      usage.input_tokens +
-      (usage.cache_creation_input_tokens ?? 0) +
-      (usage.cache_read_input_tokens ?? 0)
+    stats.inputTokens += usage.input_tokens
+    stats.cacheReadTokens += usage.cache_read_input_tokens ?? 0
+    stats.cacheWriteTokens += usage.cache_creation_input_tokens ?? 0
     stats.outputTokens += usage.output_tokens
 
     const text = response.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('\n')
@@ -76,24 +112,46 @@ export const runAgent = async (
     const results: Anthropic.ToolResultBlockParam[] = []
     for (const call of calls) {
       stats.toolCalls++
+      if (stats.firstActionMs === null && ACTIONS.has(call.name))
+        stats.firstActionMs = Math.round(performance.now() - started)
       const tool = byName.get(call.name)
+      const at = performance.now()
       try {
         if (!tool) throw new Error(`No tool named ${call.name}`)
-        results.push({
-          type: 'tool_result',
-          tool_use_id: call.id,
-          content: await tool.run(call.input as Record<string, unknown>),
+        const content = await tool.run(call.input as Record<string, unknown>)
+        stats.trace.push({
+          tool: call.name,
+          input: call.input,
+          ms: Math.round(performance.now() - at),
+          bytes: content.length,
         })
+        results.push({ type: 'tool_result', tool_use_id: call.id, content })
       } catch (error) {
+        const message = (error as Error).message
+        stats.trace.push({
+          tool: call.name,
+          input: call.input,
+          ms: Math.round(performance.now() - at),
+          bytes: 0,
+          error: message,
+        })
         results.push({
           type: 'tool_result',
           tool_use_id: call.id,
           is_error: true,
-          content: (error as Error).message,
+          content: message,
         })
       }
     }
     messages.push({ role: 'user', content: results })
   }
+  stats.tokens =
+    stats.inputTokens + stats.cacheReadTokens + stats.cacheWriteTokens + stats.outputTokens
+  stats.costUsd =
+    (stats.inputTokens * price.input +
+      stats.cacheReadTokens * price.cacheRead +
+      stats.cacheWriteTokens * price.cacheWrite +
+      stats.outputTokens * price.output) /
+    1e6
   return { ...stats, ms: Math.round(performance.now() - started) }
 }
