@@ -351,9 +351,14 @@ const Viewport = ({ lane, className }: { lane: LaneState; className?: string }) 
   )
 }
 
+// a 1280x800 screenshot: ⌈1280/28⌉ × ⌈800/28⌉ image tokens
+const SCREENSHOT_TOKENS = 1334
+
 const Reads = ({ lane }: { lane: LaneState }) => {
-  const { read } = lane
+  const { read, frame } = lane
   const label = read && callLabel(read.name, read.input)
+  // the screenshot agent reads the screenshot itself; the recording keeps it as the frame, not the result
+  const image = read?.result === '[image]' ? frame : undefined
   return (
     <Panel
       label="What the model reads"
@@ -362,7 +367,11 @@ const Reads = ({ lane }: { lane: LaneState }) => {
           <span
             className={cn('font-mono tabular-nums', read.error ? 'text-fail' : 'text-foreground')}
           >
-            {read.error ? 'error' : kb(read.result.length)}
+            {read.error
+              ? 'error'
+              : image
+                ? `≈${(SCREENSHOT_TOKENS / 1000).toFixed(1)}k image tokens`
+                : kb(read.result.length)}
           </span>
         )
       }
@@ -375,17 +384,29 @@ const Reads = ({ lane }: { lane: LaneState }) => {
               ← {label!.verb} <span className="text-muted-foreground">{label!.arg}</span>
             </span>
           </p>
-          {/* raw, exactly as the model gets it on its next turn */}
-          <pre
-            key={read.id}
-            aria-label="Latest tool result"
-            className={cn(
-              'min-h-0 flex-1 animate-enter overflow-auto p-3 font-mono text-xs/[1.55] whitespace-pre-wrap [overflow-wrap:anywhere]',
-              read.error ? 'bg-fail/10 text-fail' : 'text-muted-foreground',
-            )}
-          >
-            {plain(read.result)}
-          </pre>
+          {image ? (
+            <div className="relative min-h-0 flex-1 bg-muted/30">
+              {/* oxlint-disable-next-line nextjs/no-img-element */}
+              <img
+                key={read.id}
+                src={image.image}
+                alt="The screenshot the model reads"
+                className="absolute inset-0 size-full animate-enter object-contain"
+              />
+            </div>
+          ) : (
+            /* raw, exactly as the model gets it on its next turn */
+            <pre
+              key={read.id}
+              aria-label="Latest tool result"
+              className={cn(
+                'min-h-0 flex-1 animate-enter overflow-auto p-3 font-mono text-xs/[1.55] whitespace-pre-wrap [overflow-wrap:anywhere]',
+                read.error ? 'bg-fail/10 text-fail' : 'text-muted-foreground',
+              )}
+            >
+              {plain(read.result)}
+            </pre>
+          )}
         </>
       ) : (
         <Empty>

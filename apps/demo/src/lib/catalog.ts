@@ -9,6 +9,8 @@ export const TASKS = [
   { id: 'checkout', label: 'Checkout' },
   { id: 'search', label: 'Search' },
   { id: 'order-status', label: 'Order status' },
+  { id: 'two-items-checkout', label: 'Two items + checkout' },
+  { id: 'edit-cart', label: 'Edit cart' },
 ]
 export const taskLabel = (id: string) => TASKS.find((t) => t.id === id)?.label ?? id
 
