@@ -60,12 +60,15 @@ const Tee = () => (
 const Frame = ({
   icon,
   title,
+  type,
   footer,
   className,
   children,
 }: {
   icon: React.ReactNode
   title: string
+  // the representation this view is, shown muted after the title
+  type?: string
   footer?: React.ReactNode
   className?: string
   children: React.ReactNode
@@ -91,6 +94,7 @@ const Frame = ({
       <span className="relative mt-1 flex h-10 items-center gap-1.5 rounded-lg px-3 font-mono text-xs whitespace-nowrap text-foreground/75 [&_svg]:size-3">
         {icon}
         {title}
+        {type && <span className="text-muted-foreground">· {type}</span>}
       </span>
     </figcaption>
     <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl border bg-(--code-editor-background)">
@@ -124,125 +128,143 @@ export const TwoViews = () => {
   }
 
   return (
-    <>
-      <Frame icon={<AppWindowIcon aria-hidden className="text-muted-foreground" />} title="Human">
-        <div className="flex h-full flex-col">
-          <div className="flex h-11 shrink-0 items-center justify-between border-b px-4 text-xs">
-            <span className="font-semibold tracking-tight">Afford Supply</span>
-            <span className="flex items-center gap-1.5 text-muted-foreground tabular-nums">
-              <ShoppingBagIcon aria-hidden className="size-3.5" />
-              <span
-                key={cart.count}
-                className="text-foreground duration-200 animate-in fade-in-0 zoom-in-90 motion-reduce:animate-none"
-              >
-                {cart.count}
+    <div className="@container">
+      {/* one url, asked for twice: the bar forks into the two representations it serves */}
+      <div className="flex justify-center">
+        <p className="rounded-xl bg-card px-4 py-2 font-mono text-xs text-foreground/75 shadow-lg ring-1 shadow-black/6.5 ring-border-illustration">
+          <span className="text-muted-foreground">GET</span> {graph.page}
+        </p>
+      </div>
+      <div aria-hidden className="relative h-6 @max-3xl:hidden">
+        <span className="absolute top-0 left-1/2 h-3 border-l" />
+        <span className="absolute top-3 right-1/4 left-1/4 h-3 rounded-t-lg border-x border-t" />
+      </div>
+      <div className="grid gap-4 @max-3xl:mt-4 @3xl:grid-cols-2">
+        <Frame
+          icon={<AppWindowIcon aria-hidden className="text-muted-foreground" />}
+          title="Human"
+          type="text/html"
+        >
+          <div className="flex h-full flex-col">
+            <div className="flex h-11 shrink-0 items-center justify-between border-b px-4 text-xs">
+              <span className="font-semibold tracking-tight">Afford Supply</span>
+              <span className="flex items-center gap-1.5 text-muted-foreground tabular-nums">
+                <ShoppingBagIcon aria-hidden className="size-3.5" />
+                <span
+                  key={cart.count}
+                  className="text-foreground duration-200 animate-in fade-in-0 zoom-in-90 motion-reduce:animate-none"
+                >
+                  {cart.count}
+                </span>
               </span>
-            </span>
-          </div>
-          <div className="flex flex-1 flex-col gap-5 p-4">
-            {/* the store's product plate: the drawing on bg-muted, as on its product page */}
-            <div className="h-40 shrink-0 rounded-md bg-muted p-2 text-foreground xl:h-auto xl:min-h-0 xl:flex-1">
-              <Tee />
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground capitalize">{variant.color}</p>
-              <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-4">
-                <h3 className="text-base font-semibold tracking-tight whitespace-nowrap">
-                  {product.name}
-                </h3>
-                <p className="tabular-nums">{money(product.price)}</p>
+            <div className="flex flex-1 flex-col gap-5 p-4">
+              {/* the store's product plate: the drawing on bg-muted, as on its product page */}
+              <div className="h-44 shrink-0 rounded-md bg-muted p-2 text-foreground">
+                <Tee />
               </div>
-              <fieldset className="mt-4">
-                <legend className="text-xs text-muted-foreground">Size</legend>
-                <div className="mt-2 flex gap-2">
-                  {product.variants.map((v) => (
-                    <button
-                      key={v.sku}
-                      type="button"
-                      aria-pressed={v.sku === sku}
-                      aria-label={v.stock ? `Size ${v.size}` : `Size ${v.size}, sold out`}
-                      onClick={() => setSku(v.sku)}
-                      className={cn(
-                        'h-9 min-w-12 rounded-lg border px-3 text-sm transition-colors duration-150 outline-none focus-visible:ring-3 focus-visible:ring-ring/50',
-                        v.sku === sku ? 'border-foreground' : 'hover:border-foreground/30',
-                        v.stock === 0 && 'border-dashed text-muted-foreground',
-                      )}
-                    >
-                      {v.size}
-                    </button>
-                  ))}
+              <div>
+                <p className="text-xs text-muted-foreground capitalize">{variant.color}</p>
+                <div className="mt-1 flex items-baseline justify-between gap-4">
+                  <h3 className="text-base font-semibold tracking-tight whitespace-nowrap">
+                    {product.name}
+                  </h3>
+                  <p className="tabular-nums">{money(product.price)}</p>
                 </div>
-              </fieldset>
-              {inStock ? (
-                <Button
-                  size="lg"
-                  className="mt-4 w-full"
-                  onClick={add}
-                  data-afford-action="addToCart"
+                <fieldset className="mt-4">
+                  <legend className="text-xs text-muted-foreground">Size</legend>
+                  <div className="mt-2 flex gap-2">
+                    {product.variants.map((v) => (
+                      <button
+                        key={v.sku}
+                        type="button"
+                        aria-pressed={v.sku === sku}
+                        aria-label={v.stock ? `Size ${v.size}` : `Size ${v.size}, sold out`}
+                        onClick={() => setSku(v.sku)}
+                        className={cn(
+                          'h-9 min-w-12 rounded-lg border px-3 text-sm transition-colors duration-150 outline-none focus-visible:ring-3 focus-visible:ring-ring/50',
+                          v.sku === sku ? 'border-foreground' : 'hover:border-foreground/30',
+                          v.stock === 0 && 'border-dashed text-muted-foreground',
+                        )}
+                      >
+                        {v.size}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+                {inStock ? (
+                  <Button
+                    size="lg"
+                    className="mt-4 w-full"
+                    onClick={add}
+                    data-afford-action="addToCart"
+                  >
+                    Add to cart
+                  </Button>
+                ) : (
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    className="mt-4 w-full"
+                    disabled
+                    data-afford-action={notify?.name}
+                  >
+                    Notify me
+                  </Button>
+                )}
+                <p
+                  aria-live="polite"
+                  className="mt-3 min-h-10 text-xs leading-5 text-muted-foreground"
                 >
-                  Add to cart
-                </Button>
-              ) : (
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="mt-4 w-full"
-                  disabled
-                  data-afford-action={notify?.name}
-                >
-                  Notify me
-                </Button>
-              )}
-              <p
-                aria-live="polite"
-                className="mt-3 min-h-10 text-xs leading-5 text-muted-foreground"
-              >
-                {inStock
-                  ? (delta?.message ??
-                    `${cart.count} ${cart.count === 1 ? 'item' : 'items'} in your cart, ${money(cart.subtotal)}`)
-                  : notify?.reason}
-              </p>
+                  {inStock
+                    ? (delta?.message ??
+                      `${cart.count} ${cart.count === 1 ? 'item' : 'items'} in your cart, ${money(cart.subtotal)}`)
+                    : notify?.reason}
+                </p>
+              </div>
             </div>
           </div>
-        </div>
-      </Frame>
+        </Frame>
 
-      <Frame
-        icon={<BracesIcon aria-hidden className="text-amber-600" />}
-        title="Agent"
-        className="max-xl:h-[32rem]"
-        footer={
-          delta ? (
-            <span
-              key={calls}
-              className="truncate duration-200 animate-in fade-in-0 motion-reduce:animate-none"
-            >
-              POST addToCart · 200
-            </span>
-          ) : (
-            <span
-              className="truncate"
-              title={`GET ${graph.page} · Accept: application/vnd.afford+json`}
-            >
-              GET {graph.page} · Accept: application/vnd.afford+json
-            </span>
-          )
-        }
-      >
-        {/* out of flow, so the graph scrolls inside the card instead of setting the row's height */}
-        <div className="absolute inset-0 overflow-y-auto p-4 pl-7">
-          {delta && (
-            // remounts per call, so the tint plays each time a delta lands
-            <div
-              key={calls}
-              className="-mx-3 -mt-1 mb-4 rounded-lg px-3 pt-1 pb-1 animate-json-changed motion-reduce:[animation-timing-function:steps(1,end)]"
-            >
-              <JsonView value={delta} />
-            </div>
-          )}
-          <JsonView value={graph} highlight={['entities.cart']} />
-        </div>
-      </Frame>
-    </>
+        <Frame
+          icon={<BracesIcon aria-hidden className="text-amber-600" />}
+          title="Agent"
+          type="application/vnd.afford+json"
+          // side by side, the human card sets the height; stacked, the graph gets a window of its own
+          className="@max-3xl:h-[28rem]"
+          footer={
+            delta ? (
+              <span
+                key={calls}
+                className="truncate duration-200 animate-in fade-in-0 motion-reduce:animate-none"
+              >
+                POST addToCart · 200
+              </span>
+            ) : (
+              <span
+                className="truncate"
+                title={`GET ${graph.page} · Accept: application/vnd.afford+json`}
+              >
+                GET {graph.page} · Accept: application/vnd.afford+json
+              </span>
+            )
+          }
+        >
+          {/* out of flow, so the graph scrolls inside the card instead of setting the row's height */}
+          <div className="absolute inset-0 overflow-y-auto p-4 pl-7">
+            {delta && (
+              // remounts per call, so the tint plays each time a delta lands
+              <div
+                key={calls}
+                className="-mx-3 -mt-1 mb-4 rounded-lg px-3 pt-1 pb-1 animate-json-changed motion-reduce:[animation-timing-function:steps(1,end)]"
+              >
+                <JsonView value={delta} />
+              </div>
+            )}
+            <JsonView value={graph} highlight={['entities.cart']} />
+          </div>
+        </Frame>
+      </div>
+    </div>
   )
 }

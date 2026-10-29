@@ -40,7 +40,7 @@ export const metadata: Metadata = {
 
 const docs = siteUrl.origin
 
-// the action behind the hero's product page, wrapped to fit its column
+// the action behind the hero's product page
 const action = `'use server'
 
 import { z } from 'zod'
@@ -51,23 +51,15 @@ import product from './state'
 
 export const addToCart = defineAction({
   name: 'addToCart',
-  description: 'Add a variant to the cart',
-  input: z.object({
-    sku: z.string(),
-    quantity: z.number().int().min(1),
-  }),
+  description: 'Add a product variant to the cart',
+  input: z.object({ sku: z.string(), quantity: z.number().int().min(1).optional() }),
   state: product,
   expose: 'session',
   requires: 'The variant is in stock',
-  guard: ({ input, state }) =>
-    !input ||
-    inStock(state.product, input.sku) ||
-    'Sold out',
+  guard: ({ input, state }) => !input || inStock(state.product, input.sku) || 'Sold out',
   effects: ['cart'],
-  run: (input, ctx) =>
-    cart.add(ctx.session!.id, input),
-  message: ({ input }) =>
-    \`Added \${input.sku} to your cart\`,
+  run: (input, ctx) => cart.add(ctx.session!.id, input),
+  message: ({ input }) => \`Added \${input.sku} to your cart\`,
 })`
 
 const prompt = `Help me make this Next.js app agent-operable with Afford. Start by reading ${docs}/llms.txt, which lists every page of the Afford docs. Any page is available as Markdown by adding .md to its URL (for example ${docs}/quickstart.md), and ${docs}/llms-full.txt has the whole site in one file.
@@ -292,15 +284,15 @@ const Home = () => (
         </div>
       </section>
 
-      {/* one action, two views of the url it serves: three cards that share a height on wide screens */}
-      <section
-        className="mt-16 grid gap-4 xl:grid-cols-[minmax(0,36fr)_minmax(0,22fr)_minmax(0,26fr)]"
-        aria-label="One action, two views of one URL"
-      >
-        <CodeBlock lang="ts" title="actions.ts" className="text-[12px]">
+      {/* one url, two views of it, then the one action behind both */}
+      <section className="mt-16" aria-label="One URL, two views, one action">
+        <TwoViews />
+        <p className="mt-10 mb-4 text-sm text-muted-foreground">
+          All it took: one action, next to the page.
+        </p>
+        <CodeBlock lang="ts" title="actions.ts">
           {action}
         </CodeBlock>
-        <TwoViews />
       </section>
 
       <section className="mt-24">
