@@ -3,7 +3,7 @@ import path from 'node:path'
 import { parseArgs } from 'node:util'
 import { chromium } from 'playwright'
 import { createClient } from '@affordances/mcp'
-import { affordAgent, browserAgent, closeBrowser, webmcpAgent } from './agents.ts'
+import { affordAgent, browserAgent, closeBrowser, visionAgent, webmcpAgent } from './agents.ts'
 import type { AgentKind, DemoEvent } from './events.ts'
 import { DEFAULT_MODEL, runAgent, type LoopEvent } from './loop.ts'
 import { startStore } from './store.ts'
@@ -16,7 +16,7 @@ import { newSession, tasks as allTasks } from './tasks.ts'
 const { values } = parseArgs({
   options: {
     task: { type: 'string', default: 'add-to-cart' },
-    // which two (or more) race: browser, afford, webmcp
+    // which two (or more) race: browser, afford, webmcp, vision
     agents: { type: 'string', default: 'browser,afford' },
     model: { type: 'string', default: DEFAULT_MODEL },
     port: { type: 'string', default: '3101' },
@@ -26,9 +26,15 @@ const { values } = parseArgs({
 })
 const model = values.model!
 const site = `http://localhost:${values.port}`
-const make = { browser: browserAgent, afford: affordAgent, webmcp: webmcpAgent }
+const make = {
+  browser: browserAgent,
+  afford: affordAgent,
+  webmcp: webmcpAgent,
+  vision: visionAgent,
+}
 const kinds = values.agents!.split(',').map((k) => k.trim()) as AgentKind[]
-if (kinds.some((k) => !(k in make))) throw new Error('--agents takes browser, afford, webmcp')
+if (kinds.some((k) => !(k in make)))
+  throw new Error('--agents takes browser, afford, webmcp, vision')
 const tasks = values.task === 'all' ? allTasks : allTasks.filter((t) => t.id === values.task)
 if (!tasks.length)
   throw new Error(`unknown --task; known: all, ${allTasks.map((t) => t.id).join(', ')}`)

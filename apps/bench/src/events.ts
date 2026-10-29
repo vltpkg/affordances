@@ -1,7 +1,7 @@
 // what the recorder emits, one JSON object per line: both agents race the same task on one clock, and apps/demo
 // replays (or streams) these. `at` is ms since the run started, shared by both agents
 
-export type AgentKind = 'browser' | 'afford' | 'webmcp'
+export type AgentKind = 'browser' | 'afford' | 'webmcp' | 'vision'
 
 export type Usage = { input: number; cacheRead: number; cacheWrite: number; output: number }
 

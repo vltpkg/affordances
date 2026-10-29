@@ -3,7 +3,8 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { parseArgs } from 'node:util'
 import { createClient } from '@affordances/mcp'
-import { affordAgent, browserAgent, closeBrowser } from './agents.ts'
+import { affordAgent, browserAgent, closeBrowser, visionAgent } from './agents.ts'
+import type { AgentKind } from './events.ts'
 import { DEFAULT_MODEL, EFFORT, emptyStats, runAgent, type RunStats } from './loop.ts'
 import { startStore } from './store.ts'
 import { newSession, tasks as allTasks } from './tasks.ts'
@@ -20,8 +21,13 @@ const { values } = parseArgs({
     // a comma-separated subset, to check one change cheaply; the results file says which ran
     tasks: { type: 'string' },
     port: { type: 'string', default: '3100' },
+    // which agents run: browser (accessibility snapshots), afford, vision (computer use on screenshots)
+    agents: { type: 'string', default: 'browser,afford,vision' },
   },
 })
+const make = { browser: browserAgent, afford: affordAgent, vision: visionAgent }
+const kinds = values.agents!.split(',').map((k) => k.trim()) as (keyof typeof make)[]
+if (kinds.some((k) => !(k in make))) throw new Error('--agents takes browser, afford, vision')
 const runs = Number(values.runs)
 const git = (args: string) => execSync(`git ${args}`, { encoding: 'utf8' }).trim()
 const model = values.model!
@@ -32,19 +38,18 @@ if (wanted && tasks.length !== wanted.length)
 const site = `http://localhost:${values.port}`
 // the store keeps stock in memory, so each run gets a fresh process (see store.ts)
 
-type Row = RunStats & { run: number; agent: 'browser' | 'afford'; task: string }
+type Row = RunStats & { run: number; agent: AgentKind; task: string }
 const rows: Row[] = []
 
 for (let run = 1; run <= runs; run++) {
   const store = await startStore(values.port!)
   try {
     for (const task of tasks)
-      for (const kind of values.dry ? (['afford'] as const) : (['browser', 'afford'] as const)) {
+      for (const kind of values.dry ? (['afford'] as const) : kinds) {
         const sid = await newSession(site)
         const client = createClient(site, { token: sid })
         await task.setup?.(client)
-        const agent =
-          kind === 'afford' ? await affordAgent(site, sid) : await browserAgent(site, sid)
+        const agent = await make[kind](site, sid)
         let stats: Omit<RunStats, 'success'>
         try {
           stats = values.dry
@@ -99,16 +104,31 @@ const summarize = (mine: Row[]) => {
     // what reading pages costs: bytes the agent's read tools returned, per run
     readBytes: spread(
       mine.map((r) =>
-        r.trace
-          .filter((c) => !['affordances_call', 'click', 'fill', 'press'].includes(c.tool))
-          .reduce((sum, c) => sum + c.bytes, 0),
+        r.trace.filter((c) => !READS_NOT.has(c.tool)).reduce((sum, c) => sum + c.bytes, 0),
       ),
     ),
     costUsd: cost,
     costPerSuccessUsd: passed.length ? cost / passed.length : null,
   }
 }
-const agents = values.dry ? (['afford'] as const) : (['browser', 'afford'] as const)
+// tools that act rather than read: everything else an agent called is reading the page
+const READS_NOT = new Set([
+  'affordances_call',
+  'click',
+  'fill',
+  'press',
+  'left_click',
+  'double_click',
+  'triple_click',
+  'right_click',
+  'type',
+  'key',
+  'scroll',
+  'mouse_move',
+  'left_click_drag',
+  'wait',
+])
+const agents = values.dry ? (['afford'] as const) : kinds
 const summary = Object.fromEntries(
   agents.map((agent) => [agent, summarize(rows.filter((row) => row.agent === agent))]),
 )

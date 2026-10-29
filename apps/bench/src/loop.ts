@@ -17,9 +17,37 @@ export const PRICES: Record<
 }
 
 // tools that change or act on the page, as opposed to reading it: the first one is "time to first action"
-const ACTIONS = new Set(['affordances_call', 'click', 'fill', 'press'])
+const ACTIONS = new Set([
+  'affordances_call',
+  'click',
+  'fill',
+  'press',
+  // computer use members that act on the page
+  'left_click',
+  'double_click',
+  'triple_click',
+  'type',
+  'key',
+  'scroll',
+])
 
-export type Tool = Anthropic.Tool & { run: (input: Record<string, unknown>) => Promise<string> }
+// text, or content blocks when a tool returns an image (a screenshot)
+export type ToolOutput =
+  | string
+  | Exclude<Anthropic.ToolResultBlockParam['content'], string | undefined>
+
+export type Tool = Anthropic.Tool & {
+  run: (input: Record<string, unknown>, member?: string) => Promise<ToolOutput>
+  // an Anthropic-defined toolset (computer use) sent as this entry in place of name, description and schema: its
+  // calls arrive as tool_use blocks named for the member, with toolset_name set to this tool's name
+  definition?: Anthropic.ToolUnion
+}
+
+// what a result says as text, for the trace and the recorder: an image stands in as a marker
+const asText = (output: ToolOutput) =>
+  typeof output === 'string'
+    ? output
+    : output.map((block) => (block.type === 'text' ? block.text : `[${block.type}]`)).join('\n')
 
 export type Call = { tool: string; input: unknown; ms: number; bytes: number; error?: string }
 
@@ -103,11 +131,10 @@ export const runAgent = async (
 
   while (stats.turns < MAX_TURNS) {
     const toolbox = typeof tools === 'function' ? await tools() : tools
-    const definitions: Anthropic.Tool[] = toolbox.map(({ name, description, input_schema }) => ({
-      name,
-      description,
-      input_schema,
-    }))
+    const definitions: Anthropic.ToolUnion[] = toolbox.map(
+      ({ name, description, input_schema, definition }) =>
+        definition ?? { name, description, input_schema },
+    )
     const byName = new Map(toolbox.map((tool) => [tool.name, tool]))
     const asked = performance.now()
     const response = await client.messages.create({
@@ -151,20 +178,30 @@ export const runAgent = async (
     }
     messages.push({ role: 'assistant', content: response.content })
     const results: Anthropic.ToolResultBlockParam[] = []
+    // a toolset's calls in one turn are a batch: after one fails, the rest aren't run
+    let batchFailed = false
     for (const call of calls) {
       stats.toolCalls++
       if (stats.firstActionMs === null && ACTIONS.has(call.name))
         stats.firstActionMs = Math.round(performance.now() - started)
-      const tool = byName.get(call.name)
+      // every result for a toolset member must name the toolset again
+      const toolset = (call as { toolset_name?: string | null }).toolset_name ?? undefined
+      const tool = byName.get(toolset ?? call.name)
       const at = performance.now()
       try {
         if (!tool) throw new Error(`No tool named ${call.name}`)
-        const content = await tool.run(call.input as Record<string, unknown>)
+        if (toolset && batchFailed)
+          throw new Error('Not executed: an earlier computer action in this turn failed.')
+        const content = await tool.run(
+          call.input as Record<string, unknown>,
+          toolset ? call.name : undefined,
+        )
+        const said = asText(content)
         stats.trace.push({
           tool: call.name,
           input: call.input,
           ms: Math.round(performance.now() - at),
-          bytes: content.length,
+          bytes: said.length,
         })
         onEvent?.({
           type: 'tool',
@@ -172,11 +209,17 @@ export const runAgent = async (
           id: call.id,
           name: call.name,
           input: call.input,
-          result: content,
+          result: said,
           ms: Math.round(performance.now() - at),
         })
-        results.push({ type: 'tool_result', tool_use_id: call.id, content })
+        results.push({
+          type: 'tool_result',
+          tool_use_id: call.id,
+          content,
+          ...(toolset && { toolset_name: toolset }),
+        })
       } catch (error) {
+        if (toolset) batchFailed = true
         const message = (error as Error).message
         stats.trace.push({
           tool: call.name,
@@ -200,6 +243,7 @@ export const runAgent = async (
           tool_use_id: call.id,
           is_error: true,
           content: message,
+          ...(toolset && { toolset_name: toolset }),
         })
       }
     }

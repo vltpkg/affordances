@@ -1,6 +1,7 @@
 import { chromium, type Browser } from 'playwright'
 import { createClient, describeSite } from '@affordances/mcp'
-import type { Tool } from './loop.ts'
+import type Anthropic from '@anthropic-ai/sdk'
+import type { Tool, ToolOutput } from './loop.ts'
 
 // each agent starts on a session the task set up, so the check can read that session's cart and orders
 
@@ -59,12 +60,16 @@ export const affordAgent = async (site: string, sid: string) => {
 // the launch promise, not the browser: two agents starting at once must share one chromium, not race to launch two
 let browser: Promise<Browser> | undefined
 
-// the baseline: a DOM agent reading the accessibility tree (cheaper than screenshots, so a conservative comparison)
-export const browserAgent = async (site: string, sid: string) => {
+// a page on the task's session, for the agents that drive a browser
+const openPage = async (
+  site: string,
+  sid: string,
+  viewport?: { width: number; height: number },
+) => {
   browser ??= chromium.launch()
-  const context = await (await browser).newContext({ baseURL: site })
+  const context = await (await browser).newContext({ baseURL: site, viewport })
   await context.addCookies([{ name: 'sid', value: sid, url: site }])
-  // the store's Agent view toggle is a demo control no real store has; it would hand this agent the graph
+  // the store's Agent view toggle is a demo control no real store has; it would hand the agent the graph
   await context.addInitScript(() => {
     addEventListener('DOMContentLoaded', () => {
       const style = document.createElement('style')
@@ -72,7 +77,12 @@ export const browserAgent = async (site: string, sid: string) => {
       document.head.append(style)
     })
   })
-  const page = await context.newPage()
+  return { context, page: await context.newPage() }
+}
+
+// the baseline: a DOM agent reading the accessibility tree (cheaper than screenshots, so a conservative comparison)
+export const browserAgent = async (site: string, sid: string) => {
+  const { context, page } = await openPage(site, sid)
   const snapshot = async () => {
     await page.waitForLoadState('networkidle').catch(() => {})
     return `${page.url()}\n${await page.locator('body').ariaSnapshot()}`
@@ -217,5 +227,155 @@ export const webmcpAgent = async (site: string, sid: string) => {
           },
         })),
     ],
+  }
+}
+
+// xdotool-style key names, which computer use sends, to playwright's
+const KEYS: Record<string, string> = {
+  return: 'Enter',
+  enter: 'Enter',
+  backspace: 'Backspace',
+  delete: 'Delete',
+  escape: 'Escape',
+  esc: 'Escape',
+  tab: 'Tab',
+  space: 'Space',
+  page_down: 'PageDown',
+  page_up: 'PageUp',
+  home: 'Home',
+  end: 'End',
+  up: 'ArrowUp',
+  down: 'ArrowDown',
+  left: 'ArrowLeft',
+  right: 'ArrowRight',
+  ctrl: 'Control',
+  control: 'Control',
+  alt: 'Alt',
+  shift: 'Shift',
+  super: 'Meta',
+  cmd: 'Meta',
+  meta: 'Meta',
+}
+const key = (combo: string) =>
+  combo
+    .split('+')
+    .map((k) => KEYS[k.toLowerCase()] ?? (k.length === 1 ? k : k[0]!.toUpperCase() + k.slice(1)))
+    .join('+')
+
+const SCREEN = { width: 1280, height: 800 }
+
+// the way most browser agents work today: Claude's computer use toolset on a 1280x800 screen. it sees only
+// screenshots and acts by coordinates and keystrokes; goto opens a path, as the snapshot agent's does
+export const visionAgent = async (site: string, sid: string) => {
+  const { context, page } = await openPage(site, sid, SCREEN)
+  let cursor: [number, number] = [0, 0]
+  const screenshot = async (): Promise<ToolOutput> => {
+    await page.waitForLoadState('networkidle').catch(() => {})
+    const data = (await page.screenshot({ type: 'png' })).toString('base64')
+    return [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data } }]
+  }
+  const at = (input: Record<string, unknown>) => {
+    if (Array.isArray(input.coordinate)) cursor = input.coordinate as [number, number]
+    return cursor
+  }
+  // modifier keys held around a click or scroll, e.g. shift
+  const held = async (text: unknown, act: () => Promise<void>) => {
+    const keys = typeof text === 'string' && text ? key(text).split('+') : []
+    for (const k of keys) await page.keyboard.down(k)
+    await act()
+    for (const k of keys.toReversed()) await page.keyboard.up(k)
+  }
+  const click =
+    (count: number, button: 'left' | 'right' = 'left') =>
+    async (input: Record<string, unknown>) => {
+      const [x, y] = at(input)
+      await held(input.text, () => page.mouse.click(x, y, { clickCount: count, button }))
+      return 'OK'
+    }
+  const members: Record<string, (input: Record<string, unknown>) => Promise<ToolOutput>> = {
+    screenshot,
+    left_click: click(1),
+    double_click: click(2),
+    triple_click: click(3),
+    right_click: click(1, 'right'),
+    mouse_move: async (input) => {
+      const [x, y] = at(input)
+      await page.mouse.move(x, y)
+      return 'OK'
+    },
+    left_click_drag: async (input) => {
+      const [sx, sy] = input.start_coordinate as [number, number]
+      const [x, y] = at(input)
+      await page.mouse.move(sx, sy)
+      await page.mouse.down()
+      await page.mouse.move(x, y)
+      await page.mouse.up()
+      return 'OK'
+    },
+    scroll: async (input) => {
+      const [x, y] = at(input)
+      const n = Number(input.scroll_amount ?? 3) * 100
+      const d = String(input.scroll_direction)
+      await page.mouse.move(x, y)
+      await held(input.text, () =>
+        page.mouse.wheel(
+          d === 'left' ? -n : d === 'right' ? n : 0,
+          d === 'up' ? -n : d === 'down' ? n : 0,
+        ),
+      )
+      return 'OK'
+    },
+    type: async (input) => (await page.keyboard.type(String(input.text)), 'OK'),
+    key: async (input) => {
+      for (let i = 0; i < Number(input.repeat ?? 1); i++)
+        await page.keyboard.press(key(String(input.text)))
+      return 'OK'
+    },
+    wait: async (input) => {
+      await page.waitForTimeout(Math.min(Number(input.duration ?? 1), 10) * 1000)
+      return 'OK'
+    },
+    cursor_position: async () => `X=${cursor[0]}, Y=${cursor[1]}`,
+  }
+  const tools: Tool[] = [
+    {
+      name: 'goto',
+      description: 'Open a path on the site and return a screenshot of it.',
+      input_schema: {
+        type: 'object',
+        properties: { path: { type: 'string' } },
+        required: ['path'],
+      },
+      run: async ({ path }) => {
+        await page.goto(path as string)
+        return screenshot()
+      },
+    },
+    {
+      name: 'computer',
+      input_schema: { type: 'object' },
+      // members this harness doesn't implement are switched off, as the docs advise, rather than erroring
+      definition: {
+        type: 'computer_toolset_20260801',
+        configs: Object.fromEntries(
+          ['zoom', 'middle_click', 'left_mouse_down', 'left_mouse_up', 'hold_key'].map((m) => [
+            m,
+            { enabled: false },
+          ]),
+        ),
+      } as unknown as Anthropic.ToolUnion,
+      run: async (input, member) => {
+        const run = members[member ?? '']
+        if (!run) throw new Error(`Unsupported computer action: ${member}`)
+        return run(input)
+      },
+    },
+  ]
+  return {
+    name: 'vision' as const,
+    page,
+    system: `You operate the website at ${site} in a browser, through the computer tools on a ${SCREEN.width}x${SCREEN.height} screen. Start with goto("/"), which returns a screenshot. Actions answer OK; take a screenshot (in the same turn, after your actions) to see the result. When the task is done, reply with a one-line summary.`,
+    tools,
+    close: () => context.close(),
   }
 }
