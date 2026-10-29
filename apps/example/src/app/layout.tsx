@@ -13,7 +13,12 @@ export const metadata: Metadata = {
 }
 
 const RootLayout = ({ children }: LayoutProps<'/'>) => (
-  <html lang="en" className={`${fontVariables} h-full antialiased`} suppressHydrationWarning>
+  <html
+    lang="en"
+    data-scroll-behavior="smooth"
+    className={`${fontVariables} h-full antialiased`}
+    suppressHydrationWarning
+  >
     <body className="text-body flex min-h-full flex-col">
       <ThemeProvider>
         <Afford>
