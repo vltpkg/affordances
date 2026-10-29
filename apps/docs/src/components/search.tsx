@@ -2,22 +2,72 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
-import { FileTextIcon, HashIcon, LoaderCircleIcon, SearchIcon, TextIcon } from 'lucide-react'
+import {
+  FileTextIcon,
+  FolderIcon,
+  HashIcon,
+  LoaderCircleIcon,
+  SearchIcon,
+  TextIcon,
+} from 'lucide-react'
 import type { SortedResult } from 'fumadocs-core/search'
 import { cn } from 'cn'
 import {
   Command,
   CommandEmpty,
-  CommandInput,
   CommandGroup,
+  CommandInput,
   CommandItem,
   CommandList,
 } from '@afford/ui/components/command'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@afford/ui/components/dialog'
+import { useSidebar } from '@/components/ui/sidebar'
 
-const icons = { page: FileTextIcon, heading: HashIcon, text: TextIcon }
+// debounced fetch of /api/search; a newer query aborts the one in flight
+const useDocsSearch = () => {
+  const [search, setSearch] = useState('')
+  const [state, setState] = useState<{
+    query: string
+    data?: SortedResult[]
+    error?: true
+  } | null>(null)
+  useEffect(() => {
+    if (!search) return
+    const controller = new AbortController()
+    const timer = setTimeout(() => {
+      fetch(`/api/search?query=${encodeURIComponent(search)}`, { signal: controller.signal })
+        .then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+        .then((data: SortedResult[]) => setState({ query: search, data }))
+        .catch(() => {
+          if (!controller.signal.aborted) setState({ query: search, error: true })
+        })
+    }, 100)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [search])
+  const current = state?.query === search ? state : undefined
+  return {
+    search,
+    setSearch,
+    query: { data: current?.data, error: current?.error, isLoading: !!search && !current },
+  }
+}
+const icons = {
+  page: FileTextIcon,
+  heading: HashIcon,
+  text: TextIcon,
+}
+const MAX_PAGES = 10
 
-export type SuggestionGroup = { title: string; pages: { title: string; url: string }[] }
+// the server returns results page-first, with that page's heading/text hits right after it
+const byPage = (results: SortedResult[]) =>
+  results.reduce<SortedResult[][]>((groups, result) => {
+    if (result.type === 'page' || !groups.length) groups.push([result])
+    else groups.at(-1)?.push(result)
+    return groups
+  }, [])
 
 // content is markdown with <mark> around matches; render as text, never as html
 const Highlighted = ({ text }: { text: string }) =>
@@ -26,7 +76,7 @@ const Highlighted = ({ text }: { text: string }) =>
     .split(/<mark>(.*?)<\/mark>/g)
     .map((part, i) =>
       i % 2 ? (
-        <mark key={i} className="bg-transparent text-foreground">
+        <mark key={i} className="text-foreground bg-transparent">
           {part}
         </mark>
       ) : (
@@ -42,179 +92,200 @@ const useIsMac = () =>
     () => true,
   )
 
-type Results = { query: string; results: SortedResult[] } | { query: string; error: true }
-
-// debounced, and a newer query aborts the one in flight
-const useSearch = (query: string) => {
-  const [state, setState] = useState<Results | null>(null)
-  useEffect(() => {
-    if (!query) return
-    const controller = new AbortController()
-    const timer = setTimeout(() => {
-      fetch(`/api/search?query=${encodeURIComponent(query)}`, { signal: controller.signal })
-        .then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
-        .then((results: SortedResult[]) => setState({ query, results }))
-        .catch(() => {
-          if (!controller.signal.aborted) setState({ query, error: true })
-        })
-    }, 100)
-    return () => {
-      clearTimeout(timer)
-      controller.abort()
-    }
-  }, [query])
-  return state?.query === query ? state : null
+export const SearchTrigger = ({ className, ...props }: React.ComponentProps<'button'>) => {
+  const mac = useIsMac()
+  return (
+    <button
+      type="button"
+      aria-keyshortcuts="Meta+K Control+K"
+      className={cn(
+        'bg-card text-muted-foreground hover:border-foreground/20 hover:text-sidebar-foreground focus-visible:ring-sidebar-ring flex h-9 w-full items-center gap-2 rounded-lg border px-3 text-sm outline-hidden transition-colors focus-visible:ring-2 [&_svg]:size-4',
+        className,
+      )}
+      {...props}
+    >
+      <SearchIcon aria-hidden />
+      Search documentation
+      <kbd
+        aria-hidden
+        className="ml-auto flex h-5 items-center gap-1 rounded-md border px-1.5 font-sans text-xs pointer-coarse:hidden"
+      >
+        {mac ? '⌘' : 'Ctrl'} K
+      </kbd>
+    </button>
+  )
 }
 
-export const Search = ({ suggestions }: { suggestions: SuggestionGroup[] }) => {
+export type Suggestion = {
+  name: React.ReactNode
+  url: string
+  folder?: boolean
+}
+export type SuggestionGroup = {
+  name?: React.ReactNode
+  links: Suggestion[]
+}
+
+type SearchDialogProps = {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  returnFocus: React.RefObject<HTMLElement | null>
+  // shown before anything is typed
+  suggestions: SuggestionGroup[]
+}
+
+export const SearchDialog = ({
+  open,
+  onOpenChange,
+  returnFocus,
+  suggestions,
+}: SearchDialogProps) => {
   const router = useRouter()
-  const mac = useIsMac()
-  const trigger = useRef<HTMLButtonElement>(null)
-  const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState('')
+  const { setOpenMobile } = useSidebar()
+  const { search, setSearch, query } = useDocsSearch()
   const [selected, setSelected] = useState('')
-  const state = useSearch(search)
-  const loading = !!search && !state
-  const results = state && 'results' in state ? state.results : undefined
+  const navigated = useRef(false)
+  const [shown, setShown] = useState(query.data)
 
   // results arrive after the keystroke, so cmdk can't auto-select them; select the top hit ourselves
-  const [shown, setShown] = useState(results)
-  if (results !== shown) {
-    setShown(results)
-    setSelected(results?.[0]?.id ?? '')
+  if (query.data !== shown) {
+    setShown(query.data)
+    setSelected(Array.isArray(query.data) ? (query.data[0]?.id ?? '') : '')
   }
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() === 'k' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault()
-        setOpen((value) => !value)
+        onOpenChange(!open)
       }
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [])
+  }, [open, onOpenChange])
 
   const go = (url: string) => {
+    navigated.current = true
     router.push(url)
-    setOpen(false)
+    onOpenChange(false)
+    setOpenMobile(false)
   }
 
-  const item = 'min-h-9 gap-2.5 px-3 text-sm data-selected:bg-accent'
-
   return (
-    <>
-      <button
-        ref={trigger}
-        type="button"
-        aria-keyshortcuts="Meta+K Control+K"
-        onClick={() => setOpen(true)}
-        className="flex h-8 items-center gap-2 rounded-lg border bg-card px-2.5 text-sm text-muted-foreground outline-none transition-colors duration-150 hover:border-foreground/20 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 max-sm:size-8 max-sm:justify-center max-sm:border-transparent max-sm:bg-transparent max-sm:px-0 sm:w-56 [&_svg]:size-4"
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        showCloseButton={false}
+        // a softer zoom than the primitive's, and a plain fade out
+        className="data-open:zoom-in-[0.98] motion-reduce:data-open:zoom-in-100 data-closed:fill-mode-forwards data-closed:zoom-out-100 top-[12vh] translate-y-0 gap-0 overflow-hidden p-0 data-closed:ease-in data-open:duration-160 data-open:ease-[cubic-bezier(0.2,0.8,0.2,1)] sm:max-w-xl"
+        // back to the trigger on dismiss; after navigating, leave focus to the new page
+        finalFocus={() => {
+          const back = !navigated.current
+          navigated.current = false
+          return back ? returnFocus.current : false
+        }}
       >
-        <SearchIcon aria-hidden />
-        <span className="max-sm:sr-only">Search docs</span>
-        <kbd
-          aria-hidden
-          className="ml-auto flex h-5 items-center rounded-md border px-1.5 font-sans text-xs max-sm:hidden pointer-coarse:hidden"
+        <DialogTitle className="sr-only">Search docs</DialogTitle>
+        <DialogDescription className="sr-only">
+          Search pages, headings and content.
+        </DialogDescription>
+        <Command
+          shouldFilter={false}
+          // with an empty query, highlight the first suggestion so Enter works straight away
+          value={search ? selected : selected || (suggestions[0]?.links[0]?.url ?? '')}
+          onValueChange={setSelected}
+          // @afford/ui's CommandInput sits in an input group; flatten it into the reference's 48px header row
+          className="rounded-none! bg-transparent p-0 **:data-[slot=command-input-wrapper]:p-0 **:data-[slot=input-group]:h-12! **:data-[slot=input-group]:rounded-none **:data-[slot=input-group]:border-0 **:data-[slot=input-group]:bg-transparent! **:data-[slot=input-group]:px-2 **:data-[slot=input-group]:ring-0! [&_[data-slot=input-group]_svg]:size-4! [&_[data-slot=input-group]_svg]:opacity-100 [&_[data-slot=input-group]_svg]:text-muted-foreground"
         >
-          {mac ? '⌘' : 'Ctrl '}K
-        </kbd>
-      </button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent
-          showCloseButton={false}
-          finalFocus={trigger}
-          className="top-[12vh] translate-y-0 gap-0 overflow-hidden p-0 data-open:duration-150 data-open:ease-out data-open:zoom-in-[0.98] data-closed:duration-100 data-closed:zoom-out-100 motion-reduce:data-open:zoom-in-100 sm:max-w-xl"
-        >
-          <DialogTitle className="sr-only">Search docs</DialogTitle>
-          <DialogDescription className="sr-only">
-            Search pages, headings, and content.
-          </DialogDescription>
-          <Command
-            shouldFilter={false}
-            // with an empty query, highlight the first suggestion so Enter works straight away
-            value={search ? selected : selected || (suggestions[0]?.pages[0]?.url ?? '')}
-            onValueChange={setSelected}
-            className="rounded-none bg-transparent p-0 **:data-[slot=command-input-wrapper]:p-0 **:data-[slot=input-group]:h-12! **:data-[slot=input-group]:rounded-none **:data-[slot=input-group]:border-0 **:data-[slot=input-group]:bg-transparent! **:data-[slot=input-group]:px-2 **:data-[slot=input-group]:ring-0! [&_[data-slot=input-group]_svg]:size-4!"
-          >
-            <div className="relative">
-              <CommandInput
-                value={search}
-                onValueChange={setSearch}
-                placeholder="Search docs"
-                className="text-base text-foreground placeholder:text-muted-foreground md:text-sm"
-              />
-              {loading && (
-                // appears only if a search outlasts 300ms, so fast responses never flash it
-                <output className="absolute top-1/2 right-4 -translate-y-1/2 text-muted-foreground animate-in fade-in-0 delay-300 fill-mode-backwards">
-                  <LoaderCircleIcon
-                    aria-hidden
-                    className="size-4 animate-spin motion-reduce:animate-none"
-                  />
-                  <span className="sr-only">Searching</span>
-                </output>
-              )}
-            </div>
-            {!search && (
-              <CommandList className="max-h-[min(26rem,60vh)] border-t p-2">
-                {suggestions.map((group) => (
-                  <CommandGroup
-                    key={group.title}
-                    heading={group.title}
-                    className="p-0 not-first:mt-1 **:[[cmdk-group-heading]]:px-3 **:[[cmdk-group-heading]]:font-pixel **:[[cmdk-group-heading]]:font-normal"
-                  >
-                    {group.pages.map((page) => (
+          <div className="relative">
+            <CommandInput
+              value={search}
+              onValueChange={setSearch}
+              placeholder="Search documentation"
+              className="md:text-body text-foreground placeholder:text-muted-foreground text-base"
+            />
+            {query.isLoading && (
+              // appears only if a search outlasts 300ms, so fast responses never flash it
+              <output className="text-muted-foreground absolute top-1/2 right-4 -translate-y-1/2 animate-[view-fade_150ms_300ms_backwards]">
+                <LoaderCircleIcon className="size-4 animate-spin" />
+                <span className="sr-only">Searching</span>
+              </output>
+            )}
+          </div>
+          {!search && (
+            <CommandList className="max-h-[min(26rem,60vh)] border-t p-2">
+              {suggestions.map((group, i) => (
+                <CommandGroup
+                  key={i}
+                  heading={group.name ?? 'Get started'}
+                  className="p-0 not-first:mt-1 **:[[cmdk-group-heading]]:px-3"
+                >
+                  {group.links.map((link) => {
+                    const Icon = link.folder ? FolderIcon : FileTextIcon
+                    return (
                       <CommandItem
-                        key={page.url}
-                        value={page.url}
-                        onSelect={() => go(page.url)}
-                        className={item}
+                        key={link.url}
+                        value={link.url}
+                        onSelect={() => go(link.url)}
+                        className="text-sidebar-foreground data-selected:bg-accent min-h-9 gap-2.5 px-3 text-(length:--text-body)"
                       >
-                        <FileTextIcon aria-hidden className="text-muted-foreground" />
-                        <span className="min-w-0 flex-1 truncate">{page.title}</span>
+                        <Icon aria-hidden className="text-muted-foreground" />
+                        <span className="min-w-0 flex-1 truncate">{link.name}</span>
                       </CommandItem>
-                    ))}
-                  </CommandGroup>
-                ))}
-              </CommandList>
-            )}
-            {search && state && (
-              <CommandList className="max-h-[min(26rem,60vh)] border-t p-2">
-                {'error' in state ? (
-                  <p className="py-8 text-center text-sm text-muted-foreground">
-                    Search is unavailable right now.
-                  </p>
-                ) : (
-                  <CommandEmpty className="py-8 text-sm text-muted-foreground">
-                    No results.
-                  </CommandEmpty>
-                )}
-                {results?.map((result) => {
-                  const Icon = icons[result.type]
-                  return (
-                    <CommandItem
-                      key={result.id}
-                      value={result.id}
-                      onSelect={() => go(result.url)}
-                      className={cn(
-                        item,
-                        result.type === 'page'
-                          ? 'text-foreground'
-                          : 'pl-9 text-muted-foreground data-selected:text-foreground',
-                      )}
-                    >
-                      <Icon aria-hidden className="text-muted-foreground" />
-                      <span className="min-w-0 flex-1 truncate">
-                        <Highlighted text={result.content} />
-                      </span>
-                    </CommandItem>
-                  )
-                })}
-              </CommandList>
-            )}
-          </Command>
-        </DialogContent>
-      </Dialog>
-    </>
+                    )
+                  })}
+                </CommandGroup>
+              ))}
+            </CommandList>
+          )}
+          {search && (!!query.error || Array.isArray(query.data)) && (
+            <CommandList className="max-h-[min(26rem,60vh)] border-t p-2">
+              {query.error ? (
+                <p className="text-muted-foreground py-8 text-center text-sm">
+                  Search is unavailable right now.
+                </p>
+              ) : (
+                <CommandEmpty className="text-muted-foreground py-8">
+                  No results found.
+                </CommandEmpty>
+              )}
+              {Array.isArray(query.data) &&
+                // ponytail: renders the top 10 pages only; add "show more" if people ask for deeper results
+                byPage(query.data)
+                  .slice(0, MAX_PAGES)
+                  .map((group) => (
+                    <CommandGroup key={group[0]!.id} className="p-0 not-first:mt-1">
+                      {group.map((result) => {
+                        const Icon = icons[result.type]
+                        return (
+                          <CommandItem
+                            key={result.id}
+                            value={result.id}
+                            onSelect={() => go(result.url)}
+                            className={cn(
+                              'data-selected:bg-accent min-h-9 gap-2.5 px-3 text-(length:--text-body)',
+                              result.type === 'page'
+                                ? 'text-sidebar-foreground'
+                                : 'text-muted-foreground data-selected:text-foreground pl-9',
+                            )}
+                          >
+                            <Icon aria-hidden className="text-muted-foreground" />
+                            <span className="min-w-0 flex-1 truncate">
+                              <Highlighted text={result.content} />
+                            </span>
+                            {result.type === 'page' && !!result.breadcrumbs?.length && (
+                              <span className="text-muted-foreground max-w-[40%] truncate text-xs">
+                                {result.breadcrumbs.join(' / ')}
+                              </span>
+                            )}
+                          </CommandItem>
+                        )
+                      })}
+                    </CommandGroup>
+                  ))}
+            </CommandList>
+          )}
+        </Command>
+      </DialogContent>
+    </Dialog>
   )
 }

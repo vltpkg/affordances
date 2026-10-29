@@ -1,17 +1,16 @@
 'use client'
 
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import {
-  AnchorProvider,
-  ScrollProvider,
-  TOCItem,
-  useActiveAnchors,
-  type TOCItemType,
-} from 'fumadocs-core/toc'
+import { AnchorProvider, ScrollProvider, TOCItem, useActiveAnchors } from 'fumadocs-core/toc'
+import type { TOCItemType } from 'fumadocs-core/toc'
 import { ChevronDownIcon, PencilIcon } from 'lucide-react'
+import Link from 'next/link'
+import { Button } from '@/components/ui/button'
 
 const pad = (el: HTMLElement, side: 'paddingTop' | 'paddingBottom') =>
   parseFloat(getComputedStyle(el)[side])
+
+const indent: Record<number, string> = { 3: 'pl-3' }
 
 const headings = (toc: TOCItemType[]) => toc.filter((item) => item.depth === 2 || item.depth === 3)
 
@@ -33,6 +32,7 @@ const useActiveUrl = (items: TOCItemType[]) => {
 
 const Items = ({ items }: { items: TOCItemType[] }) => {
   const active = useActiveUrl(items)
+
   return (
     <ul>
       {items.map((item) => (
@@ -40,7 +40,7 @@ const Items = ({ items }: { items: TOCItemType[] }) => {
           <TOCItem
             href={item.url}
             aria-current={item.url === active ? 'location' : undefined}
-            className={`block rounded-sm py-1 text-[0.8125rem] leading-5 [overflow-wrap:anywhere] text-muted-foreground outline-none transition-colors duration-150 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 aria-[current]:text-foreground [&_code]:font-mono [&_code]:text-xs ${item.depth === 3 ? 'pl-3' : ''}`}
+            className={`text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 aria-[current]:text-foreground block rounded-sm py-1 text-[0.8125rem] leading-5 [overflow-wrap:anywhere] transition-colors outline-none focus-visible:ring-2 [&_code]:font-mono [&_code]:text-xs ${indent[item.depth] ?? ''}`}
           >
             {item.title}
           </TOCItem>
@@ -55,29 +55,46 @@ export const Toc = ({ toc, editUrl }: { toc: TOCItemType[]; editUrl?: string }) 
   const items = headings(toc)
 
   return (
-    <aside className="sticky top-[calc(var(--header-height)+3rem)] flex max-h-[calc(100svh-var(--header-height)-6rem)] w-56 flex-col gap-5">
-      {items.length > 0 && (
-        <nav aria-label="On this page" className="flex min-h-0 flex-col gap-3">
-          <p className="font-pixel text-xs text-muted-foreground">On this page</p>
-          {/* px-2 gives the focus ring room inside the scroll container's clip */}
-          <div ref={scroller} className="-mx-2 min-h-0 overflow-y-auto px-2">
-            <AnchorProvider toc={items}>
-              <ScrollProvider containerRef={scroller}>
-                <Items items={items} />
-              </ScrollProvider>
-            </AnchorProvider>
-          </div>
-        </nav>
-      )}
-      {editUrl && (
-        <a
-          href={editUrl}
-          className="inline-flex w-fit shrink-0 items-center gap-2 rounded-sm text-[0.8125rem] text-muted-foreground outline-none transition-colors duration-150 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-        >
-          <PencilIcon aria-hidden className="size-3.5" />
-          Edit this page
-        </a>
-      )}
+    <aside className="sticky top-[calc(var(--header-height)+3rem)] flex max-h-[calc(100svh-var(--header-height)-6rem)] w-60 flex-col gap-10">
+      {/* min-h-0 lets the toc list keep scrolling inside the capped rail */}
+      <div className="flex min-h-0 flex-col gap-5">
+        {items.length > 0 && (
+          <nav aria-label="On this page" className="flex min-h-0 flex-col gap-3">
+            <p className="text-muted-foreground font-pixel text-xs">On this page</p>
+            {/* px-2 gives the focus ring room inside the scroll container's clip */}
+            <div
+              ref={scroller}
+              className="scroll-fade -mx-2 min-h-0 overflow-y-auto px-2 [--scroll-fade-size:--spacing(8)] not-supports-[animation-timeline:scroll()]:[--scroll-fade-size:0px]"
+            >
+              <AnchorProvider toc={items}>
+                <ScrollProvider containerRef={scroller}>
+                  <Items items={items} />
+                </ScrollProvider>
+              </AnchorProvider>
+            </div>
+          </nav>
+        )}
+        {editUrl && (
+          <a
+            href={editUrl}
+            className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 inline-flex w-fit shrink-0 items-center gap-2 rounded-sm text-[0.8125rem] transition-colors outline-none focus-visible:ring-2"
+          >
+            <PencilIcon aria-hidden className="size-3.5" />
+            Edit this page
+          </a>
+        )}
+      </div>
+      {/* -mx-5 hangs the padding outside the column so the copy lines up with the links */}
+      <div className="bg-muted/60 dark:bg-card -mx-5 shrink-0 rounded-2xl p-5">
+        <p className="text-body font-semibold text-balance">Make your app agent-operable</p>
+        <p className="text-muted-foreground mt-2 text-[0.8125rem] leading-5 text-pretty">
+          Give every page a graph and every server action an agent path: HTTP, WebMCP, and MCP, with
+          the same session and the same checks. One command sets it up.
+        </p>
+        <Button asChild variant="outline" size="sm" className="mt-4">
+          <Link href="/quickstart">Read the quickstart</Link>
+        </Button>
+      </div>
     </aside>
   )
 }
@@ -92,11 +109,12 @@ const Bar = ({ items }: { items: TOCItemType[] }) => {
   const scroller = useRef<HTMLDivElement>(null)
   const ring = useRef<SVGCircleElement>(null)
   const read = useRef<HTMLSpanElement>(null)
+
   const list = useRef<HTMLDivElement>(null)
   const fill = useRef<HTMLSpanElement>(null)
   const dot = useRef<HTMLSpanElement>(null)
 
-  // measured from the links (offsets stay valid while the panel is closed or scrolled), redone when wrapping changes
+  // measured from the links (offsets stay valid while the panel is closed or scrolled) and redone when wrapping changes
   useLayoutEffect(() => {
     const box = list.current
     if (!box) return
@@ -171,13 +189,20 @@ const Bar = ({ items }: { items: TOCItemType[] }) => {
       data-toc-bar
       className="sticky top-(--header-height) z-40 -mx-4 -mt-8 mb-8 md:-mx-16 md:-mt-12 md:mb-12 xl:hidden"
     >
+      {/* blurs the page behind the open panel; the navbar (z-50) stays above it. a tap closes, a drag still scrolls */}
+      <div
+        aria-hidden
+        data-open={open}
+        onClick={() => setOpen(false)}
+        className="bg-background/40 invisible fixed inset-x-0 top-(--header-height) bottom-0 opacity-0 backdrop-blur-sm transition-[opacity,visibility] duration-150 ease-out data-[open=true]:visible data-[open=true]:opacity-100 data-[open=true]:duration-200 motion-reduce:transition-none"
+      />
       <button
         ref={button}
         type="button"
         aria-expanded={open}
         aria-controls={id}
         onClick={() => setOpen(!open)}
-        className="group relative flex h-12 w-full border-b bg-background px-4 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset md:px-16"
+        className="group bg-background/80 focus-visible:ring-ring/50 relative flex h-12 w-full border-b px-4 backdrop-blur-lg outline-none focus-visible:ring-2 focus-visible:ring-inset md:px-16"
       >
         <span className="mx-auto flex w-full max-w-[37em] items-center gap-3">
           <svg aria-hidden viewBox="0 0 20 20" className="size-5 shrink-0 -rotate-90">
@@ -186,7 +211,7 @@ const Bar = ({ items }: { items: TOCItemType[] }) => {
               cy="10"
               r="8.25"
               strokeWidth="1.5"
-              className="fill-transparent stroke-border"
+              className="stroke-border group-aria-expanded:fill-progress/15 group-aria-expanded:stroke-progress/25 fill-transparent transition-colors"
             />
             <circle
               ref={ring}
@@ -198,10 +223,10 @@ const Bar = ({ items }: { items: TOCItemType[] }) => {
               strokeDasharray={1}
               strokeDashoffset={1}
               strokeLinecap="round"
-              className="fill-none stroke-progress"
+              className="stroke-progress fill-none"
             />
           </svg>
-          <span className="min-w-0 flex-1 truncate text-left text-sm text-muted-foreground transition-colors duration-150 group-aria-expanded:text-foreground [&_code]:font-mono [&_code]:text-xs">
+          <span className="text-muted-foreground group-aria-expanded:text-foreground min-w-0 flex-1 truncate text-left text-sm transition-colors [&_code]:font-mono [&_code]:text-xs">
             {current?.title ?? 'On this page'}
           </span>
           <span ref={read} className="sr-only">
@@ -209,7 +234,7 @@ const Bar = ({ items }: { items: TOCItemType[] }) => {
           </span>
           <ChevronDownIcon
             aria-hidden
-            className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 ease-out group-aria-expanded:rotate-180 motion-reduce:transition-none"
+            className="text-muted-foreground size-4 shrink-0 transition-transform duration-200 group-aria-expanded:rotate-180 motion-reduce:transition-none"
           />
         </span>
       </button>
@@ -218,9 +243,12 @@ const Bar = ({ items }: { items: TOCItemType[] }) => {
         id={id}
         aria-label="On this page"
         data-open={open}
-        className="invisible absolute inset-x-0 top-full border-b bg-background opacity-0 transition-[clip-path,opacity,visibility] duration-150 ease-out [clip-path:inset(0_0_100%_0)] data-[open=true]:visible data-[open=true]:opacity-100 data-[open=true]:duration-200 data-[open=true]:[clip-path:inset(0)] motion-reduce:transition-none"
+        className="bg-background/80 invisible absolute inset-x-0 top-full border-b opacity-0 backdrop-blur-lg transition-[clip-path,opacity,visibility] duration-150 ease-out [clip-path:inset(0_0_100%_0)] data-[open=true]:visible data-[open=true]:opacity-100 data-[open=true]:duration-200 data-[open=true]:[clip-path:inset(0)] motion-reduce:transition-none"
       >
-        <div ref={scroller} className="max-h-[60svh] overflow-y-auto px-4 py-3 md:px-16">
+        <div
+          ref={scroller}
+          className="scroll-fade max-h-[60svh] overflow-y-auto px-4 py-3 [--scroll-fade-size:--spacing(8)] not-supports-[animation-timeline:scroll()]:[--scroll-fade-size:0px] md:px-16"
+        >
           <ScrollProvider containerRef={scroller}>
             <div ref={list} className="relative mx-auto max-w-[37em] border-l">
               <ul>
@@ -230,25 +258,25 @@ const Bar = ({ items }: { items: TOCItemType[] }) => {
                       href={item.url}
                       onClick={() => setOpen(false)}
                       aria-current={item.url === active ? 'location' : undefined}
-                      className={`relative block py-1.5 text-sm leading-5 [overflow-wrap:anywhere] text-muted-foreground outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring/50 aria-[current]:text-progress [&_code]:font-mono [&_code]:text-xs ${item.depth === 3 ? 'pl-7' : 'pl-4'}`}
+                      className={`text-muted-foreground focus-visible:ring-ring/50 aria-[current]:text-progress before:bg-muted-foreground/50 relative block py-1.5 text-sm leading-5 [overflow-wrap:anywhere] transition-colors outline-none before:absolute before:inset-y-1.5 before:-left-px before:w-px before:opacity-0 before:transition-opacity hover:before:opacity-100 focus-visible:ring-2 motion-reduce:before:transition-none [&_code]:font-mono [&_code]:text-xs ${item.depth === 3 ? 'pl-7' : 'pl-4'}`}
                     >
                       {item.title}
                     </TOCItem>
                   </li>
                 ))}
               </ul>
-              {/* progress on the guide line, from the first label to the end of the current one, dot at the end.
-                  transformed rather than resized so the change animates on the compositor */}
+              {/* progress on the guide line: from the first label down to the end of the current one, dot at the end.
+                transformed rather than resized so the change animates on the compositor */}
               <span
                 ref={fill}
                 aria-hidden
                 style={{ transform: 'scaleY(0)' }}
-                className="absolute top-0 -left-px h-full w-px origin-top bg-progress transition-transform duration-200 ease-out motion-reduce:transition-none"
+                className="bg-progress absolute top-0 -left-px h-full w-px origin-top transition-transform duration-200 ease-out motion-reduce:transition-none"
               />
               <span
                 ref={dot}
                 aria-hidden
-                className="absolute top-0 -left-[3px] size-[5px] rounded-full bg-progress opacity-0 transition-[transform,opacity] duration-200 ease-out motion-reduce:transition-none"
+                className="bg-progress absolute top-0 -left-[3px] size-[5px] rounded-full opacity-0 transition-[transform,opacity] duration-200 ease-out motion-reduce:transition-none"
               />
             </div>
           </ScrollProvider>
@@ -258,7 +286,7 @@ const Bar = ({ items }: { items: TOCItemType[] }) => {
   )
 }
 
-// the mobile and tablet counterpart of the rail: a bar pinned under the navbar that opens into the toc
+// the mobile / tablet counterpart of the rail: a bar pinned under the navbar that opens into the toc
 export const TocBar = ({ toc }: { toc: TOCItemType[] }) => {
   const items = headings(toc)
   if (items.length === 0) return null

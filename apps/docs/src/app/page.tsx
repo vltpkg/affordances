@@ -1,298 +1,315 @@
-import type { Metadata } from 'next'
 import Link from 'next/link'
+import type { Metadata } from 'next'
+import {
+  ArrowRightLeftIcon,
+  BookOpenIcon,
+  BracesIcon,
+  CableIcon,
+  FileTextIcon,
+  FlaskConicalIcon,
+  GaugeIcon,
+  KeyRoundIcon,
+  LayersIcon,
+  ListChecksIcon,
+  MousePointerClickIcon,
+  NetworkIcon,
+  RocketIcon,
+  ScrollTextIcon,
+  ShieldCheckIcon,
+  SquareCodeIcon,
+  TerminalIcon,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { AffordProvider } from '@afford/react'
-import { Button } from '@afford/ui/components/button'
-import { CodeBlock } from '@afford/ui/components/code-block'
-import { Wordmark } from '@afford/ui/components/wordmark'
-import { CommandCopy } from '@/components/command-copy'
-import { Navbar } from '@/components/navbar'
+import { Button } from '@/components/ui/button'
+import { AgentPrompt } from '@/components/agent-prompt'
+import { Book } from '@/components/book'
 import { TwoViews } from '@/components/two-views'
 import { benchResults } from '@/lib/bench'
-import { description, siteUrl } from '@/lib/site-url'
+import { siteUrl } from '@/lib/site-url'
+
+const lede =
+  'Afford gives each page of a Next.js app a JSON view for agents, at the same URL and with the same session. Define an action once, and it runs as a server action, an HTTP endpoint, a WebMCP tool, and an MCP tool.'
 
 export const metadata: Metadata = {
-  title: { absolute: 'Afford: make every page agent-operable' },
-  description,
+  title: { absolute: 'Afford docs' },
+  description: lede,
   alternates: { canonical: '/' },
 }
 
-const action = `'use server'
+const docs = siteUrl.origin
 
-import { z } from 'zod'
-import { defineAction } from '@/lib/afford'
-import { inStock } from '@/lib/catalog'
-import * as cart from '@/lib/cart'
-import product from './state'
+const prompt = `Help me make this Next.js app agent-operable with Afford. Start by reading ${docs}/llms.txt, which lists every page of the Afford docs. Any page is available as Markdown by adding .md to its URL (for example ${docs}/quickstart.md), and ${docs}/llms-full.txt has the whole site in one file.
 
-export const addToCart = defineAction({
-  name: 'addToCart',
-  description: 'Add a product variant to the cart',
-  input: z.object({
-    sku: z.string(),
-    quantity: z.number().int().min(1).optional(),
-  }),
-  state: product,
-  expose: 'session',
-  requires: 'The variant is in stock',
-  guard: ({ input, state }) =>
-    !input || inStock(state.product, input.sku) || 'Sold out',
-  effects: ['cart'],
-  run: (input, ctx) => cart.add(ctx.session!.id, input),
-  message: ({ input }) => \`Added \${input.sku} to your cart\`,
-})`
+1. Follow ${docs}/quickstart.md: install @afford/next, @afford/react, and zod, then run \`npx @afford/next init\`. It writes the route handler, wraps next.config.ts with withAfford, and generates the manifest.
+2. Next to each page an agent should operate, add a state.ts (what the page shows) and an actions.ts with defineAction. Set \`expose\` on every action an agent may call, and use 'confirm' for anything that spends money or can't be undone.
+3. Check your work with curl -H 'Accept: application/vnd.afford+json' on the page's URL, and read ${docs}/security.md before exposing anything that needs a session.
 
-const concepts = [
-  {
-    term: 'Actions',
-    body: (
-      <>
-        <code>defineAction</code> in a route’s <code>actions.ts</code> names something a person can
-        do on the page, with a schema for its input. The export is a server action your components
-        call as usual.
-      </>
-    ),
-  },
-  {
-    term: 'State',
-    body: (
-      <>
-        <code>state.ts</code> returns what the page shows, as entities. It loads with the caller’s
-        session, so a graph never holds more than the HTML would show the same person.
-      </>
-    ),
-  },
-  {
-    term: 'Deltas',
-    body: (
-      <>
-        Calling an action answers with what changed: the entities in its <code>effects</code>, its
-        output, actions that became available or went away, and where to go next.
-      </>
-    ),
-  },
-  {
-    term: 'Expose',
-    body: (
-      <>
-        Nothing is reachable by agents until an action sets <code>expose</code> to{' '}
-        <code>public</code>, <code>session</code>, or <code>confirm</code>.
-      </>
-    ),
-  },
-]
+Only use APIs that appear in the docs.`
 
-const surfaces = [
-  {
-    term: 'Server action',
-    detail: 'For your UI',
-    body: (
-      <>
-        The function <code>defineAction</code> returns. Forms, buttons, and{' '}
-        <code>useActionState</code> call it directly.
-      </>
-    ),
-  },
-  {
-    term: 'HTTP',
-    detail: 'For headless agents',
-    body: (
-      <>
-        <code>GET</code> the page with <code>Accept: application/vnd.afford+json</code> for its
-        graph; <code>POST</code> to call an action.
-      </>
-    ),
-  },
-  {
-    term: 'WebMCP',
-    detail: 'For browser agents',
-    body: (
-      <>
-        <code>AffordProvider</code> registers the page’s available actions as tools. They POST to
-        the same endpoint, so they pass the same checks.
-      </>
-    ),
-  },
-  {
-    term: 'MCP',
-    detail: 'For Claude, Cursor, and others',
-    body: (
-      <>
-        <code>npx @afford/mcp &lt;url&gt;</code> serves any Afford site as two tools: open a page,
-        call an action.
-      </>
-    ),
-  },
-]
-
-const security = [
-  {
-    term: 'Default deny',
-    body: (
-      <>
-        An action without <code>expose</code> isn’t in any graph, and calling it answers{' '}
-        <code>not_found</code>.
-      </>
-    ),
-  },
-  {
-    term: 'Confirm',
-    body: (
-      <>
-        <code>confirm</code> actions answer with a summary first, and run only when the call is
-        repeated with <code>confirm: true</code>.
-      </>
-    ),
-  },
-  {
-    term: 'Origin',
-    body: 'A call that carries cookies must come from the site’s own Origin. Bearer tokens are exempt.',
-  },
-  {
-    term: 'Order',
-    body: 'Every agent call is validated, then guarded, then run. The action never sees invalid input.',
-  },
-]
-
-const Section = ({
-  title,
-  href,
-  children,
-}: {
+type Card = {
+  icon: LucideIcon
   title: string
-  href?: string
-  children: React.ReactNode
-}) => (
-  <section className="grid gap-x-12 gap-y-6 border-t py-16 md:grid-cols-[12rem_minmax(0,1fr)] md:py-20">
-    <div>
-      <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
-      {href && (
+  description: string
+  href: string
+}
+
+const bench = benchResults()
+
+const cards: Card[] = [
+  {
+    icon: BookOpenIcon,
+    title: 'llms.txt',
+    description: 'An index of every page on this site, for agents to read before anything else.',
+    href: '/llms.txt',
+  },
+  {
+    icon: FileTextIcon,
+    title: 'Markdown pages',
+    description:
+      "Add .md to any page's URL for a plain Markdown copy, or read the whole site in one file.",
+    href: '/llms-full.txt',
+  },
+  {
+    icon: BracesIcon,
+    title: 'This site’s graph',
+    description:
+      'These docs run on Afford: ask / for application/vnd.afford+json, and search and read pages as actions.',
+    href: '/quickstart#read-the-graph',
+  },
+  {
+    icon: CableIcon,
+    title: 'MCP',
+    description: 'Serve any Afford site to Claude, Cursor, and other MCP clients as two tools.',
+    href: '/mcp',
+  },
+]
+
+// task-shaped walkthroughs from the docs, shelved as books; descriptions paraphrase each page's intro
+const guides: (Card & { color: string })[] = [
+  {
+    icon: RocketIcon,
+    title: 'Make a page agent-operable',
+    description: 'Init, a state file, an action, and curl.',
+    href: '/quickstart',
+    color: 'oklch(0.72 0.13 70)',
+  },
+  {
+    icon: KeyRoundIcon,
+    title: 'Share your session with agents',
+    description: 'One auth resolver for the UI and the agent path.',
+    href: '/nextjs',
+    color: 'oklch(0.72 0.13 250)',
+  },
+  {
+    icon: ShieldCheckIcon,
+    title: 'Ask before an order goes through',
+    description: 'Confirm actions run only after the person approves.',
+    href: '/concepts/expose',
+    color: 'oklch(0.72 0.13 155)',
+  },
+  {
+    icon: MousePointerClickIcon,
+    title: 'Give browser agents tools',
+    description: 'WebMCP tools from the page’s own graph.',
+    href: '/react',
+    color: 'oklch(0.72 0.13 20)',
+  },
+  {
+    icon: TerminalIcon,
+    title: 'Connect Claude to your site',
+    description: 'Two MCP tools over any Afford site.',
+    href: '/mcp',
+    color: 'oklch(0.72 0.13 300)',
+  },
+  {
+    icon: ListChecksIcon,
+    title: 'Guard what agents can do',
+    description: 'Preconditions agents see before they call.',
+    href: '/concepts/guards',
+    color: 'oklch(0.72 0.13 200)',
+  },
+  {
+    icon: ArrowRightLeftIcon,
+    title: 'Answer with what changed',
+    description: 'Deltas: changed entities, output, and next steps.',
+    href: '/concepts/deltas',
+    color: 'oklch(0.72 0.13 110)',
+  },
+  {
+    icon: SquareCodeIcon,
+    title: 'Catch unmarked controls',
+    description: 'Lint rules for Affordance and action names.',
+    href: '/lint',
+    color: 'oklch(0.72 0.13 340)',
+  },
+]
+
+// descriptions paraphrase each page's intro in content/
+const sections: { title: string; cards: Card[] }[] = [
+  {
+    title: 'Concepts',
+    cards: [
+      {
+        icon: MousePointerClickIcon,
+        title: 'Actions',
+        description:
+          'One defineAction call describes something a person or an agent can do on a page, and returns the server action that does it.',
+        href: '/concepts/actions',
+      },
+      {
+        icon: LayersIcon,
+        title: 'State',
+        description:
+          "A route's state.ts says what the page shows, as entities. It's loaded for the graph and again after every action.",
+        href: '/concepts/state',
+      },
+      {
+        icon: KeyRoundIcon,
+        title: 'Expose',
+        description:
+          'Nothing reaches agents until an action says who may call it: public, session, or confirm.',
+        href: '/concepts/expose',
+      },
+      {
+        icon: ListChecksIcon,
+        title: 'Guards and confirm',
+        description:
+          'The precondition an action checks before it runs. Agents see it before they call, and get its reason when it fails.',
+        href: '/concepts/guards',
+      },
+      {
+        icon: ArrowRightLeftIcon,
+        title: 'Deltas',
+        description:
+          "Calling an action returns what changed on the page, so the agent doesn't have to read it again.",
+        href: '/concepts/deltas',
+      },
+    ],
+  },
+  {
+    title: 'Reference',
+    cards: [
+      {
+        icon: ScrollTextIcon,
+        title: 'Protocol',
+        description:
+          'The normative Afford protocol, version 0: discovery, graphs, calls, deltas, and error codes.',
+        href: '/protocol',
+      },
+      {
+        icon: ShieldCheckIcon,
+        title: 'Security',
+        description:
+          'Default deny, explicit confirmation, Origin checks for cookies, and a fixed order of checks on every call.',
+        href: '/security',
+      },
+      {
+        icon: NetworkIcon,
+        title: 'API reference',
+        description: 'Every option of defineAction, createHandler, and withAfford.',
+        href: '/api-reference',
+      },
+      {
+        icon: bench.length ? GaugeIcon : FlaskConicalIcon,
+        title: 'Bench',
+        description: bench.length
+          ? 'A screenshot-driven agent and an Afford agent on the same tasks, with committed results.'
+          : 'A screenshot-driven agent and an Afford agent on the same tasks. Results will appear after the first committed bench run.',
+        href: '/bench',
+      },
+    ],
+  },
+]
+
+const CardGrid = ({ items }: { items: Card[] }) => (
+  <ul className="mt-6 grid gap-4 md:grid-cols-3">
+    {items.map(({ icon: Icon, title, description, href }) => (
+      <li key={title}>
         <Link
           href={href}
-          className="mt-1 inline-block text-sm text-muted-foreground underline-offset-4 transition-colors duration-150 hover:text-foreground hover:underline"
+          // llms.txt and friends are route handlers, not pages
+          prefetch={href.includes('.') ? false : undefined}
+          className="flex h-full flex-col rounded-xl border p-6 transition-colors hover:bg-card focus-visible:outline-2 focus-visible:outline-ring"
         >
-          Read more
+          <Icon aria-hidden className="size-5" />
+          <h3 className="mt-6 font-medium">{title}</h3>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{description}</p>
         </Link>
-      )}
-    </div>
-    <div className="max-w-[65ch]">{children}</div>
-  </section>
-)
-
-const List = ({ items }: { items: { term: string; detail?: string; body: React.ReactNode }[] }) => (
-  <dl className="grid gap-x-8 gap-y-8 sm:grid-cols-2">
-    {items.map(({ term, detail, body }) => (
-      <div key={term}>
-        <dt className="font-medium">
-          {term}
-          {detail && <span className="ml-2 font-normal text-muted-foreground">{detail}</span>}
-        </dt>
-        <dd className="mt-2 text-sm leading-relaxed text-pretty text-muted-foreground [&_code]:font-mono [&_code]:text-[0.9em] [&_code]:text-foreground">
-          {body}
-        </dd>
-      </div>
+      </li>
     ))}
-  </dl>
+  </ul>
 )
 
-const Home = () => {
-  const bench = benchResults()
-  return (
-    // the docs root has a graph of its own: searchDocs and getPage, registered as WebMCP tools here
-    <AffordProvider path="/">
-      <Navbar />
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 md:px-8">
-        <section className="pt-12 pb-10 md:pt-16">
-          <h1 className="text-4xl font-semibold tracking-tighter text-balance sm:text-5xl sm:leading-[1.05]">
-            Make every page agent-operable
-          </h1>
-          <p className="mt-5 max-w-2xl text-lg text-pretty text-muted-foreground">
-            Afford gives each page of a Next.js app a JSON view for agents, at the same URL and with
-            the same session. Define an action once, and it runs as a server action, an HTTP
-            endpoint, a WebMCP tool, and an MCP tool.
-          </p>
-          <div className="mt-7 flex flex-wrap items-center gap-3">
-            <Button
-              render={<Link href="/quickstart" />}
-              nativeButton={false}
-              className="h-9 px-4 text-sm"
-            >
-              Quickstart
-            </Button>
-            <CommandCopy command="npx @afford/next init" />
-          </div>
+const Home = () => (
+  // the docs root has a graph of its own (searchDocs, getPage); the provider registers it as WebMCP tools
+  <AffordProvider path="/">
+    <div className="typeset-docs mx-auto w-full max-w-6xl">
+      <section className="max-w-3xl">
+        <h1 className="text-5xl font-semibold tracking-tighter text-balance sm:text-6xl sm:leading-[1.05]">
+          {/* a non-breaking hyphen, so the compound never splits across lines */}
+          Make every page agent‑operable
+        </h1>
+        <p className="mt-6 text-lg text-pretty text-muted-foreground sm:text-xl">{lede}</p>
+        <div className="mt-8 flex flex-wrap gap-3">
+          <Button asChild size="lg" className="px-4">
+            <Link href="/quickstart">Quickstart</Link>
+          </Button>
+          <Button asChild size="lg" variant="outline" className="px-4">
+            <Link href="/why">Why Afford</Link>
+          </Button>
+        </div>
+      </section>
+
+      <section className="mt-16" aria-label="Two views of one URL">
+        <TwoViews />
+      </section>
+
+      <section className="mt-24">
+        <h2 className="text-2xl font-semibold tracking-tight">Set up your agent</h2>
+        <p className="mt-3 max-w-[65ch] text-pretty text-muted-foreground">
+          Every page on this site is also available as Markdown, and{' '}
+          <code className="font-mono text-[0.875em] text-foreground">/llms.txt</code> indexes them
+          all. Paste this prompt into your agent to point it at the docs:
+        </p>
+        <div className="mt-6">
+          <AgentPrompt prompt={prompt} />
+        </div>
+        <div className="mt-4">
+          <CardGrid items={cards} />
+        </div>
+      </section>
+
+      <section className="mt-24">
+        <h2 className="text-2xl font-semibold tracking-tight">Guides</h2>
+        <p className="mt-3 max-w-[65ch] text-pretty text-muted-foreground">
+          Walkthroughs for the things teams set out to do first.
+        </p>
+        {/* two to a row on phones, four on desktop; each book shrinks with the breakpoint to fit */}
+        <ul className="mt-10 grid grid-cols-2 gap-x-4 gap-y-12 md:grid-cols-4 md:gap-x-8">
+          {guides.map(({ icon: Icon, title, description, href, color }) => (
+            <li key={href + title} className="flex flex-col">
+              <Book
+                href={href}
+                title={title}
+                color={color}
+                icon={<Icon />}
+                width={{ xs: 150, sm: 160, md: 170, lg: 196 }}
+                description={description}
+              />
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {sections.map((section) => (
+        <section key={section.title} className="mt-24">
+          <h2 className="text-2xl font-semibold tracking-tight">{section.title}</h2>
+          <CardGrid items={section.cards} />
         </section>
-
-        <section className="grid items-start gap-4 pb-16 md:pb-24 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-          <CodeBlock lang="ts" title="app/products/[slug]/actions.ts">
-            {action}
-          </CodeBlock>
-          {/* on phones the live demo leads; the code it runs follows */}
-          <div className="max-lg:order-first">
-            <TwoViews />
-          </div>
-        </section>
-
-        <Section title="How it works" href="/concepts/actions">
-          <List items={concepts} />
-        </Section>
-
-        <Section title="Four surfaces, one definition" href="/react">
-          <p className="mb-8 text-pretty text-muted-foreground">
-            The same export reaches every kind of caller. Agents all go through one handler, so they
-            get the same validation, guards, and confirmation.
-          </p>
-          <List items={surfaces} />
-        </Section>
-
-        <Section title="Security" href="/security">
-          <List items={security} />
-        </Section>
-
-        <Section title="Quickstart" href="/quickstart">
-          <p className="mb-6 text-pretty text-muted-foreground">
-            In a Next.js 16 app, install the packages and run{' '}
-            <code className="font-mono text-[0.9em] text-foreground">init</code>. It writes the
-            route handler, wraps your config, and generates the manifest. Then add an{' '}
-            <code className="font-mono text-[0.9em] text-foreground">actions.ts</code> next to a
-            page.
-          </p>
-          <CodeBlock lang="bash">
-            {'npm install @afford/next @afford/react zod\nnpx @afford/next init'}
-          </CodeBlock>
-          <p className="mt-8 mb-6 text-pretty text-muted-foreground">
-            This site runs on Afford too. Ask it for its own graph:
-          </p>
-          <CodeBlock lang="bash">
-            {`curl -H 'Accept: application/vnd.afford+json' ${siteUrl.href}`}
-          </CodeBlock>
-        </Section>
-
-        <Section title="Bench" href="/bench">
-          <p className="text-pretty text-muted-foreground">
-            {bench.length
-              ? `${bench.length} committed bench runs compare a screenshot-driven agent with an Afford agent on the same tasks.`
-              : 'Results will appear here after the first bench run is committed.'}
-          </p>
-        </Section>
-      </main>
-      <footer className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-6 gap-y-3 border-t px-4 py-8 text-sm text-muted-foreground md:px-8">
-        <Wordmark className="text-foreground" />
-        <Link href="/why" className="transition-colors duration-150 hover:text-foreground">
-          Docs
-        </Link>
-        <Link href="/protocol" className="transition-colors duration-150 hover:text-foreground">
-          Protocol
-        </Link>
-        <Link
-          href="/llms.txt"
-          prefetch={false}
-          className="transition-colors duration-150 hover:text-foreground"
-        >
-          llms.txt
-        </Link>
-      </footer>
-    </AffordProvider>
-  )
-}
+      ))}
+    </div>
+  </AffordProvider>
+)
 
 export default Home

@@ -3,18 +3,20 @@ import { Table } from '@afford/ui/components/table'
 
 type Children = { children?: React.ReactNode }
 
-// first-column headers of reference tables: options, props, fields
+// first-column headers of reference tables: typedoc's names, plus the ones these docs use
 const apiHeaders = new Set([
+  'Parameter',
+  'Type Parameter',
+  'Property',
+  'Event',
+  'Member',
+  'Name',
+  // afford's reference tables
   'Option',
   'Prop',
-  'Property',
   'Argument',
   'Field',
   'Tool field',
-  'Rule',
-  'Command',
-  'Import',
-  'Tool',
 ])
 
 const firstChildren = (node: React.ReactNode) =>
@@ -28,11 +30,11 @@ const firstHeader = (children: React.ReactNode) => {
 
 // the card clips the header tint to its rounded corners; ui/table's own container does the scrolling
 const card =
-  'not-first:mt-(--typeset-flow) overflow-hidden rounded-(--radius) border [&_thead]:bg-muted/60'
-// reference tables: muted, with the name in the first column standing out
-const api = `${card} [&_td]:text-muted-foreground [&_td:first-child_code:first-of-type]:text-foreground [&_th]:text-muted-foreground`
+  'not-first:mt-(--typeset-flow) overflow-hidden rounded-(--radius) border [&_thead]:bg-muted'
+// generated API tables: muted, with the member name's code standing out
+const api = `${card} [&_td]:text-muted-foreground [&_td_code]:p-0 [&_td_code]:text-[1em] [&_td_code]:[background:none] [&_td:first-child_code:first-of-type]:font-medium [&_td:first-child_code:first-of-type]:text-foreground [&_th]:text-muted-foreground`
 
-// every markdown table becomes a bordered card that scrolls inside itself
+// every markdown table becomes a bordered card that scrolls inside itself; generated API tables get TypeTable styling
 export const TypeTable = (props: React.ComponentProps<'table'>) => (
   <div className={apiHeaders.has(firstHeader(props.children) ?? '') ? api : card}>
     <Table {...props} />

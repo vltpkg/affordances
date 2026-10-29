@@ -3,7 +3,6 @@
 import { useSyncExternalStore } from 'react'
 import { useTheme } from 'next-themes'
 import { MonitorIcon, MoonIcon, SunIcon } from 'lucide-react'
-import { Button } from '@afford/ui/components/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,8 +13,8 @@ import {
 
 const themes = [
   { value: 'system', label: 'System', Icon: MonitorIcon },
-  { value: 'light', label: 'Light', Icon: SunIcon },
   { value: 'dark', label: 'Dark', Icon: MoonIcon },
+  { value: 'light', label: 'Light', Icon: SunIcon },
 ]
 
 // the theme is only known on the client, so render the neutral icon until hydrated
@@ -29,27 +28,31 @@ const useMounted = () =>
 export const ThemeSwitcher = () => {
   const { theme = 'system', setTheme } = useTheme()
   const mounted = useMounted()
-  const current = (mounted && themes.find((t) => t.value === theme)) || themes[0]!
+  const current = themes.find((t) => t.value === theme) ?? themes[0]!
+  const Icon = mounted ? current.Icon : MonitorIcon
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={`Theme: ${current.label}`}
-            className="text-muted-foreground data-popup-open:bg-muted data-popup-open:text-foreground"
-          />
-        }
+        aria-label={`Theme: ${mounted ? current.label : 'System'}`}
+        className="grid size-8 place-items-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 data-popup-open:bg-accent data-popup-open:text-foreground"
       >
-        <current.Icon aria-hidden />
+        <Icon aria-hidden className="size-4" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={8} className="w-36">
+      <DropdownMenuContent
+        side="top"
+        align="end"
+        sideOffset={8}
+        className="z-50 w-auto min-w-36 rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg ring-0"
+      >
         <DropdownMenuRadioGroup value={theme} onValueChange={(value) => setTheme(String(value))}>
-          {themes.map(({ value, label, Icon }) => (
-            <DropdownMenuRadioItem key={value} value={value} className="text-sm">
-              <Icon aria-hidden className="text-muted-foreground" />
+          {themes.map(({ value, label, Icon: ItemIcon }) => (
+            <DropdownMenuRadioItem
+              key={value}
+              value={value}
+              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none focus:bg-accent data-highlighted:bg-accent [&_svg:not([class*='size-'])]:size-4"
+            >
+              <ItemIcon aria-hidden className="size-4 text-muted-foreground" />
               {label}
             </DropdownMenuRadioItem>
           ))}

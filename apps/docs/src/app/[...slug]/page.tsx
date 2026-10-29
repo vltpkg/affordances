@@ -59,6 +59,7 @@ const DocPage = async ({ params }: Pick<PageProps<'/[...slug]'>, 'params'>) => {
       {/* the wrapper is the toc bar's sticky range; --toc-bar takes the bar's h-12 off the column's min-height */}
       <div className="min-w-0 max-xl:has-[[data-toc-bar]]:[--toc-bar:--spacing(12)]">
         <TocBar toc={page.data.toc} />
+        <div aria-hidden className="page-fade page-fade-top" />
         {/* at least one screen tall, so on short pages the pagination sits at the bottom of the viewport */}
         <div className="mx-auto flex min-h-[calc(100svh-var(--header-height)-4rem-var(--toc-bar,0px))] w-full max-w-[37em] min-w-0 flex-col md:min-h-[calc(100svh-var(--header-height)-6rem-var(--toc-bar,0px))]">
           {trail.length > 1 && (
@@ -89,16 +90,18 @@ const DocPage = async ({ params }: Pick<PageProps<'/[...slug]'>, 'params'>) => {
               <CopyPage url={page.url} />
             </div>
             {page.data.description && (
-              <p className="mt-4 text-base leading-[1.6] text-pretty text-muted-foreground">
+              <p className="mt-4 text-base leading-[1.6] text-muted-foreground">
                 {page.data.description}
               </p>
             )}
             <MDX components={components} />
           </article>
+          {/* pt-16 keeps the old minimum gap on long pages */}
           <div className="mt-auto pt-16">
             <PageNav url={page.url} />
           </div>
         </div>
+        <div aria-hidden className="page-fade page-fade-bottom" />
       </div>
       <TextSelection />
       {/* under the sticky navbar, and under the toc bar (h-12) below xl */}

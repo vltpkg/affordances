@@ -1,50 +1,81 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { CheckIcon, ChevronDownIcon, CircleAlertIcon, CopyIcon } from 'lucide-react'
-import { Button } from '@afford/ui/components/button'
+import { CheckIcon, ChevronRightIcon, CircleAlertIcon, CopyIcon, TerminalIcon } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@afford/ui/components/dropdown-menu'
 import { useCopy } from '@afford/ui/hooks/use-copy'
+import { Claude } from '@/components/icons/claude'
+import { Markdown } from '@/components/icons/markdown'
+import { OpenAI } from '@/components/icons/openai'
+import { Button } from '@/components/ui/button'
 
-const item = 'min-h-8 px-2.5 text-sm text-muted-foreground'
+const item =
+  'text-muted-foreground flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:bg-foreground/5 focus:text-foreground data-highlighted:bg-foreground/5 data-highlighted:text-foreground [&_svg]:size-4'
 
-// rendered only inside the open menu, so reading the origin never runs on the server.
-// prompts link to the markdown twin rather than inlining it: query strings get long fast
-const Links = ({ url }: { url: string }) => {
-  const md = `${location.origin}${url}.md`
+const MenuLink = ({
+  href,
+  external = true,
+  children,
+}: {
+  href: string
+  external?: boolean
+  children: React.ReactNode
+}) => (
+  <DropdownMenuItem
+    className={item}
+    render={
+      <a href={href} {...(external && { target: '_blank', rel: 'noopener noreferrer' })}>
+        {children}
+      </a>
+    }
+  />
+)
+
+// prompts stay short and link to the markdown twin: query strings get long fast (claude-cli:// caps q at 5,000 chars).
+// rendered only inside the open menu, so reading the origin never runs on the server
+const AiActions = ({ url }: { url: string }) => {
+  const md = `${window.location.origin}${url}.md`
   const q = encodeURIComponent(`Read ${md} so I can ask questions about it.`)
-  const links = [
-    { label: 'View as Markdown', href: `${url}.md` },
-    { label: 'Open in Claude', href: `https://claude.ai/new?q=${q}` },
-    { label: 'Open in ChatGPT', href: `https://chatgpt.com/?hints=search&q=${q}` },
-  ]
-  return links.map(({ label, href }) => (
-    <DropdownMenuItem
-      key={href}
-      className={item}
-      render={
-        <a href={href} target="_blank" rel="noopener noreferrer">
-          {label}
-        </a>
-      }
-    />
-  ))
+  // claude-cli://open starts in the home directory, so have it ask for the project first
+  const cli = encodeURIComponent(
+    `Read ${md} from the Afford docs. Before changing anything, ask me which project to work in.`,
+  )
+  return (
+    <>
+      <DropdownMenuSeparator className="-mx-1 my-1 h-px bg-border-illustration" />
+      <MenuLink href={`https://claude.ai/new?q=${q}`}>
+        <Claude aria-hidden />
+        Open in Claude
+      </MenuLink>
+      <MenuLink href={`https://chatgpt.com/?hints=search&q=${q}`}>
+        <OpenAI aria-hidden />
+        Open in ChatGPT
+      </MenuLink>
+      <MenuLink href={`claude-cli://open?q=${cli}`} external={false}>
+        <TerminalIcon aria-hidden />
+        Open in Claude Code
+      </MenuLink>
+    </>
+  )
 }
 
-// a split button in the code card's dress: the card is the frame, the copy action its inset panel.
-// what gets copied is the page's `/<url>.md` twin (see next.config.ts)
+// a split button in the code card's dress: the card is the frame, the copy action its inset panel, its corners
+// the frame's radius less the padding. the page's `/<url>.md` twin (see next.config.ts rewrites) is what gets
+// copied, viewed and linked
 export const CopyPage = ({ url }: { url: string }) => {
   const { copied, copy } = useCopy(1500)
   const [failed, setFailed] = useState(false)
   const markdown = useRef<Promise<string>>(null)
 
-  // fetch on hover/focus so the click only awaits a settled promise; Safari drops clipboard writes that
-  // happen too long after the click. a failed fetch is forgotten, so the next attempt retries
+  // fetch on hover/focus so the copy only awaits an already-settled promise;
+  // Safari drops clipboard writes that happen too long after the click.
+  // a failed fetch is forgotten, so the next hover or click retries instead of reusing it
   const load = () =>
     (markdown.current ??= fetch(`${url}.md`)
       .then((res) => {
@@ -55,6 +86,7 @@ export const CopyPage = ({ url }: { url: string }) => {
         markdown.current = null
         throw error
       }))
+  // the click reports a failure; a failed preload has nobody to tell
   const preload = () => void load().catch(() => {})
   const copyPage = () => {
     setFailed(false)
@@ -64,7 +96,7 @@ export const CopyPage = ({ url }: { url: string }) => {
   return (
     <div
       data-not-typeset
-      className="flex shrink-0 items-center gap-0.5 rounded-xl bg-card p-0.5 ring-1 ring-border-illustration"
+      className="flex shrink-0 items-center gap-0.5 rounded-xl bg-card p-0.5 shadow-lg ring-1 shadow-black/6.5 ring-border-illustration"
     >
       <Button
         variant="outline"
@@ -72,9 +104,8 @@ export const CopyPage = ({ url }: { url: string }) => {
         onPointerEnter={preload}
         onFocus={preload}
         onClick={copyPage}
-        className="rounded-[calc(var(--radius-xl)-2px)] bg-illustration text-foreground/75 hover:text-foreground active:not-aria-[haspopup]:translate-y-0 dark:bg-illustration"
+        className="rounded-[calc(var(--radius-xl)-2px)] bg-illustration text-foreground/75 hover:text-foreground active:not-aria-[haspopup]:translate-y-0"
       >
-        {/* the label keeps its width; only the icon confirms, so the frame never resizes */}
         {failed ? (
           <CircleAlertIcon aria-hidden className="text-destructive" />
         ) : copied ? (
@@ -82,9 +113,10 @@ export const CopyPage = ({ url }: { url: string }) => {
         ) : (
           <CopyIcon aria-hidden />
         )}
-        Copy page
+        {/* the label keeps its width (only the icon confirms, with use-copy's toast), so the frame never resizes */}
+        Copy Page
         <span aria-live="polite" className="sr-only">
-          {failed ? 'Couldn’t load the page’s Markdown' : ''}
+          {failed ? 'Failed to copy the page' : ''}
         </span>
       </Button>
       <DropdownMenu>
@@ -98,10 +130,21 @@ export const CopyPage = ({ url }: { url: string }) => {
             />
           }
         >
-          <ChevronDownIcon aria-hidden />
+          <ChevronRightIcon
+            aria-hidden
+            className="transition-transform duration-200 ease-out group-data-popup-open/button:rotate-90 motion-reduce:transition-none"
+          />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" sideOffset={8} className="w-48 rounded-xl">
-          <Links url={url} />
+        <DropdownMenuContent
+          align="end"
+          sideOffset={8}
+          className="z-50 w-auto min-w-52 rounded-xl bg-card p-1 shadow-lg ring-1 shadow-black/6.5 ring-border-illustration"
+        >
+          <MenuLink href={`${url}.md`}>
+            <Markdown aria-hidden />
+            View as Markdown
+          </MenuLink>
+          <AiActions url={url} />
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
