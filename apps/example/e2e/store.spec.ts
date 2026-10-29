@@ -133,3 +133,26 @@ test('WebMCP tools add to cart and place an order with the person’s approval',
   await expect(page.locator('ol').getByText('Dot Grid Notebook')).toBeVisible()
   await expect(cart(page)).toHaveText(/Cart$/)
 })
+
+test('every page reads as markdown: .md urls and Accept: text/markdown', async ({ request }) => {
+  const viaSuffix = await request.get('/products/heavyweight-tee.md')
+  expect(viaSuffix.headers()['content-type']).toBe('text/markdown; charset=utf-8')
+  const markdown = await viaSuffix.text()
+  expect(markdown).toContain('# Heavyweight Tee')
+  // streamed (Suspense) content is in, the agent-only SKU list is clean, and the site chrome is out
+  expect(markdown).toContain('Size: S (selected), M, L (unavailable), XL')
+  expect(markdown).toContain('**SKU**: TEE-BLK-S, TEE-BLK-M, TEE-BLK-L, TEE-BLK-XL')
+  expect(markdown).not.toContain('Afford Supply is a demo')
+  expect(markdown).not.toContain('$ACTION_ID')
+
+  const viaAccept = await request.get('/products/heavyweight-tee', {
+    headers: { accept: 'text/markdown' },
+  })
+  expect(await viaAccept.text()).toBe(markdown)
+  expect((await request.get('/index.md')).status()).toBe(200)
+  // the graph is still there at the same url
+  const graph = await request.get('/products/heavyweight-tee', {
+    headers: { accept: 'application/vnd.afford+json' },
+  })
+  expect((await graph.json()).route).toBe('/products/[slug]')
+})

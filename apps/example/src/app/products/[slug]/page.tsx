@@ -1,3 +1,4 @@
+import { AgentText } from '@afford/md/react'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
@@ -129,9 +130,12 @@ const Product = ({ slug }: { slug: string }) => {
           <div className="grid grid-cols-[7rem_1fr] gap-4 border-b py-2.5">
             <dt className="text-muted-foreground">SKU</dt>
             <dd className="flex flex-wrap gap-x-3 font-mono text-xs leading-5">
-              {product.variants.map((v) => (
-                <span key={v.sku}>{v.sku}</span>
-              ))}
+              {/* the gap separates them on screen; agents get a list */}
+              <AgentText md={product.variants.map((v) => v.sku).join(', ')}>
+                {product.variants.map((v) => (
+                  <span key={v.sku}>{v.sku}</span>
+                ))}
+              </AgentText>
             </dd>
           </div>
         </dl>

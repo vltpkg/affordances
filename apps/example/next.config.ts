@@ -1,4 +1,5 @@
 import { withAfford } from '@afford/next/config'
+import { md } from '@afford/md/next'
 import path from 'node:path'
 import type { NextConfig } from 'next'
 
@@ -12,4 +13,4 @@ const nextConfig: NextConfig = {
   turbopack: { root: path.join(import.meta.dirname, '../..') },
 }
 
-export default withAfford(nextConfig, { name: 'Afford Supply' })
+export default withAfford(nextConfig, { name: 'Afford Supply', plugins: [md()] })
