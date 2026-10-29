@@ -3,14 +3,15 @@ import Link from 'next/link'
 import { cn } from 'cn'
 import { mdAlternate } from '@afford/md/next'
 import { AgentMain, AgentText } from '@afford/md/react'
-import { CodeBlock } from '@afford/ui/components/code-block'
 import { Button } from '@/components/ui/button'
 import { After, Before } from '@/components/marketing/scrolly'
 import { Code, SectionHead } from '@/components/marketing/section-head'
 import { Approvals } from '@/components/marketing/approvals'
 import { CopyCommand } from '@/components/marketing/copy-command'
 import { HeroStage } from '@/components/marketing/hero-stage'
-import { latestBench, type BenchSummary } from '@/lib/bench'
+import { HowItWorks, SOURCE, SURFACES } from '@/components/marketing/how'
+import { Proof } from '@/components/marketing/proof'
+import { benchRuns, modelName, type BenchRun } from '@/lib/bench'
 import { siteUrl } from '@/lib/site-url'
 import { exec, packageManagers } from '@/lib/package-managers'
 
@@ -21,90 +22,93 @@ export const metadata: Metadata = {
   alternates: { canonical: '/', ...mdAlternate('/') },
 }
 
-const SRC_A = `'use server'
+const int = (n: number) => Math.round(n).toLocaleString('en-US')
+const sec1 = (ms: number) => `${(ms / 1000).toFixed(1)}s`
+const usd = (n?: number) =>
+  n === undefined
+    ? '–'
+    : n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumSignificantDigits: 2 })
 
-export const addToCart = defineAction({
-  name: 'addToCart',
-  input: z.object({ sku: z.string(), size: z.number() }),
-  expose: 'session',
-  effects: ['cart'],
-  run: (input) => cart.add(input),
-})`
+// the proof section for agents: each model's medians, then every task, from the same results files
+const proofMd = (runs: BenchRun[]) =>
+  runs
+    .map((r) => {
+      const { browser: b, afford: a } = r
+      const ok = (x: { successRate: number }) => Math.round(x.successRate * r.runs)
+      return [
+        `**${modelName(r.model)}**, ${r.runs} runs per task. Median per task, browser agent against Afford agent: ${int(b.tokens)} against ${int(a.tokens)} tokens, ${sec1(b.ms)} against ${sec1(a.ms)}, ${b.turns} against ${a.turns} steps, ${usd(b.costPerSuccessUsd)} against ${usd(a.costPerSuccessUsd)} per successful task. Tasks completed: ${Math.round(b.successRate * 100)}% against ${Math.round(a.successRate * 100)}%.`,
+        '| Task | Browser tokens | Afford tokens | Browser time | Afford time | Browser passed | Afford passed |\n| --- | --: | --: | --: | --: | --: | --: |\n' +
+          r.tasks
+            .map(
+              (t) =>
+                `| ${t.name} | ${int(t.browser.tokens)} | ${int(t.afford.tokens)} | ${sec1(t.browser.ms)} | ${sec1(t.afford.ms)} | ${ok(t.browser)}/${r.runs} | ${ok(t.afford)}/${r.runs} |`,
+            )
+            .join('\n'),
+      ].join('\n\n')
+    })
+    .join('\n\n')
 
-const SRC_S = `export default defineState(async ({ params }) => ({
-  product: await getProduct(params.slug),
-  cart: await getCart(),
-}))`
-
-const FAN = [
+const PRINCIPLES: {
+  t: string
+  d: string
+  lang: string
+  proof: [React.ReactNode, React.ReactNode]
+  md: string
+}[] = [
   {
-    t: 'Server Action',
-    w: 'Humans',
-    d: 'The button on the page calls it, like any server action.',
-    ag: false,
+    t: 'Signal, not pixels.',
+    d: 'An agent reads names, inputs and preconditions from the graph. No screenshots, no guessing which button does what.',
+    lang: 'json',
+    proof: [
+      <>
+        <span className="text-(--fg3)">&quot;guard&quot;:</span> &quot;The variant is in stock&quot;
+      </>,
+      <>
+        <span className="text-(--fg3)">&quot;available&quot;:</span>{' '}
+        <span className="text-(--agent)">true</span>
+      </>,
+    ],
+    md: '"guard": "The variant is in stock",\n"available": true',
   },
   {
-    t: 'WebMCP tool',
-    w: 'Browser agents',
-    d: 'Registered in the tab, so an agent in the browser can call it.',
-    ag: true,
+    t: 'One source, no drift.',
+    d: 'Every surface reads the same definition, so one edit reaches all of them. There is no second copy to forget.',
+    lang: 'text',
+    proof: [
+      <>
+        actions.ts <span className="text-(--fg3)">|</span> 2{' '}
+        <span className="text-(--fg3)">+-</span>
+      </>,
+      <>
+        <span className="text-(--agent)">→</span> form, WebMCP, HTTP, MCP
+      </>,
+    ],
+    md: 'actions.ts | 2 +-\n→ form, WebMCP, HTTP, MCP',
   },
   {
-    t: 'HTTP graph',
-    w: 'Headless agents',
-    d: 'GET the page as afford+json, then POST the action.',
-    ag: true,
+    t: 'Agents act, humans approve.',
+    d: 'Actions without expose stay invisible to agents. Mark one confirm, and an agent can prepare it but only a person can finish it.',
+    lang: 'ts',
+    proof: [
+      <>
+        expose: <span className="text-(--agent)">&apos;confirm&apos;</span>
+      </>,
+      <>
+        <span className="text-(--fg3)">←</span> 409 confirm_required
+      </>,
+    ],
+    md: "expose: 'confirm'\n// ← 409 confirm_required",
   },
-  {
-    t: 'MCP tool',
-    w: 'Claude, Cursor',
-    d: 'Called through @afford/mcp. Same schema, same guard.',
-    ag: true,
-  },
-  { t: 'Markdown', w: 'Readers', d: 'The page as text/markdown, indexed by /llms.txt.', ag: false },
 ]
 
-// the bench's own summary, as measured: medians per task and the share of tasks completed; the change is
-// computed from the same two numbers
-type Side = BenchSummary['browser']
-const pct = (from: number, to: number) =>
-  from === to
-    ? 'Same'
-    : `${to < from ? '−' : '+'}${Math.round((Math.abs(to - from) / from) * 100)}%`
-const STATS: { k: string; u: string; v: (s: Side) => string; d: (b: Side, a: Side) => string }[] = [
-  {
-    k: 'Steps',
-    u: 'Median turns per task',
-    v: (s) => String(s.medianTurns),
-    d: (b, a) => pct(b.medianTurns, a.medianTurns),
-  },
-  {
-    k: 'Tokens',
-    u: 'Median per task',
-    v: (s) => s.medianTokens.toLocaleString('en-US'),
-    d: (b, a) => pct(b.medianTokens, a.medianTokens),
-  },
-  {
-    k: 'Time',
-    u: 'Median wall clock per task',
-    v: (s) => `${(s.medianMs / 1000).toFixed(1)}s`,
-    d: (b, a) => pct(b.medianMs, a.medianMs),
-  },
-  {
-    k: 'Success rate',
-    u: 'Share of tasks completed',
-    v: (s) => `${Math.round(s.successRate * 100)}%`,
-    d: (b, a) => {
-      const pts = Math.round((a.successRate - b.successRate) * 100)
-      return pts === 0 ? 'Same' : `${pts > 0 ? '+' : '−'}${Math.abs(pts)} pts`
-    },
-  },
+const ENTRY = [
+  { href: '/llms.txt', d: 'Every page on this site, indexed' },
+  { href: '/index.md', d: 'This page, as text/markdown' },
+  { href: '/agents', d: 'Where an agent should start' },
 ]
 
 const sec = 'relative px-14 py-24 max-[899px]:px-5 max-[899px]:py-[72px]'
 const btn = 'h-11 rounded-lg px-[18px] text-sm active:scale-[0.97]'
-const num =
-  'text-right text-[22px] font-semibold tracking-[-0.02em] tabular-nums max-[599px]:text-lg'
 
 const Dot = ({ agent }: { agent?: boolean }) => (
   <span
@@ -115,7 +119,7 @@ const Dot = ({ agent }: { agent?: boolean }) => (
 const curl = `curl -H 'Accept: application/vnd.afford+json' ${siteUrl.host}`
 
 const Home = () => {
-  const bench = latestBench()
+  const runs = benchRuns()
   return (
     <div className="afd flex-1 bg-(--bg) text-(--fg)">
       <AgentMain>
@@ -204,53 +208,13 @@ const Home = () => {
           <section className={sec} id="how" aria-labelledby="h-how">
             <SectionHead eyebrow="How it works" id="h-how" title="Declare it next to the page.">
               An action is a server action with a schema, an exposure level and a list of what it
-              changes. State is what the page shows, as entities. That’s the contract.
+              changes. Pick a surface to see what the same definition becomes.
             </SectionHead>
-            <div className="grid grid-cols-2 gap-4 max-[899px]:grid-cols-1">
-              <CodeBlock lang="ts" title="actions.ts">
-                {SRC_A}
-              </CodeBlock>
-              <CodeBlock lang="ts" title="state.ts">
-                {SRC_S}
-              </CodeBlock>
-            </div>
             <AgentText
               block
-              md={`One \`defineAction\`, five surfaces:\n\n${FAN.map((f) => `- **${f.t}** (${f.w}): ${f.d}`).join('\n')}`}
+              md={`\`\`\`ts\n${SOURCE}\n\`\`\`\n\nOne \`defineAction\`, five surfaces:\n\n${SURFACES.map((f) => `- **${f.name}** (${f.who}): ${f.note}`).join('\n')}`}
             >
-              <figure
-                aria-label="One defineAction produces five surfaces"
-                className="relative mt-16 flex flex-col items-center max-[899px]:items-stretch"
-              >
-                <div className="inline-flex h-12 items-center gap-2.5 rounded-[10px] border border-(--fg) bg-(--bg) px-5 font-mono text-sm font-medium max-[899px]:self-start">
-                  defineAction()
-                </div>
-                <div className="h-8 w-0 border-l border-(--line2) max-[899px]:ml-5 max-[899px]:h-5" />
-                <div className="relative grid w-full grid-cols-5 gap-3 pt-8 max-[899px]:grid-cols-1 max-[899px]:gap-2.5 max-[899px]:pt-0 max-[899px]:pl-12">
-                  <div className="absolute inset-x-[10%] top-0 h-0 border-t border-(--line2) max-[899px]:inset-x-auto max-[899px]:top-0 max-[899px]:bottom-[30px] max-[899px]:left-5 max-[899px]:h-auto max-[899px]:border-t-0 max-[899px]:border-l" />
-                  {FAN.map((f) => (
-                    <div
-                      key={f.t}
-                      className={cn(
-                        'fan-card relative flex min-w-0 flex-col gap-2 rounded-[10px] border bg-(--bg) px-4 py-[18px]',
-                        f.ag ? 'ag border-(--agent-line)' : 'border-(--line2)',
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          'flex items-center gap-1.5 font-mono text-xs leading-none',
-                          f.ag ? 'text-(--agent)' : 'text-(--fg3)',
-                        )}
-                      >
-                        <Dot agent={f.ag} />
-                        {f.w}
-                      </span>
-                      <p className="text-[15px] font-semibold tracking-[-0.01em]">{f.t}</p>
-                      <p className="text-[13px] leading-normal text-(--fg2)">{f.d}</p>
-                    </div>
-                  ))}
-                </div>
-              </figure>
+              <HowItWorks />
             </AgentText>
           </section>
 
@@ -271,13 +235,11 @@ const Home = () => {
 
           <section className={sec} id="proof" aria-labelledby="h-proof">
             <SectionHead eyebrow="Proof" id="h-proof" title="Measured, not claimed.">
-              Same tasks, same model: a browser agent reading accessibility snapshots against an
-              Afford agent.{' '}
-              {bench ? (
+              The same shopping tasks on the same model: a browser agent reading accessibility
+              snapshots, against an Afford agent reading the graph.{' '}
+              {runs.length ? (
                 <>
-                  From the latest committed run ({bench.tasks} tasks
-                  {bench.runs ? `, ${bench.runs} ${bench.runs === 1 ? 'run' : 'runs'} each` : ''}
-                  {bench.model ? `, ${bench.model}` : ''}); the{' '}
+                  From the latest committed runs; the{' '}
                   <Link
                     href="/docs/guides/bench"
                     className="text-(--fg) underline decoration-(--line2) underline-offset-4 transition-colors duration-150 hover:decoration-(--fg)"
@@ -290,123 +252,94 @@ const Home = () => {
                 'Results appear here after the first committed bench run.'
               )}
             </SectionHead>
-            <table className="w-full border-collapse text-[15px]">
-              <caption className="sr-only">Browser agent against Afford agent, per task</caption>
-              <thead>
-                <tr>
-                  {['Metric', 'Browser agent', 'Afford agent', 'Change'].map((h, i) => (
-                    <th
-                      key={h}
-                      scope="col"
-                      className={cn(
-                        'border-b border-(--line2) pb-3.5 pl-4 text-left align-bottom text-[13px] leading-[1.3] font-medium text-(--fg3) first:pl-0 max-[599px]:pl-3',
-                        i > 0 && 'text-right',
-                        i === 2 && 'text-(--agent)',
-                      )}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {STATS.map((s) => (
-                  <tr key={s.k}>
-                    <th
-                      scope="row"
-                      className="border-b border-(--line) py-5 text-left align-baseline font-normal"
-                    >
-                      {/* two lines for people, one cell for the markdown */}
-                      <AgentText
-                        md={`${s.k} (${(bench ? s.u : `${s.u}, pending bench`).toLowerCase()})`}
-                      >
-                        <span className="block text-[15px] text-(--fg)">{s.k}</span>
-                        <span className="mt-1 block text-[13px] text-(--fg3)">
-                          {bench ? s.u : `${s.u}, pending bench`}
-                        </span>
-                      </AgentText>
-                    </th>
-                    <td
-                      className={cn(
-                        num,
-                        'border-b border-(--line) py-5 pl-4 align-baseline text-(--fg2) max-[599px]:pl-3',
-                      )}
-                    >
-                      {bench ? s.v(bench.browser) : '–'}
-                    </td>
-                    <td
-                      className={cn(
-                        num,
-                        'border-b border-(--line) py-5 pl-4 align-baseline max-[599px]:pl-3',
-                        bench ? 'text-(--fg)' : 'text-(--fg2)',
-                      )}
-                    >
-                      {bench ? s.v(bench.afford) : '–'}
-                    </td>
-                    <td className="border-b border-(--line) py-5 pl-4 text-right align-baseline font-mono text-[13px] text-(--fg2) tabular-nums max-[599px]:pl-3">
-                      {bench ? s.d(bench.browser, bench.afford) : '–'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {runs.length > 0 && (
+              <AgentText block md={proofMd(runs)}>
+                <Proof runs={runs.map((r) => ({ ...r, name: modelName(r.model) }))} />
+              </AgentText>
+            )}
           </section>
 
           <section className={sec} aria-labelledby="h-pr">
-            <p className="mb-6 font-pixel text-sm text-(--fg3)" id="h-pr">
-              Principles
-            </p>
-            <div className="flex flex-col">
-              {[
-                ['Agents need signal, ', 'not pixels.'],
-                ['Measure impact, ', 'not tokens.'],
-                ['Agents act, ', 'humans approve.'],
-              ].map(([a, b]) => (
-                <p
-                  key={a}
-                  className="border-t border-(--line) py-8 text-[clamp(30px,4.6vw,60px)] leading-[1.04] font-semibold tracking-[-0.045em] text-balance last:border-b max-[899px]:py-6"
+            <SectionHead eyebrow="Principles" id="h-pr" title="Three rules it doesn’t bend." />
+            <ol className="grid grid-cols-3 border-t border-(--line) max-[899px]:grid-cols-1">
+              {PRINCIPLES.map((p, i) => (
+                <li
+                  key={p.t}
+                  className="flex flex-col gap-3 border-l border-(--line) px-6 pt-7 pb-2 first:border-l-0 first:pl-0 last:pr-0 max-[899px]:border-b max-[899px]:border-l-0 max-[899px]:px-0 max-[899px]:pb-7"
                 >
-                  {a}
-                  <span className="text-(--fg3)">{b}</span>
-                </p>
+                  <span aria-hidden className="font-pixel text-sm text-(--fg3)">
+                    0{i + 1}
+                  </span>
+                  <h3 className="text-[22px] leading-tight font-semibold tracking-[-0.03em] text-balance">
+                    {p.t}
+                  </h3>
+                  <p className="text-[15px] leading-relaxed text-pretty text-(--fg2)">{p.d}</p>
+                  <AgentText block md={`\`\`\`${p.lang}\n${p.md}\n\`\`\``}>
+                    <div className="mt-auto rounded-lg border border-(--line) bg-(--bg2) px-3.5 py-3 font-mono text-[12.5px] leading-[1.7] whitespace-nowrap text-(--fg)">
+                      {p.proof.map((line, j) => (
+                        <div key={j} className="overflow-hidden text-ellipsis">
+                          {line}
+                        </div>
+                      ))}
+                    </div>
+                  </AgentText>
+                </li>
               ))}
-            </div>
-            <div
-              className="mt-16 flex items-baseline gap-4 font-mono text-[13px] leading-[1.7] text-(--fg2)"
-              id="agents"
+            </ol>
+
+            <AgentText
+              block
+              md={`**Reading this as an agent?** Skip the pixels: every page here is also Markdown and a graph. Start at [/llms.txt](${siteUrl.origin}/llms.txt), read this page at [/index.md](${siteUrl.origin}/index.md), or see [/agents](${siteUrl.origin}/agents).\n\n\`\`\`bash\n${curl}\n\`\`\``}
             >
-              <span aria-hidden className="whitespace-nowrap text-(--agent)">
-                {'{ }'}
-              </span>
-              <div className="flex min-w-0 flex-col gap-4">
-                <p className="text-pretty">
-                  Reading this as an agent? Request <Code>text/markdown</Code> or start at{' '}
-                  <Link
-                    href="/llms.txt"
-                    prefetch={false}
-                    className="text-(--agent) underline underline-offset-[3px]"
-                  >
-                    /llms.txt
-                  </Link>{' '}
-                  and{' '}
-                  <Link href="/agents" className="text-(--agent) underline underline-offset-[3px]">
-                    /agents
-                  </Link>
-                  . We left the pixels for the humans.
-                </p>
-                <AgentText block md={`\`\`\`bash\n${curl}\n\`\`\``}>
+              <div
+                id="agents"
+                className="mt-20 grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] overflow-hidden rounded-2xl border border-(--line2) bg-(--bg2) max-[899px]:mt-14 max-[899px]:grid-cols-1"
+              >
+                <div className="flex min-w-0 flex-col gap-4 p-8 max-[599px]:p-5">
+                  <p className="flex items-center gap-2 font-pixel text-sm text-(--agent)">
+                    <Dot agent />
+                    For agents
+                  </p>
+                  <h3 className="text-[26px] leading-tight font-semibold tracking-[-0.03em]">
+                    Reading this as an agent?
+                  </h3>
+                  <p className="max-w-[440px] text-[15px] leading-relaxed text-pretty text-(--fg2)">
+                    Skip the pixels. Every page here is also Markdown and a graph, at the same URL.
+                  </p>
                   <CopyCommand
                     command={curl}
                     label="Copy curl command"
-                    className="w-fit max-w-full"
+                    className="mt-2 w-full max-w-full bg-(--bg)"
                   >
                     curl -H &apos;Accept:{' '}
                     <span className="text-(--agent)">application/vnd.afford+json</span>&apos;{' '}
                     {siteUrl.host}
                   </CopyCommand>
-                </AgentText>
+                </div>
+                <ul className="flex flex-col border-l border-(--line) max-[899px]:border-t max-[899px]:border-l-0">
+                  {ENTRY.map((e) => (
+                    <li key={e.href} className="flex-1 border-t border-(--line) first:border-t-0">
+                      <Link
+                        href={e.href}
+                        prefetch={false}
+                        className="group flex h-full min-h-16 items-center gap-4 px-6 transition-colors duration-150 hover:bg-(--bg3)/60 focus-visible:-outline-offset-2 max-[599px]:px-5"
+                      >
+                        <span className="flex min-w-0 flex-col gap-1">
+                          <span className="font-mono text-sm text-(--agent)">{e.href}</span>
+                          <span className="text-[13px] text-(--fg3)">{e.d}</span>
+                        </span>
+                        <span
+                          aria-hidden
+                          className="ml-auto font-mono text-(--fg3) transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-(--fg)"
+                        >
+                          →
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
               </div>
-            </div>
+            </AgentText>
           </section>
 
           <section

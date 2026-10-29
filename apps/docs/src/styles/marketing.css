@@ -407,17 +407,33 @@
   transform: none;
 }
 
-/* the fan-out from defineAction to its five surfaces */
-.afd .fan-card::before {
-  content: '';
-  position: absolute;
-  top: -33px;
-  left: 50%;
-  height: 32px;
-  border-left: 1px solid var(--line2);
+/* how it works: the selected surface lights the definition's lines it reads (rules generated in
+   surfaces.tsx), and one pulse runs down its connector */
+.afd .how {
+  --hl: color-mix(in oklch, var(--fg) 7%, transparent);
 }
-.afd .fan-card.ag::before {
-  border-left-color: var(--agent-line);
+.afd .how-src .line {
+  display: inline-block;
+  box-sizing: border-box;
+  /* full-bleed across the pre's 1rem padding */
+  min-width: calc(100% + 2rem);
+  margin-inline: -1rem;
+  padding-inline: 1rem;
+  opacity: 0.4;
+  transition:
+    opacity 0.2s,
+    background-color 0.2s,
+    box-shadow 0.2s;
+}
+.afd .how-pulse {
+  stroke-dasharray: 0.12 1;
+  stroke-dashoffset: 0.12;
+  animation: how-pulse 0.7s var(--out) forwards;
+}
+@keyframes how-pulse {
+  to {
+    stroke-dashoffset: -1;
+  }
 }
 
 @media (max-width: 899px) {
@@ -426,17 +442,6 @@
   }
   .afd .live .sticky {
     position: static;
-  }
-  .afd .fan-card::before {
-    top: 50%;
-    left: -28px;
-    height: 0;
-    width: 28px;
-    border-left: 0;
-    border-top: 1px solid var(--line2);
-  }
-  .afd .fan-card.ag::before {
-    border-top-color: var(--agent-line);
   }
 }
 @media (max-width: 600px) {
