@@ -20,3 +20,7 @@ jobs:
       - run: vlr build
       - run: vlr typecheck
       - run: vlr test
+      - run: node_modules/.bin/playwright install --with-deps chromium
+        working-directory: apps/example
+      - run: vlr test:e2e
+        working-directory: apps/example
