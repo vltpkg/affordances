@@ -3,7 +3,7 @@
 import { cn } from 'cn'
 import { CheckIcon, RotateCcwIcon, XIcon } from 'lucide-react'
 import { Button } from '@affordances/ui/components/button'
-import { int, LANE, ratio, sec, SHORT, usd, type AgentKind, type Done, type Lane } from '@/lib/race'
+import { byKind, int, LANE, ratio, sec, SHORT, usd, type Done, type Lane } from '@/lib/race'
 
 // lower is better for every row; the last column says by how much, whichever way it went
 type Row = {
@@ -21,27 +21,32 @@ const ROWS: Row[] = [
 ]
 
 // in a sentence; the discovery story races the browser agent against itself, so it needs telling apart
-const WHO: Record<AgentKind, string> = {
-  browser: 'The browser agent',
-  afford: 'The Affordances agent',
-  webmcp: 'The browser agent with WebMCP',
-}
+const WHO = byKind(
+  {
+    browser: 'The browser agent',
+    afford: 'The Affordances agent',
+    webmcp: 'The browser agent with WebMCP',
+    vision: 'The screenshot agent',
+  },
+  (kind) => `The ${kind} agent`,
+)
 const who = (d: Done, other: Done) =>
   d.agent === 'browser' && other.agent === 'webmcp' ? 'The browser agent without it' : WHO[d.agent]
 
 // b is the baseline (the left lane), a the challenger
-const headline = (b: Done, a: Done) => {
+const headline = (b: Done, a: Done, several: boolean) => {
   if (!a.success && !b.success) return 'Neither agent finished the task'
   if (!b.success) return `${who(b, a)} didn’t finish. ${who(a, b)} did, in ${sec(a.at)}.`
   if (!a.success) return `${who(a, b)} didn’t finish. ${who(b, a)} did, in ${sec(b.at)}.`
   // a few hundred ms is model latency noise, not a result
   if (Math.abs(a.at - b.at) < 500) return `A dead heat: both finished in about ${sec(a.at)}`
-  if (a.at < b.at) return `${who(a, b)} finished ${ratio(b.at, a.at)} faster`
+  if (a.at < b.at)
+    return `${who(a, b)} finished ${ratio(b.at, a.at)} faster${several ? ` than ${who(b, a).replace(/^The/, 'the')}, the quicker baseline` : ''}`
   return `${who(b, a)} finished first, by ${sec(a.at - b.at)}`
 }
 
 export const Summary = ({
-  lanes: [base, other],
+  lanes,
   onClose,
   onReplay,
 }: {
@@ -49,22 +54,26 @@ export const Summary = ({
   onClose: () => void
   onReplay: () => void
 }) => {
-  if (base?.activity.kind !== 'done' || other?.activity.kind !== 'done') return null
-  const b = base.activity.done
-  const a = other.activity.done
+  const all = lanes.flatMap((l) => (l.activity.kind === 'done' ? [l.activity.done] : []))
+  if (all.length < 2 || all.length !== lanes.length) return null
+  // the agent on the right against the baselines; the comparison column is against the best of them (the
+  // fastest that finished), so with several baselines the claim is the conservative one
+  const a = all.at(-1)!
+  const bases = all.slice(0, -1)
+  const b = bases.filter((d) => d.success).toSorted((x, y) => x.at - y.at)[0] ?? bases[0]!
   // the page tools a lane was offered, and which it used: the honest footnote to the discovery story
-  const found = [base, other].filter((l) => l.offered.length > 0)
+  const found = lanes.filter((l) => l.offered.length > 0)
   return (
     <div className="absolute inset-0 z-10 grid place-items-center bg-background/75 p-6 backdrop-blur-[2px]">
       <section
         aria-labelledby="summary-title"
-        className="w-full max-w-3xl animate-stamp rounded-2xl border bg-card p-8 shadow-2xl"
+        className="w-full max-w-4xl animate-stamp rounded-2xl border bg-card p-8 shadow-2xl"
       >
         <h2
           id="summary-title"
           className="text-3xl font-medium tracking-tight text-balance 2xl:text-4xl"
         >
-          {headline(b, a)}
+          {headline(b, a, bases.length > 1)}
         </h2>
         <table className="mt-7 w-full text-left">
           <thead className="text-[14px] text-muted-foreground">
@@ -72,14 +81,14 @@ export const Summary = ({
               <th className="pb-2 font-normal">
                 <span className="sr-only">Measure</span>
               </th>
-              {[base, other].map((l) => (
-                <th key={l.agent} className={cn('pb-2 font-normal', LANE[l.agent])}>
+              {all.map((d) => (
+                <th key={d.agent} className={cn('pb-2 font-normal', LANE[d.agent])}>
                   <span className="mr-2 inline-block size-2 rounded-full bg-(--lane)" />
-                  {SHORT[l.agent]}
+                  {SHORT[d.agent]}
                 </th>
               ))}
               <th className="pb-2 text-right font-normal">
-                <span className="sr-only">{SHORT[other.agent]}, compared</span>
+                <span className="sr-only">{SHORT[a.agent]}</span> vs {SHORT[b.agent]}
               </th>
             </tr>
           </thead>
@@ -93,7 +102,11 @@ export const Summary = ({
                   <th className="py-2.5 font-sans text-[15px] font-normal text-muted-foreground">
                     {row.label}
                   </th>
-                  <td className="py-2.5">{row.format(vb)}</td>
+                  {bases.map((d) => (
+                    <td key={d.agent} className="py-2.5">
+                      {row.format(row.value(d))}
+                    </td>
+                  ))}
                   <td className={cn('py-2.5 text-(--lane)', LANE[a.agent])}>{row.format(va)}</td>
                   <td
                     className={cn(
@@ -114,7 +127,7 @@ export const Summary = ({
               <th className="py-2.5 font-sans text-[15px] font-normal text-muted-foreground">
                 Result
               </th>
-              {[b, a].map((d) => (
+              {all.map((d) => (
                 <td key={d.agent} className={cn('py-2.5 text-xl', !d.success && 'text-fail')}>
                   {d.success ? (
                     <CheckIcon aria-label="Done" className="size-6" />

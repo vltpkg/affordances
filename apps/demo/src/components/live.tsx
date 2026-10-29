@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@affordances/ui/components/select'
+import { taskLabel } from '@/lib/catalog'
 import { LIVE_MODELS, LIVE_PAIRINGS, LIVE_TASKS } from '@/lib/live'
 import { modelName, STORIES, type AgentKind } from '@/lib/race'
 
@@ -70,10 +71,16 @@ export const LiveDialog = ({
   return (
     <Dialog>
       <DialogTrigger
-        render={<Button variant="outline" className="h-9 gap-2 px-3 text-sm" disabled={busy} />}
+        render={
+          <Button
+            variant="ghost"
+            className="h-9 gap-2 px-3 text-sm text-muted-foreground"
+            disabled={busy}
+          />
+        }
       >
         <RadioIcon className="size-4" />
-        Live
+        Live run
       </DialogTrigger>
       <DialogContent className="gap-5 p-6 sm:max-w-md">
         <div>
@@ -84,14 +91,14 @@ export const LiveDialog = ({
           </DialogDescription>
         </div>
         <Field
-          label="Race"
+          label="Story"
           value={agents}
           onChange={(next) => {
             setAgents(next)
             const allowed = LIVE_PAIRINGS.find((p) => p.agents === next)!.tasks as readonly string[]
             if (!allowed.includes(task)) setTask(allowed[0]!)
           }}
-          items={LIVE_PAIRINGS.map((p) => ({ value: p.agents, label: STORIES[p.story] }))}
+          items={LIVE_PAIRINGS.map((p) => ({ value: p.agents, label: STORIES[p.story].label }))}
         />
         <Field
           label="Task"
@@ -99,7 +106,7 @@ export const LiveDialog = ({
           onChange={setTask}
           items={LIVE_TASKS.filter((t) => tasks.includes(t.id)).map((t) => ({
             value: t.id,
-            label: t.prompt,
+            label: `${taskLabel(t.id)}: “${t.prompt}”`,
           }))}
         />
         <Field

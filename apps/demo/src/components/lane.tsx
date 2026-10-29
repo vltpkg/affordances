@@ -1,11 +1,12 @@
 'use client'
 
 import { cn } from 'cn'
-import { CheckIcon, EyeOffIcon, XIcon } from 'lucide-react'
+import { CheckIcon, XIcon } from 'lucide-react'
 import {
   callLabel,
   firstLine,
   int,
+  byKind,
   kb,
   LANE,
   NAMES,
@@ -16,11 +17,26 @@ import {
   type Step,
 } from '@/lib/race'
 
-const ABOUT = {
-  browser: 'Drives Chromium. Reads accessibility snapshots, clicks by role and name.',
-  afford: 'Reads the page graph. Calls actions by name.',
-  webmcp: 'The same browser agent. Its browser offers tools the page registers.',
-}
+const ABOUT = byKind(
+  {
+    browser: 'Drives Chromium. Reads accessibility snapshots, clicks by role and name.',
+    afford: 'Reads the page graph. Calls actions by name. Has no browser.',
+    webmcp: 'The same browser agent. Its browser offers tools the page registers.',
+    vision: 'Claude computer use. Sees only screenshots, clicks by coordinates.',
+  },
+  () => 'An agent kind this demo doesn’t describe yet.',
+)
+
+// what lands in "what the model reads", before anything has
+const READS = byKind(
+  {
+    browser: 'the accessibility snapshot of the page, after every step',
+    afford: 'the page graph as JSON, or an action’s delta',
+    webmcp: 'the accessibility snapshot of the page, or a page tool’s result',
+    vision: 'a screenshot (shown as [image]), or OK after an action',
+  },
+  () => 'its tool results',
+)
 
 type Props = {
   lane: LaneState
@@ -30,16 +46,21 @@ type Props = {
   // the other lane finished this long ago (it's ahead), or null
   behind: number | null
   started: boolean
+  // three lanes side by side (xl and up): one column of panels, counters under the headline numbers
+  compact?: boolean
 }
 
-export const Lane = ({ lane, t, scale, behind, started }: Props) => {
+// top-down: who the agent is and what it has, the headline numbers, the counters, then three labelled
+// panels (what a person sees, what the model reads, its steps)
+export const Lane = ({ lane, t, scale, behind, started, compact }: Props) => {
   const { agent, activity } = lane
   const done = activity.kind === 'done' ? activity.done : null
   return (
     <section
       aria-labelledby={`${agent}-name`}
       className={cn(
-        'relative flex min-h-0 min-w-0 flex-col gap-4 bg-background p-5 2xl:p-6',
+        'relative flex min-h-0 min-w-0 flex-col bg-background px-6 pt-5 pb-5',
+        compact && 'xl:px-5',
         LANE[agent],
       )}
     >
@@ -50,55 +71,121 @@ export const Lane = ({ lane, t, scale, behind, started }: Props) => {
           className="pointer-events-none absolute inset-0 animate-finish opacity-0 ring-2 ring-(--lane) ring-inset"
         />
       )}
-      <header className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h2 id={`${agent}-name`} className="flex items-center gap-2.5 text-xl font-medium">
+      <header className="min-w-0">
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+          <h2
+            id={`${agent}-name`}
+            className="flex items-center gap-2.5 text-2xl font-semibold tracking-[-0.02em]"
+          >
             <span aria-hidden className="size-2.5 rounded-full bg-(--lane)" />
             {NAMES[agent]}
           </h2>
-          <p className="mt-1 text-[15px] text-pretty text-muted-foreground">{ABOUT[agent]}</p>
-          <Toolbox lane={lane} />
+          {!done && <Status lane={lane} t={t} started={started} />}
         </div>
-        <Status lane={lane} t={t} started={started} />
+        <p
+          title={ABOUT[agent]}
+          className={cn(
+            'mt-1 text-[15px] text-pretty text-muted-foreground',
+            compact && 'xl:truncate',
+          )}
+        >
+          {ABOUT[agent]}
+        </p>
+        <Toolbox lane={lane} />
       </header>
 
-      <dl className="grid grid-cols-4 gap-x-4 gap-y-3 border-y py-3 sm:grid-cols-[2fr_repeat(4,1fr)]">
-        <Stat label={done ? 'Finished' : 'Elapsed'} wide>
-          <span className={cn(done && (done.success ? 'text-(--lane)' : 'text-fail'))}>
-            {sec(lane.elapsed)}
-          </span>
-          {behind !== null && (
-            <span className="ml-2.5 align-baseline font-mono text-2xl text-fail tabular-nums">
-              +{sec(behind)}
+      <div
+        className={cn(
+          'mt-3 flex flex-wrap items-end justify-between gap-x-8 gap-y-3 border-t pt-3',
+          compact && 'xl:flex-nowrap xl:gap-x-4',
+        )}
+      >
+        <div className="min-w-0">
+          <p className="font-mono text-[12px] text-muted-foreground">
+            {done ? 'Finished in' : 'Elapsed'}
+          </p>
+          <p className="mt-1 flex items-center gap-3 2xl:gap-4">
+            <span
+              className={cn(
+                'font-mono text-4xl font-medium tracking-[-0.04em] tabular-nums',
+                compact ? '2xl:text-5xl' : '2xl:text-6xl',
+                done && (done.success ? 'text-(--lane)' : 'text-fail'),
+              )}
+            >
+              {sec(lane.elapsed)}
             </span>
+            {behind !== null && (
+              <span className="font-mono text-xl text-fail tabular-nums 2xl:text-2xl">
+                +{sec(behind)}
+              </span>
+            )}
+            {done && <Status lane={lane} t={t} started={started} />}
+          </p>
+        </div>
+        <dl
+          className={cn(
+            'grid grid-cols-4 gap-x-5 2xl:gap-x-6',
+            compact && 'xl:grid-cols-2 xl:gap-y-1 xl:[&_dd]:text-lg',
           )}
-        </Stat>
-        <Stat label="Turns">{lane.turns}</Stat>
-        <Stat label="Tool calls">
-          {lane.toolCalls}
-          {lane.errors > 0 && (
-            <span className="ml-1.5 align-middle font-mono text-base text-fail">
-              {lane.errors}✗
-            </span>
-          )}
-        </Stat>
-        <Stat label="Tokens">{int(lane.tokens)}</Stat>
-        <Stat label="Cost">{lane.costUsd === null ? '—' : usd(lane.costUsd)}</Stat>
-      </dl>
+        >
+          <Stat label="Turns">{lane.turns}</Stat>
+          <Stat label="Tool calls">
+            {lane.toolCalls}
+            {lane.errors > 0 && <span className="ml-1 text-[15px] text-fail">{lane.errors}✗</span>}
+          </Stat>
+          <Stat label="Tokens">{int(lane.tokens)}</Stat>
+          <Stat label="Cost">{lane.costUsd === null ? '—' : usd(lane.costUsd)}</Stat>
+        </dl>
+      </div>
 
       <Meter steps={lane.steps} scale={scale} />
 
       {/* stacked lanes (narrower than xl) scroll the page, so the panels get a height of their own */}
-      <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] max-xl:md:h-[34rem]">
-        <div className="flex min-h-0 flex-col gap-4">
-          <Viewport lane={lane} />
+      <div
+        className={cn(
+          'mt-4 grid min-h-0 flex-1 gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] max-xl:md:h-[34rem]',
+          // three lanes: the page across the top, what the model reads and its steps side by side below
+          compact && 'xl:grid-cols-2 xl:grid-rows-[minmax(0,1fr)_minmax(0,1.15fr)] xl:gap-3',
+        )}
+      >
+        <div className={cn('flex min-h-0 flex-col gap-4', compact && 'xl:contents')}>
+          <Viewport lane={lane} className={cn(compact && 'xl:col-span-2')} />
           <Reads lane={lane} />
         </div>
-        <Timeline lane={lane} t={t} />
+        <Panel label="Steps" aside={lane.turns ? `${lane.turns} turns` : null}>
+          <Timeline lane={lane} t={t} />
+        </Panel>
       </div>
     </section>
   )
 }
+
+// a labelled box: the label sits above it, like a figure caption, so an empty box still says what it's for
+const Panel = ({
+  label,
+  aside,
+  className,
+  children,
+}: {
+  label: string
+  aside?: React.ReactNode
+  className?: string
+  children: React.ReactNode
+}) => (
+  <div className={cn('flex min-h-0 min-w-0 flex-col', className)}>
+    <p className="mb-1.5 flex items-baseline justify-between gap-3 font-mono text-[12px] text-muted-foreground">
+      <span className="shrink-0 text-foreground/80">{label}</span>
+      {aside && <span className="min-w-0 truncate">{aside}</span>}
+    </p>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">{children}</div>
+  </div>
+)
+
+const Empty = ({ children }: { children: React.ReactNode }) => (
+  <p className="m-auto max-w-[34ch] p-4 text-center text-[14px] text-pretty text-muted-foreground">
+    {children}
+  </p>
+)
 
 // what the model can call right now. built-ins are plain; a tool the page registered (WebMCP) slides in,
 // orange because it's an affordances action, and one the last navigation took away stays struck through
@@ -165,23 +252,10 @@ const diff = (before: string[], after: string[], builtins: Set<string>) => ({
   lost: before.filter((n) => !after.includes(n) && !builtins.has(n)),
 })
 
-const Stat = ({
-  label,
-  wide,
-  children,
-}: {
-  label: string
-  wide?: boolean
-  children: React.ReactNode
-}) => (
-  <div className={cn('min-w-0', wide && 'max-sm:col-span-4')}>
-    <dt className="text-[13px] text-muted-foreground">{label}</dt>
-    <dd
-      className={cn(
-        'mt-0.5 font-mono font-medium tracking-tight whitespace-nowrap tabular-nums',
-        wide ? 'text-4xl 2xl:text-5xl' : 'text-2xl 2xl:text-3xl',
-      )}
-    >
+const Stat = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  <div className="min-w-0">
+    <dt className="font-mono text-[12px] whitespace-nowrap text-muted-foreground">{label}</dt>
+    <dd className="mt-0.5 font-mono text-xl font-medium whitespace-nowrap tabular-nums 2xl:text-2xl">
       {children}
     </dd>
   </div>
@@ -192,54 +266,61 @@ const Status = ({ lane, t, started }: { lane: LaneState; t: number; started: boo
   if (activity.kind === 'done') {
     const { success } = activity.done
     return (
-      <p
+      <span
         className={cn(
-          'flex shrink-0 animate-stamp items-center gap-2 rounded-full px-3.5 py-1.5 text-[15px] font-medium',
-          success ? 'bg-(--lane) text-black' : 'bg-fail text-black',
+          'flex shrink-0 animate-stamp items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium text-black 2xl:text-[15px]',
+          success ? 'bg-(--lane)' : 'bg-fail',
         )}
       >
         {success ? <CheckIcon className="size-4" /> : <XIcon className="size-4" />}
         {success ? 'Done' : 'Failed'}
-      </p>
+      </span>
     )
   }
-  if (!started) return <p className="shrink-0 text-[15px] text-muted-foreground">Ready</p>
+  if (!started) return null
   const label =
     activity.kind === 'tool' ? callLabel(activity.call.name, activity.call.input).verb : 'thinking'
   return (
-    <p className="flex shrink-0 items-center gap-2 rounded-full border px-3.5 py-1.5 font-mono text-[15px]">
+    <span className="flex shrink-0 items-center gap-2 rounded-full border px-2.5 py-1 font-mono text-sm 2xl:text-[15px]">
       <span aria-hidden className="size-2 animate-breathe rounded-full bg-(--lane)" />
       {label}
       <span className="text-muted-foreground tabular-nums">{sec(t - activity.since)}</span>
-    </p>
+    </span>
   )
 }
 
 // every turn re-reads the whole conversation so far: one segment per turn, the same scale on both lanes
 const Meter = ({ steps, scale }: { steps: Step[]; scale: number }) => (
-  <div className="flex items-center gap-3">
+  <div className="mt-3 flex items-center gap-3">
     <div
       aria-hidden
-      className="flex h-3 min-w-0 flex-1 gap-px overflow-hidden rounded-[3px] bg-muted"
+      className="flex h-2 min-w-0 flex-1 gap-px overflow-hidden rounded-full bg-muted"
     >
       {steps.map((step) => (
         <span
           key={step.turn}
-          className="h-full origin-left animate-enter bg-(--lane) first:rounded-l-[3px] even:opacity-75"
+          className="h-full origin-left animate-enter bg-(--lane) even:opacity-75"
           style={{ width: `${(step.tokens / scale) * 100}%` }}
         />
       ))}
     </div>
-    <span className="shrink-0 text-[13px] text-muted-foreground">tokens read, turn by turn</span>
+    <span className="shrink-0 font-mono text-[12px] text-muted-foreground">
+      tokens, turn by turn
+    </span>
   </div>
 )
 
-const Viewport = ({ lane }: { lane: LaneState }) => {
+const Viewport = ({ lane, className }: { lane: LaneState; className?: string }) => {
   const { frame, agent } = lane
   const url = frame ? new URL(frame.url) : null
   return (
-    <figure className="shrink-0 overflow-hidden rounded-lg border bg-card">
-      <figcaption className="flex h-8 items-center gap-2 border-b px-3 font-mono text-[13px]">
+    <Panel
+      label="What a person sees"
+      // the vision agent works from screenshots, so for it this panel is the model's input too
+      aside={agent === 'vision' ? 'the model sees screenshots too' : 'never shown to the model'}
+      className={cn('shrink-0 grow-0 basis-[48%] max-md:basis-auto', className)}
+    >
+      <div className="flex h-8 items-center border-b px-3 font-mono text-[13px]">
         <span className="truncate">
           {url ? (
             <>
@@ -251,9 +332,9 @@ const Viewport = ({ lane }: { lane: LaneState }) => {
             <span className="text-muted-foreground">about:blank</span>
           )}
         </span>
-      </figcaption>
-      <div className="relative aspect-[16/10] bg-muted/40">
-        {frame && (
+      </div>
+      <div className="relative grid min-h-0 flex-1 bg-muted/30 max-md:aspect-[16/10]">
+        {frame ? (
           // a data url from the recording: there's nothing for next/image to optimize
           // oxlint-disable-next-line nextjs/no-img-element
           <img
@@ -262,15 +343,11 @@ const Viewport = ({ lane }: { lane: LaneState }) => {
             alt={`What a person would see at ${url?.pathname}`}
             className="absolute inset-0 size-full animate-enter object-cover object-top"
           />
-        )}
-        {agent === 'afford' && (
-          <p className="absolute inset-x-2 bottom-2 flex items-center gap-2 rounded-md bg-black/80 px-2.5 py-1.5 text-[13px] text-white backdrop-blur-sm">
-            <EyeOffIcon className="size-3.5 shrink-0 text-afford" />
-            This agent never sees pixels. Shown for you.
-          </p>
+        ) : (
+          <Empty>The store appears here once the agent opens a page.</Empty>
         )}
       </div>
-    </figure>
+    </Panel>
   )
 }
 
@@ -278,37 +355,44 @@ const Reads = ({ lane }: { lane: LaneState }) => {
   const { read } = lane
   const label = read && callLabel(read.name, read.input)
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border max-md:h-72">
-      <div className="flex h-8 shrink-0 items-center gap-3 border-b px-3 text-[13px]">
-        <span className="shrink-0 text-muted-foreground">What the model reads</span>
-        {read && (
-          <>
-            <span className="min-w-0 truncate font-mono">
+    <Panel
+      label="What the model reads"
+      aside={
+        read && (
+          <span
+            className={cn('font-mono tabular-nums', read.error ? 'text-fail' : 'text-foreground')}
+          >
+            {read.error ? 'error' : kb(read.result.length)}
+          </span>
+        )
+      }
+      className="flex-1 max-md:h-72"
+    >
+      {read ? (
+        <>
+          <p className="flex h-8 shrink-0 items-center border-b px-3 font-mono text-[13px]">
+            <span className="min-w-0 truncate">
               ← {label!.verb} <span className="text-muted-foreground">{label!.arg}</span>
             </span>
-            <span
-              className={cn(
-                'ml-auto shrink-0 font-mono tabular-nums',
-                read.error ? 'text-fail' : 'text-foreground',
-              )}
-            >
-              {read.error ? 'error' : kb(read.result.length)}
-            </span>
-          </>
-        )}
-      </div>
-      {/* raw, exactly as the model gets it on its next turn */}
-      <pre
-        key={read?.id}
-        aria-label="Latest tool result"
-        className={cn(
-          'min-h-0 flex-1 animate-enter overflow-auto p-3 font-mono text-xs/[1.55] whitespace-pre-wrap [overflow-wrap:anywhere]',
-          read?.error ? 'bg-fail/10 text-fail' : 'text-muted-foreground',
-        )}
-      >
-        {read ? plain(read.result) : ''}
-      </pre>
-    </div>
+          </p>
+          {/* raw, exactly as the model gets it on its next turn */}
+          <pre
+            key={read.id}
+            aria-label="Latest tool result"
+            className={cn(
+              'min-h-0 flex-1 animate-enter overflow-auto p-3 font-mono text-xs/[1.55] whitespace-pre-wrap [overflow-wrap:anywhere]',
+              read.error ? 'bg-fail/10 text-fail' : 'text-muted-foreground',
+            )}
+          >
+            {plain(read.result)}
+          </pre>
+        </>
+      ) : (
+        <Empty>
+          Each tool result lands here raw, exactly as the model reads it: {READS[lane.agent]}.
+        </Empty>
+      )}
+    </Panel>
   )
 }
 
@@ -322,7 +406,13 @@ const Timeline = ({ lane, t }: { lane: LaneState; t: number }) => {
   // column-reverse pins the scroll to the newest row with no script, and without animating it: rows
   // arrive often
   return (
-    <div className="flex min-h-0 flex-col-reverse overflow-y-auto rounded-lg border p-3 max-md:max-h-96">
+    <div className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto p-3 max-md:max-h-96">
+      {!steps.length && !thinking && (
+        <Empty>
+          Every turn shows up here: how long the model thought, the tools it called, and how long
+          each took.
+        </Empty>
+      )}
       <ol aria-label={`${NAMES[lane.agent]} timeline`} className="mb-auto flex flex-col gap-3">
         {steps.map((step, i) => {
           const pending = i === steps.length - 1 && activity.kind === 'tool' ? activity : null
@@ -348,7 +438,7 @@ const Timeline = ({ lane, t }: { lane: LaneState; t: number }) => {
                       input={tool.input}
                       ms={tool.ms}
                       error={tool.error}
-                      page={!builtins.has(tool.name)}
+                      page={lane.offered.includes(tool.name)}
                     />
                   ))}
                   {pending && (
@@ -356,7 +446,7 @@ const Timeline = ({ lane, t }: { lane: LaneState; t: number }) => {
                       name={pending.call.name}
                       input={pending.call.input}
                       ms={t - pending.since}
-                      page={!builtins.has(pending.call.name)}
+                      page={lane.offered.includes(pending.call.name)}
                       pending
                     />
                   )}

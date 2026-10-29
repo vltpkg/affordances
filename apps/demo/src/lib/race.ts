@@ -9,42 +9,66 @@ export type Frame = Extract<DemoEvent, { type: 'frame' }>
 export type Done = Extract<DemoEvent, { type: 'done' }>
 export type Call = Turn['calls'][number]
 
-// lane order, left to right: the baseline first
-const ORDER: AgentKind[] = ['browser', 'webmcp', 'afford']
+// lane order, left to right: the baselines first, the agent they're measured against last
+const ORDER: AgentKind[] = ['browser', 'vision', 'webmcp', 'afford']
 
-// the agents a recording races, from what each was given up front
+// the agents a recording races, from what each was given up front; a kind this app doesn't know yet (a
+// newer recorder) still gets a lane, after the ones it does
 export const agentsOf = (events: DemoEvent[]): AgentKind[] => {
-  const present = new Set(events.flatMap((e) => (e.type === 'agent' ? [e.agent] : [])))
-  return ORDER.filter((a) => present.has(a))
+  const present = [...new Set(events.flatMap((e) => (e.type === 'agent' ? [e.agent] : [])))]
+  return [...ORDER.filter((a) => present.includes(a)), ...present.filter((a) => !ORDER.includes(a))]
 }
 
-export const NAMES: Record<AgentKind, string> = {
-  browser: 'Browser agent',
-  afford: 'Affordances agent',
-  webmcp: 'Browser agent + WebMCP',
-}
-export const SHORT: Record<AgentKind, string> = {
-  browser: 'Browser',
-  afford: 'Affordances',
-  webmcp: '+ WebMCP',
-}
+// a per-kind lookup that answers for kinds it doesn't list, so an unknown agent renders instead of crashing
+export const byKind = (map: Record<AgentKind, string>, fallback: (kind: string) => string) =>
+  new Proxy(map, { get: (m, kind: string) => m[kind as AgentKind] ?? fallback(kind) })
+
+export const NAMES = byKind(
+  {
+    browser: 'Browser agent',
+    afford: 'Affordances agent',
+    webmcp: 'Browser agent + WebMCP',
+    vision: 'Screenshot agent',
+  },
+  (kind) => `${kind} agent`,
+)
+export const SHORT = byKind(
+  { browser: 'Browser', afford: 'Affordances', webmcp: '+ WebMCP', vision: 'Screenshot' },
+  (kind) => kind,
+)
 // each lane's colour; orange always means affordances, so webmcp's lane is blue and the page tools it
-// discovers (affordances actions, registered by the page) are orange inside it
-export const LANE: Record<AgentKind, string> = {
-  browser: '[--lane:var(--browser)]',
-  afford: '[--lane:var(--afford)]',
-  webmcp: '[--lane:var(--webmcp)]',
-}
+// discovers (affordances actions, registered by the page) are orange inside it; the two plain browser
+// agents are neutrals
+export const LANE = byKind(
+  {
+    browser: '[--lane:var(--browser)]',
+    afford: '[--lane:var(--afford)]',
+    webmcp: '[--lane:var(--webmcp)]',
+    vision: '[--lane:var(--vision)]',
+  },
+  () => '[--lane:var(--muted-foreground)]',
+)
 
-// two stories: the affordances agent against a browser agent, or the same browser agent with and without
+// two stories: the affordances agent against browser agents (snapshot, screenshot, or both), or the same browser agent with and without
 // a browser that offers the tools a page registers (WebMCP)
 export type Story = 'race' | 'discovery'
 export const storyOf = (agents: AgentKind[]): Story =>
   agents.includes('webmcp') ? 'discovery' : 'race'
-export const STORIES: Record<Story, string> = {
-  race: 'Affordances agent vs browser',
-  discovery: 'Discovery: browser with and without WebMCP',
+export const STORIES: Record<Story, { label: string; about: string }> = {
+  race: {
+    label: 'Affordances vs browser agents',
+    about:
+      'Same model, task and fresh store, on one clock. Browser agents read the page and click; the Affordances agent reads its graph and calls actions.',
+  },
+  discovery: {
+    label: 'Discovery: a browser agent finds it via WebMCP',
+    about:
+      'The same browser agent twice, on one clock. Only the right one’s browser supports WebMCP, so a page can hand it tools. Neither is told Affordances exists.',
+  },
 }
+
+// mirrors EFFORT in apps/bench/src/loop.ts, for the methodology panel
+export const EFFORT = 'medium'
 
 // mirrors PRICES in apps/bench/src/loop.ts (which can't be bundled: it builds an api client on import), so
 // cost can count up turn by turn; the done event's own costUsd is the final word
@@ -156,7 +180,7 @@ export const lane = (events: DemoEvent[], agent: AgentKind, t: number, model: st
       out.steps.at(-1)?.results.push(e)
       out.toolCalls++
       if (e.error) out.errors++
-      if (!out.builtins.has(e.name) && !out.called.includes(e.name)) out.called.push(e.name)
+      if (out.offered.includes(e.name) && !out.called.includes(e.name)) out.called.push(e.name)
       out.read = e
       last = e.at
     } else if (e.type === 'frame') out.frame = e
@@ -180,16 +204,22 @@ export type Span = { from: number; to: number; kind: 'think' | 'tool' | 'page' |
 export const spans = (events: DemoEvent[], agent: AgentKind) => {
   const out: Span[] = []
   let builtins = new Set<string>()
+  // a page tool is one a turn offered beyond the built-ins; the screenshot agent's computer actions
+  // (left_click, type) aren't tools of their own, so they don't count
+  const page = new Set<string>()
   let done: Done | undefined
   for (const e of events) {
     if (!('agent' in e) || e.agent !== agent) continue
     if (e.type === 'agent') builtins = new Set(e.tools.map((tool) => tool.name))
-    if (e.type === 'turn') out.push({ from: e.at - e.ms, to: e.at, kind: 'think' })
+    if (e.type === 'turn') {
+      out.push({ from: e.at - e.ms, to: e.at, kind: 'think' })
+      for (const name of e.tools ?? []) if (!builtins.has(name)) page.add(name)
+    }
     if (e.type === 'tool')
       out.push({
         from: e.at - e.ms,
         to: e.at,
-        kind: e.error ? 'error' : builtins.has(e.name) ? 'tool' : 'page',
+        kind: e.error ? 'error' : page.has(e.name) ? 'page' : 'tool',
       })
     if (e.type === 'done') done = e
   }

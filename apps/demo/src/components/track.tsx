@@ -28,7 +28,14 @@ export const Track = ({
         {agents.map((agent) => {
           const { spans: list, done } = spans(events, agent)
           return (
-            <div key={agent} className={cn('relative h-4 rounded-[3px] bg-muted/70', LANE[agent])}>
+            <div
+              key={agent}
+              className={cn(
+                'relative rounded-[3px] bg-muted/70',
+                agents.length > 2 ? 'h-3' : 'h-4',
+                LANE[agent],
+              )}
+            >
               {list.map((s, i) => {
                 const past = s.from <= t
                 // a span still running at the playhead hasn't failed yet

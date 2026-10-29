@@ -7,6 +7,8 @@
   --fail: oklch(0.7 0.19 22);
   /* the same browser agent with WebMCP: cool, so the orange page tools it discovers stand out inside it */
   --webmcp: oklch(0.74 0.13 245);
+  /* the screenshot agent: another plain baseline, a warm grey beside the snapshot agent's cool one */
+  --vision: oklch(0.7 0.03 80);
 }
 
 @theme inline {
