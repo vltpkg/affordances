@@ -56,12 +56,13 @@ export const affordAgent = async (site: string, sid: string) => {
   }
 }
 
-let browser: Browser | undefined
+// the launch promise, not the browser: two agents starting at once must share one chromium, not race to launch two
+let browser: Promise<Browser> | undefined
 
 // the baseline: a DOM agent reading the accessibility tree (cheaper than screenshots, so a conservative comparison)
 export const browserAgent = async (site: string, sid: string) => {
-  browser ??= await chromium.launch()
-  const context = await browser.newContext({ baseURL: site })
+  browser ??= chromium.launch()
+  const context = await (await browser).newContext({ baseURL: site })
   await context.addCookies([{ name: 'sid', value: sid, url: site }])
   // the store's Agent view toggle is a demo control no real store has; it would hand this agent the graph
   await context.addInitScript(() => {
@@ -103,7 +104,8 @@ export const browserAgent = async (site: string, sid: string) => {
         const target = page.getByRole(role as never, { name: name as string, exact: true }).first()
         // styled radios and checkboxes are usually a visually hidden input under its label, which takes the
         // pointer; check() with force selects it the way a person clicking the label would
-        if (role === 'radio' || role === 'checkbox') await target.check({ force: true, timeout: 5000 })
+        if (role === 'radio' || role === 'checkbox')
+          await target.check({ force: true, timeout: 5000 })
         else await target.click({ timeout: 5000 })
         return snapshot()
       },
@@ -144,4 +146,76 @@ export const browserAgent = async (site: string, sid: string) => {
   }
 }
 
-export const closeBrowser = () => browser?.close()
+export const closeBrowser = async () => (await browser)?.close()
+
+type PageTool = { name: string; description: string; inputSchema: Tool['input_schema'] }
+
+// the same browser agent in a browser that supports WebMCP: tools the current page registers join its toolbox
+// on the next turn, the way a WebMCP-capable browser offers them. nothing tells it about Affordances; the store's
+// <AffordancesProvider> registers each available action, and the agent decides whether to use them
+export const webmcpAgent = async (site: string, sid: string) => {
+  const agent = await browserAgent(site, sid)
+  const { page } = agent
+  // ponytail: a shim of WebMCP's registerTool (no shipping chromium has it yet); swap for the real API when
+  // playwright's chromium does
+  await page.context().addInitScript(() => {
+    const tools = new Map<string, { execute: (input: unknown) => Promise<unknown> }>()
+    Object.assign(window, { webmcpTools: tools })
+    Object.defineProperty(document, 'modelContext', {
+      value: {
+        registerTool: (
+          tool: { name: string; execute: (input: unknown) => Promise<unknown> },
+          options?: { signal?: AbortSignal },
+        ) => {
+          tools.set(tool.name, tool)
+          options?.signal?.addEventListener('abort', () => {
+            if (tools.get(tool.name) === tool) tools.delete(tool.name)
+          })
+        },
+      },
+    })
+  })
+  // the page navigated or re-registered: read what it offers now
+  const pageTools = () =>
+    page
+      .evaluate(() =>
+        [
+          ...((
+            window as unknown as {
+              webmcpTools?: Map<string, { name: string; description: string; inputSchema: unknown }>
+            }
+          ).webmcpTools?.values() ?? []),
+        ].map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
+      )
+      .catch(() => [] as never[]) as Promise<PageTool[]>
+  const builtIn = new Set(agent.tools.map((t) => t.name))
+  return {
+    ...agent,
+    name: 'webmcp' as const,
+    system: `${agent.system} Pages can register their own tools (WebMCP): while you're on such a page, they appear in your tool list.`,
+    tools: async (): Promise<Tool[]> => [
+      ...agent.tools,
+      ...(await pageTools())
+        .filter((tool) => !builtIn.has(tool.name))
+        .map((tool) => ({
+          name: tool.name,
+          description: `${tool.description} (registered by the page)`,
+          input_schema: tool.inputSchema,
+          run: async (input: Record<string, unknown>) => {
+            const result = await page.evaluate(
+              ([name, args]) =>
+                (
+                  window as unknown as {
+                    webmcpTools: Map<string, { execute: (input: unknown) => Promise<unknown> }>
+                  }
+                ).webmcpTools
+                  .get(name)!
+                  .execute(args),
+              [tool.name, input] as const,
+            )
+            return typeof result === 'string' ? result : JSON.stringify(result)
+          },
+        })),
+    ],
+  }
+}

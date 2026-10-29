@@ -3,7 +3,7 @@ import path from 'node:path'
 import { parseArgs } from 'node:util'
 import { chromium } from 'playwright'
 import { createClient } from '@affordances/mcp'
-import { affordAgent, browserAgent, closeBrowser } from './agents.ts'
+import { affordAgent, browserAgent, closeBrowser, webmcpAgent } from './agents.ts'
 import type { AgentKind, DemoEvent } from './events.ts'
 import { DEFAULT_MODEL, runAgent, type LoopEvent } from './loop.ts'
 import { startStore } from './store.ts'
@@ -12,9 +12,12 @@ import { newSession, tasks as allTasks } from './tasks.ts'
 // vlr record -- --task add-to-cart          both agents race one task on a fresh store; saved for apps/demo
 // vlr record -- --task all                  every task, one recording each
 // vlr record -- --task checkout --stream    events as JSON lines on stdout as they happen (apps/demo's live mode)
+// vlr record -- --agents browser,webmcp     the discovery story: the same browser agent, with and without WebMCP
 const { values } = parseArgs({
   options: {
     task: { type: 'string', default: 'add-to-cart' },
+    // which two (or more) race: browser, afford, webmcp
+    agents: { type: 'string', default: 'browser,afford' },
     model: { type: 'string', default: DEFAULT_MODEL },
     port: { type: 'string', default: '3101' },
     stream: { type: 'boolean', default: false },
@@ -23,6 +26,9 @@ const { values } = parseArgs({
 })
 const model = values.model!
 const site = `http://localhost:${values.port}`
+const make = { browser: browserAgent, afford: affordAgent, webmcp: webmcpAgent }
+const kinds = values.agents!.split(',').map((k) => k.trim()) as AgentKind[]
+if (kinds.some((k) => !(k in make))) throw new Error('--agents takes browser, afford, webmcp')
 const tasks = values.task === 'all' ? allTasks : allTasks.filter((t) => t.id === values.task)
 if (!tasks.length)
   throw new Error(`unknown --task; known: all, ${allTasks.map((t) => t.id).join(', ')}`)
@@ -41,7 +47,7 @@ const record = async (task: (typeof tasks)[number]) => {
     events.push(event)
     if (values.stream) process.stdout.write(`${JSON.stringify(event)}\n`)
   }
-  const id = `${new Date().toISOString().slice(0, 16).replace(':', '')}-${task.id}-${model}`
+  const id = `${new Date().toISOString().slice(0, 16).replace(':', '')}-${task.id}-${model}${kinds.includes('webmcp') ? '-webmcp' : ''}`
   emit({
     type: 'run',
     id,
@@ -53,16 +59,18 @@ const record = async (task: (typeof tasks)[number]) => {
   // the afford agent never renders anything; a separate page on its session shows the audience the store
   const observer = await chromium.launch()
   try {
-    const race = (['browser', 'afford'] as const).map(async (kind: AgentKind) => {
+    const race = kinds.map(async (kind) => {
       const sid = await newSession(site)
       const client = createClient(site, { token: sid })
       await task.setup?.(client)
-      const agent = kind === 'afford' ? await affordAgent(site, sid) : await browserAgent(site, sid)
+      const agent = await make[kind](site, sid)
       emit({
         type: 'agent',
         agent: kind,
         system: agent.system,
-        tools: agent.tools.map(({ name, description = '' }) => ({ name, description })),
+        tools: (typeof agent.tools === 'function' ? await agent.tools() : agent.tools).map(
+          ({ name, description = '' }) => ({ name, description }),
+        ),
       })
 
       // the page frames come from: the agent's own browser, or the observer on the same session

@@ -32,6 +32,8 @@ export type LoopEvent =
       usage: { input: number; cacheRead: number; cacheWrite: number; output: number }
       text: string
       calls: { id: string; name: string; input: unknown }[]
+      // the tools offered on this turn
+      tools: string[]
     }
   | {
       type: 'tool'
@@ -89,22 +91,24 @@ export const runAgent = async (
   model: string,
   system: string,
   prompt: string,
-  tools: Tool[],
+  // a function for a toolbox that changes as the agent goes, e.g. tools a page registers over WebMCP
+  tools: Tool[] | (() => Promise<Tool[]>),
   onEvent?: (event: LoopEvent) => void,
 ): Promise<Omit<RunStats, 'success'>> => {
   const price = PRICES[model]
   if (!price) throw new Error(`No price for ${model}; add it to PRICES in src/loop.ts`)
   const started = performance.now()
-  const definitions: Anthropic.Tool[] = tools.map(({ name, description, input_schema }) => ({
-    name,
-    description,
-    input_schema,
-  }))
-  const byName = new Map(tools.map((tool) => [tool.name, tool]))
   const messages: Anthropic.MessageParam[] = [{ role: 'user', content: prompt }]
   const stats = emptyStats({ stop: 'turn_cap' })
 
   while (stats.turns < MAX_TURNS) {
+    const toolbox = typeof tools === 'function' ? await tools() : tools
+    const definitions: Anthropic.Tool[] = toolbox.map(({ name, description, input_schema }) => ({
+      name,
+      description,
+      input_schema,
+    }))
+    const byName = new Map(toolbox.map((tool) => [tool.name, tool]))
     const asked = performance.now()
     const response = await client.messages.create({
       model,
@@ -138,6 +142,7 @@ export const runAgent = async (
       },
       text,
       calls: calls.map(({ id, name, input }) => ({ id, name, input })),
+      tools: toolbox.map((tool) => tool.name),
     })
     // refusal, end_turn, max_tokens: the run is over (a truncated tool input is never executed)
     if (response.stop_reason !== 'tool_use' || !calls.length) {
