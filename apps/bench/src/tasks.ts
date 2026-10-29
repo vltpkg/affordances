@@ -69,6 +69,54 @@ export const tasks: Task[] = [
       return `${last!.items[0]!.name}, ${last!.total}`
     },
   },
+  // longer tasks, closer to what agents get asked: savings per step compound, and so do mistakes
+  {
+    id: 'two-items-checkout',
+    prompt:
+      'Buy a Heavyweight Tee in size M and the Graphite keycap set, then check out. I approve placing the order.',
+    check: async (client) => {
+      const [last, ...rest] = await orders(client)
+      const names = (last?.items ?? []).map((item) => item.name).toSorted()
+      return (
+        !rest.length &&
+        names.join() === 'Heavyweight Tee,Keycap Set' &&
+        last!.total === '$112.00' &&
+        (await cart(client)).items.length === 0
+      )
+    },
+    oracle: async (client) => {
+      await add(client, 'heavyweight-tee', 'TEE-BLK-M')
+      await add(client, 'keycap-set', 'KEY-GRA')
+      await client.call('/checkout', 'placeOrder', {}, true)
+      return 'Ordered.'
+    },
+  },
+  {
+    id: 'edit-cart',
+    prompt:
+      'Change my cart: swap the black cap for the stone one, cut the stickers down to one sheet, and add an A3 grid poster.',
+    setup: async (client) => {
+      await add(client, 'six-panel-cap', 'CAP-BLK')
+      await add(client, 'sticker-sheet', 'STK-01', 2)
+    },
+    check: async (client) => {
+      const items = (await cart(client)).items
+      const quantities = Object.fromEntries(items.map((item) => [item.sku, item.quantity]))
+      return (
+        items.length === 3 &&
+        quantities['CAP-STN'] === 1 &&
+        quantities['STK-01'] === 1 &&
+        quantities['PST-A3'] === 1
+      )
+    },
+    oracle: async (client) => {
+      await client.call('/cart', 'removeItem', { sku: 'CAP-BLK' })
+      await add(client, 'six-panel-cap', 'CAP-STN')
+      await client.call('/cart', 'updateQuantity', { sku: 'STK-01', quantity: 1 })
+      await add(client, 'grid-poster', 'PST-A3')
+      return 'Done.'
+    },
+  },
 ]
 
 // a session that exists but holds nothing: add then remove, so both agents start from the same place
