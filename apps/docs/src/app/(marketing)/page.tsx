@@ -8,6 +8,7 @@ import { After, Before } from '@/components/marketing/scrolly'
 import { Code, SectionHead } from '@/components/marketing/section-head'
 import { Approvals } from '@/components/marketing/approvals'
 import { CopyCommand } from '@/components/marketing/copy-command'
+import { Discovery } from '@/components/marketing/discovery'
 import { HeroStage } from '@/components/marketing/hero-stage'
 import { HowItWorks, SOURCE, SURFACES } from '@/components/marketing/how'
 import { Proof } from '@/components/marketing/proof'
@@ -229,6 +230,20 @@ const Home = () => {
               }
             >
               <Approvals />
+            </AgentText>
+          </section>
+
+          <section className={sec} aria-labelledby="h-disc">
+            <SectionHead eyebrow="Discovery" id="h-disc" title="Agents find it on their own.">
+              A browser agent that has never heard of Affordances, asked to add a tee to a cart. Its
+              browser supports WebMCP, and its prompt says only that pages can register tools. On
+              the product page, <Code>addToCart</Code> joins its toolbox, and it calls it.
+            </SectionHead>
+            <AgentText
+              block
+              md={`One recorded run on Claude Opus 5.5, the task "Add a Heavyweight Tee in size M to my cart.", two browser agents on one clock. Both start with the same built-in tools: \`goto\`, \`click\`, \`fill\` and \`press\`.\n\n- **With WebMCP** (its prompt says only that pages can register tools): \`goto("/")\`, where the home page registered \`search\`. It clicked the Heavyweight Tee link. The product page registered \`addToCart\`, and \`search\` went away. It called \`addToCart({ sku: "TEE-BLK-M", quantity: 1 })\` and answered. 9.2s, 4 turns.\n- **Plain browser**: \`goto("/")\`, clicked the product link, reloaded the product page, clicked size M and Add to cart, timed out clicking the Cart link, then went to \`/cart\` and answered. 20.6s, 7 turns.\n\nBoth added the tee to the cart. The [React and WebMCP guide](/docs/guides/react) shows how a page registers its actions.`}
+            >
+              <Discovery />
             </AgentText>
           </section>
 

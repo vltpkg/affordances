@@ -370,6 +370,31 @@
 .afd .call.cur .no {
   color: var(--agent);
 }
+/* discovery: the log runs tighter, and a page's tools join the toolbox (and leave it) as the agent moves */
+.afd .call.tight.on {
+  height: 32px;
+}
+/* a lit call bleeds past the column like a lit line, and its tint is the separator */
+.afd .call.lit {
+  margin-inline: -8px;
+  padding-inline: 8px;
+  border-bottom-color: transparent;
+}
+.afd .tbx {
+  height: 0;
+  opacity: 0;
+  overflow: hidden;
+  border-top: 1px solid transparent;
+  transition:
+    height 0.4s var(--out),
+    opacity 0.3s,
+    border-color 0.3s;
+}
+.afd .tbx.on {
+  height: 32px;
+  opacity: 1;
+  border-top-color: var(--line);
+}
 /* while scrolling drives the panels: a tall track with the panels pinned, centred below the header */
 .afd .live .track {
   height: 1700px;

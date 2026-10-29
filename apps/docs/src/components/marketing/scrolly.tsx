@@ -98,7 +98,15 @@ const Dot = ({ agent }: { agent?: boolean }) => (
   />
 )
 
-const PanelHead = ({ title, count, agent }: { title: string; count: string; agent?: boolean }) => (
+export const PanelHead = ({
+  title,
+  count,
+  agent,
+}: {
+  title: string
+  count: string
+  agent?: boolean
+}) => (
   <div className="flex items-center justify-between gap-2.5 border-b border-(--line) pb-4 font-mono text-xs text-(--fg3)">
     <span className={cn('flex items-center gap-2', agent ? 'text-(--agent)' : 'text-(--fg)')}>
       <Dot agent={agent} />
@@ -108,7 +116,7 @@ const PanelHead = ({ title, count, agent }: { title: string; count: string; agen
   </div>
 )
 
-const Caption = ({
+export const Caption = ({
   on,
   children,
   sub,
@@ -183,15 +191,15 @@ const Meter = ({
 
 const SEG = ['var(--agent)', 'var(--agent-mid)', 'var(--agent-low)', 'var(--agent-min)']
 
-const Split = ({ children }: { children: React.ReactNode }) => (
+export const Split = ({ children }: { children: React.ReactNode }) => (
   <div className="grid grid-cols-2 overflow-hidden rounded-[14px] border border-(--line2) bg-(--bg) max-[899px]:grid-cols-1">
     {children}
   </div>
 )
 
-const panel =
+export const panel =
   'panel relative box-border flex min-h-[540px] min-w-0 flex-col gap-[18px] px-6 pt-[22px] pb-6'
-const second = 'border-l border-(--line2) max-[899px]:border-t max-[899px]:border-l-0'
+export const second = 'border-l border-(--line2) max-[899px]:border-t max-[899px]:border-l-0'
 
 const STEPS = [
   'screenshot()',
