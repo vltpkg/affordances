@@ -1,6 +1,5 @@
 {
   "pages": [
-    "---Get started---",
     "why",
     "quickstart",
     "---Concepts---",
@@ -8,13 +7,14 @@
     "---Guides---",
     "nextjs",
     "react",
-    "markdown",
     "mcp",
     "lint",
+    "security",
+    "bench",
+    "md",
     "---Reference---",
     "protocol",
-    "security",
-    "api-reference",
-    "bench"
+    "options",
+    "api-reference"
   ]
 }

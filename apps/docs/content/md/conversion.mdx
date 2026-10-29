@@ -1,0 +1,44 @@
+---
+title: What gets converted
+description: What the converter keeps from a page, what it drops, and how it reads streamed content, forms, code, and links.
+---
+
+## Which content
+
+Without [markers](/md/markers), the converter takes the page's `<main>` (or `[role=main]`). Without one, it takes the body minus `nav`, `header`, `footer`, `aside`, dialogs, and their ARIA roles.
+
+Scripts, styles, SVG, media, iframes, and anything hidden from people with `hidden` or `aria-hidden` are always dropped, unless an `<AgentOnly>` put it there.
+
+## Streamed content
+
+The handler waits for the whole response. React streams each resolved `<Suspense>` boundary after the page's shell, and the converter moves each one into place, as the browser would. So data loaded behind a fallback is in the Markdown, and the fallback isn't. Content rendered only on the client, in an effect, isn't: the handler converts what the server sent.
+
+## Elements
+
+- Headings, paragraphs, lists, blockquotes, tables, and rules, with GitHub-flavored Markdown for tables, strikethrough, and task lists.
+- A heading's link to its own `#fragment` (the usual self-link) is unwrapped, so it reads `## Effects`.
+- `<details>` becomes its summary in bold followed by its content, and `<dl>` becomes `**term**: definition`.
+- Images need both a `src` and alt text; without alt text, they tell an agent nothing.
+- Buttons are dropped. What a page lets you do belongs in its [Afford graph](/concepts/actions).
+
+## Code
+
+`<pre><code class="language-ts">` becomes a `ts` fence. A `data-title` on the `<pre>` becomes the fence's title:
+
+````md
+```ts title="app/api/afford/md/[[...path]]/route.ts"
+export { GET } from '@afford/md/next'
+```
+````
+
+## Links
+
+Links and images get absolute URLs. A link to `#` or `javascript:` keeps only its text. Links laid out side by side, with no text between them, get a space, so they don't run together.
+
+## Forms
+
+A form becomes a list of what it asks for: each field's label, with its type when it isn't text, and each choice group with its options and which are selected or unavailable. Values, placeholders, hidden inputs, and tokens never appear. The form's other text, such as hints and errors, follows the list.
+
+## The page around it
+
+At the top, YAML frontmatter carries the page's `title`, `description`, canonical `url`, `image`, and `lang`, from its metadata. If the content has no `#` heading, the title becomes one. JSON-LD scripts are appended as fenced JSON.

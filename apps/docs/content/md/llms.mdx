@@ -1,0 +1,27 @@
+---
+title: llms.txt and llms-full
+description: An index of every page for agents, and the whole site's Markdown in one file.
+---
+
+[`llms.txt`](https://llmstxt.org) is a page index for agents: a title, a summary, and links to every page's Markdown. It's yours to write, as a route handler; this site lists its sidebar, linking each page's `.md`.
+
+`createLlmsFullHandler` serves the other half, every page's Markdown in one file:
+
+```ts title="app/llms-full.txt/route.ts"
+import { connection } from 'next/server'
+import { createLlmsFullHandler } from '@afford/md/next'
+
+export const GET = createLlmsFullHandler({
+  pages: async () => {
+    await connection()
+    return ['/', '/docs/start', '/docs/guides']
+  },
+})
+```
+
+- Each page goes through the same handler and converter as `/page.md`, so it matches what an agent would read one page at a time.
+- Pages are rendered without the caller's cookies: the file is the public site.
+- Frontmatter is stripped, and each page is headed `# Title (url)`.
+- A page that fails is left out rather than failing the file.
+
+It renders by requesting the site's own pages, so it must run at request time. With Cache Components, call `connection()` (or read the request) before anything else, so Next doesn't try to prerender it during the build, when no server is running.

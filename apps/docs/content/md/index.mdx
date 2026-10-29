@@ -1,0 +1,22 @@
+---
+title: Markdown for every page
+description: "@afford/md serves every page of a Next.js app as Markdown, at /page.md and to Accept: text/markdown, from the page's own render."
+---
+
+Agents that don't speak the Afford protocol still read pages, and most of a page's HTML is chrome they have to wade through. `@afford/md` gives every page a Markdown twin: its content, without navigation, scripts, or controls.
+
+There's no second source of truth. When an agent asks for Markdown, a route handler requests the page's HTML from your own app, the way a browser would, and converts it. Whatever the page renders, including data fetched on the server and content streamed into `<Suspense>` boundaries, is what the Markdown says.
+
+```bash
+curl https://store.example.com/products/tee.md
+curl -H 'Accept: text/markdown' https://store.example.com/products/tee
+```
+
+This site runs on it: add `.md` to any page's URL.
+
+- [Setup](/md/setup): the config plugin and the route handler.
+- [Markers](/md/markers): say exactly what to keep and what to leave out.
+- [What gets converted](/md/conversion): content, streamed boundaries, forms, code, and links.
+- [Caching and privacy](/md/caching): what's private and what's cached.
+- [llms.txt and llms-full](/md/llms): the whole site in one file.
+- [htmlToMarkdown](/md/converter): the converter on its own.

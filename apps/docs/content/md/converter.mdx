@@ -1,0 +1,23 @@
+---
+title: htmlToMarkdown
+description: The converter on its own, with no React or Next.js dependency.
+---
+
+`htmlToMarkdown` from `@afford/md` is the converter the route handler uses. Give it any HTML document:
+
+```ts
+import { htmlToMarkdown } from '@afford/md'
+
+const html = await (await fetch('https://example.com/post')).text()
+const { markdown, title, url, tokens } = htmlToMarkdown(html, { url: 'https://example.com/post' })
+```
+
+| Option        | Default  | Description                                                                                                       |
+| ------------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
+| `url`         | none     | Base for absolute links and images, usually the page's URL                                                        |
+| `extract`     | `'auto'` | `'auto'`: markers, then `<main>`, then the body minus chrome; `'none'`: the whole body; or a function of the tree |
+| `frontmatter` | `true`   | Prepend YAML frontmatter from the page's metadata                                                                 |
+| `jsonLd`      | `true`   | Append the page's JSON-LD as fenced JSON                                                                          |
+| `handlers`    | none     | Per-element overrides, as `hast-util-to-mdast` handlers                                                           |
+
+It returns the Markdown, the page's `title`, its canonical `url` (or the one you passed), and `tokens`, an estimate of the Markdown's length in tokens (characters divided by four).

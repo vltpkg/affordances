@@ -2,7 +2,8 @@
 
 import { z } from 'zod'
 import { AffordError, defineAction } from '@afford/next'
-import { pageMarkdown, search, source } from '@/lib/source'
+import { GET as renderMarkdown, MD_PATH } from '@afford/md/next'
+import { search, source } from '@/lib/source'
 
 const result = z.object({
   title: z.string(),
@@ -46,9 +47,12 @@ export const getPage = defineAction({
   output: z.string(),
   expose: 'public',
   readOnly: true,
-  run: async ({ url }) => {
+  run: async ({ url }, ctx) => {
     const page = source.getPage(url.split('/').filter(Boolean))
-    if (!page) throw new AffordError('not_found', `No docs page at ${url}`)
-    return pageMarkdown(page)
+    if (!page || !ctx.request) throw new AffordError('not_found', `No docs page at ${url}`)
+    // the page's markdown twin, as /<page>.md serves it: same render, same converter
+    const response = await renderMarkdown(new Request(new URL(MD_PATH + page.url, ctx.request.url)))
+    if (!response.ok) throw new AffordError('internal', `Couldn't render ${url}`)
+    return response.text()
   },
 })

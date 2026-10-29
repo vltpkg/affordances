@@ -1,0 +1,52 @@
+---
+title: Setup
+description: Add the md plugin to your Next.js config, then the route handler that renders and converts pages.
+---
+
+With the Afford graph, add `md()` to `withAfford`'s plugins:
+
+```ts title="next.config.ts"
+import { withAfford } from '@afford/next/config'
+import { md } from '@afford/md/next'
+
+export default withAfford(nextConfig, { name: 'Store', plugins: [md()] })
+```
+
+On its own, wrap the config with `withMd`:
+
+```ts title="next.config.ts"
+import { withMd } from '@afford/md/next'
+
+export default withMd(nextConfig)
+```
+
+Then add the route handler. `npx @afford/md init` writes it:
+
+```ts title="app/api/afford/md/[[...path]]/route.ts"
+export { GET } from '@afford/md/next'
+```
+
+## Routing
+
+The config only adds rewrites, so nothing runs per request until an agent asks:
+
+- A page requested with `Accept: text/markdown` is rewritten to the handler. API routes, `/_next`, and URLs with a file extension are left alone.
+- `/blog/post.md` and `/index.md` (for `/`) are rewritten after Next's own files, so a real `.md` file in `public/` still wins.
+- The handler's own request for the page carries an `x-afford-md-render` header, which the rewrites skip, so it can't loop.
+
+Next matches `Accept` as a pattern, so a header that lists `text/markdown` with a low q-value still gets Markdown. Browsers never send it, so in practice only agents do.
+
+## Advertise it
+
+`mdAlternate(path)` returns metadata alternates for a page's Markdown twin:
+
+```ts title="app/blog/[slug]/page.tsx"
+import { mdAlternate } from '@afford/md/next'
+
+export const generateMetadata = async ({ params }) => {
+  const { slug } = await params
+  return { alternates: { canonical: `/blog/${slug}`, ...mdAlternate(`/blog/${slug}`) } }
+}
+```
+
+That renders `<link rel="alternate" type="text/markdown" href="/blog/post.md">`. For `/`, it points at `/index.md`.

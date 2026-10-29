@@ -230,9 +230,15 @@ const sections: { title: string; cards: Card[] }[] = [
         href: '/security',
       },
       {
+        icon: ListChecksIcon,
+        title: 'Options',
+        description: 'Every option of defineAction, createHandler, and withAfford, in one place.',
+        href: '/options',
+      },
+      {
         icon: NetworkIcon,
         title: 'API reference',
-        description: 'Every option of defineAction, createHandler, and withAfford.',
+        description: 'Every export of every package, with its types, generated from the source.',
         href: '/api-reference',
       },
       {

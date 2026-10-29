@@ -4,10 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node scripts/typedoc.mts",
     "dev": "next dev -p 3000",
+    "prebuild": "node scripts/typedoc.mts",
     "build": "next build",
     "start": "next start -p 3000",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "typedoc": "node scripts/typedoc.mts",
+    "typedoc:check": "node scripts/typedoc.mts --check"
   },
   "dependencies": {
     "@afford/core": "workspace:*",

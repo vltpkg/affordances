@@ -10,6 +10,9 @@ const nextConfig: NextConfig = {
   partialPrefetching: true,
   transpilePackages: ['@afford/ui'],
   // vlt-lock.json sits at the repo root, and next resolves `next` (and @afford/ui) from there
+  // pages that moved: the markdown guide became the md section, and the options tables left
+  // /api-reference to the generated reference
+  redirects: async () => [{ source: '/markdown', destination: '/md', permanent: true }],
   turbopack: { root: path.join(import.meta.dirname, '../..') },
 }
 
