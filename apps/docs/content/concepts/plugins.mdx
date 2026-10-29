@@ -1,0 +1,41 @@
+---
+title: Plugins
+description: A plugin serves an Affordances app's pages in another form for agents, at the same URLs, from the same render. What they are and how they fit together.
+---
+
+The graph is one way for an agent to read a page: its entities and actions, as JSON. Not every agent speaks it. Some read Markdown, some want the whole site in one file. A plugin adds one of those forms to the app, without a second copy of your content.
+
+## What a plugin is
+
+A plugin is two pieces:
+
+- **A config wrapper.** It takes your Next config and returns it with its own rewrites and headers added. You pass it to `withAffordances` in `plugins`.
+- **A route handler** under `/api/affordances/<name>`. The rewrites send the requests the plugin is for to it.
+
+The Markdown plugin is `md()` in the config and one line at `app/api/affordances/md/[[...path]]/route.ts`.
+
+## Same URLs, different requests
+
+Every form of a page lives at the page's own URL. Which one a client gets depends on what it asks for:
+
+| Request                                    | Answered by          |
+| ------------------------------------------ | -------------------- |
+| A browser asking for HTML                  | Your page, unchanged |
+| `Accept: application/vnd.affordances+json` | The graph            |
+| `Accept: text/markdown`, or `/page.md`     | The Markdown plugin  |
+
+Each plugin matches only its own requests, so plugins and the graph never answer for each other, and a person's request never reaches any of them.
+
+## One source of truth
+
+A plugin derives what it serves from what the app already has. The Markdown plugin requests the page's HTML from your own app, the way a browser would, and converts it. So the Markdown says whatever the page renders, including server data and streamed content, and there's nothing to keep in sync.
+
+## Order and independence
+
+- Plugins apply in the order you list them, after the graph's rewrites.
+- A plugin doesn't need the graph. `@affordances/md` also works on its own, with `withMd(nextConfig)` instead of `withAffordances`.
+
+## Next
+
+- [Plugins](/docs/plugins) lists each plugin and how to add it.
+- [Plugins in the Next.js guide](/docs/guides/nextjs/plugins) covers the config in detail, and writing your own.

@@ -68,7 +68,7 @@ export const source = loader({
       {
         // a section's index sits first under its separator, which already says the section's name
         file: (node, filePath) =>
-          filePath && /^(concepts|guides|reference)\/index\.mdx$/.test(filePath)
+          filePath && /^(concepts|guides|plugins|reference)\/index\.mdx$/.test(filePath)
             ? { ...node, name: 'Overview' }
             : node,
       },

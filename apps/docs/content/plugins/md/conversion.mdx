@@ -5,7 +5,7 @@ description: What the converter keeps from a page, what it drops, and how it rea
 
 ## Which content
 
-Without [markers](/docs/guides/md/markers), the converter takes the page's `<main>` (or `[role=main]`). Without one, it takes the body minus `nav`, `header`, `footer`, `aside`, dialogs, and their ARIA roles.
+Without [markers](/docs/plugins/md/markers), the converter takes the page's `<main>` (or `[role=main]`). Without one, it takes the body minus `nav`, `header`, `footer`, `aside`, dialogs, and their ARIA roles.
 
 Scripts, styles, SVG, media, iframes, and anything hidden from people with `hidden` or `aria-hidden` are always dropped, unless an `<AgentOnly>` put it there.
 

@@ -3,7 +3,7 @@ title: Plugins
 description: Add more capabilities to the same Next.js config through withAffordances's plugins, and write your own.
 ---
 
-A plugin adds a capability to an Affordances app, such as serving every page as Markdown, without another config wrapper to order by hand. Pass plugins to `withAffordances`:
+A plugin adds a capability to an Affordances app, such as serving every page as Markdown, without another config wrapper to order by hand. [Plugins](/docs/concepts/plugins) in Concepts explains what they are, and the [Plugins](/docs/plugins) section lists each one. Pass plugins to `withAffordances`:
 
 ```ts title="next.config.ts"
 import { withAffordances } from '@affordances/next/config'
@@ -16,7 +16,7 @@ Then add each plugin's route handler. For `md()`:
 
 <Run cmd="@affordances/md init" />
 
-This site runs with `md()`: add `.md` to any page's URL. See [Markdown](/docs/guides/md).
+This site runs with `md()`: add `.md` to any page's URL. See [Markdown](/docs/plugins/md).
 
 ## How they combine
 

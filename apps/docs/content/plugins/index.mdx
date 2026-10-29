@@ -1,0 +1,25 @@
+---
+title: Plugins
+description: Plugins add more ways for agents to read an Affordances app, on the same pages and the same URLs. Here's each one and how to add it.
+---
+
+The graph gives agents a page's state and actions. Plugins give them more, from the same app: each serves the same pages in another form, at the same URLs, without a second source of truth. [Plugins](/docs/concepts/plugins) in Concepts explains how they work.
+
+| Plugin                       | Package           | What agents get                                                                                           |
+| ---------------------------- | ----------------- | --------------------------------------------------------------------------------------------------------- |
+| [Markdown](/docs/plugins/md) | `@affordances/md` | Every page as Markdown, at `/page.md` and to `Accept: text/markdown`, plus `llms.txt` and `llms-full.txt` |
+
+## Add a plugin
+
+Install its package, pass it to `withAffordances`, and add its route handler. For Markdown:
+
+<Install pkgs="@affordances/md" run="@affordances/md init" />
+
+```ts title="next.config.ts"
+import { withAffordances } from '@affordances/next/config'
+import { md } from '@affordances/md/next'
+
+export default withAffordances(nextConfig, { name: 'Store', plugins: [md()] })
+```
+
+Each plugin's page covers its setup in full. To write your own, see [Plugins](/docs/guides/nextjs/plugins) in the Next.js guide.
