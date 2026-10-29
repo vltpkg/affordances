@@ -17,7 +17,8 @@
   --line2: color-mix(in oklch, var(--foreground) 16%, var(--background));
   --red: var(--fg);
   /* the agent accent: the one colour on the page, for everything an agent reads */
-  --agent: #c4470b;
+  /* AA for small text on white and on its own 11% tint */
+  --agent: #b8420a;
   --agent-ink: #fff;
   --agent-soft: color-mix(in srgb, var(--agent) 11%, transparent);
   --agent-line: color-mix(in srgb, var(--agent) 55%, transparent);
@@ -28,53 +29,66 @@
 }
 
 [data-theme='dark'] .afd {
+  /* on black, the light theme's 16% line all but disappears */
+  --line2: color-mix(in oklch, var(--foreground) 24%, var(--background));
   --agent: #ff6a1f;
   --agent-ink: #140600;
 }
 
-.afd :focus-visible {
-  outline: 2px solid var(--agent);
-  outline-offset: 2px;
+/* one focus ring for the page's own controls, in the base layer so a component's own ring (the button's)
+   wins over it */
+@layer base {
+  .afd :focus-visible {
+    outline: 2px solid var(--fg);
+    outline-offset: 2px;
+  }
+}
+
+/* press feedback: a slight scale, never a downward offset */
+.afd .press {
+  transition-property: color, background-color, border-color, opacity, transform;
+}
+.afd .press:active {
+  transform: scale(0.97);
+  transition-duration: 0.08s;
 }
 
 /* hero: the human/agent switch */
 .afd .seg-ind {
   transition:
-    transform 0.5s var(--ease),
-    background-color 0.35s;
+    transform 0.3s var(--ease),
+    background-color 0.2s;
 }
 .afd .seg-ind.is-agent {
   transform: translateX(100%);
   background: var(--agent);
 }
-.afd .seg-b.act-h {
-  color: var(--bg);
-}
-.afd .seg-b.act-a {
-  color: var(--agent-ink);
-}
-.afd .accept b {
-  transition: color 0.3s;
-}
-.afd .is-agent-row .accept b {
-  color: var(--agent);
-}
 
-/* hero: the stage, where the product page's parts move into the graph's lines */
+/* hero: the stage, where the product page's parts move into the graph's lines. the boxes morph their
+   geometry, so the stage contains its own layout and paint */
 .afd .stage {
-  transition: border-color 0.5s;
+  contain: layout paint;
+  transition: border-color 0.3s;
 }
 .afd .stage.is-agent {
-  border-color: var(--agent);
+  border-color: var(--agent-line);
+}
+.afd .url-m,
+.afd .url-a {
+  transition: color 0.2s;
+}
+.afd .is-agent .url-m,
+.afd .is-agent .url-a {
+  color: var(--agent);
 }
 .afd .swap {
-  transition: opacity 0.16s;
+  transition: opacity 0.15s var(--out);
 }
 .afd .fading .swap {
   opacity: 0;
 }
 .afd .hum {
-  transition: opacity 0.3s 0.22s;
+  transition: opacity 0.2s 0.22s;
 }
 .afd .is-agent .hum {
   opacity: 0;
@@ -83,44 +97,45 @@
 }
 .afd .agt {
   opacity: 0;
-  transition: opacity 0.15s;
+  transition: opacity 0.12s;
   pointer-events: none;
 }
 .afd .is-agent .agt {
   opacity: 1;
-  transition: opacity 0.35s 0.35s;
+  transition: opacity 0.25s 0.3s;
+  pointer-events: auto;
 }
 .afd .m {
   position: absolute;
   box-sizing: border-box;
   transition:
-    top 0.62s var(--ease),
-    left 0.62s var(--ease),
-    width 0.62s var(--ease),
-    height 0.62s var(--ease),
-    font-size 0.62s var(--ease),
-    background-color 0.45s,
-    border-color 0.45s,
-    border-radius 0.62s var(--ease),
-    color 0.45s,
-    opacity 0.3s;
+    top 0.5s var(--ease),
+    left 0.5s var(--ease),
+    width 0.5s var(--ease),
+    height 0.5s var(--ease),
+    background-color 0.3s,
+    border-color 0.3s,
+    border-radius 0.5s var(--ease),
+    color 0.3s,
+    opacity 0.2s,
+    transform 0.15s var(--out);
 }
 .afd .ghost {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
   white-space: nowrap;
   line-height: 1.6;
   transition:
-    top 0.62s var(--ease),
-    left 0.62s var(--ease),
-    font-size 0.62s var(--ease),
-    opacity 0.25s 0.1s;
+    transform 0.5s var(--ease),
+    opacity 0.2s 0.1s;
 }
 .afd .is-agent .ghost {
   opacity: 0;
   transition:
-    top 0.62s var(--ease),
-    left 0.62s var(--ease),
-    font-size 0.62s var(--ease),
-    opacity 0.25s 0.38s;
+    transform 0.5s var(--ease),
+    opacity 0.2s 0.32s;
 }
 .afd .box {
   background: var(--img);
@@ -137,19 +152,20 @@
   border-radius: 6px;
 }
 .afd .hf {
-  transition: opacity 0.2s 0.28s;
+  transition: opacity 0.2s 0.24s;
 }
 .afd .is-agent .hf {
   opacity: 0;
   transition-delay: 0s;
 }
 .afd .pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--line2);
-  background: transparent;
   border-radius: 8px;
   color: var(--fg);
   font: 500 14px/1 var(--font-sans);
-  padding: 0;
   white-space: nowrap;
 }
 .afd .pill.sel {
@@ -158,7 +174,6 @@
 .afd .pill.out {
   border-style: dashed;
   color: var(--fg3);
-  cursor: not-allowed;
   text-decoration: line-through;
 }
 .afd .is-agent .pill {
@@ -166,7 +181,6 @@
   border-color: var(--agent-line);
   background: var(--agent-soft);
   border-radius: 4px;
-  pointer-events: none;
 }
 .afd .cta {
   border: 1px solid var(--fg);
@@ -177,11 +191,16 @@
   cursor: pointer;
   padding: 0;
 }
+.afd .cta:hover {
+  background: color-mix(in oklch, var(--fg) 86%, var(--bg));
+}
+.afd .cta:active {
+  transform: scale(0.985);
+}
 .afd .is-agent .cta {
   background: var(--agent-soft);
   border-color: var(--agent-line);
   border-radius: 6px;
-  pointer-events: none;
 }
 .afd .gl {
   height: 20px;
@@ -197,8 +216,8 @@
   opacity: 1;
   transform: none;
   transition:
-    opacity 0.32s var(--d),
-    transform 0.4s var(--out) var(--d);
+    opacity 0.25s var(--d),
+    transform 0.3s var(--out) var(--d);
 }
 .afd .gk {
   color: var(--fg);
@@ -210,9 +229,13 @@
 .afd .gp {
   color: var(--fg3);
 }
+.afd .gl .gn {
+  border-radius: 3px;
+  transition: background-color 0.6s;
+}
 .afd .gl.flash .gn {
   background: var(--agent-soft);
-  border-radius: 3px;
+  transition-duration: 0.1s;
 }
 
 /* before / after: file rows, meters, calls, surfaces, captions */
@@ -362,32 +385,16 @@
   border-color: var(--agent-line);
 }
 
-/* while scrolling drives the panels: a tall track with the panels pinned under the header */
+/* while scrolling drives the panels: a tall track with the panels pinned, centred below the header */
 .afd .live .track {
-  height: 2100px;
+  height: 1700px;
 }
 .afd .live .sticky {
   position: sticky;
-  top: calc(var(--header-height) + 32px);
-}
-.afd .live .panel {
-  min-height: 480px;
+  top: max(calc(var(--header-height) + 24px), calc(50svh + var(--header-height) / 2 - 272px));
 }
 
 /* approvals */
-.afd .blink {
-  display: inline-block;
-  width: 7px;
-  height: 13px;
-  background: var(--agent);
-  vertical-align: -2px;
-  animation: afd-blink 1s steps(2) infinite;
-}
-@keyframes afd-blink {
-  50% {
-    opacity: 0;
-  }
-}
 .afd .ask {
   opacity: 0;
   transform: translateY(14px);

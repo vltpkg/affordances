@@ -1,5 +1,6 @@
 'use client'
 
+import { cn } from 'cn'
 import { useCopy } from '@afford/ui/hooks/use-copy'
 import { usePreferredPackageManager } from '@/hooks/use-preferred-package-manager'
 import { PackageManagerSelect, PerPackageManager } from '@/components/package-manager-select'
@@ -11,16 +12,23 @@ export const CopyCommand = ({
   command,
   children,
   label,
+  className,
 }: {
   command: string | Partial<Record<PackageManager, string>>
   children?: React.ReactNode
   label: string
+  className?: string
 }) => {
   const { copied, copy } = useCopy(1600)
   const { preferredPm } = usePreferredPackageManager()
   const perPm = typeof command !== 'string'
   return (
-    <div className="mt-9 box-border flex h-12 max-w-[520px] items-center gap-1.5 rounded-[10px] border border-(--line2) bg-(--bg2) pr-1.5 pl-4">
+    <div
+      className={cn(
+        'box-border flex h-12 max-w-[520px] items-center gap-1.5 rounded-[10px] border border-(--line2) bg-(--bg2) pr-1.5 pl-4',
+        className,
+      )}
+    >
       <span className="min-w-0 flex-1 overflow-x-auto font-mono text-[13px] leading-none whitespace-nowrap text-(--fg) [scrollbar-width:none]">
         <span className="text-(--fg3)">$ </span>
         {perPm ? <PerPackageManager render={(pm) => command[pm]} /> : children}
@@ -30,7 +38,7 @@ export const CopyCommand = ({
         type="button"
         onClick={() => copy((perPm ? command[preferredPm] : command) ?? '', { enableToast: false })}
         aria-label={label}
-        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-transparent px-2.5 font-mono text-xs font-medium text-(--fg2) transition-colors duration-150 hover:border-(--line2) hover:text-(--fg)"
+        className="press inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 font-mono text-xs font-medium text-(--fg2) duration-150 hover:bg-(--bg3) hover:text-(--fg)"
       >
         <svg
           width="14"

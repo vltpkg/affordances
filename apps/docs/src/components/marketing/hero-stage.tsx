@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { cn } from 'cn'
 
 // three example pages, each as a person sees it and as its graph; the graph's lines are the protocol's
@@ -295,7 +295,19 @@ const box = (b: { t: number; l: number; w: number; h: number }) => ({
   width: b.w,
   height: b.h,
 })
-const text = (b: { t: number; l: number; f: number }) => ({ top: b.t, left: b.l, fontSize: b.f })
+// a line of text that travels by transform, from where the page sets it (right-aligned when `r`) to the
+// graph line that carries its value
+type At = { t: number; l: number; f: number; r?: boolean }
+const ghost = (human: At, graph: At, agent: boolean) => {
+  const at = agent ? graph : human
+  const x = !agent && human.r ? -100 : 0
+  return {
+    fontSize: human.f,
+    transform: `translate(${at.l}px, ${at.t}px) translateX(${x}%) scale(${at.f / human.f})`,
+  }
+}
+// the graph's first line, under the url bar; each line is 20px
+const line = (i: number) => 60 + i * 20
 
 // one url, two readers: switch the stage between the page a person sees and the graph an agent reads, and
 // watch the page's parts move to where the graph says them
@@ -312,6 +324,7 @@ export const HeroStage = () => {
   const timers = useRef<ReturnType<typeof setTimeout>[]>([])
   useEffect(() => () => timers.current.forEach(clearTimeout), [])
   const later = (fn: () => void, ms: number) => timers.current.push(setTimeout(fn, ms))
+  const tabs = useRef<HTMLDivElement>(null)
 
   const S = SC[sc]
   const n = counts[sc]
@@ -324,28 +337,36 @@ export const HeroStage = () => {
   const mid = l5.indexOf(', "', s1)
   const s2 = mid + 2
   const e2 = l5.lastIndexOf(' }')
-  const nameCol = lines[3]!.indexOf(': "') + 2
-  const valCol = lines[4]!.indexOf(S.marker)
-  const cntCol = lines[7]!.lastIndexOf(String(n))
+  const col = (c: number) => 20 + c * CW
   const pw = S.pillW
   const ms = {
-    img: P({ t: 64, l: 20, w: 480, h: 176 }, { t: 102, l: 10, w: 498, h: 104 }),
+    img: P({ t: 100, l: 20, w: 480, h: 160 }, { t: line(2) - 2, l: 10, w: 500, h: 104 }),
     p1: P(
-      { t: 342, l: 20, w: pw, h: 40 },
-      { t: 163, l: 20 + s1 * CW - 4, w: (mid - s1) * CW + 8, h: 22 },
+      { t: 356, l: 20, w: pw, h: 40 },
+      { t: line(5) - 1, l: col(s1) - 4, w: (mid - s1) * CW + 8, h: 22 },
     ),
     p2: P(
-      { t: 342, l: 28 + pw, w: pw, h: 40 },
-      { t: 163, l: 20 + s2 * CW - 4, w: (e2 - s2) * CW + 8, h: 22 },
+      { t: 356, l: 28 + pw, w: pw, h: 40 },
+      { t: line(5) - 1, l: col(s2) - 4, w: (e2 - s2) * CW + 8, h: 22 },
     ),
-    btn: P({ t: 398, l: 20, w: 480, h: 44 }, { t: 262, l: 10, w: 498, h: 104 }),
-    name: P({ t: 270, l: 20, f: 20 }, { t: 124, l: 20 + nameCol * CW, f: 12.5 }),
-    val: P(
-      { t: 274, l: 500 - S.value.length * 8.6, f: 17 },
-      { t: 144, l: 20 + valCol * CW, f: 12.5 },
-    ),
-    count: P({ t: 13, l: 480, f: 13 }, { t: 204, l: 20 + cntCol * CW, f: 12.5 }),
+    btn: P({ t: 410, l: 20, w: 480, h: 44 }, { t: line(10) - 2, l: 10, w: 500, h: 104 }),
   }
+  const gl = 12.5
+  const name = ghost(
+    { t: 290, l: 20, f: 20 },
+    { t: line(3), l: col(lines[3]!.indexOf(': "') + 2), f: gl },
+    agent,
+  )
+  const val = ghost(
+    { t: 294, l: 500, f: 17, r: true },
+    { t: line(4), l: col(lines[4]!.indexOf(S.marker)), f: gl },
+    agent,
+  )
+  const count = ghost(
+    { t: 53, l: 480, f: 13 },
+    { t: line(7), l: col(lines[7]!.lastIndexOf(String(n))), f: gl },
+    agent,
+  )
 
   const bump = (fromAgent: boolean) => {
     const next = n + 1
@@ -357,19 +378,6 @@ export const HeroStage = () => {
       later(() => setFlash(false), 900)
     }
   }
-
-  // the underline slides and resizes to the selected tab; until it's measured, the tab draws its own
-  const tabs = useRef<HTMLDivElement>(null)
-  useLayoutEffect(() => {
-    const root = tabs.current
-    const el = root?.querySelector<HTMLElement>(`[data-tab="${tab}"]`)
-    const bar = root?.querySelector<HTMLElement>('[data-bar]')
-    if (!root || !el || !bar) return
-    bar.style.transform = `translateX(${el.offsetLeft}px) scaleX(${el.offsetWidth})`
-    if ('measured' in root.dataset) return
-    root.dataset.measured = ''
-    requestAnimationFrame(() => (bar.dataset.ready = ''))
-  }, [tab])
 
   // a new scenario starts on the page a person sees
   const pick = (id: Id) => {
@@ -386,48 +394,29 @@ export const HeroStage = () => {
       setSc(id)
       setFading(false)
       setDelta('')
-    }, 170)
+    }, 150)
   }
 
-  return (
-    <div className="flex min-w-0 flex-[0_1_540px] flex-col gap-3.5">
-      <div
-        ref={tabs}
-        role="tablist"
-        aria-label="Example app"
-        className="group/tabs relative flex gap-5 border-b border-(--line)"
-      >
-        {ORDER.map((id) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            data-tab={id}
-            aria-selected={tab === id}
-            onClick={() => pick(id)}
-            className={cn(
-              'relative h-10 text-sm font-medium transition-colors duration-150 hover:text-(--fg)',
-              tab === id
-                ? 'text-(--fg) after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-(--fg) group-data-measured/tabs:after:hidden'
-                : 'text-(--fg3)',
-            )}
-          >
-            {SC[id].label}
-          </button>
-        ))}
-        <span
-          data-bar
-          aria-hidden
-          className="absolute -bottom-px left-0 h-0.5 w-px origin-left bg-(--fg) opacity-0 ease-out group-data-measured/tabs:opacity-100 data-ready:transition-transform data-ready:duration-200 motion-reduce:transition-none"
-        />
-      </div>
+  // tabs move with the arrow keys, and focus follows the selection
+  const onTabKey = (e: React.KeyboardEvent) => {
+    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
+    if (!step) return
+    e.preventDefault()
+    const id = ORDER[(ORDER.indexOf(tab) + step + ORDER.length) % ORDER.length]!
+    pick(id)
+    tabs.current?.querySelector<HTMLElement>(`[data-tab="${id}"]`)?.focus()
+  }
 
-      <div
-        className={cn('flex flex-wrap items-center justify-between gap-3', agent && 'is-agent-row')}
-      >
+  const seg =
+    'seg-b relative z-[1] h-9 w-[104px] rounded-full text-sm font-medium transition-colors duration-150'
+
+  return (
+    <div className="flex min-w-0 flex-[0_1_520px] flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
         <fieldset className="relative m-0 inline-flex min-w-0 rounded-full border border-(--line2) bg-(--bg2) p-[3px]">
-          <legend className="sr-only">View this page as</legend>
-          <div
+          <legend className="sr-only">Read this page as</legend>
+          <span
+            aria-hidden
             className={cn(
               'seg-ind absolute top-[3px] left-[3px] h-[calc(100%-6px)] w-[calc(50%-3px)] rounded-full bg-(--fg)',
               agent && 'is-agent',
@@ -437,10 +426,7 @@ export const HeroStage = () => {
             type="button"
             aria-pressed={!agent}
             onClick={() => setAgent(false)}
-            className={cn(
-              'seg-b relative z-[1] h-[38px] w-[112px] rounded-full text-sm font-medium text-(--fg2) max-[420px]:w-[100px]',
-              !agent && 'act-h',
-            )}
+            className={cn(seg, agent ? 'text-(--fg2) hover:text-(--fg)' : 'text-(--bg)')}
           >
             Human
           </button>
@@ -448,33 +434,61 @@ export const HeroStage = () => {
             type="button"
             aria-pressed={agent}
             onClick={() => setAgent(true)}
-            className={cn(
-              'seg-b relative z-[1] h-[38px] w-[112px] rounded-full text-sm font-medium text-(--fg2) max-[420px]:w-[100px]',
-              agent && 'act-a',
-            )}
+            className={cn(seg, agent ? 'text-(--agent-ink)' : 'text-(--fg2) hover:text-(--fg)')}
           >
             Agent
           </button>
         </fieldset>
-        <div className="accept font-mono text-xs whitespace-nowrap text-(--fg3)">
-          Accept:{' '}
-          <b className="font-normal text-(--fg2)">
-            {agent ? 'application/vnd.afford+json' : 'text/html'}
-          </b>
+        <div ref={tabs} role="tablist" aria-label="Example page" className="flex gap-1">
+          {ORDER.map((id) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              id={`stage-tab-${id}`}
+              data-tab={id}
+              aria-selected={tab === id}
+              aria-controls="stage"
+              tabIndex={tab === id ? 0 : -1}
+              onClick={() => pick(id)}
+              onKeyDown={onTabKey}
+              className="h-8 rounded-md px-2.5 text-sm font-medium text-(--fg3) transition-colors duration-150 hover:text-(--fg) aria-selected:bg-(--bg3) aria-selected:text-(--fg)"
+            >
+              {SC[id].label}
+            </button>
+          ))}
         </div>
       </div>
 
-      <div className={cn('stage-wrap w-[520px] max-w-full', fading && 'fading')}>
+      <div
+        id="stage"
+        role="tabpanel"
+        aria-labelledby={`stage-tab-${tab}`}
+        className={cn('stage-wrap w-[520px] max-w-full', fading && 'fading')}
+      >
         <div
           className={cn(
-            'stage relative box-border h-[490px] w-[520px] overflow-hidden rounded-[14px] border border-(--line2) bg-(--bg)',
+            'stage relative box-border h-[500px] w-[520px] overflow-hidden rounded-[14px] border border-(--line2) bg-(--bg)',
             agent && 'is-agent',
           )}
         >
           <div className="swap absolute inset-0">
-            <div className="absolute inset-x-0 top-0 h-12 border-b border-(--line)">
-              <div className="hum absolute top-[15px] left-5 text-sm font-semibold">{S.head}</div>
-              <div className="hum absolute top-4 right-11 text-(--fg2)">
+            {/* the url bar: the one thing that stays put, and the one header that changes */}
+            <div className="absolute inset-x-0 top-0 flex h-10 items-center justify-between gap-3 border-b border-(--line) bg-(--bg2) px-5 font-mono text-xs">
+              <span className="truncate text-(--fg)">
+                <span className="url-m text-(--fg3)">GET</span> {S.path}
+              </span>
+              <span className="whitespace-nowrap text-(--fg3)">
+                Accept:{' '}
+                <span className="url-a text-(--fg2)">
+                  {agent ? 'application/vnd.afford+json' : 'text/html'}
+                </span>
+              </span>
+            </div>
+
+            <div className="hum absolute inset-x-0 top-10 h-11 border-b border-(--line)">
+              <div className="absolute top-[13px] left-5 text-sm font-semibold">{S.head}</div>
+              <div className="absolute top-[14px] right-11 text-(--fg2)">
                 <svg
                   width="16"
                   height="16"
@@ -487,12 +501,6 @@ export const HeroStage = () => {
                   {icons[S.icon]}
                 </svg>
               </div>
-              <div className="agt absolute top-[17px] left-5 font-mono text-xs text-(--fg2)">
-                <span className="text-(--agent)">GET</span> {S.path}
-              </div>
-              <div className="agt absolute top-[17px] right-5 font-mono text-xs text-(--fg3)">
-                200 · graph
-              </div>
             </div>
 
             <div className="m box" style={box(ms.img)}>
@@ -501,59 +509,52 @@ export const HeroStage = () => {
                 <span className="sr-only">{S.art}</span>
               </div>
             </div>
-            <div className="hum absolute top-[252px] left-5 text-xs text-(--fg3)">{S.meta}</div>
-            <div className="m ghost font-semibold tracking-[-0.01em]" style={text(ms.name)}>
+            <div className="hum absolute top-[270px] left-5 text-xs text-(--fg3)">{S.meta}</div>
+            <div className="ghost font-semibold tracking-[-0.01em]" style={name}>
               {S.name}
             </div>
-            <div className="m ghost tabular-nums" style={text(ms.val)}>
+            <div className="ghost tabular-nums" style={val}>
               {S.value}
             </div>
-            <div className="m ghost text-(--fg2) tabular-nums" style={text(ms.count)}>
+            <div className="ghost text-(--fg2) tabular-nums" style={count}>
               {n}
+              <span className="sr-only"> in {S.key.split('.')[0]}</span>
             </div>
-            <div className="hum absolute top-80 left-5 text-xs text-(--fg3)">{S.optLabel}</div>
-            <button
-              type="button"
-              className="m pill sel"
-              style={box(ms.p1)}
-              aria-pressed
-              tabIndex={agent ? -1 : 0}
-            >
+            <div className="hum absolute top-[336px] left-5 text-xs text-(--fg3)">{S.optLabel}</div>
+            {/* the options are shown, not offered: one is picked, the other unavailable */}
+            <span className="m pill sel" style={box(ms.p1)}>
               <span className="hf">{S.pills[0]}</span>
-            </button>
-            <button
-              type="button"
-              className="m pill out"
-              style={box(ms.p2)}
-              disabled
-              aria-label={S.outLabel}
-            >
-              <span className="hf">{S.pills[1]}</span>
-            </button>
+            </span>
+            <span className="m pill out" style={box(ms.p2)}>
+              <span className="hf" aria-hidden>
+                {S.pills[1]}
+              </span>
+              <span className="sr-only">{S.outLabel}</span>
+            </span>
             <button
               type="button"
               className="m cta"
               style={box(ms.btn)}
               onClick={() => bump(false)}
-              tabIndex={agent ? -1 : 0}
+              inert={agent}
             >
               <span className="hf">{S.btn}</span>
             </button>
             <div
-              className="hum absolute top-[456px] left-5 text-xs text-(--fg2)"
+              className="hum absolute top-[466px] left-5 text-xs text-(--fg2)"
               aria-live="polite"
             >
               {added[sc] ? S.msg : ''}
             </div>
 
-            <div className="absolute inset-x-5 top-16" aria-hidden={!agent}>
-              {lines.map((line, i) => (
+            <div className="absolute inset-x-5 top-[60px]" aria-hidden={!agent}>
+              {lines.map((text, i) => (
                 <div
                   key={i}
                   className={cn('gl', i === 7 && flash && 'flash')}
-                  style={{ '--d': `${220 + i * 22}ms` } as React.CSSProperties}
+                  style={{ '--d': `${140 + i * 14}ms` } as React.CSSProperties}
                 >
-                  {jtok(line).map((p, j) => (
+                  {jtok(text).map((p, j) => (
                     <span key={j} className={p.c}>
                       {p.t}
                     </span>
@@ -561,41 +562,31 @@ export const HeroStage = () => {
                 </div>
               ))}
             </div>
-            {[
-              [106, 'entity'],
-              [203, 'entity'],
-              [246, 'action · session'],
-            ].map(([top, label]) => (
-              <div
-                key={top}
-                className="agt absolute right-[18px] rounded-sm border border-(--agent-line) bg-(--bg) px-1.5 py-1 font-mono text-[11px] leading-none text-(--agent)"
-                style={{ top: Number(top) }}
+
+            <div
+              className="agt absolute inset-x-0 bottom-0 flex h-[72px] items-center justify-between gap-3 border-t border-(--line) px-5 font-mono text-xs"
+              inert={!agent}
+            >
+              <span className="text-(--fg2)" aria-live="polite">
+                {delta || 'Call the action. Get back only what changed.'}
+              </span>
+              <button
+                type="button"
+                onClick={() => bump(true)}
+                className="press h-8 rounded-md border border-(--agent-line) bg-(--agent-soft) px-3 font-mono text-xs font-medium whitespace-nowrap text-(--agent) transition-colors duration-150 hover:bg-(--agent)/20"
               >
-                {label}
-              </div>
-            ))}
+                POST {S.action}
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="flex min-h-10 items-center justify-between gap-3 font-mono text-xs text-(--fg3)">
-        {agent ? (
-          <>
-            <span className="text-(--fg2)" aria-live="polite">
-              {delta || 'Call the action. Get back only what changed.'}
-            </span>
-            <button
-              type="button"
-              onClick={() => bump(true)}
-              className="h-9 rounded-lg border border-(--agent-line) bg-(--agent-soft) px-3 font-mono text-xs font-medium whitespace-nowrap text-(--agent)"
-            >
-              POST {S.action}
-            </button>
-          </>
-        ) : (
-          <span>Same URL, same session. Switch to Agent to see the graph.</span>
-        )}
-      </div>
+      <p className="text-sm text-pretty text-(--fg3)">
+        {agent
+          ? 'The same page, as its graph: what’s on it, and what can be done there.'
+          : 'Same URL, same session. Switch to Agent to read the page as JSON.'}
+      </p>
     </div>
   )
 }

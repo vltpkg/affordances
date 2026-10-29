@@ -72,7 +72,7 @@ export const Approvals = () => {
     lines.push({ a: '× ', ac: 'text-(--fg)', t: 'declined, so the call is never resent' })
 
   const button =
-    'inline-flex h-11 w-full items-center justify-center rounded-lg border px-[18px] text-sm font-medium transition-colors duration-150'
+    'press inline-flex h-11 w-full items-center justify-center rounded-lg border px-[18px] text-sm font-medium duration-150'
 
   return (
     <div
@@ -80,18 +80,11 @@ export const Approvals = () => {
       className="mt-12 grid grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] items-center gap-10 max-[899px]:grid-cols-1"
     >
       <div className="min-w-0 overflow-hidden rounded-xl border border-(--line2) bg-(--bg2)">
-        <div className="flex h-11 items-center justify-between border-b border-(--line) pr-2 pl-4 font-mono text-[12.5px] leading-none text-(--fg2)">
-          <span className="flex items-center gap-2 text-(--agent)">
+        <div className="flex h-11 items-center border-b border-(--line) px-4 font-mono text-[12.5px] leading-none text-(--agent)">
+          <span className="flex items-center gap-2">
             <span className="size-[7px] rounded-full bg-(--agent)" />
             agent · MCP session
           </span>
-          <button
-            type="button"
-            onClick={replay}
-            className="h-8 rounded-md border border-transparent px-2.5 font-mono text-xs font-medium text-(--fg2) hover:border-(--line2) hover:text-(--fg)"
-          >
-            Replay
-          </button>
         </div>
         <div className="overflow-x-auto border-b border-(--line) pt-3 pb-3.5">
           {SNIPPET.map((line, i) => (
@@ -124,22 +117,25 @@ export const Approvals = () => {
               {l.t}
             </div>
           ))}
-          {(step === 1 || step === 2) && <span className="blink" />}
         </div>
       </div>
-      <div className="relative flex min-h-[340px] items-center justify-center">
+      {/* the placeholder and the card share one cell, so the empty state is exactly the card's size */}
+      <div className="grid min-h-[340px] content-center justify-items-center max-[899px]:min-h-0">
         <div
-          className="absolute text-center font-mono text-xs leading-normal text-(--fg3) transition-opacity duration-300"
+          className="col-start-1 row-start-1 flex w-full max-w-[360px] items-center justify-center rounded-[14px] border border-dashed border-(--line2) font-mono text-xs text-(--fg3) transition-opacity duration-200"
           style={{ opacity: step >= 2 ? 0 : 1 }}
+          aria-hidden
         >
-          No requests yet.
+          {step === 1 ? 'Agent is calling placeOrder…' : 'No approval requests'}
         </div>
         <section
           className={cn(
-            'ask flex w-full max-w-[360px] flex-col gap-4 rounded-[14px] border border-(--line2) bg-(--bg) p-5',
+            'ask col-start-1 row-start-1 flex w-full max-w-[360px] flex-col gap-4 rounded-[14px] border border-(--line2) bg-(--bg) p-5',
             step >= 2 && 'on',
           )}
           aria-label="Approval request"
+          aria-hidden={step < 2}
+          inert={step < 2}
         >
           <div className="flex items-center justify-between text-[13px] text-(--fg3)">
             <span>Afford Supply · approval</span>
@@ -161,7 +157,7 @@ export const Approvals = () => {
               <b className="font-semibold text-(--fg) tabular-nums">$244.00</b>
             </div>
           </div>
-          {step === 2 && (
+          {step <= 2 && (
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -173,7 +169,7 @@ export const Approvals = () => {
               <button
                 type="button"
                 onClick={() => setStep(3)}
-                className={cn(button, 'border-(--fg) bg-(--fg) text-(--bg) hover:opacity-90')}
+                className={cn(button, 'border-(--fg) bg-(--fg) text-(--bg) hover:bg-(--fg)/86')}
               >
                 Approve
               </button>
@@ -185,7 +181,7 @@ export const Approvals = () => {
               <button
                 type="button"
                 onClick={replay}
-                className="h-8 rounded-md border border-transparent px-2.5 font-mono text-xs font-medium text-(--fg2) hover:border-(--line2) hover:text-(--fg)"
+                className="press h-8 rounded-md border border-(--line2) px-2.5 font-mono text-xs font-medium text-(--fg2) duration-150 hover:bg-(--bg3) hover:text-(--fg)"
               >
                 Replay
               </button>

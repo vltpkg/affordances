@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { cn } from 'cn'
+import { Code, SectionHead } from './section-head'
 
 const clamp = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v)
 const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`)
-const STICKY_TOP = 88
 
 // scroll drives the two panels from 0 to 1. on wide screens a tall track pins them under the header and
 // both follow the track; below 900px each panel runs as it enters the viewport. with reduced motion, or a
@@ -39,8 +39,12 @@ const useScrolly = () => {
       const t = track.current
       const s = sticky.current
       if (!t || !s) return
-      const span = t.getBoundingClientRect().height - s.offsetHeight
-      const v = span <= 0 ? 1 : clamp((STICKY_TOP - t.getBoundingClientRect().top) / span)
+      // how far the pinned panels have travelled down their track: 0 as they pin, 1 as they let go
+      const span = t.offsetHeight - s.offsetHeight
+      const v =
+        span <= 0
+          ? 1
+          : clamp((s.getBoundingClientRect().top - t.getBoundingClientRect().top) / span)
       setP([v, v])
     }
     const schedule = () => {
@@ -144,7 +148,7 @@ const Meter = ({
   <div>
     <div className="mb-6 flex items-baseline justify-between gap-2.5 font-mono text-xs text-(--fg3)">
       <span className={cn(over && 'font-medium text-(--fg)')}>{label}</span>
-      <span>{task}</span>
+      <span className="max-[899px]:hidden">{task}</span>
     </div>
     <div className="relative h-3.5 rounded-sm border border-(--line) bg-(--bg3)">
       <span className="sr-only">{label}</span>
@@ -178,41 +182,6 @@ const Meter = ({
 
 const SEG = ['var(--agent)', 'var(--agent-mid)', 'var(--agent-low)', 'var(--agent-min)']
 
-const Head = ({
-  eyebrow,
-  title,
-  live,
-  children,
-}: {
-  eyebrow: string
-  title: string
-  live: boolean
-  children: React.ReactNode
-}) => (
-  <div className={live ? 'mb-7' : 'mb-10'}>
-    <p className="mb-4 text-sm font-medium text-(--fg3)">{eyebrow}</p>
-    <h2
-      className={cn(
-        'max-w-[820px] font-semibold tracking-[-0.04em] text-balance max-[899px]:text-[34px]',
-        live ? 'text-4xl' : 'text-[44px]',
-        // after the size, which cn would otherwise let override it
-        'leading-[1.06]',
-      )}
-    >
-      {title}
-    </h2>
-    <p
-      className={cn(
-        'max-w-[620px] text-pretty text-(--fg2)',
-        live ? 'mt-3 text-base' : 'mt-5 text-lg',
-        'leading-[1.6]',
-      )}
-    >
-      {children}
-    </p>
-  </div>
-)
-
 const Split = ({ children }: { children: React.ReactNode }) => (
   <div className="grid grid-cols-2 overflow-hidden rounded-[14px] border border-(--line2) bg-(--bg) max-[899px]:grid-cols-1">
     {children}
@@ -220,7 +189,7 @@ const Split = ({ children }: { children: React.ReactNode }) => (
 )
 
 const panel =
-  'panel relative box-border flex min-h-[560px] min-w-0 flex-col gap-[18px] px-6 pt-[22px] pb-6'
+  'panel relative box-border flex min-h-[540px] min-w-0 flex-col gap-[18px] px-6 pt-[22px] pb-6'
 const second = 'border-l border-(--line2) max-[899px]:border-t max-[899px]:border-l-0'
 
 const STEPS = [
@@ -365,16 +334,16 @@ export const Before = () => {
 
   return (
     <div className={cn(live && 'live')}>
+      <SectionHead
+        eyebrow="Before"
+        id="h-before"
+        title="Serving agents today means describing every page five more times."
+      >
+        A markdown twin. An OpenAPI spec. MCP routes. Tool handlers. WebMCP glue. Each one a
+        hand-written copy of what the UI already knows.
+      </SectionHead>
       <div className="track relative" ref={track}>
         <div ref={sticky} className={cn(live && 'sticky')}>
-          <Head
-            eyebrow="Before"
-            title="Serving agents today means describing every page five more times."
-            live={live}
-          >
-            A markdown twin. An OpenAPI spec. MCP routes. Tool handlers. WebMCP glue. Each one a
-            hand-written copy of what the UI already knows.
-          </Head>
           <Split>
             <div className={panel} ref={left}>
               <PanelHead title="Developer" count={`${shown} files · 1 route`} />
@@ -455,7 +424,7 @@ export const After = () => {
   const rows = files.map((f) => {
     if (f.keep) {
       count++
-      return { d: f.d, n: f.n, s: 'renders', cls: 'on' }
+      return { d: f.d, n: f.n, s: 'renders', cls: 'on edited' }
     }
     if (f.g !== undefined) {
       const gone = pa > 0.1 + f.g * 0.05
@@ -491,17 +460,17 @@ export const After = () => {
 
   return (
     <div className={cn(live && 'live')}>
+      <SectionHead
+        eyebrow="After, with Afford"
+        id="h-after"
+        title="Three files per route. One definition."
+      >
+        <Code>page.tsx</Code> renders. <Code>state.ts</Code> says what’s on the page.{' '}
+        <Code>actions.ts</Code> says what can be done. Every agent surface is derived from those, so
+        there’s nothing left to drift.
+      </SectionHead>
       <div className="track relative" ref={track}>
         <div ref={sticky} className={cn(live && 'sticky')}>
-          <Head
-            eyebrow="After, with Afford"
-            title="Three files per route. One definition."
-            live={live}
-          >
-            <Code>page.tsx</Code> renders. <Code>state.ts</Code> says what’s on the page.{' '}
-            <Code>actions.ts</Code> says what can be done. Every agent surface is derived from
-            those, so there’s nothing left to drift.
-          </Head>
           <Split>
             <div className={panel} ref={left}>
               <PanelHead title="Developer" count={`${count} files · 1 route`} />
@@ -584,9 +553,3 @@ export const After = () => {
     </div>
   )
 }
-
-export const Code = ({ children }: { children: React.ReactNode }) => (
-  <code className="rounded-[5px] border border-(--line2) bg-(--bg2) px-[5px] py-px font-mono text-[0.86em] text-(--fg)">
-    {children}
-  </code>
-)
