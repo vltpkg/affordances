@@ -1,4 +1,4 @@
-import { defineState } from '@/lib/afford'
+import { defineState } from '@/lib/affordances'
 import { searchProducts } from '@/lib/store'
 import { listing } from '../state'
 

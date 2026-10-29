@@ -1,5 +1,5 @@
 import { Children, isValidElement } from 'react'
-import { Table } from '@afford/ui/components/table'
+import { Table } from '@affordances/ui/components/table'
 
 type Children = { children?: React.ReactNode }
 
@@ -11,7 +11,7 @@ const apiHeaders = new Set([
   'Event',
   'Member',
   'Name',
-  // afford's reference tables
+  // Affordances' reference tables
   'Option',
   'Prop',
   'Argument',

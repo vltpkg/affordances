@@ -28,7 +28,7 @@ test('renders a manifest', () => {
 })
 
 const project = (files: Record<string, string>) => {
-  const root = mkdtempSync(path.join(tmpdir(), 'afford-'))
+  const root = mkdtempSync(path.join(tmpdir(), 'affordances-'))
   for (const [file, source] of Object.entries(files)) {
     mkdirSync(path.dirname(path.join(root, file)), { recursive: true })
     writeFileSync(path.join(root, file), source)
@@ -64,9 +64,9 @@ test('fails on a state file without a default export', () => {
   rmSync(root, { recursive: true })
 })
 
-test('generate writes .afford/manifest.ts', () => {
+test('generate writes .affordances/manifest.ts', () => {
   generate(fixture, { name: 'Fixture' })
-  expect(readFileSync(path.join(fixture, '.afford/manifest.ts'), 'utf8')).toBe(
+  expect(readFileSync(path.join(fixture, '.affordances/manifest.ts'), 'utf8')).toBe(
     render(scan(fixture), { name: 'Fixture' }),
   )
 })

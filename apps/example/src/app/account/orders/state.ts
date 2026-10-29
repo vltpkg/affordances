@@ -1,4 +1,4 @@
-import { defineState } from '@/lib/afford'
+import { defineState } from '@/lib/affordances'
 import { formatPrice, getOrders } from '@/lib/store'
 
 export const loadOrders = (sid: string | null) => ({

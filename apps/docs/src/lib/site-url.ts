@@ -13,4 +13,4 @@ export const siteUrl = new URL(
 )
 
 export const description =
-  'Afford gives every page of a Next.js app a JSON view for agents, and turns one action definition into a server action, an HTTP endpoint, a WebMCP tool, and an MCP tool.'
+  'Affordances gives every page of a Next.js app a JSON view for agents, and turns one action definition into a server action, an HTTP endpoint, a WebMCP tool, and an MCP tool.'

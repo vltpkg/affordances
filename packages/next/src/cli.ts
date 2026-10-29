@@ -6,7 +6,7 @@ import { API_PATH } from './constants.ts'
 
 const root = process.cwd()
 const [command = 'help'] = process.argv.slice(2)
-const log = (line: string) => console.log(`afford  ${line}`)
+const log = (line: string) => console.log(`affordances  ${line}`)
 
 const routeFile = () =>
   path.join(findAppDir(root), ...API_PATH.split('/').filter(Boolean), '[[...path]]', 'route.ts')
@@ -15,11 +15,11 @@ const init = () => {
   const file = routeFile()
   if (existsSync(file)) log(`kept ${path.relative(root, file)}`)
   else {
-    const manifest = path.relative(path.dirname(file), path.join(root, '.afford', 'manifest'))
+    const manifest = path.relative(path.dirname(file), path.join(root, '.affordances', 'manifest'))
     mkdirSync(path.dirname(file), { recursive: true })
     writeFileSync(
       file,
-      `import { createRouteHandler } from '@afford/next/route'
+      `import { createRouteHandler } from '@affordances/next/route'
 import { manifest } from '${manifest}'
 
 const handler = createRouteHandler(manifest)
@@ -34,32 +34,35 @@ export { handler as GET, handler as POST }
     existsSync(path.join(root, f)),
   )
   const source = config && readFileSync(path.join(root, config), 'utf8')
-  if (source && !source.includes('withAfford')) {
-    const wrapped = source.replace(/export default (\w+)/, 'export default withAfford($1)')
+  if (source && !source.includes('withAffordances')) {
+    const wrapped = source.replace(/export default (\w+)/, 'export default withAffordances($1)')
     if (wrapped === source)
-      log(`wrap your config: export default withAfford(nextConfig) in ${config}`)
+      log(`wrap your config: export default withAffordances(nextConfig) in ${config}`)
     else {
       writeFileSync(
         path.join(root, config!),
-        `import { withAfford } from '@afford/next/config'\n${wrapped}`,
+        `import { withAffordances } from '@affordances/next/config'\n${wrapped}`,
       )
-      log(`wrapped ${config} with withAfford`)
+      log(`wrapped ${config} with withAffordances`)
     }
   }
 
   const gitignore = path.join(root, '.gitignore')
-  if (!existsSync(gitignore) || !readFileSync(gitignore, 'utf8').split('\n').includes('.afford')) {
+  if (
+    !existsSync(gitignore) ||
+    !readFileSync(gitignore, 'utf8').split('\n').includes('.affordances')
+  ) {
     appendFileSync(gitignore, '\n.afford\n')
-    log('added .afford to .gitignore')
+    log('added .affordances to .gitignore')
   }
 
   generate(root)
-  log('generated .afford/manifest.ts')
+  log('generated .affordances/manifest.ts')
   log('next: add actions.ts and state.ts next to a page, and set `expose` on each action')
 }
 
 if (command === 'init') init()
 else if (command === 'build') {
   const entries = generate(root)
-  log(`${entries.length} routes → .afford/manifest.ts`)
-} else console.log('usage: afford <init|build>')
+  log(`${entries.length} routes → .affordances/manifest.ts`)
+} else console.log('usage: affordances <init|build>')

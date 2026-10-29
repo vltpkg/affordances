@@ -2,8 +2,8 @@
 import { act, StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { MEDIA_TYPE, type Graph } from '@afford/protocol'
-import { AffordProvider, useAfford, type ModelContextTool } from '../src/index.ts'
+import { MEDIA_TYPE, type Graph } from '@affordances/protocol'
+import { AffordancesProvider, useAffordances, type ModelContextTool } from '../src/index.ts'
 
 // lets react know act() is available outside a test renderer
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -71,7 +71,7 @@ const mount = async (ui: React.ReactNode) => {
 }
 
 test('registers every available action as a tool, with hints', async () => {
-  const root = await mount(<AffordProvider path="/products/tee">{null}</AffordProvider>)
+  const root = await mount(<AffordancesProvider path="/products/tee">{null}</AffordancesProvider>)
   expect([...tools.keys()].toSorted()).toEqual(['addToCart', 'lookup', 'placeOrder'])
   expect(tools.get('lookup')!.annotations).toEqual({ readOnlyHint: true, consequentialHint: false })
   expect(tools.get('placeOrder')!.annotations).toEqual({
@@ -89,7 +89,7 @@ test('registers every available action as a tool, with hints', async () => {
 test('strict mode double mount leaves one live registration per tool', async () => {
   const root = await mount(
     <StrictMode>
-      <AffordProvider path="/products/tee">{null}</AffordProvider>
+      <AffordancesProvider path="/products/tee">{null}</AffordancesProvider>
     </StrictMode>,
   )
   expect([...tools.keys()].toSorted()).toEqual(['addToCart', 'lookup', 'placeOrder'])
@@ -100,9 +100,9 @@ test('strict mode double mount leaves one live registration per tool', async () 
 test('tools call the page endpoint and report the delta', async () => {
   const onDelta = vi.fn()
   await mount(
-    <AffordProvider path="/products/tee" onDelta={onDelta}>
+    <AffordancesProvider path="/products/tee" onDelta={onDelta}>
       {null}
-    </AffordProvider>,
+    </AffordancesProvider>,
   )
   const result = await act(() => tools.get('addToCart')!.execute({ sku: 'M' }, {}))
   expect(JSON.parse(result as string)).toEqual({ ok: true, changed: { cart: { count: 1 } } })
@@ -115,9 +115,9 @@ test('tools call the page endpoint and report the delta', async () => {
 test('confirm actions ask the person, then resend with confirm: true', async () => {
   const confirm = vi.fn(async () => true)
   await mount(
-    <AffordProvider path="/checkout" confirm={confirm}>
+    <AffordancesProvider path="/checkout" confirm={confirm}>
       {null}
-    </AffordProvider>,
+    </AffordancesProvider>,
   )
   const result = await act(() => tools.get('placeOrder')!.execute({}, {}))
   expect(confirm).toHaveBeenCalledWith('Order 1 item')
@@ -133,31 +133,31 @@ test('confirm actions ask the person, then resend with confirm: true', async () 
 
 test('a declined confirm sends nothing more', async () => {
   await mount(
-    <AffordProvider path="/checkout" confirm={() => false}>
+    <AffordancesProvider path="/checkout" confirm={() => false}>
       {null}
-    </AffordProvider>,
+    </AffordancesProvider>,
   )
   const result = await act(() => tools.get('placeOrder')!.execute({}, {}))
   expect(JSON.parse(result as string).error.code).toBe('confirm_required')
   expect(fetchMock.mock.calls.filter(([, i]) => i?.method === 'POST')).toHaveLength(1)
 })
 
-test('useAfford exposes the graph', async () => {
+test('useAffordances exposes the graph', async () => {
   let seen: Graph | null = null
   const Probe = () => {
-    seen = useAfford().graph
+    seen = useAffordances().graph
     return null
   }
   await mount(
-    <AffordProvider path="/products/tee">
+    <AffordancesProvider path="/products/tee">
       <Probe />
-    </AffordProvider>,
+    </AffordancesProvider>,
   )
   expect(seen).toEqual(graph)
 })
 
 test('no modelContext: nothing registers, nothing throws', async () => {
   delete (document as { modelContext?: unknown }).modelContext
-  await mount(<AffordProvider path="/products/tee">{null}</AffordProvider>)
+  await mount(<AffordancesProvider path="/products/tee">{null}</AffordancesProvider>)
   expect(tools.size).toBe(0)
 })

@@ -1,5 +1,5 @@
 // no 'use client': in a server component, `action` is the real defineAction function and carries its name
-const AFFORD = Symbol.for('afford.action')
+const AFFORDANCES = Symbol.for('affordances.action')
 
 export type AffordanceProps = {
   children: React.ReactNode
@@ -13,15 +13,16 @@ export type AffordanceProps = {
 
 // marks the element(s) a person would use for an action, for DOM-reading agents and the dev overlay
 export const Affordance = ({ action, name, input, children }: AffordanceProps) => {
-  const resolved = name ?? (action as { [AFFORD]?: { name: string } } | undefined)?.[AFFORD]?.name
+  const resolved =
+    name ?? (action as { [AFFORDANCES]?: { name: string } } | undefined)?.[AFFORDANCES]?.name
   if (!resolved)
     throw new Error(
       '<Affordance action> needs an action from defineAction, used in a server component. In a client component, pass name="…" instead.',
     )
   return (
     <span
-      data-afford-action={resolved}
-      data-afford-input={input && JSON.stringify(input)}
+      data-affordances-action={resolved}
+      data-affordances-input={input && JSON.stringify(input)}
       style={{ display: 'contents' }}
     >
       {children}

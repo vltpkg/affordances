@@ -3,9 +3,9 @@
 The same five shopping tasks run against `apps/example`, by two agents on the same model:
 
 - **browser**: drives Chromium through Playwright and reads each page as an accessibility snapshot. Its tools are `goto`, `click`, `fill`, and `press`. A snapshot is far cheaper than a screenshot, so this is a generous baseline.
-- **afford**: reads graphs and calls actions through `@afford/mcp`'s client, with two tools: `afford_open` and `afford_call`.
+- **afford**: reads graphs and calls actions through `@affordances/mcp`'s client, with two tools: `affordances_open` and `affordances_call`.
 
-The two agents use the same model (`claude-opus-5-5` by default, `--model` for another) at the same effort. The Afford agent gets the site index up front (every route and action, ~400 tokens for the store), as an MCP client gets it from `@afford/mcp`'s server instructions. For each run the bench records turns, tool calls, tokens split into input, cache reads, cache writes and output, dollar cost at list prices, wall time, time to first action, a trace of every tool call (name, input, result size, time), and success. Success is checked against the store, not taken from the agent's word: the cart and orders of the agent's own session, or the answer text for the question tasks.
+The two agents use the same model (`claude-opus-5-5` by default, `--model` for another) at the same effort. The Affordances agent gets the site index up front (every route and action, ~400 tokens for the store), as an MCP client gets it from `@affordances/mcp`'s server instructions. For each run the bench records turns, tool calls, tokens split into input, cache reads, cache writes and output, dollar cost at list prices, wall time, time to first action, a trace of every tool call (name, input, result size, time), and success. Success is checked against the store, not taken from the agent's word: the cart and orders of the agent's own session, or the answer text for the question tasks.
 
 | Task              | Prompt                                                                           |
 | ----------------- | -------------------------------------------------------------------------------- |

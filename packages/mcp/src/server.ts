@@ -11,7 +11,7 @@ const failure = (error: unknown) => ({
   content: [{ type: 'text' as const, text: (error as Error).message }],
 })
 
-// two generic tools over any Afford site: read a page's graph, call one of its actions
+// two generic tools over any Affordances site: read a page's graph, call one of its actions
 // `instructions` (e.g. describeSite(index)) reach the model through the MCP client, so it knows the routes and
 // actions before its first call
 export const createServer = (
@@ -20,13 +20,13 @@ export const createServer = (
 ) => {
   const client = createClient(site, options)
   const server = new McpServer(
-    { name: 'afford', version: '0.0.0' },
+    { name: 'affordances', version: '0.0.0' },
     options.instructions ? { instructions: options.instructions } : undefined,
   )
   const origin = new URL(site).origin
 
   server.registerTool(
-    'afford_open',
+    'affordances_open',
     {
       title: 'Open a page',
       description: `Read a page on ${origin}: its entities (what the page shows), actions (what you can do there, with input schemas and availability), and nav (where to go next). Start at "/".`,
@@ -37,7 +37,7 @@ export const createServer = (
   )
 
   server.registerTool(
-    'afford_call',
+    'affordances_call',
     {
       title: 'Call an action',
       description: `Call an action from a page's graph on ${origin}. Returns a delta: changed entities, output, actions that appeared or went away, and a redirect to open next. Actions with expose "confirm" first answer confirm_required with a summary: show it to the user, and only resend with confirm: true once they approve.`,

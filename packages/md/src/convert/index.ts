@@ -47,9 +47,9 @@ const CHROME =
 
 const isElement = (node: unknown): node is Element => (node as Element)?.type === 'element'
 const mode = (node: Element) =>
-  node.tagName === 'afford-md'
+  node.tagName === 'affordances-md'
     ? String(node.properties.dataMode ?? '')
-    : node.properties.dataAffordMd === 'skip'
+    : node.properties.dataAffordancesMd === 'skip'
       ? 'skip'
       : undefined
 
@@ -70,7 +70,7 @@ const prune = (parent: HastRoot | Element) => {
         {
           type: 'element',
           tagName: block ? 'div' : 'span',
-          properties: { dataAffordMdText: md },
+          properties: { dataAffordancesMdText: md },
           children: [{ type: 'text', value: md }],
         },
       ]
@@ -144,11 +144,11 @@ const extract = (body: HastRoot, how: Options['extract']): HastRoot => {
   if (typeof how === 'function') return how(body)
   if (how === 'none') return body
   // a main inside another main is already part of it
-  const marked = selectAll('afford-md[data-mode=main]', body)
+  const marked = selectAll('affordances-md[data-mode=main]', body)
   const outer = marked.filter(
     (m) =>
       !marked.some(
-        (other) => other !== m && selectAll('afford-md[data-mode=main]', other).includes(m),
+        (other) => other !== m && selectAll('affordances-md[data-mode=main]', other).includes(m),
       ),
   )
   if (outer.length) return { type: 'root', children: outer }
@@ -361,9 +361,9 @@ const wrap =
 const verbatim =
   (fallback: Handle): Handle =>
   (state, node, parent) =>
-    node.properties.dataAffordMdText === undefined
+    node.properties.dataAffordancesMdText === undefined
       ? fallback(state, node, parent)
-      : ({ type: 'html', value: String(node.properties.dataAffordMdText) } as never)
+      : ({ type: 'html', value: String(node.properties.dataAffordancesMdText) } as never)
 
 // <pre data-title="route.ts"> keeps its title as fence meta: ```ts title="route.ts"
 const pre: Handle = (state, node) => {
@@ -387,7 +387,7 @@ const handlers: Handlers = {
   span: verbatim(defaultHandlers.span),
   div: verbatim(defaultHandlers.div),
   // main and only markers are plain wrappers
-  'afford-md': (state, node) => state.all(node) as never,
+  'affordances-md': (state, node) => state.all(node) as never,
   // values and placeholders are the user's, not the page's; task-list checkboxes are read by the li handler
   input: () => undefined,
   select: () => undefined,

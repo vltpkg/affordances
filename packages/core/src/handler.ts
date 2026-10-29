@@ -9,9 +9,16 @@ import {
   type ErrorCode,
   type Graph,
   type SiteIndex,
-} from '@afford/protocol'
-import { AFFORD, validate, type AnyAction, type AnyState, type Auth, type Ctx } from './action.ts'
-import { AffordError, RedirectSignal } from './errors.ts'
+} from '@affordances/protocol'
+import {
+  AFFORDANCES,
+  validate,
+  type AnyAction,
+  type AnyState,
+  type Auth,
+  type Ctx,
+} from './action.ts'
+import { AffordancesError, RedirectSignal } from './errors.ts'
 import { compile, match, sort } from './route.ts'
 
 export type Manifest = {
@@ -23,9 +30,9 @@ export type Manifest = {
 
 export type HandlerOptions = {
   manifest: Manifest
-  // stripped from the request path before matching, e.g. '/api/afford' when a proxy rewrites there
+  // stripped from the request path before matching, e.g. '/api/affordances' when a proxy rewrites there
   basePath?: string
-  // defaults to the auth the actions were defined with (createAfford)
+  // defaults to the auth the actions were defined with (createAffordances)
   auth?: Auth<unknown>
   // true to allow; a number is seconds until the caller may retry
   rateLimit?: (args: {
@@ -58,7 +65,7 @@ const headers = {
 const json = (body: Graph | Delta | SiteIndex, init: ResponseInit = {}) =>
   Response.json(body, { ...init, headers: { ...headers, ...init.headers } })
 
-const fail = (error: AffordError, init: ResponseInit = {}) =>
+const fail = (error: AffordancesError, init: ResponseInit = {}) =>
   json(
     {
       ok: false,
@@ -71,13 +78,13 @@ const fail = (error: AffordError, init: ResponseInit = {}) =>
     { status: status[error.code], ...init },
   )
 
-const exposed = (actions: AnyAction[]) => actions.filter((action) => action[AFFORD].expose)
+const exposed = (actions: AnyAction[]) => actions.filter((action) => action[AFFORDANCES].expose)
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
 // an action as the site index lists it: everything but this request's availability
 const summarize = (action: AnyAction): ActionSummary => {
-  const meta = action[AFFORD]
+  const meta = action[AFFORDANCES]
   return {
     name: meta.name,
     description: meta.description,
@@ -95,7 +102,7 @@ const describe = async (
   state: Record<string, unknown>,
   ctx: Ctx,
 ): Promise<ActionDescriptor> => {
-  const meta = action[AFFORD]
+  const meta = action[AFFORDANCES]
   const descriptor: ActionDescriptor = { ...summarize(action), available: true }
   if (meta.expose !== 'public' && !ctx.session)
     return { ...descriptor, available: false, reason: 'Requires a session' }
@@ -109,7 +116,8 @@ export const createHandler = (options: HandlerOptions) => {
   const { manifest, basePath = '' } = options
   const routes = sort(Object.keys(manifest.routes).map(compile))
   const allActions = Object.values(manifest.routes).flatMap((route) => route.actions)
-  const auth = options.auth ?? allActions.find((action) => action[AFFORD].auth)?.[AFFORD].auth
+  const auth =
+    options.auth ?? allActions.find((action) => action[AFFORDANCES].auth)?.[AFFORDANCES].auth
 
   const resolve = (path: string) => {
     for (const route of routes) {
@@ -120,7 +128,7 @@ export const createHandler = (options: HandlerOptions) => {
 
   const load = async (route: NonNullable<ReturnType<typeof resolve>>, url: URL, ctx: Ctx) => {
     const searchParams = new URLSearchParams(url.searchParams)
-    searchParams.delete('afford')
+    searchParams.delete('affordances')
     const state = (await route.state?.load({ params: route.params, searchParams, ctx })) ?? {}
     const actions = await Promise.all(exposed(route.actions).map((a) => describe(a, state, ctx)))
     return { state, actions }
@@ -148,30 +156,33 @@ export const createHandler = (options: HandlerOptions) => {
     // 1. resolve
     const body = Call.safeParse(await request.json().catch(() => undefined))
     if (!body.success)
-      throw new AffordError('invalid_input', 'Body must be { action, input?, confirm? }')
-    const action = exposed(route.actions).find((a) => a[AFFORD].name === body.data.action)
+      throw new AffordancesError('invalid_input', 'Body must be { action, input?, confirm? }')
+    const action = exposed(route.actions).find((a) => a[AFFORDANCES].name === body.data.action)
     if (!action)
-      throw new AffordError('not_found', `No action named ${body.data.action} on ${route.pattern}`)
-    const meta = action[AFFORD]
+      throw new AffordancesError(
+        'not_found',
+        `No action named ${body.data.action} on ${route.pattern}`,
+      )
+    const meta = action[AFFORDANCES]
 
     // 2. csrf + expose: a cookie-authenticated call has to come from the site (or an allowed origin)
     const bearer = request.headers.get('authorization')?.startsWith('Bearer ')
     if (!bearer && request.headers.has('cookie')) {
       const origin = request.headers.get('origin')
       if (!origin || ![url.origin, ...(options.allowedOrigins ?? [])].includes(origin))
-        throw new AffordError(
+        throw new AffordancesError(
           'unauthorized',
           'Cookie-authenticated calls need a matching Origin header, or use a bearer token',
         )
     }
     if (meta.expose !== 'public' && !ctx.session)
-      throw new AffordError('unauthorized', `${meta.name} requires a session`)
+      throw new AffordancesError('unauthorized', `${meta.name} requires a session`)
 
     // 3. rate limit
     const limit = await options.rateLimit?.({ request, action: meta.name, session: ctx.session })
     if (typeof limit === 'number')
       return fail(
-        new AffordError('rate_limited', `Too many calls to ${meta.name}; retry in ${limit}s`),
+        new AffordancesError('rate_limited', `Too many calls to ${meta.name}; retry in ${limit}s`),
         {
           headers: { 'retry-after': String(limit) },
         },
@@ -182,11 +193,11 @@ export const createHandler = (options: HandlerOptions) => {
     const before = await load(route, url, ctx)
     const guard = meta.guard ? await meta.guard({ input, state: before.state, ctx }) : true
     if (guard !== true)
-      throw new AffordError('unavailable', guard || `${meta.name} is unavailable right now`)
+      throw new AffordancesError('unavailable', guard || `${meta.name} is unavailable right now`)
 
     // 6. confirm
     if (meta.expose === 'confirm' && body.data.confirm !== true)
-      throw new AffordError(
+      throw new AffordancesError(
         'confirm_required',
         // only the summary: confirm_required itself tells the agent to resend with confirm: true once approved
         (await meta.summary?.({ input, state: before.state })) ?? `Run ${meta.name}`,
@@ -232,7 +243,7 @@ export const createHandler = (options: HandlerOptions) => {
     try {
       if (request.method === 'GET' && path === WELL_KNOWN_PATH) return json(siteIndex())
       const route = resolve(path)
-      if (!route) throw new AffordError('not_found', `No Afford graph for ${path}`)
+      if (!route) throw new AffordancesError('not_found', `No Affordances graph for ${path}`)
       const session = auth ? await auth(request) : null
       const ctx: Ctx = { session, request, via: 'agent' }
 
@@ -250,9 +261,9 @@ export const createHandler = (options: HandlerOptions) => {
       if (request.method === 'POST') return await call(request, route, url, ctx)
       return new Response(null, { status: 405, headers: { allow: 'GET, POST' } })
     } catch (error) {
-      if (error instanceof AffordError) return fail(error)
-      console.error('[afford]', error)
-      return fail(new AffordError('internal', 'Something went wrong'))
+      if (error instanceof AffordancesError) return fail(error)
+      console.error('[affordances]', error)
+      return fail(new AffordancesError('internal', 'Something went wrong'))
     }
   }
 }

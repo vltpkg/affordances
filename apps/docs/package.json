@@ -1,5 +1,5 @@
 {
-  "name": "@afford/docs",
+  "name": "@affordances/docs",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -14,12 +14,12 @@
     "typedoc:check": "node scripts/typedoc.mts --check"
   },
   "dependencies": {
-    "@afford/core": "workspace:*",
-    "@afford/md": "workspace:*",
-    "@afford/next": "workspace:*",
-    "@afford/protocol": "workspace:*",
-    "@afford/react": "workspace:*",
-    "@afford/ui": "workspace:*",
+    "@affordances/core": "workspace:*",
+    "@affordances/md": "workspace:*",
+    "@affordances/next": "workspace:*",
+    "@affordances/protocol": "workspace:*",
+    "@affordances/react": "workspace:*",
+    "@affordances/ui": "workspace:*",
     "@mdx-js/react": "^3.1.1",
     "@types/mdx": "^2.0.13",
     "cn": "^0.5.0",

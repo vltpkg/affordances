@@ -8,13 +8,13 @@ export const usd = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumSignificantDigits: 2 })
 export const pct = (r: number) => `${Math.round(r * 100)}%`
 export const passed = (a: BenchAgent, runs: number) => Math.round(a.successRate * runs)
-// "2.6×", and whether that's in the Afford agent's favour (lower is better for every metric here)
+// "2.6×", and whether that's in the Affordances agent's favour (lower is better for every metric here)
 export const times = (browser: number, afford: number) =>
   afford <= browser
     ? { x: `${(browser / afford).toFixed(1)}×`, better: true }
     : { x: `${(afford / browser).toFixed(1)}×`, better: false }
 
-// a run's four headline figures: the Afford agent against the browser agent, big number first
+// a run's four headline figures: the Affordances agent against the browser agent, big number first
 export const headline = ({ browser: b, afford: a }: BenchRun) => {
   const tok = (1 - a.tokens / b.tokens) * 100
   const time = times(b.ms, a.ms)

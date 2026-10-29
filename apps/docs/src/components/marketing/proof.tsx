@@ -13,7 +13,7 @@ type Metric = 'tokens' | 'ms'
 
 const config = {
   browser: { label: 'Browser agent', colors: { light: ['var(--fg3)'] } },
-  afford: { label: 'Afford agent', colors: { light: ['var(--agent)'] } },
+  afford: { label: 'Affordances agent', colors: { light: ['var(--agent)'] } },
 }
 
 export const Dot = ({ agent }: { agent?: boolean }) => (
@@ -136,7 +136,7 @@ const Toggle = <T extends string | number>({
   </fieldset>
 )
 
-// one run per task, browser agent against Afford agent, as tokens or seconds. the marketing proof section and
+// one run per task, browser agent against Affordances agent, as tokens or seconds. the marketing proof section and
 // the bench page both draw it
 export const TaskChart = ({ run, className }: { run: ProofRun; className?: string }) => {
   // the chart mounts in the browser only: it measures its box, and stamps Date.now() as it renders,
@@ -206,7 +206,7 @@ export const TaskChart = ({ run, className }: { run: ProofRun; className?: strin
             </span>
             <span className="flex items-center gap-1.5">
               <Dot agent />
-              Afford agent
+              Affordances agent
             </span>
           </div>
           <Toggle
@@ -282,11 +282,11 @@ export const TaskChart = ({ run, className }: { run: ProofRun; className?: strin
             <tr>
               <th scope="col">Task</th>
               <th scope="col">Browser agent tokens</th>
-              <th scope="col">Afford agent tokens</th>
+              <th scope="col">Affordances agent tokens</th>
               <th scope="col">Browser agent time</th>
-              <th scope="col">Afford agent time</th>
+              <th scope="col">Affordances agent time</th>
               <th scope="col">Browser agent passed</th>
-              <th scope="col">Afford agent passed</th>
+              <th scope="col">Affordances agent passed</th>
             </tr>
           </thead>
           <tbody>
@@ -312,7 +312,7 @@ export const TaskChart = ({ run, className }: { run: ProofRun; className?: strin
   )
 }
 
-// the bench, as numbers first and then per task: browser agent against Afford agent on one model, with a
+// the bench, as numbers first and then per task: browser agent against Affordances agent on one model, with a
 // toggle when more than one model has a committed run. every figure is computed from the results files
 export const Proof = ({ runs }: { runs: ProofRun[] }) => {
   const [m, setM] = useState(0)
@@ -356,7 +356,7 @@ export const Proof = ({ runs }: { runs: ProofRun[] }) => {
             <dd className="order-3 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-(--fg3) tabular-nums">
               <span className="flex items-center gap-1.5">
                 <Dot agent />
-                <span className="sr-only">Afford agent </span>
+                <span className="sr-only">Affordances agent </span>
                 {s.a}
               </span>
               <span className="flex items-center gap-1.5">
@@ -376,8 +376,8 @@ export const Proof = ({ runs }: { runs: ProofRun[] }) => {
           </span>{' '}
           {bMiss.length > 0 && <>It failed {bMiss.join(' and ')}. </>}
           {aMiss.length
-            ? `The Afford agent failed ${aMiss.join(' and ')}.`
-            : 'The Afford agent completed every task.'}
+            ? `The Affordances agent failed ${aMiss.join(' and ')}.`
+            : 'The Affordances agent completed every task.'}
         </p>
       )}
       {!bMiss.length && !aMiss.length && other >= 0 && other !== m && (

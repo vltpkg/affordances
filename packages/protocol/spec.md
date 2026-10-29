@@ -1,32 +1,32 @@
-# Afford protocol, version 0
+# Affordances protocol, version 0
 
-Afford lets an agent read and operate a web page through the same URL a person uses, with the same session. A page answers in HTML for browsers and in JSON for agents. The JSON lists what the page shows (entities), what can be done there (actions), and where to go next (nav). Calling an action returns a delta: the parts of the page that changed.
+Affordances lets an agent read and operate a web page through the same URL a person uses, with the same session. A page answers in HTML for browsers and in JSON for agents. The JSON lists what the page shows (entities), what can be done there (actions), and where to go next (nav). Calling an action returns a delta: the parts of the page that changed.
 
 This document is normative. The key words "must", "must not", "should", and "may" are used as in RFC 2119. The JSON Schemas in `schemas/` are generated from the same source as the TypeScript types and are authoritative for shapes.
 
 ## Media type
 
-All Afford documents use `application/vnd.afford+json`. A server must not return an Afford document for a request that did not ask for one.
+All Affordances documents use `application/vnd.affordances+json`. A server must not return an Affordances document for a request that did not ask for one.
 
 ## Discovery
 
-**Per page.** A client requests the page's own URL with `Accept: application/vnd.afford+json`. The server responds with a [graph](#graph) for that page, or a `not_found` [delta](#delta) with status `404` if the page has no Afford graph.
+**Per page.** A client requests the page's own URL with `Accept: application/vnd.affordances+json`. The server responds with a [graph](#graph) for that page, or a `not_found` [delta](#delta) with status `404` if the page has no Affordances graph.
 
 HTML responses for pages with a graph should advertise it in both places:
 
 ```http
-Link: <?afford=1>; rel="afford"
+Link: <?affordances=1>; rel="affordances"
 ```
 
 ```html
-<link rel="afford" href="?afford=1" />
+<link rel="affordances" href="?affordances=1" />
 ```
 
-`?afford=1` is an alias for the `Accept` header, for clients that cannot set headers. A server that supports it must treat `GET <url>?afford=1` like `GET <url>` with the Afford `Accept` header, and must leave `afford` out of the `searchParams` it gives the page's state.
+`?affordances=1` is an alias for the `Accept` header, for clients that cannot set headers. A server that supports it must treat `GET <url>?affordances=1` like `GET <url>` with the Affordances `Accept` header, and must leave `afford` out of the `searchParams` it gives the page's state.
 
-**Per site.** `GET /.well-known/afford.json` returns a [site index](#site-index): the protocol version, the route patterns that have graphs and their action names, the supported auth modes, and optionally an MCP endpoint.
+**Per site.** `GET /.well-known/affordances.json` returns a [site index](#site-index): the protocol version, the route patterns that have graphs and their action names, the supported auth modes, and optionally an MCP endpoint.
 
-A shared cache must never serve one representation for the other: graphs send `Vary: Accept` and `Cache-Control: private, no-store`, and a server must make sure cached HTML is keyed on `Accept` too (with `Vary: Accept`, or by routing Afford requests before the cache, as `@afford/next` does with rewrites).
+A shared cache must never serve one representation for the other: graphs send `Vary: Accept` and `Cache-Control: private, no-store`, and a server must make sure cached HTML is keyed on `Accept` too (with `Vary: Accept`, or by routing Affordances requests before the cache, as `@affordances/next` does with rewrites).
 
 ## Graph
 
@@ -79,7 +79,7 @@ An action with no `expose` is not part of the protocol. It must not appear in gr
 
 ```http
 POST <page-url>
-Content-Type: application/vnd.afford+json
+Content-Type: application/vnd.affordances+json
 
 { "action": "addToCart", "input": { "sku": "TEE-BLK-M" } }
 ```
@@ -151,7 +151,7 @@ The index is enough to plan a task and to call an action without opening its pag
 ## Security
 
 - Default deny. Only actions that declare `expose` are reachable.
-- A call that authenticates by cookie must carry an `Origin` header that matches the site. A call with `Authorization: Bearer` is exempt. A server must not rely on its framework's server-action protections for Afford calls.
+- A call that authenticates by cookie must carry an `Origin` header that matches the site. A call with `Authorization: Bearer` is exempt. A server must not rely on its framework's server-action protections for Affordances calls.
 - `confirm` actions must not run without `confirm: true`. Clients acting for a person should show `message` and get approval first.
 - Input is validated before the guard runs, and the guard runs before the action.
 - URLs must not carry personal data. A graph must not include data that the HTML page would not show to the same user.

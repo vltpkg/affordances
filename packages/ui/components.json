@@ -11,11 +11,11 @@
   },
   "iconLibrary": "lucide",
   "aliases": {
-    "components": "@afford/ui/components",
-    "utils": "@afford/ui/lib/utils",
-    "hooks": "@afford/ui/hooks",
-    "lib": "@afford/ui/lib",
-    "ui": "@afford/ui/components"
+    "components": "@affordances/ui/components",
+    "utils": "@affordances/ui/lib/utils",
+    "hooks": "@affordances/ui/hooks",
+    "lib": "@affordances/ui/lib",
+    "ui": "@affordances/ui/components"
   },
   "rtl": false,
   "menuColor": "default",

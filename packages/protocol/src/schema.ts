@@ -3,9 +3,9 @@ import { z } from 'zod'
 // the protocol's one source: types are inferred from these, and schemas/*.json are generated from them
 
 export const PROTOCOL_VERSION = '0'
-export const MEDIA_TYPE = 'application/vnd.afford+json'
-export const LINK_REL = 'afford'
-export const WELL_KNOWN_PATH = '/.well-known/afford.json'
+export const MEDIA_TYPE = 'application/vnd.affordances+json'
+export const LINK_REL = 'affordances'
+export const WELL_KNOWN_PATH = '/.well-known/affordances.json'
 
 const JSONSchema = z.record(z.string(), z.unknown()).meta({ description: 'A JSON Schema object' })
 

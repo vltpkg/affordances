@@ -1,19 +1,19 @@
-# @afford/lint
+# @affordances/lint
 
-Two lint rules for Afford apps, for ESLint and oxlint's JS plugins:
+Two lint rules for Affordances apps, for ESLint and oxlint's JS plugins:
 
 - `afford/require-affordance` warns when a control calls a server action (`action`, `formAction`, `onClick`, or `onSubmit` using an import from an `actions` module) outside an `<Affordance>`.
-- `afford/static-action-name` errors when `defineAction` has no `name`, or a name that isn't a string literal, which codegen can't read.
+- `affordances/static-action-name` errors when `defineAction` has no `name`, or a name that isn't a string literal, which codegen can't read.
 
 ```bash
-vlt install -D @afford/lint
+vlt install -D @affordances/lint
 ```
 
 ```js
 // eslint.config.js
-import afford from '@afford/lint'
+import affordances from '@affordances/lint'
 
-export default [afford.configs.recommended]
+export default [affordances.configs.recommended]
 ```
 
-Docs: [https://github.com/afford/afford/blob/main/apps/docs/content/lint.mdx](https://github.com/afford/afford/blob/main/apps/docs/content/lint.mdx)
+Docs: [https://github.com/affordances/affordances/blob/main/apps/docs/content/lint.mdx](https://github.com/affordances/affordances/blob/main/apps/docs/content/lint.mdx)

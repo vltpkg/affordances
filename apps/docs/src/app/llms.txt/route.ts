@@ -7,18 +7,18 @@ const abs = (path: string) => new URL(path, siteUrl).href
 // agents' page, and every docs page), linking the markdown twins
 export const GET = () =>
   new Response(
-    `# Afford
+    `# Affordances
 
-> Afford makes Next.js apps operable by agents. Every page that opts in answers in HTML for people and in JSON (application/vnd.afford+json) for agents, at the same URL and with the same session. One \`defineAction\` becomes a server action, an HTTP endpoint, a WebMCP tool, and an MCP tool.
+> Affordances makes Next.js apps operable by agents. Every page that opts in answers in HTML for people and in JSON (application/vnd.affordances+json) for agents, at the same URL and with the same session. One \`defineAction\` becomes a server action, an HTTP endpoint, a WebMCP tool, and an MCP tool.
 
 Every page is available as Markdown: append \`.md\` to its URL, or request it with \`Accept: text/markdown\`. [llms-full.txt](${abs('/llms-full.txt')}) holds every page in one file.
 
-This site is itself Afford-enabled: \`GET ${abs('/docs')}\` (or any docs page) with \`Accept: application/vnd.afford+json\` returns a graph with \`searchDocs\` and \`getPage\` actions, and [/.well-known/afford.json](${abs('/.well-known/afford.json')}) is the site index.
+This site is itself Affordances-enabled: \`GET ${abs('/docs')}\` (or any docs page) with \`Accept: application/vnd.affordances+json\` returns a graph with \`searchDocs\` and \`getPage\` actions, and [/.well-known/affordances.json](${abs('/.well-known/affordances.json')}) is the site index.
 
 ## Start here
 
-- [Afford](${abs('/index.md')}): what Afford is, in one page.
-- [For agents](${abs('/agents.md')}): how an agent gets started with these docs and with Afford.
+- [Affordances](${abs('/index.md')}): what Affordances is, in one page.
+- [For agents](${abs('/agents.md')}): how an agent gets started with these docs and with Affordances.
 
 ${sections()
   .map(

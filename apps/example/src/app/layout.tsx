@@ -1,11 +1,11 @@
 import type { Metadata } from 'next'
-import { ThemeProvider } from '@afford/ui/components/theme-provider'
-import { fontVariables } from '@afford/ui/lib/fonts'
-import { AffordDevtools } from '@afford/react/dev'
-import { Afford } from '@/components/afford-provider'
+import { ThemeProvider } from '@affordances/ui/components/theme-provider'
+import { fontVariables } from '@affordances/ui/lib/fonts'
+import { AffordancesDevtools } from '@affordances/react/dev'
+import { Affordances } from '@/components/affordances-provider'
 import { AgentFrame } from '@/components/agent-view'
 import { SiteHeader } from '@/components/site-header'
-import '@afford/ui/globals.css'
+import '@affordances/ui/globals.css'
 
 export const metadata: Metadata = {
   title: { default: 'Afford Supply', template: '%s · Afford Supply' },
@@ -21,7 +21,7 @@ const RootLayout = ({ children }: LayoutProps<'/'>) => (
   >
     <body className="text-body flex min-h-full flex-col">
       <ThemeProvider>
-        <Afford>
+        <Affordances>
           <SiteHeader />
           <main className="mx-auto w-full max-w-5xl flex-1 px-4 pt-10 pb-20 sm:px-6 sm:pt-14">
             <AgentFrame>{children}</AgentFrame>
@@ -30,8 +30,8 @@ const RootLayout = ({ children }: LayoutProps<'/'>) => (
             Afford Supply is a demo. Nothing ships, and every page can be read and operated by
             agents.
           </footer>
-          {process.env.NODE_ENV === 'development' && <AffordDevtools />}
-        </Afford>
+          {process.env.NODE_ENV === 'development' && <AffordancesDevtools />}
+        </Affordances>
       </ThemeProvider>
     </body>
   </html>

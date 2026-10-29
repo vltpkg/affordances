@@ -9,7 +9,7 @@ An action is a named operation on a page, with a typed input. You define it in t
 'use server'
 
 import { z } from 'zod'
-import { defineAction } from '@/lib/afford'
+import { defineAction } from '@/lib/affordances'
 import * as cart from '@/lib/cart'
 import product from './state'
 
@@ -75,16 +75,16 @@ run: async ({ sku, quantity }, ctx) => {
 
 ## Redirects
 
-Throw `redirect(path)` from `@afford/next` to send the caller somewhere when the action finishes. A person's browser navigates there; an agent gets it as the delta's `redirect`. Next's own `redirect()` from `next/navigation` works too.
+Throw `redirect(path)` from `@affordances/next` to send the caller somewhere when the action finishes. A person's browser navigates there; an agent gets it as the delta's `redirect`. Next's own `redirect()` from `next/navigation` works too.
 
 ## Errors
 
-Throw an `AffordError` to answer with a specific protocol error:
+Throw an `AffordancesError` to answer with a specific protocol error:
 
 ```ts
-import { AffordError } from '@afford/next'
+import { AffordancesError } from '@affordances/next'
 
-throw new AffordError('unavailable', 'The sale has ended')
+throw new AffordancesError('unavailable', 'The sale has ended')
 ```
 
 Any other error becomes `internal`, with a generic message, so stack traces and secrets don't reach agents.

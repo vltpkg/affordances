@@ -1,15 +1,15 @@
 {
-  "name": "@afford/next",
+  "name": "@affordances/next",
   "version": "0.0.0",
-  "description": "Afford for Next.js: withAfford, codegen, and the route handler",
+  "description": "Affordances for Next.js: withAffordances, codegen, and the route handler",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/afford/afford.git",
+    "url": "git+https://github.com/affordances/affordances.git",
     "directory": "packages/next"
   },
   "bin": {
-    "afford": "./dist/cli.js"
+    "affordances": "./dist/cli.js"
   },
   "files": [
     "dist"
@@ -36,8 +36,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@afford/core": "workspace:*",
-    "@afford/protocol": "workspace:*",
+    "@affordances/core": "workspace:*",
+    "@affordances/protocol": "workspace:*",
     "oxc-parser": "^0.156.0"
   },
   "devDependencies": {

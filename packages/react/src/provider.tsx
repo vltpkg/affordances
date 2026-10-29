@@ -1,10 +1,10 @@
 'use client'
 
 import { createContext, use, useCallback, useEffect, useRef, useState } from 'react'
-import { MEDIA_TYPE, type Delta, type Graph } from '@afford/protocol'
+import { MEDIA_TYPE, type Delta, type Graph } from '@affordances/protocol'
 import { getModelContext } from './model-context.ts'
 
-export type AffordContext = {
+export type AffordancesContext = {
   // this page's graph, or null while it loads or when the page has none
   graph: Graph | null
   // calls an action on this page as an agent would, confirming `confirm` actions with the person first
@@ -15,9 +15,9 @@ export type AffordContext = {
   refresh: () => Promise<void>
 }
 
-const Context = createContext<AffordContext | null>(null)
+const Context = createContext<AffordancesContext | null>(null)
 
-export type AffordProviderProps = {
+export type AffordancesProviderProps = {
   children: React.ReactNode
   // the current page's path and query; change it on navigation so the graph and tools follow
   path: string
@@ -34,12 +34,12 @@ const post = (path: string, body: object) =>
     body: JSON.stringify(body),
   }).then((response) => response.json() as Promise<Delta>)
 
-export const AffordProvider = ({
+export const AffordancesProvider = ({
   children,
   path,
   onDelta,
   confirm = (message) => window.confirm(message),
-}: AffordProviderProps) => {
+}: AffordancesProviderProps) => {
   const [graph, setGraph] = useState<Graph | null>(null)
   const [lastDelta, setLastDelta] = useState<Delta | null>(null)
   // read in callbacks without re-registering every tool when a parent re-renders
@@ -116,8 +116,8 @@ export const AffordProvider = ({
   return <Context value={{ graph, call, lastDelta, refresh }}>{children}</Context>
 }
 
-export const useAfford = () => {
+export const useAffordances = () => {
   const context = use(Context)
-  if (!context) throw new Error('useAfford needs an <AffordProvider> above it')
+  if (!context) throw new Error('useAffordances needs an <AffordancesProvider> above it')
   return context
 }

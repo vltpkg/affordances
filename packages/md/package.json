@@ -1,15 +1,15 @@
 {
-  "name": "@afford/md",
+  "name": "@affordances/md",
   "version": "0.0.0",
   "description": "Serve any Next.js page as clean markdown at the same URL",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/afford/afford.git",
+    "url": "git+https://github.com/affordances/affordances.git",
     "directory": "packages/md"
   },
   "bin": {
-    "afford-md": "./dist/cli.js"
+    "affordances-md": "./dist/cli.js"
   },
   "files": [
     "dist"

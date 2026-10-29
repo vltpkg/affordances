@@ -1,4 +1,4 @@
-// the slice of WebMCP (https://developer.chrome.com/docs/ai/webmcp/imperative-api) afford uses
+// the slice of WebMCP (https://developer.chrome.com/docs/ai/webmcp/imperative-api) Affordances uses
 export type ModelContextTool = {
   name: string
   description: string

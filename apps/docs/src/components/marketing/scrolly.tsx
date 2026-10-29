@@ -461,7 +461,7 @@ export const After = () => {
   return (
     <div className={cn(live && 'live')}>
       <SectionHead
-        eyebrow="After, with Afford"
+        eyebrow="After, with Affordances"
         id="h-after"
         title="Three files per route. One definition."
       >
@@ -507,7 +507,7 @@ export const After = () => {
               </Caption>
             </div>
             <div className={cn(panel, second)} ref={right}>
-              <PanelHead title="Agent · Afford graph" count={`call ${calls} / 5`} agent />
+              <PanelHead title="Agent · Affordances graph" count={`call ${calls} / 5`} agent />
               <div className="flex flex-col">
                 {C.map(([m, path, r], j) => (
                   <div

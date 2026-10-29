@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import { Fragment, Suspense } from 'react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { AgentMain, AgentSkip } from '@afford/md/react'
-import { mdAlternate } from '@afford/md/next'
+import { AgentMain, AgentSkip } from '@affordances/md/react'
+import { mdAlternate } from '@affordances/md/next'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -11,7 +11,7 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '@afford/ui/components/breadcrumb'
+} from '@affordances/ui/components/breadcrumb'
 import { breadcrumbs, source } from '@/lib/source'
 import { description as siteDescription } from '@/lib/site-url'
 import { components } from '@/mdx-components'
@@ -34,7 +34,7 @@ export const generateMetadata = async ({
   return {
     title,
     description,
-    // the markdown twin at /<page>.md, served by @afford/md
+    // the markdown twin at /<page>.md, served by @affordances/md
     alternates: { canonical: page.url, ...mdAlternate(page.url) },
     openGraph: { type: 'article', url: page.url, title, description, images: [image] },
     twitter: { card: 'summary_large_image', title, description, images: [image] },
@@ -46,7 +46,7 @@ export const generateMetadata = async ({
 const editUrl = (path: string) =>
   path.startsWith('reference/api-reference/')
     ? undefined
-    : `https://github.com/afford/afford/edit/main/${path === 'reference/protocol.mdx' ? 'packages/protocol/spec.md' : `apps/docs/content/${path}`}`
+    : `https://github.com/affordances/affordances/edit/main/${path === 'reference/protocol.mdx' ? 'packages/protocol/spec.md' : `apps/docs/content/${path}`}`
 
 // the layout's navbar and sidebar paint at once; the slug read sits behind Suspense and the page streams in
 const Page = ({ params }: PageProps<'/docs/[[...slug]]'>) => (

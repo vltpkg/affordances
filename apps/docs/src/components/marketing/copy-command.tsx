@@ -1,7 +1,7 @@
 'use client'
 
 import { cn } from 'cn'
-import { useCopy } from '@afford/ui/hooks/use-copy'
+import { useCopy } from '@affordances/ui/hooks/use-copy'
 import { usePreferredPackageManager } from '@/hooks/use-preferred-package-manager'
 import { PackageManagerSelect, PerPackageManager } from '@/components/package-manager-select'
 import type { PackageManager } from '@/lib/package-managers'

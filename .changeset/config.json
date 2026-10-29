@@ -4,16 +4,16 @@
   "commit": false,
   "fixed": [
     [
-      "@afford/protocol",
-      "@afford/core",
-      "@afford/react",
-      "@afford/next",
-      "@afford/mcp",
-      "@afford/lint",
-      "@afford/md"
+      "@affordances/protocol",
+      "@affordances/core",
+      "@affordances/react",
+      "@affordances/next",
+      "@affordances/mcp",
+      "@affordances/lint",
+      "@affordances/md"
     ]
   ],
   "access": "public",
   "baseBranch": "main",
-  "ignore": ["@afford/ui", "@afford/docs", "@afford/example", "@afford/bench"]
+  "ignore": ["@affordances/ui", "@affordances/docs", "@affordances/example", "@affordances/bench"]
 }

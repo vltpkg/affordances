@@ -1,13 +1,13 @@
-import { defineState } from '@afford/next'
+import { defineState } from '@affordances/next'
 
-// the marketing page, for agents: what Afford is and where to go next
+// the marketing page, for agents: what Affordances is and where to go next
 export default defineState(
   () => ({
     product: {
-      name: 'Afford',
+      name: 'Affordances',
       summary:
         'An open protocol and Next.js toolkit. Declare what a page shows (state.ts) and what can be done there (actions.ts); people, browser agents, headless agents, and MCP clients all use the same definition.',
-      install: 'vlx @afford/next init',
+      install: 'vlx @affordances/next init',
     },
     start: [
       { title: 'Quickstart', url: '/docs/quickstart' },

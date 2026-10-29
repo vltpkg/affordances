@@ -1,6 +1,6 @@
 export {
-  AFFORD,
-  createAfford,
+  AFFORDANCES,
+  createAffordances,
   defineAction,
   defineState,
   isAction,
@@ -10,7 +10,7 @@ export {
   type ActionMeta,
   type AnyAction,
   type AnyState,
-  type AffordOptions,
+  type AffordancesOptions,
   type Entities,
   type GuardResult,
   type StateLoader,
@@ -19,6 +19,6 @@ export {
   type InferState,
   type StateDef,
 } from './action.ts'
-export { AffordError, redirect } from './errors.ts'
+export { AffordancesError, redirect } from './errors.ts'
 export { createHandler, type HandlerOptions, type Manifest } from './handler.ts'
 export { compile, match, sort, type CompiledRoute, type Segment } from './route.ts'

@@ -67,7 +67,7 @@ function ChartLegendContent({
           // Get colors count for this item to determine gradient vs solid
           const colorsCount = itemConfig ? getColorsCount(itemConfig) : 1
 
-          // a real button when it toggles a series, so it's reachable and operable by keyboard (afford edit)
+          // a real button when it toggles a series, so it's reachable and operable by keyboard (Affordances edit)
           const Item = isClickable ? 'button' : 'div'
           return (
             <Item

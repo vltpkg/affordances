@@ -2,9 +2,9 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, test, vi } from 'vitest'
-import { MEDIA_TYPE } from '@afford/protocol'
-import { AffordProvider } from '../src/index.ts'
-import { AffordDevtools } from '../src/dev.tsx'
+import { MEDIA_TYPE } from '@affordances/protocol'
+import { AffordancesProvider } from '../src/index.ts'
+import { AffordancesDevtools } from '../src/dev.tsx'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 test('⌥A toggles the overlay, which reports the page graph', async () => {
@@ -18,16 +18,16 @@ test('⌥A toggles the overlay, which reports the page graph', async () => {
   const root = createRoot(container)
   await act(async () =>
     root.render(
-      <AffordProvider path="/">
-        <AffordDevtools />
-      </AffordProvider>,
+      <AffordancesProvider path="/">
+        <AffordancesDevtools />
+      </AffordancesProvider>,
     ),
   )
   await act(async () => {})
-  expect(container.querySelector('[data-afford-devtools]')).toBeNull()
+  expect(container.querySelector('[data-affordances-devtools]')).toBeNull()
   await act(async () => dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyA', altKey: true })))
   expect(container.textContent).toContain('/ · 0 actions')
   await act(async () => dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyA', altKey: true })))
-  expect(container.querySelector('[data-afford-devtools]')).toBeNull()
+  expect(container.querySelector('[data-affordances-devtools]')).toBeNull()
   vi.unstubAllGlobals()
 })

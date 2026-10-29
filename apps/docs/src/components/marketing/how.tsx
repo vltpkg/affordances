@@ -1,4 +1,4 @@
-import { highlight } from '@afford/ui/components/code-block'
+import { highlight } from '@affordances/ui/components/code-block'
 import { Surfaces } from '@/components/marketing/surfaces'
 
 // lines are 0-based into SOURCE; each surface lists the lines it reads
@@ -47,7 +47,7 @@ export const SURFACES = [
     hint: 'registerTool',
     agent: true,
     lines: [3, 4, ...INPUT, 10, 12, 13],
-    note: '`<AffordProvider>` registers it in the tab while the guard passes. Calls go through the same handler as any agent.',
+    note: '`<AffordancesProvider>` registers it in the tab while the guard passes. Calls go through the same handler as any agent.',
     lang: 'ts',
     title: 'In the browser tab',
     code: `navigator.modelContext.registerTool({
@@ -68,13 +68,13 @@ export const SURFACES = [
     note: 'The page’s own URL answers with a graph. A call returns a delta with only the entities in `effects`.',
     lang: 'bash',
     title: 'Terminal',
-    code: `curl -H 'Accept: application/vnd.afford+json' \\
+    code: `curl -H 'Accept: application/vnd.affordances+json' \\
   shop.example/products/tee
 # "actions": [{ "name": "addToCart", "expose": "public",
 #   "guard": "The variant is in stock", "available": true }]
 
 curl -X POST shop.example/products/tee \\
-  -H 'Content-Type: application/vnd.afford+json' \\
+  -H 'Content-Type: application/vnd.affordances+json' \\
   -d '{"action":"addToCart","input":{"sku":"TEE-BLK-M"}}'
 # { "ok": true, "changed": { "cart": { "count": 1 } } }`,
   },
@@ -82,16 +82,16 @@ curl -X POST shop.example/products/tee \\
     id: 'mcp',
     name: 'MCP',
     who: 'Claude, Cursor',
-    hint: 'afford_call',
+    hint: 'affordances_call',
     agent: true,
     lines: [3, 4, ...INPUT, 10],
-    note: 'Two tools for the whole site. The model finds `addToCart` in the graph `afford_open` returns, then calls it by name.',
+    note: 'Two tools for the whole site. The model finds `addToCart` in the graph `affordances_open` returns, then calls it by name.',
     lang: 'ts',
     title: 'MCP client',
-    code: `// vlx @afford/mcp https://shop.example
-// tools: afford_open, afford_call
+    code: `// vlx @affordances/mcp https://shop.example
+// tools: affordances_open, affordances_call
 
-afford_call({
+affordances_call({
   path: '/products/tee',
   action: 'addToCart',
   input: { sku: 'TEE-BLK-M' },

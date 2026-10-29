@@ -7,16 +7,16 @@ The handler forwards the caller's `cookie`, `authorization`, and `accept-languag
 
 - With a cookie or bearer token, or when the page is `private` or `no-store`, or sets a cookie, the Markdown is sent with `Cache-Control: private, no-store`.
 - Otherwise it keeps the page's own `Cache-Control`.
-- Every response has `Vary: Accept`, `X-Afford-Tokens` with an estimate of its length in tokens, and a `Link` to the canonical page when it has one.
+- Every response has `Vary: Accept`, `X-Affordances-Tokens` with an estimate of its length in tokens, and a `Link` to the canonical page when it has one.
 
 The status code is the page's. A redirect to the same site stays in Markdown (to the target's `.md`); one to another origin is passed on, never followed. A page that takes longer than 10 seconds answers `504`, and one larger than 6 MB answers `413`.
 
 ## Behind a proxy
 
-The handler fetches pages from the request's own origin. When a proxy changes it, set `AFFORD_MD_ORIGIN`, or build the handler with options:
+The handler fetches pages from the request's own origin. When a proxy changes it, set `AFFORDANCES_MD_ORIGIN`, or build the handler with options:
 
-```ts title="app/api/afford/md/[[...path]]/route.ts"
-import { createMdHandler } from '@afford/md/next'
+```ts title="app/api/affordances/md/[[...path]]/route.ts"
+import { createMdHandler } from '@affordances/md/next'
 
 export const GET = createMdHandler({ origin: 'http://localhost:3000', timeout: 5000 })
 ```

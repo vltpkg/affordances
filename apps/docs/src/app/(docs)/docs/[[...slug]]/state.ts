@@ -1,4 +1,4 @@
-import { defineState } from '@afford/next'
+import { defineState } from '@affordances/next'
 import { isApiReference, pageFor, sections } from '@/lib/source'
 
 // every docs page's graph: the page itself, and the docs' table of contents (getPage reads any page in
@@ -16,7 +16,7 @@ export default defineState(({ params }) => {
           markdown: `${page.url}.md`,
         }
       : null,
-    site: { name: 'Afford docs', llms: '/llms.txt', agents: '/agents' },
+    site: { name: 'Affordances docs', llms: '/llms.txt', agents: '/agents' },
     sections: sections().map((section) => ({
       ...section,
       pages: section.pages.filter(

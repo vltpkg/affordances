@@ -1,4 +1,4 @@
-import { defineState } from '@/lib/afford'
+import { defineState } from '@/lib/affordances'
 import { findVariant, formatPrice, getCart } from '@/lib/store'
 
 export const loadCart = (sid: string | null) => {

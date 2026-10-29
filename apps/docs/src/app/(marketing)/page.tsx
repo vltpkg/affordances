@@ -1,8 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { cn } from 'cn'
-import { mdAlternate } from '@afford/md/next'
-import { AgentMain, AgentText } from '@afford/md/react'
+import { mdAlternate } from '@affordances/md/next'
+import { AgentMain, AgentText } from '@affordances/md/react'
 import { Button } from '@/components/ui/button'
 import { After, Before } from '@/components/marketing/scrolly'
 import { Code, SectionHead } from '@/components/marketing/section-head'
@@ -15,9 +15,9 @@ import { benchRuns, modelName, type BenchRun } from '@/lib/bench'
 import { siteUrl } from '@/lib/site-url'
 
 export const metadata: Metadata = {
-  title: { absolute: 'Afford: every page, agent-operable' },
+  title: { absolute: 'Affordances: every page, agent-operable' },
   description:
-    'Your UI already knows what it can do. Afford lets you declare it once, and humans, browser agents, headless agents, and MCP clients all use the same definition.',
+    'Your UI already knows what it can do. Affordances lets you declare it once, and humans, browser agents, headless agents, and MCP clients all use the same definition.',
   alternates: { canonical: '/', ...mdAlternate('/') },
 }
 
@@ -35,8 +35,8 @@ const proofMd = (runs: BenchRun[]) =>
       const { browser: b, afford: a } = r
       const ok = (x: { successRate: number }) => Math.round(x.successRate * r.runs)
       return [
-        `**${modelName(r.model)}**, ${r.runs} runs per task. Median per task, browser agent against Afford agent: ${int(b.tokens)} against ${int(a.tokens)} tokens, ${sec1(b.ms)} against ${sec1(a.ms)}, ${b.turns} against ${a.turns} steps, ${usd(b.costPerSuccessUsd)} against ${usd(a.costPerSuccessUsd)} per successful task. Tasks completed: ${Math.round(b.successRate * 100)}% against ${Math.round(a.successRate * 100)}%.`,
-        '| Task | Browser tokens | Afford tokens | Browser time | Afford time | Browser passed | Afford passed |\n| --- | --: | --: | --: | --: | --: | --: |\n' +
+        `**${modelName(r.model)}**, ${r.runs} runs per task. Median per task, browser agent against Affordances agent: ${int(b.tokens)} against ${int(a.tokens)} tokens, ${sec1(b.ms)} against ${sec1(a.ms)}, ${b.turns} against ${a.turns} steps, ${usd(b.costPerSuccessUsd)} against ${usd(a.costPerSuccessUsd)} per successful task. Tasks completed: ${Math.round(b.successRate * 100)}% against ${Math.round(a.successRate * 100)}%.`,
+        '| Task | Browser tokens | Affordances tokens | Browser time | Affordances time | Browser passed | Affordances passed |\n| --- | --: | --: | --: | --: | --: | --: |\n' +
           r.tasks
             .map(
               (t) =>
@@ -115,7 +115,7 @@ const Dot = ({ agent }: { agent?: boolean }) => (
   />
 )
 
-const curl = `curl -H 'Accept: application/vnd.afford+json' ${siteUrl.origin}`
+const curl = `curl -H 'Accept: application/vnd.affordances+json' ${siteUrl.origin}`
 
 const Home = () => {
   const runs = benchRuns()
@@ -136,7 +136,7 @@ const Home = () => {
                 Every page, agent‑operable.
               </h1>
               <p className="mt-6 max-w-[500px] text-[19px] leading-[1.6] text-pretty text-(--fg2) max-[899px]:text-[17px]">
-                Your UI already knows what it can do. Afford lets you declare it once. Humans,
+                Your UI already knows what it can do. Affordances lets you declare it once. Humans,
                 browser agents, headless agents and MCP clients all use the same definition.
               </p>
               <div className="mt-8 flex flex-wrap gap-2.5">
@@ -150,7 +150,7 @@ const Home = () => {
             </div>
             <AgentText
               block
-              md="**One URL, two readers.** A product page, a team settings page, and a booking page, each shown as a person sees it (`text/html`) and as the graph an agent reads (`application/vnd.afford+json`) at the same URL: its entities, its action with input, guard, and availability, and its nav. Calling the action returns a delta with only what changed."
+              md="**One URL, two readers.** A product page, a team settings page, and a booking page, each shown as a person sees it (`text/html`) and as the graph an agent reads (`application/vnd.affordances+json`) at the same URL: its entities, its action with input, guard, and availability, and its nav. Calling the action returns a delta with only what changed."
             >
               <HeroStage />
             </AgentText>
@@ -174,7 +174,7 @@ const Home = () => {
               <div className="flex flex-col gap-2.5 border-l border-(--line) py-8 pl-8 max-[899px]:border-t max-[899px]:border-l-0 max-[899px]:py-7 max-[899px]:pl-0">
                 <div className="flex items-center gap-2 font-mono text-xs text-(--agent)">
                   <Dot agent />
-                  Agent · application/vnd.afford+json
+                  Agent · application/vnd.affordances+json
                 </div>
                 <p className="mt-1.5 text-[28px] leading-[1.15] font-semibold tracking-[-0.03em]">
                   Reads structure.
@@ -198,7 +198,7 @@ const Home = () => {
           <section className={sec} aria-labelledby="h-after">
             <AgentText
               block
-              md={`After, with Afford\n\n## Three files per route. One definition.\n\n\`page.tsx\` renders. \`state.ts\` says what's on the page. \`actions.ts\` says what can be done. Every agent surface (server action, WebMCP, HTTP graph, MCP, Markdown) is derived from those, so one edit reaches all of them. The agent finishes in five calls: read the graph, add to cart, read the checkout, then place the order, once to get the confirmation summary and once with \`confirm: true\`.`}
+              md={`After, with Affordances\n\n## Three files per route. One definition.\n\n\`page.tsx\` renders. \`state.ts\` says what's on the page. \`actions.ts\` says what can be done. Every agent surface (server action, WebMCP, HTTP graph, MCP, Markdown) is derived from those, so one edit reaches all of them. The agent finishes in five calls: read the graph, add to cart, read the checkout, then place the order, once to get the confirmation summary and once with \`confirm: true\`.`}
             >
               <After />
             </AgentText>
@@ -235,7 +235,7 @@ const Home = () => {
           <section className={sec} id="proof" aria-labelledby="h-proof">
             <SectionHead eyebrow="Proof" id="h-proof" title="Measured, not claimed.">
               The same shopping tasks on the same model: a browser agent reading accessibility
-              snapshots, against an Afford agent reading the graph.{' '}
+              snapshots, against an Affordances agent reading the graph.{' '}
               {runs.length ? (
                 <>
                   From the latest committed runs; the{' '}
@@ -311,7 +311,7 @@ const Home = () => {
                     className="mt-2 w-full max-w-full bg-(--bg)"
                   >
                     curl -H &apos;Accept:{' '}
-                    <span className="text-(--agent)">application/vnd.afford+json</span>&apos;{' '}
+                    <span className="text-(--agent)">application/vnd.affordances+json</span>&apos;{' '}
                     {siteUrl.origin}
                   </CopyCommand>
                 </div>

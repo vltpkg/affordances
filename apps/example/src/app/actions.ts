@@ -1,7 +1,7 @@
 'use server'
 
 import { z } from 'zod'
-import { defineAction } from '@/lib/afford'
+import { defineAction } from '@/lib/affordances'
 import { searchProducts } from '@/lib/store'
 import { listing } from './state'
 

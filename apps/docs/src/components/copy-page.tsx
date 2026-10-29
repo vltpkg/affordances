@@ -8,8 +8,8 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@afford/ui/components/dropdown-menu'
-import { useCopy } from '@afford/ui/hooks/use-copy'
+} from '@affordances/ui/components/dropdown-menu'
+import { useCopy } from '@affordances/ui/hooks/use-copy'
 import { Claude } from '@/components/icons/claude'
 import { Markdown } from '@/components/icons/markdown'
 import { OpenAI } from '@/components/icons/openai'
@@ -44,7 +44,7 @@ const AiActions = ({ url }: { url: string }) => {
   const q = encodeURIComponent(`Read ${md} so I can ask questions about it.`)
   // claude-cli://open starts in the home directory, so have it ask for the project first
   const cli = encodeURIComponent(
-    `Read ${md} from the Afford docs. Before changing anything, ask me which project to work in.`,
+    `Read ${md} from the Affordances docs. Before changing anything, ask me which project to work in.`,
   )
   return (
     <>

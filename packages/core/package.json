@@ -1,10 +1,10 @@
 {
-  "name": "@afford/core",
+  "name": "@affordances/core",
   "version": "0.0.0",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/afford/afford.git",
+    "url": "git+https://github.com/affordances/affordances.git",
     "directory": "packages/core"
   },
   "files": [
@@ -24,7 +24,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@afford/protocol": "workspace:*",
+    "@affordances/protocol": "workspace:*",
     "@standard-schema/spec": "^1.1.0"
   },
   "devDependencies": {

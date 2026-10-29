@@ -1,16 +1,16 @@
 ---
 title: Next.js
-description: How @afford/next finds your actions, routes agent requests to them, and shares your session resolver.
+description: How @affordances/next finds your actions, routes agent requests to them, and shares your session resolver.
 ---
 
-`@afford/next` has four entry points:
+`@affordances/next` has four entry points:
 
-| Import                | What it's for                                                                  |
-| --------------------- | ------------------------------------------------------------------------------ |
-| `@afford/next`        | `defineAction`, `defineState`, `createAfford`, `redirect`, `AffordError`       |
-| `@afford/next/config` | `withAfford`, for `next.config.ts`; it returns the same config type it's given |
-| `@afford/next/route`  | `createRouteHandler`, for the route handler                                    |
-| `afford` (bin)        | `afford init` and `afford build`                                               |
+| Import                     | What it's for                                                                       |
+| -------------------------- | ----------------------------------------------------------------------------------- |
+| `@affordances/next`        | `defineAction`, `defineState`, `createAffordances`, `redirect`, `AffordancesError`  |
+| `@affordances/next/config` | `withAffordances`, for `next.config.ts`; it returns the same config type it's given |
+| `@affordances/next/route`  | `createRouteHandler`, for the route handler                                         |
+| `affordances` (bin)        | `affordances init` and `affordances build`                                          |
 
 ## Conventions
 
@@ -25,8 +25,8 @@ app/
     page.tsx
     state.ts          → /products/[slug]
     actions.ts        → /products/[slug]
-  api/afford/graph/[[...path]]/
-    route.ts          (written by afford init)
+  api/affordances/graph/[[...path]]/
+    route.ts          (written by affordances init)
 ```
 
 Route groups like `(shop)` and parallel slots like `@modal` don't appear in the route. Folders starting with `_` are skipped. A route can have state without actions, or actions without state.
@@ -38,50 +38,50 @@ Codegen reads these files statically and fails the build when:
 - two actions on one route share a name;
 - a `state` file has no default export.
 
-It writes `.afford/manifest.ts`, which imports each route's state and actions. Commit it or not, as you like; `afford init` adds `.afford` to `.gitignore`, and `withAfford` regenerates it on every start.
+It writes `.affordances/manifest.ts`, which imports each route's state and actions. Commit it or not, as you like; `affordances init` adds `.affordances` to `.gitignore`, and `withAffordances` regenerates it on every start.
 
 ## Routing
 
-The same URL answers people and agents. `withAfford` adds rewrites that run before Next's filesystem routes, and send a request to the Afford route handler when it has any of:
+The same URL answers people and agents. `withAffordances` adds rewrites that run before Next's filesystem routes, and send a request to the Affordances route handler when it has any of:
 
-- `Accept: application/vnd.afford+json` (reading a graph);
-- `Content-Type: application/vnd.afford+json` (calling an action);
-- the query parameter `afford=1`, for clients that can't set headers.
+- `Accept: application/vnd.affordances+json` (reading a graph);
+- `Content-Type: application/vnd.affordances+json` (calling an action);
+- the query parameter `affordances=1`, for clients that can't set headers.
 
-`/.well-known/afford.json` is rewritten to the handler too. Requests to `/api/` routes (the handler's own `/api/afford/graph` included) and to `/_next` are never rewritten. Everything else, including every browser request for HTML, reaches your pages as before.
+`/.well-known/affordances.json` is rewritten to the handler too. Requests to `/api/` routes (the handler's own `/api/affordances/graph` included) and to `/_next` are never rewritten. Everything else, including every browser request for HTML, reaches your pages as before.
 
-Your own rewrites are kept: `withAfford` puts its rules first in `beforeFiles` and leaves the rest alone.
+Your own rewrites are kept: `withAffordances` puts its rules first in `beforeFiles` and leaves the rest alone.
 
 ## Plugins
 
-More capabilities ride on the same config through `plugins`. Each plugin is a config wrapper that adds its own rewrites and headers after the graph's, and owns a route under `/api/afford/<name>`, so plugins and the graph never answer for each other:
+More capabilities ride on the same config through `plugins`. Each plugin is a config wrapper that adds its own rewrites and headers after the graph's, and owns a route under `/api/affordances/<name>`, so plugins and the graph never answer for each other:
 
 ```ts title="next.config.ts"
-import { withAfford } from '@afford/next/config'
-import { md } from '@afford/md/next'
+import { withAffordances } from '@affordances/next/config'
+import { md } from '@affordances/md/next'
 
-export default withAfford(nextConfig, { name: 'Store', plugins: [md()] })
+export default withAffordances(nextConfig, { name: 'Store', plugins: [md()] })
 ```
 
 This site runs with `md()`: every page is also served as Markdown, at `/<page>.md` and to `Accept: text/markdown`. Its rewrites match only that media type, so they don't collide with the graph's. See [Markdown](/docs/guides/md).
 
-For each route in the manifest, `withAfford` also adds a header to the HTML page, so clients can discover the graph:
+For each route in the manifest, `withAffordances` also adds a header to the HTML page, so clients can discover the graph:
 
 ```http
-Link: <?afford=1>; rel="afford"
+Link: <?affordances=1>; rel="affordances"
 ```
 
 ## Sessions
 
-`createAfford({ auth })` returns a `defineAction` and `defineState` bound to one session resolver:
+`createAffordances({ auth })` returns a `defineAction` and `defineState` bound to one session resolver:
 
-```ts title="lib/afford.ts"
-import { createAfford } from '@afford/next'
+```ts title="lib/affordances.ts"
+import { createAffordances } from '@affordances/next'
 import { getSession } from '@/lib/auth'
 
 type Session = { userId: string }
 
-export const { defineAction, defineState } = createAfford<Session>({
+export const { defineAction, defineState } = createAffordances<Session>({
   auth: async (request) => {
     const token = request.headers.get('authorization')?.replace(/^Bearer /, '')
     return token ? verifyToken(token) : getSession(request.headers.get('cookie'))
@@ -89,15 +89,15 @@ export const { defineAction, defineState } = createAfford<Session>({
 })
 ```
 
-Import these instead of the defaults from `@afford/next`. On the agent path, the handler calls `auth` with the incoming request. On the UI path, the server action calls it with a `Request` built from `headers()`, so a session cookie works in both.
+Import these instead of the defaults from `@affordances/next`. On the agent path, the handler calls `auth` with the incoming request. On the UI path, the server action calls it with a `Request` built from `headers()`, so a session cookie works in both.
 
 The resolver is where Auth.js, Better Auth, Clerk, or your own sessions plug in. It receives a standard `Request`, and returns your session object or `null`.
 
 ## The route handler
 
-```ts title="app/api/afford/graph/[[...path]]/route.ts"
-import { createRouteHandler } from '@afford/next/route'
-import { manifest } from '../../../../../.afford/manifest'
+```ts title="app/api/affordances/graph/[[...path]]/route.ts"
+import { createRouteHandler } from '@affordances/next/route'
+import { manifest } from '../../../../../.affordances/manifest'
 
 const handler = createRouteHandler(manifest, {
   rateLimit: ({ action, session }) => limiter.check(`${action}:${session ?? 'anon'}`),
@@ -111,4 +111,4 @@ export { handler as GET, handler as POST }
 
 ## Caching
 
-Graphs and deltas are sent with `Cache-Control: private, no-store` and `Vary: Accept`. HTML responses keep whatever caching they had. Afford requests are rewritten to the route handler before the filesystem and before any cached page, so a cached HTML page is never served to an agent, and a graph is never cached at all.
+Graphs and deltas are sent with `Cache-Control: private, no-store` and `Vary: Accept`. HTML responses keep whatever caching they had. Affordances requests are rewritten to the route handler before the filesystem and before any cached page, so a cached HTML page is never served to an agent, and a graph is never cached at all.

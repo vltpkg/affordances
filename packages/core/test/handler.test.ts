@@ -1,8 +1,14 @@
 import { readFileSync } from 'node:fs'
-import { Delta, Graph, MEDIA_TYPE, SiteIndex } from '@afford/protocol'
+import { Delta, Graph, MEDIA_TYPE, SiteIndex } from '@affordances/protocol'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { z } from 'zod'
-import { AffordError, createAfford, createHandler, defineAction, redirect } from '../src/index.ts'
+import {
+  AffordancesError,
+  createAffordances,
+  createHandler,
+  defineAction,
+  redirect,
+} from '../src/index.ts'
 
 // a tiny store: one product with two variants, and a cart per session
 type Session = { id: string }
@@ -15,7 +21,7 @@ beforeEach(() => {
   orders = []
 })
 
-const { defineAction: action, defineState } = createAfford<Session>({
+const { defineAction: action, defineState } = createAffordances<Session>({
   auth: (request) => {
     const id = request.headers.get('authorization')?.replace('Bearer ', '')
     return id ? { id } : null
@@ -105,7 +111,7 @@ const teapot = action({
   input: z.object({}),
   expose: 'public',
   run: () => {
-    throw new AffordError('unavailable', 'Out of tea')
+    throw new AffordancesError('unavailable', 'Out of tea')
   },
 })
 
@@ -128,19 +134,21 @@ const handler = createHandler({
       '/docs/[...slug]': { actions: [] },
     },
   },
-  basePath: '/api/afford',
+  basePath: '/api/affordances',
   rateLimit: (args) => (args.action === 'lookup' && stock.M === 99 ? 10 : true),
 })
 
 const origin = 'https://store.test'
 const get = (path: string, init: RequestInit = {}) =>
-  handler(new Request(`${origin}/api/afford${path}`, { headers: { accept: MEDIA_TYPE }, ...init }))
+  handler(
+    new Request(`${origin}/api/affordances${path}`, { headers: { accept: MEDIA_TYPE }, ...init }),
+  )
 const post = (
   body: unknown,
   { session, headers }: { session?: string; headers?: Record<string, string> } = {},
 ) =>
   handler(
-    new Request(`${origin}/api/afford/products/tee`, {
+    new Request(`${origin}/api/affordances/products/tee`, {
       method: 'POST',
       body: JSON.stringify(body),
       headers: {
@@ -203,7 +211,7 @@ describe('graph', () => {
   })
 
   test('site index describes every route and its exposed actions, enough to call them unopened', async () => {
-    const index = SiteIndex.parse(await (await get('/.well-known/afford.json')).json())
+    const index = SiteIndex.parse(await (await get('/.well-known/affordances.json')).json())
     expect(index.name).toBe('Test store')
     const productRoute = index.routes.find((r) => r.route === '/products/[slug]')!
     expect(productRoute.description).toBe('One product and the cart')
@@ -339,7 +347,7 @@ describe('call', () => {
     expect((await delta(response)).error?.code).toBe('rate_limited')
   })
 
-  test('thrown errors become internal without leaking; AffordError keeps its code', async () => {
+  test('thrown errors become internal without leaking; AffordancesError keeps its code', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     const crashed = await post({ action: 'crash', input: {} })
     expect(crashed.status).toBe(500)

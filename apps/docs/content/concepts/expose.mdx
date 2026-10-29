@@ -13,18 +13,18 @@ description: Nothing reaches agents until an action says who may call it. expose
 
 ## Sessions
 
-A session is whatever your `auth` resolver returns for a request. Define it once with `createAfford`, and both the UI path and the agent path use it:
+A session is whatever your `auth` resolver returns for a request. Define it once with `createAffordances`, and both the UI path and the agent path use it:
 
-```ts title="lib/afford.ts"
-import { createAfford } from '@afford/next'
+```ts title="lib/affordances.ts"
+import { createAffordances } from '@affordances/next'
 import { sessionFrom } from '@/lib/auth'
 
-export const { defineAction, defineState } = createAfford({
+export const { defineAction, defineState } = createAffordances({
   auth: (request) => sessionFrom(request),
 })
 ```
 
-The resolver gets a `Request`. For agent calls, it's the real request, with its cookies and `Authorization` header. For server actions called from your UI, `@afford/next` builds one from `headers()`.
+The resolver gets a `Request`. For agent calls, it's the real request, with its cookies and `Authorization` header. For server actions called from your UI, `@affordances/next` builds one from `headers()`.
 
 Actions that need a session are still listed for callers without one, as `available: false` with the reason `Requires a session`. Calling one answers `unauthorized`.
 
@@ -42,7 +42,7 @@ Use `confirm` for anything a person should approve: placing an order, sending a 
 }
 ```
 
-The summary comes from the action's `summary` option, and the agent should show it to the person before resending the same call with `"confirm": true`. `@afford/react` does this for WebMCP tools, with `window.confirm` unless you pass your own `confirm`. `@afford/mcp` tells the model to do the same.
+The summary comes from the action's `summary` option, and the agent should show it to the person before resending the same call with `"confirm": true`. `@affordances/react` does this for WebMCP tools, with `window.confirm` unless you pass your own `confirm`. `@affordances/mcp` tells the model to do the same.
 
 ```ts
 export const placeOrder = defineAction({

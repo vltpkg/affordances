@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useAfford } from './provider.tsx'
+import { useAffordances } from './provider.tsx'
 
 type Box = {
   name: string
@@ -30,8 +30,8 @@ const measure = (marker: Element) => {
 }
 
 // dev only: ⌥A outlines every affordance on the page with its action name and availability, and shows the last delta
-export const AffordDevtools = ({ shortcut = 'KeyA' }: { shortcut?: string }) => {
-  const { graph, lastDelta } = useAfford()
+export const AffordancesDevtools = ({ shortcut = 'KeyA' }: { shortcut?: string }) => {
+  const { graph, lastDelta } = useAffordances()
   const [open, setOpen] = useState(false)
   const [boxes, setBoxes] = useState<Box[]>([])
 
@@ -51,9 +51,9 @@ export const AffordDevtools = ({ shortcut = 'KeyA' }: { shortcut?: string }) => 
       frame = requestAnimationFrame(() => {
         const actions = new Map(graph?.actions.map((a) => [a.name, a]))
         setBoxes(
-          [...document.querySelectorAll('[data-afford-action]')].flatMap((marker) => {
+          [...document.querySelectorAll('[data-affordances-action]')].flatMap((marker) => {
             const rect = measure(marker)
-            const name = marker.getAttribute('data-afford-action')!
+            const name = marker.getAttribute('data-affordances-action')!
             const action = actions.get(name)
             return rect
               ? [{ name, available: action?.available ?? false, reason: action?.reason, ...rect }]
@@ -78,7 +78,7 @@ export const AffordDevtools = ({ shortcut = 'KeyA' }: { shortcut?: string }) => 
   if (!open) return null
   return (
     <div
-      data-afford-devtools=""
+      data-affordances-devtools=""
       aria-live="polite"
       style={{
         position: 'fixed',
@@ -123,7 +123,7 @@ export const AffordDevtools = ({ shortcut = 'KeyA' }: { shortcut?: string }) => 
         </div>
       ))}
       <section
-        aria-label="Afford devtools"
+        aria-label="Affordances devtools"
         style={{
           position: 'fixed',
           right: 16,

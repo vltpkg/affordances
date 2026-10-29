@@ -1,7 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "paths": { "@afford/ui/*": ["./src/*"] }
+    "paths": { "@affordances/ui/*": ["./src/*"] }
   },
   "include": ["src"]
 }

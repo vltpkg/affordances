@@ -9,7 +9,7 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from '@afford/ui/components/dropdown-menu'
+} from '@affordances/ui/components/dropdown-menu'
 
 const themes = [
   { value: 'system', label: 'System', Icon: MonitorIcon },

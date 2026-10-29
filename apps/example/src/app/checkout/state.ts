@@ -1,4 +1,4 @@
-import { defineState } from '@/lib/afford'
+import { defineState } from '@/lib/affordances'
 import { loadCart } from '../cart/state'
 
 export const loadCheckout = loadCart

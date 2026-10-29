@@ -3,22 +3,22 @@
 import * as React from 'react'
 import { cn } from 'cn'
 import { PanelLeftIcon } from 'lucide-react'
-import { Input } from '@afford/ui/components/input'
-import { Separator } from '@afford/ui/components/separator'
+import { Input } from '@affordances/ui/components/input'
+import { Separator } from '@affordances/ui/components/separator'
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from '@afford/ui/components/sheet'
-import { Skeleton } from '@afford/ui/components/skeleton'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@afford/ui/components/tooltip'
+} from '@affordances/ui/components/sheet'
+import { Skeleton } from '@affordances/ui/components/skeleton'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@affordances/ui/components/tooltip'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { Button } from '@/components/ui/button'
 import { Slot } from '@/components/ui/slot'
 
-// shadcn's sidebar as the vlt docs use it; radix's Slot is ./slot, its Sheet and Tooltip are @afford/ui's base-ui ones
+// shadcn's sidebar as the vlt docs use it; radix's Slot is ./slot, its Sheet and Tooltip are @affordances/ui's base-ui ones
 
 const SIDEBAR_COOKIE_NAME = 'sidebar_state'
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7

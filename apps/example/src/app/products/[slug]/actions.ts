@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
-import { defineAction } from '@/lib/afford'
+import { defineAction } from '@/lib/affordances'
 import { ensureSession } from '@/lib/session'
 import * as store from '@/lib/store'
 import product, { remaining } from './state'

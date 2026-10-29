@@ -10,8 +10,8 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@afford/ui/components/dialog'
-import { InputGroup, InputGroupAddon } from '@afford/ui/components/input-group'
+} from '@affordances/ui/components/dialog'
+import { InputGroup, InputGroupAddon } from '@affordances/ui/components/input-group'
 import { SearchIcon, CheckIcon } from 'lucide-react'
 
 function Command({ className, ...props }: React.ComponentProps<typeof CommandPrimitive>) {

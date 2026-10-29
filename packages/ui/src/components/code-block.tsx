@@ -2,7 +2,7 @@ import { Fragment } from 'react'
 import { jsx, jsxs } from 'react/jsx-runtime'
 import { toJsxRuntime } from 'hast-util-to-jsx-runtime'
 import { createHighlighter } from 'shiki'
-import { CodeCard } from '@afford/ui/components/code-card'
+import { CodeCard } from '@affordances/ui/components/code-card'
 
 // anything else renders as plain text
 const langs = ['ts', 'tsx', 'js', 'json', 'bash', 'markdown']
@@ -30,7 +30,7 @@ export const highlight = async (
     themes,
     defaultColor: false,
   }).children
-  // the language rides on <code> as language-*, the html convention markdown converters (@afford/md) read
+  // the language rides on <code> as language-*, the html convention markdown converters (@affordances/md) read
   for (const child of pre?.type === 'element' ? pre.children : [])
     if (child.type === 'element' && child.tagName === 'code')
       Object.assign(child.properties, properties, {

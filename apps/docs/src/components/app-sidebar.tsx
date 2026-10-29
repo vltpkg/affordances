@@ -14,7 +14,7 @@ import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from '@afford/ui/components/collapsible'
+} from '@affordances/ui/components/collapsible'
 import {
   Sidebar,
   SidebarContent,

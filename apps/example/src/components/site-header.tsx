@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Suspense } from 'react'
-import { Wordmark } from '@afford/ui/components/wordmark'
+import { Wordmark } from '@affordances/ui/components/wordmark'
 import { getSessionId } from '@/lib/session'
 import { cartCount } from '@/lib/store'
 import { AgentViewToggle } from './agent-view'

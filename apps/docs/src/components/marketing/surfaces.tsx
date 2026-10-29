@@ -2,7 +2,7 @@
 
 import { useLayoutEffect, useRef, useState } from 'react'
 import { cn } from 'cn'
-import { CodeCard, type CodeTab } from '@afford/ui/components/code-card'
+import { CodeCard, type CodeTab } from '@affordances/ui/components/code-card'
 
 type Surface = {
   id: string

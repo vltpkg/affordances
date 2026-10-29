@@ -1,7 +1,7 @@
 'use client'
 
 import { cn } from 'cn'
-import { useCopy } from '@afford/ui/hooks/use-copy'
+import { useCopy } from '@affordances/ui/hooks/use-copy'
 import { Button } from '@/components/ui/button'
 import { useTextSelection } from '@/hooks/use-text-selection'
 

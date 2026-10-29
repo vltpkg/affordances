@@ -1,9 +1,9 @@
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from '@standard-schema/spec'
-import type { Expose, NavItem } from '@afford/protocol'
-import { AffordError, RedirectSignal } from './errors.ts'
+import type { Expose, NavItem } from '@affordances/protocol'
+import { AffordancesError, RedirectSignal } from './errors.ts'
 
-export const AFFORD = Symbol.for('afford.action')
-const STATE = Symbol.for('afford.state')
+export const AFFORDANCES = Symbol.for('affordances.action')
+const STATE = Symbol.for('affordances.state')
 
 export type Ctx<Session = unknown> = {
   // an action that starts a session (e.g. an anonymous cart) assigns it here, so the state reload sees it
@@ -68,7 +68,7 @@ export type ActionMeta = Omit<
 // the server action: called with input, or with FormData (a <form action>), or with (prevState, FormData) (useActionState)
 export type Action<Input = unknown, Output = unknown> = ((
   ...args: [input: Input] | [prev: unknown, form: FormData] | [form: FormData]
-) => Promise<Output>) & { [AFFORD]: ActionMeta }
+) => Promise<Output>) & { [AFFORDANCES]: ActionMeta }
 
 // what a manifest holds: any action or state, whatever its input or entity types
 // oxlint-disable-next-line typescript/no-explicit-any
@@ -93,7 +93,7 @@ export type StateDef<State extends Entities = Entities> = {
 export type InferState<S> = S extends StateDef<infer State> ? State : Entities
 
 export const isAction = (value: unknown): value is AnyAction =>
-  typeof value === 'function' && AFFORD in value
+  typeof value === 'function' && AFFORDANCES in value
 
 export const isState = (value: unknown): value is AnyState =>
   typeof value === 'object' && value !== null && STATE in value
@@ -113,7 +113,7 @@ const toJsonSchema = (schema: StandardSchemaV1, override?: Record<string, unknow
 export const validate = async <Schema extends StandardSchemaV1>(schema: Schema, value: unknown) => {
   const result = await schema['~standard'].validate(value)
   if (!result.issues) return result.value as StandardSchemaV1.InferOutput<Schema>
-  throw new AffordError('invalid_input', "Input does not match the action's schema", {
+  throw new AffordancesError('invalid_input', "Input does not match the action's schema", {
     issues: result.issues.map((issue) => ({
       path: issue.path?.map((key) => (typeof key === 'object' ? key.key : key)),
       message: issue.message,
@@ -137,7 +137,7 @@ const inputOf = (args: unknown[]) => {
   return form ? fromForm(form) : args[0]
 }
 
-export type AffordOptions<Session> = {
+export type AffordancesOptions<Session> = {
   // resolves the caller's session from a request; shared by the UI path and the agent handler
   auth?: Auth<Session>
   // the current request on the UI path, for frameworks where it's ambient (e.g. next's headers())
@@ -146,12 +146,12 @@ export type AffordOptions<Session> = {
   redirect?: (to: string) => never
 }
 
-export const createAfford = <Session = never>(options: AffordOptions<Session> = {}) => {
+export const createAffordances = <Session = never>(options: AffordancesOptions<Session> = {}) => {
   const defineAction = <Schema extends StandardSchemaV1, Output, State extends Entities = Entities>(
     config: ActionConfig<Schema, Output, Session, State>,
   ): Action<StandardSchemaV1.InferInput<Schema>, Output> => {
     if (!config.expose && process.env.NODE_ENV !== 'production')
-      console.warn(`[afford] ${config.name} has no \`expose\`, so agents can't reach it`)
+      console.warn(`[affordances] ${config.name} has no \`expose\`, so agents can't reach it`)
 
     const action = async (...args: unknown[]) => {
       const input = await validate(config.input, inputOf(args))
@@ -171,7 +171,7 @@ export const createAfford = <Session = never>(options: AffordOptions<Session> = 
       outputSchema: config.output && toJsonSchema(config.output),
       auth: options.auth as Auth<unknown> | undefined,
     }
-    return Object.assign(action, { [AFFORD]: meta }) as unknown as Action<
+    return Object.assign(action, { [AFFORDANCES]: meta }) as unknown as Action<
       StandardSchemaV1.InferInput<Schema>,
       Output
     >
@@ -185,4 +185,4 @@ export const createAfford = <Session = never>(options: AffordOptions<Session> = 
   return { defineAction, defineState }
 }
 
-export const { defineAction, defineState } = createAfford()
+export const { defineAction, defineState } = createAffordances()

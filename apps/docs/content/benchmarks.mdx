@@ -1,12 +1,12 @@
 ---
 title: Benchmarks
-description: How the benchmark compares a browser agent with an Afford agent on the same tasks, and where its results are published.
+description: How the benchmark compares a browser agent with an Affordances agent on the same tasks, and where its results are published.
 ---
 
 The bench runs the same tasks against the example store with two agents, using the same model for both:
 
 1. a browser agent driving Chromium through Playwright, reading each page as an accessibility snapshot (`goto`, `click`, `fill`, `press`). Snapshots are far cheaper than screenshots, so this is a generous baseline: a vision agent would cost more;
-2. a headless agent whose only tools are `afford_open` and `afford_call`, given the site index (every route and action) up front, as an MCP client gets it from `@afford/mcp`.
+2. a headless agent whose only tools are `affordances_open` and `affordances_call`, given the site index (every route and action) up front, as an MCP client gets it from `@affordances/mcp`.
 
 The tasks are the ones a shopper does: find a product and add it to the cart, change a quantity, check out (including the confirm step), search, and look up an order. Each run records turns, tool calls, tokens (input, cache reads, cache writes, output), dollar cost, wall time, time to first action, a trace of every tool call, and whether the task succeeded, checked against the store rather than the agent's word. Results are committed as JSON in `apps/bench/results`, one file per model, with the commit they ran against.
 

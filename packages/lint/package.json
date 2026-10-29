@@ -1,11 +1,11 @@
 {
-  "name": "@afford/lint",
+  "name": "@affordances/lint",
   "version": "0.0.0",
-  "description": "Afford lint rules for ESLint and oxlint: require-affordance, static-action-name",
+  "description": "Affordances lint rules for ESLint and oxlint: require-affordance, static-action-name",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/afford/afford.git",
+    "url": "git+https://github.com/affordances/affordances.git",
     "directory": "packages/lint"
   },
   "files": [

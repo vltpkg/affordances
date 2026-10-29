@@ -20,8 +20,8 @@ const page = h(
 
 test('markers render as display: contents custom elements', () => {
   const html = renderToString(page)
-  expect(html).toContain('<afford-md data-mode="skip" style="display:contents">')
-  expect(html).toContain('<afford-md data-mode="only" hidden="">')
+  expect(html).toContain('<affordances-md data-mode="skip" style="display:contents">')
+  expect(html).toContain('<affordances-md data-mode="only" hidden="">')
   expect(html).toContain('data-md="$48.00"')
   expect(html).toContain('data-block=""')
 })

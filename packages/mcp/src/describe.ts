@@ -1,4 +1,4 @@
-import type { SiteIndex } from '@afford/protocol'
+import type { SiteIndex } from '@affordances/protocol'
 
 type Schema = {
   type?: string | string[]

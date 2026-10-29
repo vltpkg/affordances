@@ -1,6 +1,6 @@
 'use client'
 
-import { CodeCard } from '@afford/ui/components/code-card'
+import { CodeCard } from '@affordances/ui/components/code-card'
 import { usePreferredPackageManager } from '@/hooks/use-preferred-package-manager'
 import { PackageManagerSelect } from '@/components/package-manager-select'
 import type { PackageManager } from '@/lib/package-managers'

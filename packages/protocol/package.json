@@ -1,11 +1,11 @@
 {
-  "name": "@afford/protocol",
+  "name": "@affordances/protocol",
   "version": "0.0.0",
-  "description": "Afford protocol: types, JSON Schemas, and the spec",
+  "description": "Affordances protocol: types, JSON Schemas, and the spec",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/afford/afford.git",
+    "url": "git+https://github.com/affordances/affordances.git",
     "directory": "packages/protocol"
   },
   "files": [

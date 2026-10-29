@@ -2,8 +2,14 @@ import { isValidElement } from 'react'
 import Link from 'next/link'
 import type { MDXComponents } from 'mdx/types'
 import { cn } from 'cn'
-import { CodeBlock } from '@afford/ui/components/code-block'
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@afford/ui/components/table'
+import { CodeBlock } from '@affordances/ui/components/code-block'
+import {
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@affordances/ui/components/table'
 import { Heading } from '@/components/heading'
 import { TypeTable } from '@/components/type-table'
 import { BenchHistory, BenchResults } from '@/components/bench-results'

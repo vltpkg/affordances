@@ -1,15 +1,15 @@
 'use client'
 
-import { MEDIA_TYPE } from '@afford/protocol'
-import { useAfford } from '@afford/react'
+import { MEDIA_TYPE } from '@affordances/protocol'
+import { useAffordances } from '@affordances/react'
 import { cn } from 'cn'
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { JsonView } from '@afford/ui/components/json-view'
-import { Toggle } from '@afford/ui/components/toggle'
-import { usePagePath } from './afford-provider'
+import { JsonView } from '@affordances/ui/components/json-view'
+import { Toggle } from '@affordances/ui/components/toggle'
+import { usePagePath } from './affordances-provider'
 
 // per tab, for the session: survives navigation and reloads, not a new tab
-const key = 'afford-agent-view'
+const key = 'affordances-agent-view'
 const listeners = new Set<() => void>()
 const subscribe = (listener: () => void) => {
   listeners.add(listener)
@@ -69,7 +69,7 @@ export const AgentFrame = ({ children }: { children: React.ReactNode }) => {
 
 const GraphPanel = ({ className }: { className?: string }) => {
   const path = usePagePath()
-  const { graph, lastDelta, refresh } = useAfford()
+  const { graph, lastDelta, refresh } = useAffordances()
   // the provider refetches after its own calls, not after a person's form submit, so refetch on open
   useEffect(() => {
     refresh().catch(() => {})

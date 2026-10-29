@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Suspense } from 'react'
-import { Affordance } from '@afford/react'
+import { Affordance } from '@affordances/react'
 import { SubmitButton } from '@/components/submit-button'
 import { Totals } from '@/components/totals'
 import { getSessionId } from '@/lib/session'

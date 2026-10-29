@@ -1,13 +1,13 @@
-# @afford/protocol
+# @affordances/protocol
 
-The Afford protocol: TypeScript types and zod schemas for graphs, calls, deltas, and the site index, the JSON Schemas generated from them, the protocol constants, and the normative `spec.md`. The other Afford packages import their types from here.
+The Affordances protocol: TypeScript types and zod schemas for graphs, calls, deltas, and the site index, the JSON Schemas generated from them, the protocol constants, and the normative `spec.md`. The other Affordances packages import their types from here.
 
 ```bash
-vlt install @afford/protocol
+vlt install @affordances/protocol
 ```
 
 ```ts
-import { Delta, Graph, MEDIA_TYPE } from '@afford/protocol'
+import { Delta, Graph, MEDIA_TYPE } from '@affordances/protocol'
 
 const response = await fetch('https://store.example.com/products/tee', {
   headers: { accept: MEDIA_TYPE },
@@ -15,6 +15,6 @@ const response = await fetch('https://store.example.com/products/tee', {
 const graph = Graph.parse(await response.json())
 ```
 
-The JSON Schemas are at `@afford/protocol/schemas/*.json`, example documents at `@afford/protocol/fixtures/*`, and the spec at `@afford/protocol/spec.md`.
+The JSON Schemas are at `@affordances/protocol/schemas/*.json`, example documents at `@affordances/protocol/fixtures/*`, and the spec at `@affordances/protocol/spec.md`.
 
-Read the protocol: [https://github.com/afford/afford/blob/main/apps/docs/content/protocol.mdx](https://github.com/afford/afford/blob/main/apps/docs/content/protocol.mdx)
+Read the protocol: [https://github.com/affordances/affordances/blob/main/apps/docs/content/protocol.mdx](https://github.com/affordances/affordances/blob/main/apps/docs/content/protocol.mdx)

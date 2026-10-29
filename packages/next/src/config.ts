@@ -1,6 +1,6 @@
 import { watch } from 'node:fs'
 import type { NextConfig } from 'next'
-import { MEDIA_TYPE, WELL_KNOWN_PATH } from '@afford/protocol'
+import { MEDIA_TYPE, WELL_KNOWN_PATH } from '@affordances/protocol'
 import { findAppDir, generate } from './codegen.ts'
 import { API_PATH } from './constants.ts'
 
@@ -18,11 +18,11 @@ const escaped = MEDIA_TYPE.replace(/[.+]/g, '\\$&')
 // every page: not api routes (ours included) and not next's internals
 const page = '/:path((?!api/|_next/).+)'
 
-// the same url answers html or a graph: agents ask with Accept (GET), Content-Type (POST), or ?afford=1
+// the same url answers html or a graph: agents ask with Accept (GET), Content-Type (POST), or ?affordances=1
 const conditions: NonNullable<Rewrite['has']>[] = [
   [{ type: 'header', key: 'accept', value: `.*${escaped}.*` }],
   [{ type: 'header', key: 'content-type', value: `.*${escaped}.*` }],
-  [{ type: 'query', key: 'afford' }],
+  [{ type: 'query', key: 'affordances' }],
 ]
 
 export const rewrites: Rewrite[] = [
@@ -52,23 +52,23 @@ const normalize = (
       }
 
 // a next config wrapper, the same shape as createMDX() or withMd: (config) => config
-export type AffordPlugin = <C extends Config>(config: C) => C
+export type AffordancesPlugin = <C extends Config>(config: C) => C
 
-export type AffordConfig = {
-  // the site's name in /.well-known/afford.json
+export type AffordancesConfig = {
+  // the site's name in /.well-known/affordances.json
   name?: string
   // the project root; defaults to the directory next runs in
   root?: string
-  // more afford capabilities on the same app, applied in order after the graph, e.g. [md()] from @afford/md/next
-  plugins?: AffordPlugin[]
+  // more afford capabilities on the same app, applied in order after the graph, e.g. [md()] from @affordances/md/next
+  plugins?: AffordancesPlugin[]
 }
 
-// the slice of NextConfig withAfford touches; generic so it accepts whichever copy of next the app has
+// the slice of NextConfig withAffordances touches; generic so it accepts whichever copy of next the app has
 export type Config = Pick<NextConfig, 'rewrites' | 'headers'>
 
-export const withAfford = <C extends Config>(
+export const withAffordances = <C extends Config>(
   nextConfig: C = {} as C,
-  options: AffordConfig = {},
+  options: AffordancesConfig = {},
 ): C => {
   const root = options.root ?? process.cwd()
   const entries = generate(root, options)
@@ -83,7 +83,7 @@ export const withAfford = <C extends Config>(
         try {
           generate(root, options)
         } catch (error) {
-          console.error(`[afford] ${(error as Error).message}`)
+          console.error(`[affordances] ${(error as Error).message}`)
         }
       }, 50)
     }).unref()
@@ -98,7 +98,7 @@ export const withAfford = <C extends Config>(
     headers: async () => [
       ...entries.map(({ route }) => ({
         source: toSource(route),
-        headers: [{ key: 'Link', value: '<?afford=1>; rel="afford"' }],
+        headers: [{ key: 'Link', value: '<?affordances=1>; rel="affordances"' }],
       })),
       ...((await nextConfig.headers?.()) ?? []),
     ],

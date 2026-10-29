@@ -1,9 +1,9 @@
 import { htmlToMarkdown } from '../convert/index.ts'
 
-// where the rewrites send markdown requests; `afford-md init` puts the route handler here
-export const MD_PATH = '/api/afford/md'
+// where the rewrites send markdown requests; `affordances-md init` puts the route handler here
+export const MD_PATH = '/api/affordances/md'
 // set on the handler's own fetch of the page, so it never gets rewritten back to markdown
-export const RENDER_HEADER = 'x-afford-md-render'
+export const RENDER_HEADER = 'x-affordances-md-render'
 
 export type Has = { type: 'header' | 'query'; key: string; value?: string }
 export type Rewrite = { source: string; destination: string; has?: Has[]; missing?: Has[] }
@@ -38,14 +38,14 @@ const normalize = (value: unknown): Rewrites =>
         ...(value as Partial<Rewrites> | undefined),
       }
 
-// a next config wrapper, like createMDX(): md()(config), or withAfford(config, { plugins: [md()] })
+// a next config wrapper, like createMDX(): md()(config), or withAffordances(config, { plugins: [md()] })
 export const md =
   () =>
   <C extends Config>(config: C): C => ({
     ...config,
     rewrites: async () => {
       const user = normalize(await config.rewrites?.())
-      // after whatever came first (e.g. afford's graph rewrites), so each keeps its own media type
+      // after whatever came first (e.g. Affordances' graph rewrites), so each keeps its own media type
       return {
         ...user,
         beforeFiles: [...user.beforeFiles, ...rewrites.beforeFiles],
@@ -62,11 +62,11 @@ export const mdAlternate = (path: string) => ({
 })
 
 export type MdHandlerOptions = {
-  // where to fetch pages from; defaults to the request's own origin, or AFFORD_MD_ORIGIN behind a proxy
+  // where to fetch pages from; defaults to the request's own origin, or AFFORDANCES_MD_ORIGIN behind a proxy
   origin?: string
   timeout?: number
   maxBytes?: number
-  // more markdown after the page's, e.g. an Afford graph summary
+  // more markdown after the page's, e.g. an Affordances graph summary
   append?: (request: Request) => Promise<string | undefined> | string | undefined
 }
 
@@ -88,12 +88,15 @@ export const createMdHandler =
 
     const url = new URL(request.url)
     // a rewritten request keeps its original url in next (/blog/post.md, or /blog/post with Accept), so map
-    // every shape back to the page: /api/afford/md/x, /x.md, /index.md → /x and /
+    // every shape back to the page: /api/affordances/md/x, /x.md, /index.md → /x and /
     const path =
       (url.pathname.startsWith(MD_PATH) ? url.pathname.slice(MD_PATH.length) : url.pathname)
         .replace(/(^|\/)index\.md$/, '/')
         .replace(/\.md$/, '') || '/'
-    const target = new URL(path + url.search, origin ?? process.env.AFFORD_MD_ORIGIN ?? url.origin)
+    const target = new URL(
+      path + url.search,
+      origin ?? process.env.AFFORDANCES_MD_ORIGIN ?? url.origin,
+    )
     const headers = new Headers({ accept: 'text/html', [RENDER_HEADER]: '1' })
     for (const name of FORWARD) {
       const value = request.headers.get(name)
@@ -140,7 +143,7 @@ export const createMdHandler =
       /private|no-store/.test(cacheControl) ||
       upstream.headers.has('set-cookie')
     return respond(markdown, upstream.status, {
-      'x-afford-tokens': String(Math.ceil(markdown.length / 4)),
+      'x-affordances-tokens': String(Math.ceil(markdown.length / 4)),
       ...(result.url && { link: `<${result.url}>; rel="canonical"` }),
       ...(personal
         ? { 'cache-control': 'private, no-store' }
@@ -148,7 +151,7 @@ export const createMdHandler =
     })
   }
 
-// app/api/afford/md/[[...path]]/route.ts: export { GET } from '@afford/md/next'
+// app/api/affordances/md/[[...path]]/route.ts: export { GET } from '@affordances/md/next'
 export const GET = createMdHandler()
 
 export type LlmsFullOptions = Omit<MdHandlerOptions, 'append'> & {

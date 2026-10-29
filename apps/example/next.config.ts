@@ -1,5 +1,5 @@
-import { withAfford } from '@afford/next/config'
-import { md } from '@afford/md/next'
+import { withAffordances } from '@affordances/next/config'
+import { md } from '@affordances/md/next'
 import path from 'node:path'
 import type { NextConfig } from 'next'
 
@@ -8,9 +8,9 @@ const nextConfig: NextConfig = {
   // CodeBlock highlights under 'use cache'
   cacheComponents: true,
   partialPrefetching: true,
-  transpilePackages: ['@afford/ui'],
-  // vlt-lock.json sits at the repo root, and next resolves `next` (and @afford/ui) from there
+  transpilePackages: ['@affordances/ui'],
+  // vlt-lock.json sits at the repo root, and next resolves `next` (and @affordances/ui) from there
   turbopack: { root: path.join(import.meta.dirname, '../..') },
 }
 
-export default withAfford(nextConfig, { name: 'Afford Supply', plugins: [md()] })
+export default withAffordances(nextConfig, { name: 'Afford Supply', plugins: [md()] })

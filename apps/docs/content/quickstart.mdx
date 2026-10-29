@@ -7,20 +7,20 @@ You need a Next.js 16 app using the App Router, and zod 4 (or any schema library
 
 ## Install and initialize
 
-<Install pkgs="@afford/next @afford/react zod" run="@afford/next init" />
+<Install pkgs="@affordances/next @affordances/react zod" run="@affordances/next init" />
 
 `init` does four things, and skips any that are already done:
 
-- writes the route handler at `app/api/afford/graph/[[...path]]/route.ts` (or under `src/app`);
-- wraps the default export of `next.config.ts` with `withAfford`;
-- adds `.afford` to `.gitignore`;
-- generates `.afford/manifest.ts` from your `actions.ts` and `state.ts` files.
+- writes the route handler at `app/api/affordances/graph/[[...path]]/route.ts` (or under `src/app`);
+- wraps the default export of `next.config.ts` with `withAffordances`;
+- adds `.affordances` to `.gitignore`;
+- generates `.affordances/manifest.ts` from your `actions.ts` and `state.ts` files.
 
 The route handler it writes looks like this:
 
-```ts title="app/api/afford/graph/[[...path]]/route.ts"
-import { createRouteHandler } from '@afford/next/route'
-import { manifest } from '../../../../../.afford/manifest'
+```ts title="app/api/affordances/graph/[[...path]]/route.ts"
+import { createRouteHandler } from '@affordances/next/route'
+import { manifest } from '../../../../../.affordances/manifest'
 
 const handler = createRouteHandler(manifest)
 
@@ -33,21 +33,21 @@ If your config's default export isn't a plain identifier, `init` asks you to wra
 
 ```ts title="next.config.ts"
 import type { NextConfig } from 'next'
-import { withAfford } from '@afford/next/config'
+import { withAffordances } from '@affordances/next/config'
 
 const nextConfig: NextConfig = {}
 
-export default withAfford(nextConfig)
+export default withAffordances(nextConfig)
 ```
 
-`withAfford` regenerates the manifest when Next loads the config, and again in `next dev` whenever an `actions` or `state` file changes. It also adds the rewrites that send agent requests for a page to the route handler. Your pages and their HTML are untouched.
+`withAffordances` regenerates the manifest when Next loads the config, and again in `next dev` whenever an `actions` or `state` file changes. It also adds the rewrites that send agent requests for a page to the route handler. Your pages and their HTML are untouched.
 
 ## Describe the page
 
-Afford reads two files next to a page. `state.ts` returns what the page shows:
+Affordances reads two files next to a page. `state.ts` returns what the page shows:
 
 ```ts title="app/guestbook/state.ts"
-import { defineState } from '@afford/next'
+import { defineState } from '@affordances/next'
 import { entries } from '@/lib/db'
 
 export default defineState(async () => ({
@@ -62,7 +62,7 @@ export default defineState(async () => ({
 
 import { refresh } from 'next/cache'
 import { z } from 'zod'
-import { defineAction } from '@afford/next'
+import { defineAction } from '@affordances/next'
 import { entries } from '@/lib/db'
 import guestbook from './state'
 
@@ -85,7 +85,7 @@ export const sign = defineAction({
 Use it in the page like any server action. Wrapping the form in `<Affordance>` marks it for agents that read the DOM:
 
 ```tsx title="app/guestbook/page.tsx"
-import { Affordance } from '@afford/react'
+import { Affordance } from '@affordances/react'
 import { sign } from './actions'
 
 export default function Page() {
@@ -103,21 +103,21 @@ export default function Page() {
 
 ## Add the provider
 
-`<AffordProvider>` loads the current page's graph in the browser and registers each available action as a WebMCP tool. Give it the current path, and refresh the server-rendered UI after an agent changes something:
+`<AffordancesProvider>` loads the current page's graph in the browser and registers each available action as a WebMCP tool. Give it the current path, and refresh the server-rendered UI after an agent changes something:
 
 ```tsx title="app/agents.tsx"
 'use client'
 
 import { usePathname, useRouter } from 'next/navigation'
-import { AffordProvider } from '@afford/react'
+import { AffordancesProvider } from '@affordances/react'
 
 export const Agents = ({ children }: { children: React.ReactNode }) => {
   const pathname = usePathname()
   const router = useRouter()
   return (
-    <AffordProvider path={pathname} onDelta={() => router.refresh()}>
+    <AffordancesProvider path={pathname} onDelta={() => router.refresh()}>
       {children}
-    </AffordProvider>
+    </AffordancesProvider>
   )
 }
 ```
@@ -129,7 +129,7 @@ Render `<Agents>` around `{children}` in your root layout.
 Start the dev server and ask for the page as an agent would:
 
 ```bash
-curl -H 'Accept: application/vnd.afford+json' localhost:3000/guestbook
+curl -H 'Accept: application/vnd.affordances+json' localhost:3000/guestbook
 ```
 
 ```json
@@ -163,7 +163,7 @@ curl -H 'Accept: application/vnd.afford+json' localhost:3000/guestbook
 
 ```bash
 curl localhost:3000/guestbook \
-  -H 'Content-Type: application/vnd.afford+json' \
+  -H 'Content-Type: application/vnd.affordances+json' \
   -d '{ "action": "sign", "input": { "name": "Ada", "message": "Hello" } }'
 ```
 
@@ -175,10 +175,10 @@ curl localhost:3000/guestbook \
 }
 ```
 
-The response is a [delta](/docs/concepts/deltas): the new value of each entity the action declared in `effects`, and the message to repeat to the user. `/.well-known/afford.json` now lists `/guestbook` and its `sign` action.
+The response is a [delta](/docs/concepts/deltas): the new value of each entity the action declared in `effects`, and the message to repeat to the user. `/.well-known/affordances.json` now lists `/guestbook` and its `sign` action.
 
 ## Next
 
 - [Actions](/docs/concepts/actions) covers every `defineAction` option.
-- [Expose](/docs/concepts/expose) explains `session` and `confirm`, and [Next.js](/docs/guides/nextjs) shows how to share a session resolver with `createAfford`.
+- [Expose](/docs/concepts/expose) explains `session` and `confirm`, and [Next.js](/docs/guides/nextjs) shows how to share a session resolver with `createAffordances`.
 - [MCP](/docs/guides/mcp) connects Claude or Cursor to the site.

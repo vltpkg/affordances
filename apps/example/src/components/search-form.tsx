@@ -1,6 +1,6 @@
 import Form from 'next/form'
 import { cn } from 'cn'
-import { Input } from '@afford/ui/components/input'
+import { Input } from '@affordances/ui/components/input'
 
 export const SearchForm = ({
   defaultValue,

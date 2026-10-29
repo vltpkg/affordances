@@ -6,7 +6,7 @@
     "plugins": [{ "name": "next" }],
     "paths": {
       "@/*": ["./src/*"],
-      "@afford/ui/*": ["../../packages/ui/src/*"]
+      "@affordances/ui/*": ["../../packages/ui/src/*"]
     }
   },
   "include": [

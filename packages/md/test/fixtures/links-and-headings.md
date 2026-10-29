@@ -9,7 +9,7 @@ url: "https://shop.test/page"
 
 See [effects](https://shop.test/page#effects) above.
 
-[Quickstart](https://shop.test/quickstart) [Why Afford](https://shop.test/why)
+[Quickstart](https://shop.test/quickstart) [Why Affordances](https://shop.test/why)
 
 $48
 

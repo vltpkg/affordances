@@ -2,14 +2,14 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { expect, test } from 'vitest'
 import { z } from 'zod'
-import { createAfford, createHandler } from '@afford/core'
+import { createAffordances, createHandler } from '@affordances/core'
 import { createClient } from '../src/client.ts'
 import { createServer } from '../src/server.ts'
 import { describeSite } from '../src/describe.ts'
 
 // a one-page site: a cookie session is created by the first call, and orders need confirm
 const carts = new Map<string, number>()
-const { defineAction, defineState } = createAfford<{ id: string }>({
+const { defineAction, defineState } = createAffordances<{ id: string }>({
   auth: (request) => {
     const id = request.headers.get('cookie')?.match(/sid=(\w+)/)?.[1]
     return id ? { id } : null
@@ -79,20 +79,23 @@ test('over MCP: open, call, confirm', async () => {
   const mcp = new Client({ name: 'test', version: '0' })
   await mcp.connect(b)
 
-  expect((await mcp.listTools()).tools.map((t) => t.name)).toEqual(['afford_open', 'afford_call'])
+  expect((await mcp.listTools()).tools.map((t) => t.name)).toEqual([
+    'affordances_open',
+    'affordances_call',
+  ])
   const read = (result: Awaited<ReturnType<typeof mcp.callTool>>) =>
     JSON.parse((result.content as { text: string }[])[0]!.text)
 
-  const graph = read(await mcp.callTool({ name: 'afford_open', arguments: { path: '/' } }))
+  const graph = read(await mcp.callTool({ name: 'affordances_open', arguments: { path: '/' } }))
   expect(graph.actions.map((action: { name: string }) => action.name)).toEqual(['add', 'order'])
 
   const first = read(
-    await mcp.callTool({ name: 'afford_call', arguments: { path: '/', action: 'add' } }),
+    await mcp.callTool({ name: 'affordances_call', arguments: { path: '/', action: 'add' } }),
   )
   expect(first).toMatchObject({ ok: true, changed: { cart: 1 } })
   const asked = read(
     await mcp.callTool({
-      name: 'afford_call',
+      name: 'affordances_call',
       arguments: { path: '/', action: 'order', input: {} },
     }),
   )
@@ -102,13 +105,13 @@ test('over MCP: open, call, confirm', async () => {
   })
   const done = read(
     await mcp.callTool({
-      name: 'afford_call',
+      name: 'affordances_call',
       arguments: { path: '/', action: 'order', input: {}, confirm: true },
     }),
   )
   expect(done).toEqual({ ok: true, output: 'ordered' })
 
-  const missing = await mcp.callTool({ name: 'afford_open', arguments: { path: '/nope' } })
+  const missing = await mcp.callTool({ name: 'affordances_open', arguments: { path: '/nope' } })
   expect(missing.isError).toBe(true)
 })
 

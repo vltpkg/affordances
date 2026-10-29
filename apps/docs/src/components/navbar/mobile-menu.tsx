@@ -9,7 +9,7 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from '@afford/ui/components/sheet'
+} from '@affordances/ui/components/sheet'
 import { Button } from '@/components/ui/button'
 import { links } from './data'
 import { Logo } from './logo'

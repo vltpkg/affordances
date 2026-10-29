@@ -1,4 +1,4 @@
-import { Delta, Graph, MEDIA_TYPE } from '@afford/protocol'
+import { Delta, Graph, MEDIA_TYPE } from '@affordances/protocol'
 import { beforeAll, expect, test } from 'vitest'
 import { generate } from '../src/codegen.ts'
 import { createRouteHandler } from '../src/route.ts'
@@ -8,11 +8,11 @@ let handler: (request: Request) => Promise<Response>
 beforeAll(async () => {
   generate(path.join(import.meta.dirname, 'fixture'), { name: 'Fixture' })
   // @ts-ignore generated
-  const { manifest } = await import('./fixture/.afford/manifest.ts')
+  const { manifest } = await import('./fixture/.affordances/manifest.ts')
   handler = createRouteHandler(manifest)
 })
 
-const url = (p: string) => `http://shop.test/api/afford/graph${p}`
+const url = (p: string) => `http://shop.test/api/affordances/graph${p}`
 
 test('serves the graph for a rewritten page url', async () => {
   const graph = Graph.parse(await (await handler(new Request(url('/products/tee')))).json())
@@ -24,7 +24,7 @@ test('serves the graph for a rewritten page url', async () => {
 })
 
 test('the root and the well-known index resolve', async () => {
-  const index = await (await handler(new Request(url('/.well-known/afford.json')))).json()
+  const index = await (await handler(new Request(url('/.well-known/affordances.json')))).json()
   expect(index).toMatchObject({
     name: 'Fixture',
     routes: [{ route: '/cart' }, { route: '/products/[slug]' }],

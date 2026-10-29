@@ -1,4 +1,4 @@
-@import '@afford/ui/globals.css';
+@import '@affordances/ui/globals.css';
 @import './sidebar.css';
 @import './book.css';
 
@@ -18,13 +18,13 @@ html:not([data-pm='deno']) [data-pm-only='deno'] {
   display: none;
 }
 
-/* @afford/ui's overlays are darker than the vlt docs'; match the reference's light dim (the blur stays) */
+/* @affordances/ui's overlays are darker than the vlt docs'; match the reference's light dim (the blur stays) */
 [data-slot='sheet-overlay'],
 [data-slot='dialog-overlay'] {
   background: oklch(0 0 0 / 10%);
 }
 
-/* the bench page draws the marketing proof chart; its tokens, as the docs' neutrals. the Afford agent is
+/* the bench page draws the marketing proof chart; its tokens, as the docs' neutrals. the Affordances agent is
    the foreground, the browser agent recedes */
 .bench {
   --bg: var(--background);

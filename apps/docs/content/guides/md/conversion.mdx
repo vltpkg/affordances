@@ -19,15 +19,15 @@ The handler waits for the whole response. React streams each resolved `<Suspense
 - A heading's link to its own `#fragment` (the usual self-link) is unwrapped, so it reads `## Effects`.
 - `<details>` becomes its summary in bold followed by its content, and `<dl>` becomes `**term**: definition`.
 - Images need both a `src` and alt text; without alt text, they tell an agent nothing.
-- Buttons are dropped. What a page lets you do belongs in its [Afford graph](/docs/concepts/actions).
+- Buttons are dropped. What a page lets you do belongs in its [Affordances graph](/docs/concepts/actions).
 
 ## Code
 
 `<pre><code class="language-ts">` becomes a `ts` fence. A `data-title` on the `<pre>` becomes the fence's title:
 
 ````md
-```ts title="app/api/afford/md/[[...path]]/route.ts"
-export { GET } from '@afford/md/next'
+```ts title="app/api/affordances/md/[[...path]]/route.ts"
+export { GET } from '@affordances/md/next'
 ```
 ````
 

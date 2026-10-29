@@ -1,7 +1,7 @@
 'use client'
 
 import { LinkIcon } from 'lucide-react'
-import { useCopy } from '@afford/ui/hooks/use-copy'
+import { useCopy } from '@affordances/ui/hooks/use-copy'
 
 type HeadingProps = React.ComponentProps<'h2'> & {
   as: 'h2' | 'h3' | 'h4' | 'h5' | 'h6'

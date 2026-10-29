@@ -3,19 +3,19 @@ title: Security
 description: Default deny, explicit confirmation, Origin checks for cookies, and a fixed order of checks on every agent call.
 ---
 
-Afford adds an entry point to your app, so its defaults are conservative. This page lists what the handler enforces and what stays your job.
+Affordances adds an entry point to your app, so its defaults are conservative. This page lists what the handler enforces and what stays your job.
 
 ## Default deny
 
-An action without `expose` isn't part of the protocol. It's missing from graphs and from `/.well-known/afford.json`, and calling it answers `not_found`, the same as an action that doesn't exist. `defineAction` warns in development when `expose` is missing, so the omission is a decision rather than an accident.
+An action without `expose` isn't part of the protocol. It's missing from graphs and from `/.well-known/affordances.json`, and calling it answers `not_found`, the same as an action that doesn't exist. `defineAction` warns in development when `expose` is missing, so the omission is a decision rather than an accident.
 
 ## Confirm
 
-`expose: 'confirm'` actions never run on the first call. The handler answers `confirm_required` with the action's `summary`, and runs only when the same call comes back with `confirm: true`. Clients acting for a person should show the summary and ask first. `@afford/react` and `@afford/mcp` both do. See [Expose](/docs/concepts/expose#confirm).
+`expose: 'confirm'` actions never run on the first call. The handler answers `confirm_required` with the action's `summary`, and runs only when the same call comes back with `confirm: true`. Clients acting for a person should show the summary and ask first. `@affordances/react` and `@affordances/mcp` both do. See [Expose](/docs/concepts/expose#confirm).
 
 ## Origin and CSRF
 
-Next's server actions protect themselves with an Origin check, but Afford calls arrive at a route handler, so the handler does its own:
+Next's server actions protect themselves with an Origin check, but Affordances calls arrive at a route handler, so the handler does its own:
 
 - A call that carries cookies and no bearer token must send an `Origin` header that matches the site, or one of `allowedOrigins`. Otherwise it answers `unauthorized`.
 - A call with `Authorization: Bearer` is exempt, because a browser can't attach a bearer token to a cross-site request on its own.
@@ -27,7 +27,7 @@ Every agent call follows the same sequence and stops at the first failure: resol
 
 ## Errors
 
-An error thrown from `run` that isn't an `AffordError` is logged on the server and answered as `internal` with the message `Something went wrong`. Stack traces, SQL, and secrets in error messages don't reach the caller.
+An error thrown from `run` that isn't an `AffordancesError` is logged on the server and answered as `internal` with the message `Something went wrong`. Stack traces, SQL, and secrets in error messages don't reach the caller.
 
 ## Rate limits
 
@@ -39,4 +39,4 @@ An error thrown from `run` that isn't an `AffordError` is logged on the server a
 - **What entities contain.** A graph must not include anything the HTML page wouldn't show the same user. The loader runs with the caller's session; use it.
 - **URLs.** Don't put personal data in paths or query strings. Graph URLs are page URLs, and they end up in logs.
 - **The UI path.** A server action called from your components validates input but doesn't evaluate the guard or `expose`. Enforce invariants that matter for people in `run`.
-- **Bots.** Verified-agent and bot-protection checks, such as Vercel BotID, belong in `auth` or `rateLimit`. Afford doesn't require one.
+- **Bots.** Verified-agent and bot-protection checks, such as Vercel BotID, belong in `auth` or `rateLimit`. Affordances doesn't require one.

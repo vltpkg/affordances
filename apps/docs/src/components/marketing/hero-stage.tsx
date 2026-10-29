@@ -481,7 +481,7 @@ export const HeroStage = () => {
               <span className="whitespace-nowrap text-(--fg3)">
                 Accept:{' '}
                 <span className="url-a text-(--fg2)">
-                  {agent ? 'application/vnd.afford+json' : 'text/html'}
+                  {agent ? 'application/vnd.affordances+json' : 'text/html'}
                 </span>
               </span>
             </div>

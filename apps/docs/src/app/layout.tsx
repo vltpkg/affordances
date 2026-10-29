@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { fontVariables } from '@afford/ui/lib/fonts'
+import { fontVariables } from '@affordances/ui/lib/fonts'
 import { Providers } from '@/providers'
 import { description, siteUrl } from '@/lib/site-url'
 import { prePaintScript } from '@/lib/package-managers'
@@ -8,8 +8,8 @@ import '@/styles/docs.css'
 export const metadata: Metadata = {
   // resolves relative og/twitter image + canonical urls against whichever deployment is serving
   metadataBase: siteUrl,
-  openGraph: { siteName: 'Afford', type: 'website' },
-  title: { default: 'Afford', template: '%s · Afford' },
+  openGraph: { siteName: 'Affordances', type: 'website' },
+  title: { default: 'Affordances', template: '%s · Affordances' },
   description,
 }
 

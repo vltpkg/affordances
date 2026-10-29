@@ -1,28 +1,28 @@
-import { createClient, type AffordClient } from '@afford/mcp'
+import { createClient, type AffordancesClient } from '@affordances/mcp'
 
 // the five tasks from PLAN.md §8, against apps/example's seed. setup runs on a fresh session as plain
-// afford calls; check reads that session afterwards. `oracle` is the scripted ideal, for --dry runs.
+// affordances calls; check reads that session afterwards. `oracle` is the scripted ideal, for --dry runs.
 
 type Cart = { items: { sku: string; quantity: number }[] }
 
 export type Task = {
   id: string
   prompt: string
-  setup?: (client: AffordClient) => Promise<void>
-  check: (client: AffordClient, answer: string) => Promise<boolean>
-  oracle: (client: AffordClient) => Promise<string>
+  setup?: (client: AffordancesClient) => Promise<void>
+  check: (client: AffordancesClient, answer: string) => Promise<boolean>
+  oracle: (client: AffordancesClient) => Promise<string>
 }
 
-const cart = async (client: AffordClient) => (await client.open('/cart')).entities.cart as Cart
-const quantity = async (client: AffordClient, sku: string) =>
+const cart = async (client: AffordancesClient) => (await client.open('/cart')).entities.cart as Cart
+const quantity = async (client: AffordancesClient, sku: string) =>
   (await cart(client)).items.find((item) => item.sku === sku)?.quantity ?? 0
-const orders = async (client: AffordClient) =>
+const orders = async (client: AffordancesClient) =>
   (await client.open('/account/orders')).entities.orders as {
     items: { name: string }[]
     total: string
   }[]
 
-const add = (client: AffordClient, slug: string, sku: string, n = 1) =>
+const add = (client: AffordancesClient, slug: string, sku: string, n = 1) =>
   client.call(`/products/${slug}`, 'addToCart', { sku, quantity: n })
 
 export const tasks: Task[] = [

@@ -1,4 +1,4 @@
-import { Delta, Graph, MEDIA_TYPE, SiteIndex, WELL_KNOWN_PATH } from '@afford/protocol'
+import { Delta, Graph, MEDIA_TYPE, SiteIndex, WELL_KNOWN_PATH } from '@affordances/protocol'
 
 export type ClientOptions = {
   // sent as Authorization: Bearer; without one, the client keeps the site's cookies like a browser would
@@ -6,7 +6,7 @@ export type ClientOptions = {
   fetch?: typeof fetch
 }
 
-// an agent's view of one Afford site: open a page for its graph, call an action for a delta
+// an agent's view of one Affordances site: open a page for its graph, call an action for a delta
 export const createClient = (site: string | URL, options: ClientOptions = {}) => {
   const base = new URL(site)
   const fetcher = options.fetch ?? fetch
@@ -41,7 +41,7 @@ export const createClient = (site: string | URL, options: ClientOptions = {}) =>
     open: async (path: string) => {
       const { url, response } = await request(path)
       if (!response.headers.get('content-type')?.includes(MEDIA_TYPE))
-        throw new Error(`${url.pathname} has no Afford graph (${response.status})`)
+        throw new Error(`${url.pathname} has no Affordances graph (${response.status})`)
       const body = await response.json()
       // an error delta (e.g. not_found) instead of a graph
       if ('ok' in body)
@@ -60,4 +60,4 @@ export const createClient = (site: string | URL, options: ClientOptions = {}) =>
   }
 }
 
-export type AffordClient = ReturnType<typeof createClient>
+export type AffordancesClient = ReturnType<typeof createClient>

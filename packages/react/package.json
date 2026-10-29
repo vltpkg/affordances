@@ -1,11 +1,11 @@
 {
-  "name": "@afford/react",
+  "name": "@affordances/react",
   "version": "0.0.0",
-  "description": "Afford for React: WebMCP tools from the page graph, and <Affordance> markers",
+  "description": "Affordances for React: WebMCP tools from the page graph, and <Affordance> markers",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/afford/afford.git",
+    "url": "git+https://github.com/affordances/affordances.git",
     "directory": "packages/react"
   },
   "files": [
@@ -29,10 +29,10 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@afford/protocol": "workspace:*"
+    "@affordances/protocol": "workspace:*"
   },
   "devDependencies": {
-    "@afford/core": "workspace:*",
+    "@affordances/core": "workspace:*",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "happy-dom": "^21.0.4",

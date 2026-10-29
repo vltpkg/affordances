@@ -1,8 +1,8 @@
 import { headers } from 'next/headers'
 import { redirect as nextRedirect } from 'next/navigation'
-import { createAfford as createCore, type AffordOptions } from '@afford/core'
+import { createAffordances as createCore, type AffordancesOptions } from '@affordances/core'
 
-export { AffordError, redirect, type Ctx, type Manifest } from '@afford/core'
+export { AffordancesError, redirect, type Ctx, type Manifest } from '@affordances/core'
 
 // the UI path reads the request from next's headers() and redirects with next's redirect()
 const request = async () => {
@@ -12,7 +12,8 @@ const request = async () => {
   return new Request(`${proto}://${host}/`, { headers: list })
 }
 
-export const createAfford = <Session = never>(options: Pick<AffordOptions<Session>, 'auth'> = {}) =>
-  createCore<Session>({ ...options, request, redirect: nextRedirect })
+export const createAffordances = <Session = never>(
+  options: Pick<AffordancesOptions<Session>, 'auth'> = {},
+) => createCore<Session>({ ...options, request, redirect: nextRedirect })
 
-export const { defineAction, defineState } = createAfford()
+export const { defineAction, defineState } = createAffordances()

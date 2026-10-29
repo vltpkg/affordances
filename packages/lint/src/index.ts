@@ -119,16 +119,16 @@ const staticActionName: Rule.RuleModule = {
 }
 
 const plugin = {
-  // oxlint's jsPlugins prefix rules with meta.name, eslint with the key under `plugins`; both say afford/…
-  meta: { name: 'afford' },
+  // oxlint's jsPlugins prefix rules with meta.name, eslint with the key under `plugins`; both say affordances/…
+  meta: { name: 'affordances' },
   rules: { 'require-affordance': requireAffordance, 'static-action-name': staticActionName },
   configs: {} as Record<string, unknown>,
 }
 
-// eslint.config.js: import afford from '@afford/lint'; export default [afford.configs.recommended]
+// eslint.config.js: import affordances from '@affordances/lint'; export default [affordances.configs.recommended]
 plugin.configs.recommended = {
-  plugins: { afford: plugin },
-  rules: { 'afford/require-affordance': 'warn', 'afford/static-action-name': 'error' },
+  plugins: { affordances: plugin },
+  rules: { 'afford/require-affordance': 'warn', 'affordances/static-action-name': 'error' },
 }
 
 export default plugin

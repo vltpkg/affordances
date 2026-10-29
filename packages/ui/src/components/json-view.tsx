@@ -150,7 +150,7 @@ const Node = ({ name, value, path, highlight, comma }: NodeProps) => {
   )
 }
 
-// a read-only view of an afford graph or delta; pure render, so it works on either side of the client boundary
+// a read-only view of an Affordances graph or delta; pure render, so it works on either side of the client boundary
 export const JsonView = ({ value, highlight = [], className }: JsonViewProps) => (
   <div
     className={cn(

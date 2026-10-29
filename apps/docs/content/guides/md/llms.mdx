@@ -9,7 +9,7 @@ description: An index of every page for agents, and the whole site's Markdown in
 
 ```ts title="app/llms-full.txt/route.ts"
 import { connection } from 'next/server'
-import { createLlmsFullHandler } from '@afford/md/next'
+import { createLlmsFullHandler } from '@affordances/md/next'
 
 export const GET = createLlmsFullHandler({
   pages: async () => {

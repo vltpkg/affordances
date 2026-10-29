@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-const MEDIA_TYPE = 'application/vnd.afford+json'
+const MEDIA_TYPE = 'application/vnd.affordances+json'
 
 const cart = (page: Page) => page.getByRole('banner').getByRole('link', { name: /^Cart/ })
 
@@ -152,7 +152,7 @@ test('every page reads as markdown: .md urls and Accept: text/markdown', async (
   expect((await request.get('/index.md')).status()).toBe(200)
   // the graph is still there at the same url
   const graph = await request.get('/products/heavyweight-tee', {
-    headers: { accept: 'application/vnd.afford+json' },
+    headers: { accept: 'application/vnd.affordances+json' },
   })
   expect((await graph.json()).route).toBe('/products/[slug]')
 })

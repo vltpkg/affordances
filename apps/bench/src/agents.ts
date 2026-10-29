@@ -1,5 +1,5 @@
 import { chromium, type Browser } from 'playwright'
-import { createClient, describeSite } from '@afford/mcp'
+import { createClient, describeSite } from '@affordances/mcp'
 import type { Tool } from './loop.ts'
 
 // each agent starts on a session the task set up, so the check can read that session's cart and orders
@@ -13,7 +13,7 @@ export const affordAgent = async (site: string, sid: string) => {
   const index = describeSite(await client.index())
   const tools: Tool[] = [
     {
-      name: 'afford_open',
+      name: 'affordances_open',
       description:
         'Read a page: its entities (what the page shows), actions (what you can do there, with input schemas and availability), and nav. Start at "/".',
       input_schema: {
@@ -24,7 +24,7 @@ export const affordAgent = async (site: string, sid: string) => {
       run: async ({ path }) => json(await client.open(path as string)),
     },
     {
-      name: 'afford_call',
+      name: 'affordances_call',
       description:
         'Call an action from a page graph. Returns a delta: changed entities, output, actions that appeared or went away, and a redirect to open next. Actions with expose "confirm" answer confirm_required first; resend with confirm: true once the user has approved.',
       input_schema: {
@@ -50,7 +50,7 @@ export const affordAgent = async (site: string, sid: string) => {
   ]
   return {
     name: 'afford' as const,
-    system: `You operate the website at ${site} through its Afford graph. Use afford_open and afford_call. When the task is done, reply with a one-line summary.\n\n${index}`,
+    system: `You operate the website at ${site} through its Affordances graph. Use affordances_open and affordances_call. When the task is done, reply with a one-line summary.\n\n${index}`,
     tools,
     close: async () => {},
   }

@@ -1,4 +1,4 @@
-import { defineState } from '@/lib/afford'
+import { defineState } from '@/lib/affordances'
 import { formatPrice, listProducts, type Product } from '@/lib/store'
 
 // one row of the index, also used by search

@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { createMDX } from 'fumadocs-mdx/next'
-import { md } from '@afford/md/next'
-import { withAfford } from '@afford/next/config'
+import { md } from '@affordances/md/next'
+import { withAffordances } from '@affordances/next/config'
 import type { NextConfig } from 'next'
 
 // where each page lives now: guides and reference became folders under /docs
@@ -33,10 +33,10 @@ const nextConfig: NextConfig = {
   reactCompiler: true,
   cacheComponents: true,
   partialPrefetching: true,
-  transpilePackages: ['@afford/ui'],
+  transpilePackages: ['@affordances/ui'],
   // the docs moved under /docs (the site root is the marketing page now), then guides and reference moved
   // into folders. each old url goes straight to its page, no chains. redirects run before rewrites, so
-  // /quickstart.md lands on /docs/quickstart.md and then on @afford/md
+  // /quickstart.md lands on /docs/quickstart.md and then on @affordances/md
   redirects: async () => [
     ...redirect('/why', '/docs'),
     ...Object.entries(moved).flatMap(([from, to]) => [
@@ -45,10 +45,12 @@ const nextConfig: NextConfig = {
       ...redirect(`/${from}`, `/docs/${to}`),
     ]),
   ],
-  // vlt-lock.json sits at the repo root, and next resolves `next` (and @afford/ui) from there
+  // vlt-lock.json sits at the repo root, and next resolves `next` (and @affordances/ui) from there
   turbopack: { root: path.join(import.meta.dirname, '../..') },
 }
 
-// the graph for agents that speak afford, and markdown (`/page.md`, `Accept: text/markdown`) for the rest;
+// the graph for agents that speak affordances, and markdown (`/page.md`, `Accept: text/markdown`) for the rest;
 // each plugin's rewrites match only its own media type, so they don't collide
-export default createMDX()(withAfford(nextConfig, { name: 'Afford docs', plugins: [md()] }))
+export default createMDX()(
+  withAffordances(nextConfig, { name: 'Affordances docs', plugins: [md()] }),
+)

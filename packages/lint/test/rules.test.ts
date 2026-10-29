@@ -40,7 +40,7 @@ tester.run('require-affordance', plugin.rules['require-affordance'], {
 tester.run('static-action-name', plugin.rules['static-action-name'], {
   valid: [
     `defineAction({ name: 'addToCart', run() {} })`,
-    `afford.defineAction({ name: "x" })`,
+    `affordances.defineAction({ name: "x" })`,
     `other({ name: n })`,
   ],
   invalid: [

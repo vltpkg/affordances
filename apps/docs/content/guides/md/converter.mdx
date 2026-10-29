@@ -3,10 +3,10 @@ title: htmlToMarkdown
 description: The converter on its own, with no React or Next.js dependency.
 ---
 
-`htmlToMarkdown` from `@afford/md` is the converter the route handler uses. Give it any HTML document:
+`htmlToMarkdown` from `@affordances/md` is the converter the route handler uses. Give it any HTML document:
 
 ```ts
-import { htmlToMarkdown } from '@afford/md'
+import { htmlToMarkdown } from '@affordances/md'
 
 const html = await (await fetch('https://example.com/post')).text()
 const { markdown, title, url, tokens } = htmlToMarkdown(html, { url: 'https://example.com/post' })

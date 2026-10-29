@@ -28,7 +28,7 @@ afterEach(() => vi.unstubAllGlobals())
 
 const handler = createMdHandler()
 const get = (path: string, headers: Record<string, string> = {}) =>
-  handler(new Request(`${site}/api/afford/md${path}`, { headers }))
+  handler(new Request(`${site}/api/affordances/md${path}`, { headers }))
 
 test('renders the page as html from its own origin and converts it', async () => {
   const response = await get('/products/tee?color=black', {
@@ -47,7 +47,7 @@ test('renders the page as html from its own origin and converts it', async () =>
   expect(call!.headers.get('cookie')).toBe('sid=1')
   expect(call!.headers.get('accept-language')).toBe('en')
   expect(call!.headers.get('x-other')).toBeNull()
-  expect(Number(response.headers.get('x-afford-tokens'))).toBeGreaterThan(0)
+  expect(Number(response.headers.get('x-affordances-tokens'))).toBeGreaterThan(0)
 })
 
 test('next hands rewritten requests their original url: .md and index.md map back to the page', async () => {
@@ -128,7 +128,7 @@ test('loop guard, size limit, timeout', async () => {
   expect((await get('/a', { [RENDER_HEADER]: '1' })).status).toBe(508)
   expect(seen).toHaveLength(0)
   const small = createMdHandler({ maxBytes: 10 })
-  expect((await small(new Request(`${site}/api/afford/md/a`))).status).toBe(413)
+  expect((await small(new Request(`${site}/api/affordances/md/a`))).status).toBe(413)
   vi.stubGlobal(
     'fetch',
     (_url: URL, init: RequestInit) =>
@@ -137,7 +137,7 @@ test('loop guard, size limit, timeout', async () => {
       ),
   )
   expect(
-    (await createMdHandler({ timeout: 5 })(new Request(`${site}/api/afford/md/slow`))).status,
+    (await createMdHandler({ timeout: 5 })(new Request(`${site}/api/affordances/md/slow`))).status,
   ).toBe(504)
 })
 
@@ -146,7 +146,7 @@ test('origin override and append', async () => {
     origin: 'http://internal:3000',
     append: () => '## Actions\n\n- addToCart',
   })
-  const response = await proxied(new Request(`${site}/api/afford/md/a`))
+  const response = await proxied(new Request(`${site}/api/affordances/md/a`))
   expect(seen[0]!.url.href).toBe('http://internal:3000/a')
   expect(await response.text()).toMatch(/Boxy\.\n\n## Actions\n\n- addToCart\n$/)
 })
@@ -155,7 +155,7 @@ test('rewrites send only markdown requests, never our own render, and skip api a
   const [, pageRule] = rewrites.beforeFiles
   const re = new RegExp(`^/${pageRule!.source.slice('/:path'.length)}$`)
   expect(re.test('/blog/post')).toBe(true)
-  expect(re.test('/api/afford/md/x')).toBe(false)
+  expect(re.test('/api/affordances/md/x')).toBe(false)
   expect(re.test('/_next/static/a.js')).toBe(false)
   expect(re.test('/sitemap.xml')).toBe(false)
   for (const rule of [...rewrites.beforeFiles, ...rewrites.afterFiles])
@@ -173,7 +173,7 @@ test('md() composes with existing rewrites in either shape', async () => {
     ...rewrites.afterFiles,
     { source: '/a', destination: '/b' },
   ])
-  const graph = { source: '/', destination: '/api/afford/graph' }
+  const graph = { source: '/', destination: '/api/affordances/graph' }
   const nested = (await withMd({ rewrites: async () => ({ beforeFiles: [graph] }) })
     .rewrites!()) as { beforeFiles: unknown[] }
   expect(nested.beforeFiles).toEqual([graph, ...rewrites.beforeFiles])

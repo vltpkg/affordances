@@ -1,5 +1,5 @@
 import { Fragment } from 'react'
-import { highlight } from '@afford/ui/components/code-block'
+import { highlight } from '@affordances/ui/components/code-block'
 import { CommandCard } from '@/components/command-card'
 import {
   DEFAULT_PREFERRED_PM,
@@ -23,7 +23,7 @@ const Command = async ({ commands }: { commands: Record<PackageManager, string> 
     packageManagers.map((pm) =>
       highlight(
         { code: commands[pm], lang: 'bash' },
-        { dataPmOnly: pm, ...(pm !== DEFAULT_PREFERRED_PM && { dataAffordMd: 'skip' }) },
+        { dataPmOnly: pm, ...(pm !== DEFAULT_PREFERRED_PM && { dataAffordancesMd: 'skip' }) },
       ),
     ),
   )
@@ -37,12 +37,12 @@ const Command = async ({ commands }: { commands: Record<PackageManager, string> 
   )
 }
 
-// <Run cmd="@afford/next init" />: run a package's bin, vlx @afford/next init for vlt
+// <Run cmd="@affordances/next init" />: run a package's bin, vlx @affordances/next init for vlt
 export const Run = ({ cmd }: { cmd: string }) => (
   <Command commands={forEach((pm) => exec(pm, cmd))} />
 )
 
-// <Install pkgs="@afford/next zod" dev run="@afford/next init" />: add packages, then (optionally) run one
+// <Install pkgs="@affordances/next zod" dev run="@affordances/next init" />: add packages, then (optionally) run one
 export const Install = ({ pkgs, dev, run }: { pkgs: string; dev?: boolean; run?: string }) => (
   <Command
     commands={forEach((pm) =>

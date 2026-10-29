@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { cn } from 'cn'
 import { Vlt } from '@/components/icons/vlt'
 
-// vlt.io's logo, as two links: the mark and "vlt" go to vlt, "afford" to this site's home
+// vlt.io's logo, as two links: the mark and "vlt" go to vlt, "affordances" to this site's home
 export const Logo = ({ className, onClick }: { className?: string; onClick?: () => void }) => (
   <div
     className={cn(
@@ -23,12 +23,12 @@ export const Logo = ({ className, onClick }: { className?: string; onClick?: () 
     </span>
     <Link
       href="/"
-      aria-label="Afford home"
+      aria-label="Affordances home"
       onClick={onClick}
       className="rounded-md font-normal text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
     >
       {/* Geist Pixel draws 1.5px cells at 19.75px (its cell is 0.076em), so it stays crisp next to the 18px text */}
-      <span className="font-pixel text-[19.75px] leading-none">afford</span>
+      <span className="font-pixel text-[19.75px] leading-none">affordances</span>
     </Link>
   </div>
 )

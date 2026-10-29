@@ -1,9 +1,9 @@
 'use client'
 
-import { Affordance, AffordProvider } from '@afford/react'
+import { Affordance, AffordancesProvider } from '@affordances/react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { createContext, Suspense, use, useCallback, useEffect, useState } from 'react'
-import { Button } from '@afford/ui/components/button'
+import { Button } from '@affordances/ui/components/button'
 import {
   Dialog,
   DialogContent,
@@ -11,7 +11,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@afford/ui/components/dialog'
+} from '@affordances/ui/components/dialog'
 
 // under cacheComponents these hooks can suspend, so only this empty child reads them and the shell stays static
 const RouteSync = ({ onChange }: { onChange: (path: string) => void }) => {
@@ -28,7 +28,7 @@ const PathContext = createContext('/')
 // the page's path and query, as the agent view requests it
 export const usePagePath = () => use(PathContext)
 
-export const Afford = ({ children }: { children: React.ReactNode }) => {
+export const Affordances = ({ children }: { children: React.ReactNode }) => {
   const router = useRouter()
   // the provider renders no markup, so reading location on the client can't mismatch hydration
   const [path, setPath] = useState(() =>
@@ -52,7 +52,7 @@ export const Afford = ({ children }: { children: React.ReactNode }) => {
   }
 
   return (
-    <AffordProvider
+    <AffordancesProvider
       path={path}
       confirm={confirm}
       onDelta={(delta) => {
@@ -95,6 +95,6 @@ export const Afford = ({ children }: { children: React.ReactNode }) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </AffordProvider>
+    </AffordancesProvider>
   )
 }

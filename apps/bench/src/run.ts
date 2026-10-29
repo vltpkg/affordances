@@ -2,7 +2,7 @@ import { execSync, spawn } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { parseArgs } from 'node:util'
-import { createClient } from '@afford/mcp'
+import { createClient } from '@affordances/mcp'
 import { affordAgent, browserAgent, closeBrowser } from './agents.ts'
 import { DEFAULT_MODEL, EFFORT, emptyStats, runAgent, type RunStats } from './loop.ts'
 import { newSession, tasks as allTasks } from './tasks.ts'
@@ -119,7 +119,7 @@ const summarize = (mine: Row[]) => {
     readBytes: spread(
       mine.map((r) =>
         r.trace
-          .filter((c) => !['afford_call', 'click', 'fill', 'press'].includes(c.tool))
+          .filter((c) => !['affordances_call', 'click', 'fill', 'press'].includes(c.tool))
           .reduce((sum, c) => sum + c.bytes, 0),
       ),
     ),

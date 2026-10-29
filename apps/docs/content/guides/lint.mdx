@@ -3,36 +3,36 @@ title: Lint
 description: Two rules that keep the manifest buildable and every server-action control visible to agents.
 ---
 
-`@afford/lint` is an ESLint plugin, written against the ESLint rule API so oxlint's JS plugin support can load it too.
+`@affordances/lint` is an ESLint plugin, written against the ESLint rule API so oxlint's JS plugin support can load it too.
 
-<Install pkgs="@afford/lint" dev />
+<Install pkgs="@affordances/lint" dev />
 
 ## ESLint
 
 ```js title="eslint.config.js"
-import afford from '@afford/lint'
+import affordances from '@affordances/lint'
 
-export default [afford.configs.recommended]
+export default [affordances.configs.recommended]
 ```
 
 ## oxlint
 
 ```json title=".oxlintrc.json"
 {
-  "jsPlugins": ["@afford/lint"],
+  "jsPlugins": ["@affordances/lint"],
   "rules": {
     "afford/require-affordance": "warn",
-    "afford/static-action-name": "error"
+    "affordances/static-action-name": "error"
   }
 }
 ```
 
 ## Rules
 
-| Rule                        | Recommended | What it checks                                               |
-| --------------------------- | ----------- | ------------------------------------------------------------ |
-| `afford/require-affordance` | `warn`      | Controls that call a server action are inside `<Affordance>` |
-| `afford/static-action-name` | `error`     | `defineAction` has a `name`, and it's a string literal       |
+| Rule                             | Recommended | What it checks                                               |
+| -------------------------------- | ----------- | ------------------------------------------------------------ |
+| `afford/require-affordance`      | `warn`      | Controls that call a server action are inside `<Affordance>` |
+| `affordances/static-action-name` | `error`     | `defineAction` has a `name`, and it's a string literal       |
 
 ### require-affordance
 

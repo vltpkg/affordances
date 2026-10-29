@@ -3,7 +3,7 @@ title: Markers
 description: Four components that say what a page's Markdown keeps, drops, and says instead.
 ---
 
-The converter finds a page's content on its own. Markers from `@afford/md/react` make it exact. They're server components that render an `<afford-md>` element with `display: contents`, so they don't change layout and ship no JavaScript.
+The converter finds a page's content on its own. Markers from `@affordances/md/react` make it exact. They're server components that render an `<affordances-md>` element with `display: contents`, so they don't change layout and ship no JavaScript.
 
 | Marker                  | Effect on the Markdown                                                       |
 | ----------------------- | ---------------------------------------------------------------------------- |
@@ -13,7 +13,7 @@ The converter finds a page's content on its own. Markers from `@afford/md/react`
 | `<AgentText md block?>` | Replaces its children with `md`, verbatim; `block` makes it its own block    |
 
 ```tsx title="app/products/[slug]/page.tsx"
-import { AgentMain, AgentSkip, AgentText } from '@afford/md/react'
+import { AgentMain, AgentSkip, AgentText } from '@affordances/md/react'
 
 ;<AgentMain>
   <h1>{product.name}</h1>
@@ -27,7 +27,7 @@ import { AgentMain, AgentSkip, AgentText } from '@afford/md/react'
 ```
 
 - A `skip` inside a `main` is respected, and a `main` inside another `main` is part of the outer one.
-- `data-afford-md="skip"` on any element works like `<AgentSkip>`, for components you can't wrap.
+- `data-affordances-md="skip"` on any element works like `<AgentSkip>`, for components you can't wrap.
 - `<AgentOnly>` must say what the page already shows people, in a form an agent can read. It's not for content people can't see.
 
 This site wraps each docs article in `<AgentMain>`, and skips the page actions menu, the table of contents, and the previous and next links inside it.

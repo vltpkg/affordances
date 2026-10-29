@@ -50,7 +50,7 @@ const remarkFileLinks = () => (tree: MdNode, file: { path?: string }) => {
 const docs = defineDocs({
   dir: 'content',
   docs: {
-    // @afford/ui's CodeBlock highlights on the server, so fumadocs' shiki (rehype-code) is off
+    // @affordances/ui's CodeBlock highlights on the server, so fumadocs' shiki (rehype-code) is off
     mdxOptions: applyMdxPreset({
       rehypeCodeOptions: false,
       remarkPlugins: [remarkFileLinks],

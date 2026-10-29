@@ -1,12 +1,12 @@
-import type { ErrorCode } from '@afford/protocol'
+import type { ErrorCode } from '@affordances/protocol'
 
 // throw from run() or a guard to answer with a specific protocol error
-export class AffordError extends Error {
+export class AffordancesError extends Error {
   code: ErrorCode
   issues?: unknown
   constructor(code: ErrorCode, message: string, extra: { issues?: unknown } = {}) {
     super(message)
-    this.name = 'AffordError'
+    this.name = 'AffordancesError'
     this.code = code
     this.issues = extra.issues
   }

@@ -1,5 +1,5 @@
-import { AffordError } from '@afford/core'
-import { defineState } from '@/lib/afford'
+import { AffordancesError } from '@affordances/core'
+import { defineState } from '@/lib/affordances'
 import { cartCount, formatPrice, getProduct, quantityInCart } from '@/lib/store'
 
 export const loadProduct = (slug: string, sid: string | null) => {
@@ -36,7 +36,7 @@ export const remaining = (variant: ProductVariant) => variant.stock - (variant.i
 export default defineState(
   ({ params, ctx }) => {
     const state = loadProduct(String(params.slug), ctx.session?.id ?? null)
-    if (!state) throw new AffordError('not_found', `No product at ${params.slug}`)
+    if (!state) throw new AffordancesError('not_found', `No product at ${params.slug}`)
     return state
   },
   {

@@ -4,8 +4,8 @@ import { Tabs as TabsPrimitive } from '@base-ui/react/tabs'
 import { BracesIcon, CheckIcon, CopyIcon, TerminalIcon } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from 'cn'
-import { Button } from '@afford/ui/components/button'
-import { useCopy } from '@afford/ui/hooks/use-copy'
+import { Button } from '@affordances/ui/components/button'
+import { useCopy } from '@affordances/ui/hooks/use-copy'
 
 const shells = new Set(['bash', 'sh', 'shell', 'zsh', 'console'])
 const names: Record<string, string> = {
@@ -119,14 +119,18 @@ export const CodeCard = ({ tabs, toolbar, className, ...props }: CodeCardProps) 
     >
       {tabs.length === 1 ? (
         <>
-          <figcaption data-active="" data-afford-md="skip" className="group relative h-11 w-fit">
+          <figcaption
+            data-active=""
+            data-affordances-md="skip"
+            className="group relative h-11 w-fit"
+          >
             <TabFace tab={active} first />
           </figcaption>
           {pre(active)}
         </>
       ) : (
         <TabsPrimitive.Root value={value} onValueChange={(v: number) => setValue(v)}>
-          <TabsPrimitive.List data-afford-md="skip" className="flex h-11 pr-9">
+          <TabsPrimitive.List data-affordances-md="skip" className="flex h-11 pr-9">
             {tabs.map((tab, i) => (
               <TabsPrimitive.Tab
                 key={i}
@@ -142,7 +146,7 @@ export const CodeCard = ({ tabs, toolbar, className, ...props }: CodeCardProps) 
           ))}
         </TabsPrimitive.Root>
       )}
-      <div data-afford-md="skip" className="absolute top-2 right-1.5 flex items-center gap-1">
+      <div data-affordances-md="skip" className="absolute top-2 right-1.5 flex items-center gap-1">
         {toolbar}
         <Button
           variant="ghost"

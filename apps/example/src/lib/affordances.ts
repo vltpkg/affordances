@@ -1,4 +1,4 @@
-import { createAfford } from '@afford/next'
+import { createAffordances } from '@affordances/next'
 
 // an agent sends `Authorization: Bearer <sid>`; a browser sends the sid cookie
 const auth = (request: Request) => {
@@ -8,4 +8,4 @@ const auth = (request: Request) => {
   return id ? { id } : null
 }
 
-export const { defineAction, defineState } = createAfford<{ id: string }>({ auth })
+export const { defineAction, defineState } = createAffordances<{ id: string }>({ auth })

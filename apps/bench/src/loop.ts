@@ -17,7 +17,7 @@ export const PRICES: Record<
 }
 
 // tools that change or act on the page, as opposed to reading it: the first one is "time to first action"
-const ACTIONS = new Set(['afford_call', 'click', 'fill', 'press'])
+const ACTIONS = new Set(['affordances_call', 'click', 'fill', 'press'])
 
 export type Tool = Anthropic.Tool & { run: (input: Record<string, unknown>) => Promise<string> }
 
@@ -35,7 +35,7 @@ export type RunStats = {
   outputTokens: number
   costUsd: number
   ms: number
-  // from the first request to the first tool call that acts (afford_call, click, fill, press)
+  // from the first request to the first tool call that acts (affordances_call, click, fill, press)
   firstActionMs: number | null
   stop: string
   // the model's last text, for tasks that ask a question

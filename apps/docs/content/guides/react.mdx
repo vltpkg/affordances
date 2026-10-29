@@ -1,16 +1,16 @@
 ---
 title: React and WebMCP
-description: AffordProvider turns the current page's actions into WebMCP tools for browser agents. Affordance marks the controls in the DOM.
+description: AffordancesProvider turns the current page's actions into WebMCP tools for browser agents. Affordance marks the controls in the DOM.
 ---
 
-`@afford/react` serves agents that run inside the browser, next to the person.
+`@affordances/react` serves agents that run inside the browser, next to the person.
 
-## AffordProvider
+## AffordancesProvider
 
 ```tsx
-<AffordProvider path={pathname} onDelta={() => router.refresh()}>
+<AffordancesProvider path={pathname} onDelta={() => router.refresh()}>
   {children}
-</AffordProvider>
+</AffordancesProvider>
 ```
 
 On mount, and whenever `path` changes, the provider fetches the page's graph from its own URL. When the browser supports WebMCP, it registers each available action as a tool:
@@ -23,7 +23,7 @@ On mount, and whenever `path` changes, the provider fetches the page's graph fro
 | `annotations.readOnlyHint`      | `readOnly`             |
 | `annotations.consequentialHint` | `expose === 'confirm'` |
 
-A tool's `execute` doesn't call the server action directly. It POSTs to the page's Afford endpoint, the same way a headless agent would, so browser agents get the same `expose`, Origin, guard, and confirm checks as everyone else. The browser sends the person's cookies and the page's Origin, so session actions work.
+A tool's `execute` doesn't call the server action directly. It POSTs to the page's Affordances endpoint, the same way a headless agent would, so browser agents get the same `expose`, Origin, guard, and confirm checks as everyone else. The browser sends the person's cookies and the page's Origin, so session actions work.
 
 After each call, the provider calls `onDelta`, reloads the graph, and registers the tools again, so tools that became available appear and ones that didn't go away. Unmounting unregisters everything.
 
@@ -37,17 +37,17 @@ WebMCP is read from `document.modelContext`, falling back to the earlier `naviga
 | `onDelta` | `(delta: Delta) => void`                           | Called after every call. In Next, `router.refresh()` re-renders server components. |
 | `confirm` | `(message: string) => boolean \| Promise<boolean>` | Asked before a `confirm` action runs. Defaults to `window.confirm`.                |
 
-### useAfford
+### useAffordances
 
-Inside the provider, `useAfford()` returns `{ graph, call, lastDelta }`. `graph` is the page's graph, or `null` while it loads or when the page has none. `call(action, input)` calls an action the way a tool would, including the confirm step, and resolves to the delta. `lastDelta` is the most recent delta from any call, or `null`.
+Inside the provider, `useAffordances()` returns `{ graph, call, lastDelta }`. `graph` is the page's graph, or `null` while it loads or when the page has none. `call(action, input)` calls an action the way a tool would, including the confirm step, and resolves to the delta. `lastDelta` is the most recent delta from any call, or `null`.
 
 ```tsx
 'use client'
 
-import { useAfford } from '@afford/react'
+import { useAffordances } from '@affordances/react'
 
 export const AgentStatus = () => {
-  const { graph } = useAfford()
+  const { graph } = useAffordances()
   if (!graph) return null
   const available = graph.actions.filter((action) => action.available)
   return <p>{available.length} actions available to agents on this page</p>
@@ -64,7 +64,7 @@ export const AgentStatus = () => {
 </Affordance>
 ```
 
-It renders a `display: contents` wrapper with `data-afford-action="addToCart"` and, when you pass `input`, `data-afford-input` with the input as JSON. It doesn't register anything or change behavior.
+It renders a `display: contents` wrapper with `data-affordances-action="addToCart"` and, when you pass `input`, `data-affordances-input` with the input as JSON. It doesn't register anything or change behavior.
 
 In a server component, `action` is the real function from `defineAction`, and `<Affordance>` reads the name from it. In a client component, a server action arrives as a bare reference without its metadata, so pass the name instead:
 
@@ -74,16 +74,16 @@ In a server component, `action` is the real function from `defineAction`, and `<
 
 ## Devtools
 
-`<AffordDevtools />` from `@afford/react/dev` shows what agents see, on top of the page. Render it inside the provider, in development only:
+`<AffordancesDevtools />` from `@affordances/react/dev` shows what agents see, on top of the page. Render it inside the provider, in development only:
 
 ```tsx
-import { AffordDevtools } from '@afford/react/dev'
+import { AffordancesDevtools } from '@affordances/react/dev'
 
 {
-  process.env.NODE_ENV === 'development' && <AffordDevtools />
+  process.env.NODE_ENV === 'development' && <AffordancesDevtools />
 }
 ```
 
-Press ⌥A (Alt+A) to toggle it. It outlines every `[data-afford-action]` control with its action's name: solid when the action is available, dashed with the reason when it isn't. It also shows the last delta.
+Press ⌥A (Alt+A) to toggle it. It outlines every `[data-affordances-action]` control with its action's name: solid when the action is available, dashed with the reason when it isn't. It also shows the last delta.
 
-[`@afford/lint`](/docs/guides/lint) warns when a control calls a server action outside an `<Affordance>`.
+[`@affordances/lint`](/docs/guides/lint) warns when a control calls a server action outside an `<Affordance>`.

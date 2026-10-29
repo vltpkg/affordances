@@ -35,7 +35,7 @@ const sourceOf = (cwd, dist) => {
  */
 export default (cwd) => {
   const pkg = readPkg(cwd)
-  // private workspaces (e.g. @afford/ui) are not part of the docs site
+  // private workspaces (e.g. @affordances/ui) are not part of the docs site
   if (pkg.private || !pkg.name) return
 
   // code entry points from package.json exports; schemas, fixtures, and other files aren't code.

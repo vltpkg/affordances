@@ -19,8 +19,13 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from '@afford/ui/components/command'
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@afford/ui/components/dialog'
+} from '@affordances/ui/components/command'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from '@affordances/ui/components/dialog'
 import { useSidebar } from '@/components/ui/sidebar'
 
 // debounced fetch of /api/search; a newer query aborts the one in flight
@@ -193,7 +198,7 @@ export const SearchDialog = ({
           // with an empty query, highlight the first suggestion so Enter works straight away
           value={search ? selected : selected || (suggestions[0]?.links[0]?.url ?? '')}
           onValueChange={setSelected}
-          // @afford/ui's CommandInput sits in an input group; flatten it into the reference's 48px header row
+          // @affordances/ui's CommandInput sits in an input group; flatten it into the reference's 48px header row
           className="rounded-none! bg-transparent p-0 **:data-[slot=command-input-wrapper]:p-0 **:data-[slot=input-group]:h-12! **:data-[slot=input-group]:rounded-none **:data-[slot=input-group]:border-0 **:data-[slot=input-group]:bg-transparent! **:data-[slot=input-group]:px-2 **:data-[slot=input-group]:ring-0! [&_[data-slot=input-group]_svg]:size-4! [&_[data-slot=input-group]_svg]:opacity-100 [&_[data-slot=input-group]_svg]:text-muted-foreground"
         >
           <div className="relative">

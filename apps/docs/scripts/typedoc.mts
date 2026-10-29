@@ -17,8 +17,8 @@ const packagesDir = resolve(import.meta.dirname, '../../../packages')
 const target = resolve(import.meta.dirname, '../content/reference/api-reference')
 // typedoc writes into a scratch folder, then only changed files are copied over: rewriting all ~50 pages on
 // every run (predev included) makes a running dev server reload over and over while modules vanish under it
-const out = mkdtempSync(join(tmpdir(), 'afford-typedoc-'))
-const wanted = process.env.AFFORD_TYPEDOC_PACKAGES?.split(',')
+const out = mkdtempSync(join(tmpdir(), 'affordances-typedoc-'))
+const wanted = process.env.AFFORDANCES_TYPEDOC_PACKAGES?.split(',')
 const check = process.argv.includes('--check')
 
 const packages = readdirSync(packagesDir, { withFileTypes: true })

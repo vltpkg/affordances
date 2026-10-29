@@ -1,9 +1,9 @@
 'use server'
 
-import { redirect } from '@afford/core'
+import { redirect } from '@affordances/core'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
-import { defineAction } from '@/lib/afford'
+import { defineAction } from '@/lib/affordances'
 import * as store from '@/lib/store'
 import checkout from './state'
 

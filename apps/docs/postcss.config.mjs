@@ -1,1 +1,1 @@
-export { default } from '@afford/ui/postcss.config'
+export { default } from '@affordances/ui/postcss.config'

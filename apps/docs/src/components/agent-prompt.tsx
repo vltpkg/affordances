@@ -2,7 +2,7 @@
 
 import { useId, useState } from 'react'
 import { cn } from 'cn'
-import { CodeCard } from '@afford/ui/components/code-card'
+import { CodeCard } from '@affordances/ui/components/code-card'
 import { Button } from '@/components/ui/button'
 
 // a CodeCard set as prose, clamped to a couple of lines until expanded

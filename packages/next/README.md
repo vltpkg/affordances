@@ -1,20 +1,20 @@
-# @afford/next
+# @affordances/next
 
-Afford for Next.js: `withAfford` for `next.config.ts`, codegen that finds each route's `actions.ts` and `state.ts`, the route handler, and the `afford` CLI.
+Affordances for Next.js: `withAffordances` for `next.config.ts`, codegen that finds each route's `actions.ts` and `state.ts`, the route handler, and the `afford` CLI.
 
 ```bash
-vlt install @afford/next @afford/react zod
-vlx @afford/next init
+vlt install @affordances/next @affordances/react zod
+vlx @affordances/next init
 ```
 
-`init` writes `app/api/afford/graph/[[...path]]/route.ts`, wraps your config, and generates `.afford/manifest.ts`. Then describe a page next to it:
+`init` writes `app/api/affordances/graph/[[...path]]/route.ts`, wraps your config, and generates `.affordances/manifest.ts`. Then describe a page next to it:
 
 ```ts
 // app/guestbook/actions.ts
 'use server'
 
 import { z } from 'zod'
-import { defineAction } from '@afford/next'
+import { defineAction } from '@affordances/next'
 import guestbook from './state'
 
 export const sign = defineAction({
@@ -28,6 +28,6 @@ export const sign = defineAction({
 })
 ```
 
-`curl -H 'Accept: application/vnd.afford+json' localhost:3000/guestbook` returns the page's graph, and a POST with `Content-Type: application/vnd.afford+json` calls `sign`.
+`curl -H 'Accept: application/vnd.affordances+json' localhost:3000/guestbook` returns the page's graph, and a POST with `Content-Type: application/vnd.affordances+json` calls `sign`.
 
-Docs: [https://github.com/afford/afford/blob/main/apps/docs/content/quickstart.mdx](https://github.com/afford/afford/blob/main/apps/docs/content/quickstart.mdx) and [https://github.com/afford/afford/blob/main/apps/docs/content/nextjs.mdx](https://github.com/afford/afford/blob/main/apps/docs/content/nextjs.mdx)
+Docs: [https://github.com/affordances/affordances/blob/main/apps/docs/content/quickstart.mdx](https://github.com/affordances/affordances/blob/main/apps/docs/content/quickstart.mdx) and [https://github.com/affordances/affordances/blob/main/apps/docs/content/nextjs.mdx](https://github.com/affordances/affordances/blob/main/apps/docs/content/nextjs.mdx)

@@ -1,8 +1,8 @@
 'use server'
 
 import { z } from 'zod'
-import { AffordError, defineAction } from '@afford/next'
-import { GET as renderMarkdown, MD_PATH } from '@afford/md/next'
+import { AffordancesError, defineAction } from '@affordances/next'
+import { GET as renderMarkdown, MD_PATH } from '@affordances/md/next'
 import { pageFor, search } from '@/lib/source'
 
 const result = z.object({
@@ -16,7 +16,7 @@ const result = z.object({
 export const searchDocs = defineAction({
   name: 'searchDocs',
   description:
-    'Search the Afford docs. Returns up to 8 pages, best first, each with the headings and passages that matched. Read one with getPage.',
+    'Search the Affordances docs. Returns up to 8 pages, best first, each with the headings and passages that matched. Read one with getPage.',
   input: z.object({ query: z.string().min(1).describe('Words to look for') }),
   output: z.array(result),
   expose: 'public',
@@ -40,7 +40,8 @@ export const searchDocs = defineAction({
 
 export const getPage = defineAction({
   name: 'getPage',
-  description: 'Read one page of the Afford docs as Markdown, by its url, e.g. /docs/quickstart',
+  description:
+    'Read one page of the Affordances docs as Markdown, by its url, e.g. /docs/quickstart',
   input: z.object({
     url: z.string().startsWith('/').describe('The page url, as listed in sections'),
   }),
@@ -49,10 +50,10 @@ export const getPage = defineAction({
   readOnly: true,
   run: async ({ url }, ctx) => {
     const page = pageFor(url)
-    if (!page || !ctx.request) throw new AffordError('not_found', `No docs page at ${url}`)
+    if (!page || !ctx.request) throw new AffordancesError('not_found', `No docs page at ${url}`)
     // the page's markdown twin, as /<page>.md serves it: same render, same converter
     const response = await renderMarkdown(new Request(new URL(MD_PATH + page.url, ctx.request.url)))
-    if (!response.ok) throw new AffordError('internal', `Couldn't render ${url}`)
+    if (!response.ok) throw new AffordancesError('internal', `Couldn't render ${url}`)
     return response.text()
   },
 })

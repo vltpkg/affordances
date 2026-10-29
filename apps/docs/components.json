@@ -14,8 +14,8 @@
     "components": "@/components",
     "hooks": "@/hooks",
     "lib": "@/lib",
-    "utils": "@afford/ui/lib/utils",
-    "ui": "@afford/ui/components"
+    "utils": "@affordances/ui/lib/utils",
+    "ui": "@affordances/ui/components"
   },
   "rtl": false,
   "menuColor": "default",

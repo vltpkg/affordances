@@ -1,6 +1,12 @@
 import { cn } from 'cn'
-import { AgentSkip, AgentText } from '@afford/md/react'
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@afford/ui/components/table'
+import { AgentSkip, AgentText } from '@affordances/md/react'
+import {
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@affordances/ui/components/table'
 import { Heading } from '@/components/heading'
 import { TypeTable } from '@/components/type-table'
 import { Dot, TaskChart } from '@/components/marketing/proof'
@@ -24,7 +30,7 @@ const AGENTS = ['browser', 'afford'] as const
 const Agent = ({ k }: { k: (typeof AGENTS)[number] }) => (
   <span className="flex items-center gap-2">
     <Dot agent={k === 'afford'} />
-    {k === 'afford' ? 'Afford' : 'Browser'}
+    {k === 'afford' ? 'Affordances' : 'Browser'}
   </span>
 )
 
@@ -35,7 +41,7 @@ const summaryMd = (r: BenchRun) => {
     a.costPerSuccessUsd !== undefined && b.costPerSuccessUsd !== undefined
       ? `, ${usd(b.costPerSuccessUsd)} against ${usd(a.costPerSuccessUsd)} per successful task`
       : ''
-  return `Median per run, browser agent against Afford agent: ${int(b.tokens)} against ${int(a.tokens)} tokens, ${sec(b.ms)} against ${sec(a.ms)}, ${b.turns} against ${a.turns} turns${cost}. Tasks completed: ${pct(b.successRate)} against ${pct(a.successRate)}.`
+  return `Median per run, browser agent against Affordances agent: ${int(b.tokens)} against ${int(a.tokens)} tokens, ${sec(b.ms)} against ${sec(a.ms)}, ${b.turns} against ${a.turns} turns${cost}. Tasks completed: ${pct(b.successRate)} against ${pct(a.successRate)}.`
 }
 
 const Headline = ({ run }: { run: BenchRun }) => (
@@ -50,7 +56,7 @@ const Headline = ({ run }: { run: BenchRun }) => (
           <dd className="order-3 mt-1 flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs text-muted-foreground tabular-nums">
             <span className="flex items-center gap-1.5">
               <Dot agent />
-              <span className="sr-only">Afford agent </span>
+              <span className="sr-only">Affordances agent </span>
               {s.a}
             </span>
             <span className="flex items-center gap-1.5">
@@ -243,18 +249,22 @@ export const BenchHistory = () => {
       </caption>
       <TableHeader>
         <TableRow className="hover:bg-transparent">
-          {['Finished', 'Model', 'Tasks', 'Runs', 'Commit', 'Browser', 'Afford'].map((h, i) => (
-            <TableHead key={h} scope="col" className={cn(th, i > 2 && i !== 4 && 'text-right')}>
-              {h}
-            </TableHead>
-          ))}
+          {['Finished', 'Model', 'Tasks', 'Runs', 'Commit', 'Browser', 'Affordances'].map(
+            (h, i) => (
+              <TableHead key={h} scope="col" className={cn(th, i > 2 && i !== 4 && 'text-right')}>
+                {h}
+              </TableHead>
+            ),
+          )}
         </TableRow>
       </TableHeader>
       <TableBody>
         {files.map((f) => (
           <TableRow key={f.file} className="hover:bg-transparent">
             <TableHead scope="row" className={cn(th, 'text-[0.8125rem] font-normal tabular-nums')}>
-              <a href={`https://github.com/afford/afford/blob/main/apps/bench/results/${f.file}`}>
+              <a
+                href={`https://github.com/affordances/affordances/blob/main/apps/bench/results/${f.file}`}
+              >
                 {f.finishedAt
                   ? `${day(f.finishedAt)} ${f.finishedAt.slice(11, 16)}`
                   : f.file.slice(0, 10)}

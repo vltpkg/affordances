@@ -1,6 +1,6 @@
 import { flattenTree } from 'fumadocs-core/page-tree'
 import { connection } from 'next/server'
-import { createLlmsFullHandler } from '@afford/md/next'
+import { createLlmsFullHandler } from '@affordances/md/next'
 import { isApiReference, source } from '@/lib/source'
 
 // the home page, the agents' page, and every docs page's markdown twin, in sidebar order; the generated API reference stays out (llms.txt

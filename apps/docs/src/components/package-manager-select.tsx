@@ -2,14 +2,14 @@
 
 import { ChevronDownIcon } from 'lucide-react'
 import { cn } from 'cn'
-import { Button } from '@afford/ui/components/button'
+import { Button } from '@affordances/ui/components/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from '@afford/ui/components/dropdown-menu'
+} from '@affordances/ui/components/dropdown-menu'
 import { usePreferredPackageManager } from '@/hooks/use-preferred-package-manager'
 import { DEFAULT_PREFERRED_PM, packageManagers, type PackageManager } from '@/lib/package-managers'
 import { Vlt } from '@/components/icons/vlt'
@@ -32,7 +32,7 @@ export const PerPackageManager = ({
     <span
       key={pm}
       data-pm-only={pm}
-      data-afford-md={pm === DEFAULT_PREFERRED_PM ? undefined : 'skip'}
+      data-affordances-md={pm === DEFAULT_PREFERRED_PM ? undefined : 'skip'}
       className="contents"
     >
       {render(pm)}
