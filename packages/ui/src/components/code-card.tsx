@@ -97,7 +97,7 @@ export const CodeCard = ({ tabs, className, ...props }: CodeCardProps) => {
   const pre = (tab: CodeTab) => (
     <pre
       className={cn(
-        'overflow-x-auto rounded-xl border bg-(--code-editor-background) p-4 font-mono text-[13px] leading-snug text-foreground [&_span]:text-(--shiki-light) dark:[&_span]:text-(--shiki-dark)',
+        'flex-1 overflow-x-auto rounded-xl border bg-(--code-editor-background) p-4 font-mono text-[13px] leading-snug text-foreground [&_span]:text-(--shiki-light) dark:[&_span]:text-(--shiki-dark)',
         className,
       )}
       {...props}
@@ -111,7 +111,7 @@ export const CodeCard = ({ tabs, className, ...props }: CodeCardProps) => {
   return (
     <figure
       data-not-typeset
-      className="@container relative overflow-hidden rounded-2xl border border-transparent bg-card px-1 pb-1 shadow-lg ring-1 shadow-black/6.5 ring-border-illustration backdrop-blur [--code-editor-background:var(--color-illustration)]"
+      className="@container relative flex flex-col overflow-hidden rounded-2xl border border-transparent bg-card px-1 pb-1 shadow-lg ring-1 shadow-black/6.5 ring-border-illustration backdrop-blur [--code-editor-background:var(--color-illustration)]"
     >
       {tabs.length === 1 ? (
         <>
