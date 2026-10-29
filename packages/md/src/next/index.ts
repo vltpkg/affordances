@@ -5,10 +5,10 @@ export const MD_PATH = '/api/afford/md'
 // set on the handler's own fetch of the page, so it never gets rewritten back to markdown
 export const RENDER_HEADER = 'x-afford-md-render'
 
-type Has = { type: 'header' | 'query'; key: string; value?: string }
-type Rewrite = { source: string; destination: string; has?: Has[]; missing?: Has[] }
-type Rewrites = { beforeFiles: Rewrite[]; afterFiles: Rewrite[]; fallback: Rewrite[] }
-type Config = { rewrites?: () => Promise<unknown> | unknown }
+export type Has = { type: 'header' | 'query'; key: string; value?: string }
+export type Rewrite = { source: string; destination: string; has?: Has[]; missing?: Has[] }
+export type Rewrites = { beforeFiles: Rewrite[]; afterFiles: Rewrite[]; fallback: Rewrite[] }
+export type Config = { rewrites?: () => Promise<unknown> | unknown }
 
 const accepts: Has[] = [{ type: 'header', key: 'accept', value: '.*text/markdown.*' }]
 const notOurs: Has[] = [{ type: 'header', key: RENDER_HEADER }]

@@ -15,10 +15,10 @@ export type Ctx<Session = unknown> = {
 
 export type Auth<Session> = (request: Request) => Session | null | Promise<Session | null>
 
-type Entities = Record<string, unknown>
+export type Entities = Record<string, unknown>
 
 // true passes; a string is the reason it fails; false fails without one
-type GuardResult = boolean | string
+export type GuardResult = boolean | string
 
 export type ActionConfig<
   Schema extends StandardSchemaV1,

@@ -4,7 +4,7 @@ import { createContext, use, useCallback, useEffect, useRef, useState } from 're
 import { MEDIA_TYPE, type Delta, type Graph } from '@afford/protocol'
 import { getModelContext } from './model-context.ts'
 
-type AffordContext = {
+export type AffordContext = {
   // this page's graph, or null while it loads or when the page has none
   graph: Graph | null
   // calls an action on this page as an agent would, confirming `confirm` actions with the person first

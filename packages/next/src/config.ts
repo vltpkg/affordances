@@ -6,12 +6,12 @@ import { API_PATH } from './constants.ts'
 
 export { API_PATH }
 
-type Rewrite = {
+export type Rewrite = {
   source: string
   destination: string
   has?: { type: 'header' | 'query'; key: string; value?: string }[]
 }
-type Rewrites = { beforeFiles: Rewrite[]; afterFiles: Rewrite[]; fallback: Rewrite[] }
+export type Rewrites = { beforeFiles: Rewrite[]; afterFiles: Rewrite[]; fallback: Rewrite[] }
 
 const escaped = MEDIA_TYPE.replace(/[.+]/g, '\\$&')
 
@@ -64,7 +64,7 @@ export type AffordConfig = {
 }
 
 // the slice of NextConfig withAfford touches; generic so it accepts whichever copy of next the app has
-type Config = Pick<NextConfig, 'rewrites' | 'headers'>
+export type Config = Pick<NextConfig, 'rewrites' | 'headers'>
 
 export const withAfford = <C extends Config>(
   nextConfig: C = {} as C,

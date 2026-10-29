@@ -1,4 +1,4 @@
-type Segment =
+export type Segment =
   | { kind: 'static'; value: string }
   | { kind: 'param'; name: string }
   | { kind: 'catchAll'; name: string; optional: boolean }
