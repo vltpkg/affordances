@@ -271,7 +271,8 @@ const Home = () => {
 
           <section className={sec} id="proof" aria-labelledby="h-proof">
             <SectionHead eyebrow="Proof" id="h-proof" title="Measured, not claimed.">
-              Same tasks, same model: a screenshot agent against an Afford agent.{' '}
+              Same tasks, same model: a browser agent reading accessibility snapshots against an
+              Afford agent.{' '}
               {bench ? (
                 <>
                   From the latest committed run ({bench.tasks} tasks
@@ -290,10 +291,10 @@ const Home = () => {
               )}
             </SectionHead>
             <table className="w-full border-collapse text-[15px]">
-              <caption className="sr-only">Screenshot agent against Afford agent, per task</caption>
+              <caption className="sr-only">Browser agent against Afford agent, per task</caption>
               <thead>
                 <tr>
-                  {['Metric', 'Screenshot agent', 'Afford agent', 'Change'].map((h, i) => (
+                  {['Metric', 'Browser agent', 'Afford agent', 'Change'].map((h, i) => (
                     <th
                       key={h}
                       scope="col"

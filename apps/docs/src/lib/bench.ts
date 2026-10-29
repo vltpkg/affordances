@@ -33,18 +33,28 @@ const isSide = (value: unknown): value is Side =>
     (key) => typeof (value as Record<string, unknown>)[key] === 'number',
   )
 
-// the newest committed run's summary, when it has one in the shape apps/bench writes; null otherwise,
-// so nothing is shown that the bench didn't measure
-export const latestBench = (): BenchSummary | null => {
-  const latest = benchResults().at(-1)
-  const data = latest?.data as
-    | {
-        model?: string
-        runs?: number
-        tasks?: unknown[]
-        summary?: { browser?: unknown; afford?: unknown }
-      }
-    | undefined
+// the model the site's headline numbers come from; other models' runs live alongside on the bench page
+export const HEADLINE_MODEL = 'claude-opus-5-5'
+
+// the newest committed run of `model`, when it has a summary in the shape apps/bench writes; null otherwise,
+// so nothing is shown that the bench didn't measure. newest by finishedAt (older files have none and lose)
+export const latestBench = (model = HEADLINE_MODEL): BenchSummary | null => {
+  type Run = {
+    model?: string
+    runs?: number
+    finishedAt?: string
+    tasks?: unknown[]
+    summary?: { browser?: unknown; afford?: unknown }
+  }
+  const latest = benchResults()
+    .filter(({ data }) => (data as Run).model === model)
+    .toSorted(
+      (a, b) =>
+        ((a.data as Run).finishedAt ?? '').localeCompare((b.data as Run).finishedAt ?? '') ||
+        a.file.localeCompare(b.file),
+    )
+    .at(-1)
+  const data = latest?.data as Run | undefined
   if (!latest || !data || !isSide(data.summary?.browser) || !isSide(data.summary?.afford))
     return null
   return {
