@@ -1,0 +1,60 @@
+---
+title: MCP
+description: '@afford/mcp turns any Afford site into two MCP tools, for Claude, Cursor, and other MCP clients.'
+---
+
+`@afford/mcp` is a stdio MCP server that speaks Afford to one site:
+
+```bash
+npx @afford/mcp https://store.example.com
+```
+
+It doesn't flatten the site into one tool per action. It gives the model two generic tools and lets it move through pages like a person would.
+
+| Tool          | Input                                  | Returns                                                             |
+| ------------- | -------------------------------------- | ------------------------------------------------------------------- |
+| `afford_open` | `path`                                 | The page's graph: entities, actions with input schemas, and nav     |
+| `afford_call` | `path`, `action`, `input?`, `confirm?` | The delta: changed entities, output, action changes, and a redirect |
+
+`afford_open` is marked read-only. `afford_call`'s description tells the model that `confirm` actions answer `confirm_required` first, and to resend with `confirm: true` only after the user approves the summary.
+
+## Connect a client
+
+```json title="claude_desktop_config.json"
+{
+  "mcpServers": {
+    "store": {
+      "command": "npx",
+      "args": ["@afford/mcp", "https://store.example.com"]
+    }
+  }
+}
+```
+
+Cursor and other clients take the same command and arguments.
+
+## Authentication
+
+Pass a bearer token with `--token`, or set `AFFORD_TOKEN`:
+
+```bash
+npx @afford/mcp https://store.example.com --token "$STORE_TOKEN"
+```
+
+The token is sent as `Authorization: Bearer` on every request, and your `auth` resolver decides what session it maps to. The bridge never handles passwords.
+
+Without a token, it keeps the cookies the site sets, like a browser would, and sends the site's own Origin with them. That's enough for flows where an action starts a session, such as an anonymous cart.
+
+The bridge only requests paths on the site it was started with. A path that resolves to another origin is refused.
+
+## As a library
+
+```ts
+import { createClient, createServer } from '@afford/mcp'
+
+const store = createClient('https://store.example.com', { token })
+const graph = await store.open('/products/heavyweight-tee')
+const delta = await store.call('/products/heavyweight-tee', 'addToCart', { sku: 'TEE-BLK-M' })
+```
+
+`createClient` returns `index()`, `open(path)`, and `call(path, action, input, confirm)`, each validated against the protocol's schemas. `createServer(site, options)` returns the `McpServer` the CLI connects to stdio, for embedding in your own transport.

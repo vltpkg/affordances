@@ -1,0 +1,101 @@
+---
+title: Next.js
+description: How @afford/next finds your actions, routes agent requests to them, and shares your session resolver.
+---
+
+`@afford/next` has four entry points:
+
+| Import                | What it's for                                                                  |
+| --------------------- | ------------------------------------------------------------------------------ |
+| `@afford/next`        | `defineAction`, `defineState`, `createAfford`, `redirect`, `AffordError`       |
+| `@afford/next/config` | `withAfford`, for `next.config.ts`; it returns the same config type it's given |
+| `@afford/next/route`  | `createRouteHandler`, for the route handler                                    |
+| `afford` (bin)        | `afford init` and `afford build`                                               |
+
+## Conventions
+
+Put `state.ts` and `actions.ts` next to the `page.tsx` they describe:
+
+```text
+app/
+  page.tsx
+  state.ts            → /
+  actions.ts          → /
+  (shop)/products/[slug]/
+    page.tsx
+    state.ts          → /products/[slug]
+    actions.ts        → /products/[slug]
+  api/afford/[[...path]]/
+    route.ts          (written by afford init)
+```
+
+Route groups like `(shop)` and parallel slots like `@modal` don't appear in the route. Folders starting with `_` are skipped. A route can have state without actions, or actions without state.
+
+Codegen reads these files statically and fails the build when:
+
+- an `actions` file doesn't start with `'use server'`;
+- a `defineAction` call's `name` isn't a string literal;
+- two actions on one route share a name;
+- a `state` file has no default export.
+
+It writes `.afford/manifest.ts`, which imports each route's state and actions. Commit it or not, as you like; `afford init` adds `.afford` to `.gitignore`, and `withAfford` regenerates it on every start.
+
+## Routing
+
+The same URL answers people and agents. `withAfford` adds rewrites that run before Next's filesystem routes, and send a request to the Afford route handler when it has any of:
+
+- `Accept: application/vnd.afford+json` (reading a graph);
+- `Content-Type: application/vnd.afford+json` (calling an action);
+- the query parameter `afford=1`, for clients that can't set headers.
+
+`/.well-known/afford.json` is rewritten to the handler too. Requests to `/api/afford` itself and to `/_next` are never rewritten. Everything else, including every browser request for HTML, reaches your pages as before.
+
+Your own rewrites are kept: `withAfford` puts its rules first in `beforeFiles` and leaves the rest alone. This site adds `Accept: text/markdown` rewrites next to them, and the two don't collide, because each matches only its own media type.
+
+For each route in the manifest, `withAfford` also adds a header to the HTML page, so clients can discover the graph:
+
+```http
+Link: <?afford=1>; rel="afford"
+```
+
+## Sessions
+
+`createAfford({ auth })` returns a `defineAction` and `defineState` bound to one session resolver:
+
+```ts title="lib/afford.ts"
+import { createAfford } from '@afford/next'
+import { getSession } from '@/lib/auth'
+
+type Session = { userId: string }
+
+export const { defineAction, defineState } = createAfford<Session>({
+  auth: async (request) => {
+    const token = request.headers.get('authorization')?.replace(/^Bearer /, '')
+    return token ? verifyToken(token) : getSession(request.headers.get('cookie'))
+  },
+})
+```
+
+Import these instead of the defaults from `@afford/next`. On the agent path, the handler calls `auth` with the incoming request. On the UI path, the server action calls it with a `Request` built from `headers()`, so a session cookie works in both.
+
+The resolver is where Auth.js, Better Auth, Clerk, or your own sessions plug in. It receives a standard `Request`, and returns your session object or `null`.
+
+## The route handler
+
+```ts title="app/api/afford/[[...path]]/route.ts"
+import { createRouteHandler } from '@afford/next/route'
+import { manifest } from '../../../../.afford/manifest'
+
+const handler = createRouteHandler(manifest, {
+  rateLimit: ({ action, session }) => limiter.check(`${action}:${session ?? 'anon'}`),
+  allowedOrigins: ['https://admin.example.com'],
+})
+
+export { handler as GET, handler as POST }
+```
+
+`createRouteHandler` takes the [handler options](/api-reference#createhandler) except `manifest` and `basePath`, which it sets. It also translates Next's `redirect()` into the delta's `redirect`.
+
+## Caching
+
+Graphs and deltas are sent with `Cache-Control: private, no-store` and `Vary: Accept`. HTML responses keep whatever caching they had. Afford requests are rewritten to the route handler before the filesystem and before any cached page, so a cached HTML page is never served to an agent, and a graph is never cached at all.

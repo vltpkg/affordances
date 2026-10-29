@@ -1,0 +1,14 @@
+@import '@afford/ui/globals.css';
+
+/* unlayered, so these win over @afford/ui's utilities: overlays only dim the page, and
+   floating surfaces are separated by their ring rather than a shadow */
+[data-slot='sheet-overlay'],
+[data-slot='dialog-overlay'] {
+  backdrop-filter: none;
+  background: oklch(0 0 0 / 40%);
+}
+
+[data-slot='sheet-content'],
+[data-slot='dropdown-menu-content'] {
+  box-shadow: none;
+}

@@ -1,0 +1,13 @@
+---
+title: Bench
+description: How the benchmark compares a screenshot-driven browser agent with an Afford agent on the same tasks, and where its results are published.
+---
+
+The bench runs the same tasks against the example store with two agents, using the same model for both:
+
+1. a browser agent that works from screenshots and the DOM;
+2. a headless agent whose only tools are `afford_open` and `afford_call`.
+
+The tasks are the ones a shopper does: find a product and add it to the cart, change a quantity, check out (including the confirm step), search, and look up an order. Each run records steps, tokens, wall time, and whether the task succeeded, and the results are committed as JSON in `apps/bench/results`.
+
+<BenchResults />

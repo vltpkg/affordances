@@ -1,0 +1,58 @@
+---
+title: State
+description: A route's state.ts says what the page shows, as entities. It's loaded for the graph and again after every action.
+---
+
+`state.ts` sits next to a page and default-exports `defineState(loader)`. The loader returns the page's entities: plain, JSON-serializable data, keyed by name.
+
+```ts title="app/products/[slug]/state.ts"
+import { defineState } from '@/lib/afford'
+import { getProduct } from '@/lib/catalog'
+import { getCart } from '@/lib/cart'
+
+export default defineState(
+  async ({ params, ctx }) => ({
+    product: await getProduct(params.slug as string),
+    cart: await getCart(ctx.session),
+  }),
+  { nav: ({ cart }) => (cart.count > 0 ? [{ to: '/checkout', label: 'Checkout' }] : []) },
+)
+```
+
+The loader receives:
+
+| Argument       | Type                                 | Description                                                        |
+| -------------- | ------------------------------------ | ------------------------------------------------------------------ |
+| `params`       | `Record<string, string \| string[]>` | The route's dynamic segments, as Next names them                   |
+| `searchParams` | `URLSearchParams`                    | The page's query string, without `afford`                          |
+| `ctx`          | `Ctx`                                | The caller's session and request; see [Actions](/concepts/actions) |
+
+The optional `nav` function turns the loaded state into links an agent can follow. A link's `when` is a human-readable condition, like `"cart.count > 0"`.
+
+## When it runs
+
+The handler loads state for three things:
+
+1. Building the graph for a `GET`.
+2. Evaluating the guard before an action runs.
+3. Reloading after the action ran, to compute the delta.
+
+So the loader should be cheap, and it must use the context it's given. A loader that reads the session from somewhere else won't see a session an action just started.
+
+## Keep it small
+
+Entities are what the page shows the same user, not everything you know. Agents read the graph as tokens, so about 2,000 tokens is a good ceiling. Summarize long lists (a count and the first page, say) rather than sending them whole.
+
+## Typing actions against state
+
+Pass the state to an action's `state` option. Its `guard` and `summary` then receive the loaded entities with their types, and `effects` only accepts entity names that exist:
+
+```ts
+import product from './state'
+
+defineAction({
+  // …
+  state: product,
+  effects: ['cart'], // 'cart' must be a key of the state
+})
+```

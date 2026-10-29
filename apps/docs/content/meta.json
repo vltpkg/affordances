@@ -1,0 +1,19 @@
+{
+  "pages": [
+    "---Get started---",
+    "why",
+    "quickstart",
+    "---Concepts---",
+    "...concepts",
+    "---Guides---",
+    "nextjs",
+    "react",
+    "mcp",
+    "lint",
+    "---Reference---",
+    "protocol",
+    "security",
+    "api-reference",
+    "bench"
+  ]
+}

@@ -1,0 +1,94 @@
+---
+title: Actions
+description: One defineAction call describes something a person or an agent can do on a page, and returns the server action that does it.
+---
+
+An action is a named operation on a page, with a typed input. You define it in the route's `actions.ts`, which must start with `'use server'`:
+
+```ts title="app/products/[slug]/actions.ts"
+'use server'
+
+import { z } from 'zod'
+import { defineAction } from '@/lib/afford'
+import * as cart from '@/lib/cart'
+import product from './state'
+
+export const addToCart = defineAction({
+  name: 'addToCart',
+  description: 'Add a product variant to the cart',
+  input: z.object({ sku: z.string(), quantity: z.number().int().min(1).default(1) }),
+  state: product,
+  expose: 'session',
+  requires: 'The variant is in stock',
+  guard: ({ input, state }) =>
+    !input ||
+    state.product.variants.some((v) => v.sku === input.sku && v.stock > 0) ||
+    'That variant is sold out',
+  effects: ['cart'],
+  run: (input, ctx) => cart.add(ctx.session!.id, input),
+  message: ({ input }) => `Added ${input.sku} to your cart`,
+})
+```
+
+`defineAction` returns an async function: a valid server action. Pass it to `<form action>`, call it from a client component, or use it with `useActionState`. It accepts a plain object, a `FormData`, or `(previousState, FormData)`, and validates the input against the schema before `run` sees it.
+
+The same export carries the action's metadata. Codegen finds it by its `name`, which must be a string literal, and the route handler uses it to describe and run the action for agents.
+
+## What agents see
+
+Each exposed action appears in the page's graph as a descriptor:
+
+```json
+{
+  "name": "addToCart",
+  "description": "Add a product variant to the cart",
+  "input": { "type": "object", "properties": { "sku": { "type": "string" } } },
+  "expose": "session",
+  "guard": "The variant is in stock",
+  "available": true,
+  "effects": ["cart"]
+}
+```
+
+- `input` is the JSON Schema of `input`, produced through Standard JSON Schema. Zod 4 implements it. For a library that doesn't, pass `jsonSchema`.
+- `guard` is your `requires` text. `available` is the result of running `guard` for this request, and `reason` explains a `false`.
+- `output` appears when you pass an `output` schema, and `readOnly` when you set `readOnly: true`.
+
+## Context
+
+`run` and `guard` receive a context:
+
+| Property  | Type              | Description                                                                       |
+| --------- | ----------------- | --------------------------------------------------------------------------------- |
+| `session` | `Session \| null` | What your `auth` resolver returned. Assignable, so an action can start a session. |
+| `request` | `Request`         | The incoming request, when there is one                                           |
+| `via`     | `'ui' \| 'agent'` | `'ui'` when a component called the server action, `'agent'` when the handler did  |
+
+An action that starts a session, such as an anonymous cart, assigns `ctx.session`. The handler reloads the page's state with the same context after `run`, so the new session's data shows up in the delta:
+
+```ts
+run: async ({ sku, quantity }, ctx) => {
+  ctx.session ??= { id: await startSession() }
+  cart.add(ctx.session.id, sku, quantity)
+},
+```
+
+## Redirects
+
+Throw `redirect(path)` from `@afford/next` to send the caller somewhere when the action finishes. A person's browser navigates there; an agent gets it as the delta's `redirect`. Next's own `redirect()` from `next/navigation` works too.
+
+## Errors
+
+Throw an `AffordError` to answer with a specific protocol error:
+
+```ts
+import { AffordError } from '@afford/next'
+
+throw new AffordError('unavailable', 'The sale has ended')
+```
+
+Any other error becomes `internal`, with a generic message, so stack traces and secrets don't reach agents.
+
+## Options
+
+The full list is in the [API reference](/api-reference#defineaction).

@@ -1,0 +1,60 @@
+---
+title: Expose
+description: Nothing reaches agents until an action says who may call it. expose is public, session, or confirm.
+---
+
+`expose` decides whether an action is part of the protocol and who may call it. Without it, an action is an ordinary server action: it doesn't appear in graphs, the handler answers `not_found` for it, and `defineAction` warns in development.
+
+| `expose`  | Who may call it                                                                     |
+| --------- | ----------------------------------------------------------------------------------- |
+| `public`  | Anyone                                                                              |
+| `session` | A caller with a session, by cookie or bearer token                                  |
+| `confirm` | A caller with a session, and only with `confirm: true` after the person approved it |
+
+## Sessions
+
+A session is whatever your `auth` resolver returns for a request. Define it once with `createAfford`, and both the UI path and the agent path use it:
+
+```ts title="lib/afford.ts"
+import { createAfford } from '@afford/next'
+import { sessionFrom } from '@/lib/auth'
+
+export const { defineAction, defineState } = createAfford({
+  auth: (request) => sessionFrom(request),
+})
+```
+
+The resolver gets a `Request`. For agent calls, it's the real request, with its cookies and `Authorization` header. For server actions called from your UI, `@afford/next` builds one from `headers()`.
+
+Actions that need a session are still listed for callers without one, as `available: false` with the reason `Requires a session`. Calling one answers `unauthorized`.
+
+## Confirm
+
+Use `confirm` for anything a person should approve: placing an order, sending a message, deleting data. The first call doesn't run anything. It answers `confirm_required` with a summary:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "confirm_required",
+    "message": "Order 2 items for $96.00. Resend with confirm: true once the user approves."
+  }
+}
+```
+
+The summary comes from the action's `summary` option, and the agent should show it to the person before resending the same call with `"confirm": true`. `@afford/react` does this for WebMCP tools, with `window.confirm` unless you pass your own `confirm`. `@afford/mcp` tells the model to do the same.
+
+```ts
+export const placeOrder = defineAction({
+  name: 'placeOrder',
+  description: 'Place the order for everything in the cart',
+  input: z.object({}),
+  state: checkout,
+  expose: 'confirm',
+  guard: ({ state }) => state.cart.count > 0 || 'Your cart is empty',
+  summary: ({ state }) => `Order ${state.cart.count} items for ${format(state.cart.total)}`,
+  run: (_, ctx) => orders.place(ctx.session!.id),
+})
+```
+
+`confirm` is a protocol rule, not a promise about the agent. A client can send `confirm: true` without asking anyone. It stops agents from running consequential actions by accident; it doesn't replace authorization.

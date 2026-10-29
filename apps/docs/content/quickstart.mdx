@@ -1,0 +1,187 @@
+---
+title: Quickstart
+description: Give one page of a Next.js 16 app a graph and an action, then read and call it with curl.
+---
+
+You need a Next.js 16 app using the App Router, and zod 4 (or any schema library that implements Standard Schema and Standard JSON Schema).
+
+## Install and initialize
+
+```bash
+npm install @afford/next @afford/react zod
+npx @afford/next init
+```
+
+`init` does four things, and skips any that are already done:
+
+- writes the route handler at `app/api/afford/[[...path]]/route.ts` (or under `src/app`);
+- wraps the default export of `next.config.ts` with `withAfford`;
+- adds `.afford` to `.gitignore`;
+- generates `.afford/manifest.ts` from your `actions.ts` and `state.ts` files.
+
+The route handler it writes looks like this:
+
+```ts title="app/api/afford/[[...path]]/route.ts"
+import { createRouteHandler } from '@afford/next/route'
+import { manifest } from '../../../../.afford/manifest'
+
+const handler = createRouteHandler(manifest)
+
+export { handler as GET, handler as POST }
+```
+
+## Wrap the config
+
+If your config's default export isn't a plain identifier, `init` asks you to wrap it yourself:
+
+```ts title="next.config.ts"
+import type { NextConfig } from 'next'
+import { withAfford } from '@afford/next/config'
+
+const nextConfig: NextConfig = {}
+
+export default withAfford(nextConfig)
+```
+
+`withAfford` regenerates the manifest when Next loads the config, and again in `next dev` whenever an `actions` or `state` file changes. It also adds the rewrites that send agent requests for a page to the route handler. Your pages and their HTML are untouched.
+
+## Describe the page
+
+Afford reads two files next to a page. `state.ts` returns what the page shows:
+
+```ts title="app/guestbook/state.ts"
+import { defineState } from '@afford/next'
+import { entries } from '@/lib/db'
+
+export default defineState(async () => ({
+  entries: await entries.list(),
+}))
+```
+
+`actions.ts` is a regular server actions file. Each `defineAction` export is a server action your components can call, and, because it sets `expose`, an action agents can call too:
+
+```ts title="app/guestbook/actions.ts"
+'use server'
+
+import { refresh } from 'next/cache'
+import { z } from 'zod'
+import { defineAction } from '@afford/next'
+import { entries } from '@/lib/db'
+import guestbook from './state'
+
+export const sign = defineAction({
+  name: 'sign',
+  description: 'Add a message to the guestbook',
+  input: z.object({ name: z.string().min(1), message: z.string().max(280) }),
+  state: guestbook,
+  expose: 'public',
+  effects: ['entries'],
+  run: async (input, ctx) => {
+    await entries.add(input)
+    // a form submit re-renders the page; agents get a delta instead
+    if (ctx.via === 'ui') refresh()
+  },
+  message: ({ input }) => `Signed as ${input.name}`,
+})
+```
+
+Use it in the page like any server action. Wrapping the form in `<Affordance>` marks it for agents that read the DOM:
+
+```tsx title="app/guestbook/page.tsx"
+import { Affordance } from '@afford/react'
+import { sign } from './actions'
+
+export default function Page() {
+  return (
+    <Affordance action={sign}>
+      <form action={sign}>
+        <input name="name" />
+        <textarea name="message" />
+        <button>Sign</button>
+      </form>
+    </Affordance>
+  )
+}
+```
+
+## Add the provider
+
+`<AffordProvider>` loads the current page's graph in the browser and registers each available action as a WebMCP tool. Give it the current path, and refresh the server-rendered UI after an agent changes something:
+
+```tsx title="app/agents.tsx"
+'use client'
+
+import { usePathname, useRouter } from 'next/navigation'
+import { AffordProvider } from '@afford/react'
+
+export const Agents = ({ children }: { children: React.ReactNode }) => {
+  const pathname = usePathname()
+  const router = useRouter()
+  return (
+    <AffordProvider path={pathname} onDelta={() => router.refresh()}>
+      {children}
+    </AffordProvider>
+  )
+}
+```
+
+Render `<Agents>` around `{children}` in your root layout.
+
+## Read the graph
+
+Start the dev server and ask for the page as an agent would:
+
+```bash
+curl -H 'Accept: application/vnd.afford+json' localhost:3000/guestbook
+```
+
+```json
+{
+  "v": "0",
+  "page": "/guestbook",
+  "route": "/guestbook",
+  "entities": { "entries": [] },
+  "actions": [
+    {
+      "name": "sign",
+      "description": "Add a message to the guestbook",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "message": { "type": "string", "maxLength": 280 }
+        },
+        "required": ["name", "message"]
+      },
+      "expose": "public",
+      "available": true,
+      "effects": ["entries"]
+    }
+  ]
+}
+```
+
+## Call the action
+
+```bash
+curl localhost:3000/guestbook \
+  -H 'Content-Type: application/vnd.afford+json' \
+  -d '{ "action": "sign", "input": { "name": "Ada", "message": "Hello" } }'
+```
+
+```json
+{
+  "ok": true,
+  "changed": { "entries": [{ "name": "Ada", "message": "Hello" }] },
+  "message": "Signed as Ada"
+}
+```
+
+The response is a [delta](/concepts/deltas): the new value of each entity the action declared in `effects`, and the message to repeat to the user. `/.well-known/afford.json` now lists `/guestbook` and its `sign` action.
+
+## Next
+
+- [Actions](/concepts/actions) covers every `defineAction` option.
+- [Expose](/concepts/expose) explains `session` and `confirm`, and [Next.js](/nextjs) shows how to share a session resolver with `createAfford`.
+- [MCP](/mcp) connects Claude or Cursor to the site.

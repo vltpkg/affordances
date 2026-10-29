@@ -1,0 +1,33 @@
+---
+title: Why Afford
+description: Agents operate websites by reading pixels and guessing at forms. Afford gives them the page's state and its actions directly, at the same URL, with the same session.
+---
+
+An agent that wants to add a shirt to a cart today has two options. It can drive a browser: take a screenshot, find the size picker, click it, find the button, click that, and take another screenshot to see whether anything happened. Or it can use an API, if the site has one, which usually means a second set of endpoints with their own auth, their own validation, and their own drift from what the page actually does.
+
+Afford takes a third path. Every page that opts in answers in two formats at the same URL: HTML for browsers, and a small JSON document for agents. The JSON says what the page shows (entities), what can be done there (actions, each with an input schema and whether it's available right now), and where to go next. Calling an action returns a delta: just the parts of the page that changed.
+
+## One definition
+
+The action a person triggers by clicking a button is the same action an agent calls. You write it once with `defineAction`, next to the page, and it becomes:
+
+- a server action your components call, the same as any other;
+- an HTTP endpoint at the page's own URL, for headless agents;
+- a WebMCP tool, registered in the browser while the page is open;
+- an MCP tool, through `@afford/mcp`, for Claude, Cursor, and other MCP clients.
+
+There's no second API to keep in sync. If the button changes, the agent sees the change.
+
+## Same URL, same session
+
+Agents don't get a parallel world. A graph is built for whoever asked, with their cookies or their bearer token, so it never contains anything the HTML page wouldn't show the same user. A cart an agent fills is the cart the person sees when they open the page.
+
+## Safe by default
+
+Nothing is reachable by agents until you say so. An action without `expose` stays a plain server action. Actions that spend money or can't be undone use `expose: 'confirm'`, which refuses to run until the caller resends with `confirm: true`, after showing the person a summary. Every agent call is validated, then guarded, then run, in that order. See [Security](/security).
+
+## What Afford is not
+
+- It isn't a browser automation tool. Agents that can't speak Afford still see your HTML, and `<Affordance>` marks the controls for them.
+- It isn't a replacement for your API. It describes pages, so it's shaped like your UI.
+- It isn't tied to Next.js. The [protocol](/protocol) is plain HTTP and JSON, and `@afford/core` is framework-agnostic. Next.js is the first adapter.
