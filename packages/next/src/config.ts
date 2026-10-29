@@ -15,8 +15,8 @@ type Rewrites = { beforeFiles: Rewrite[]; afterFiles: Rewrite[]; fallback: Rewri
 
 const escaped = MEDIA_TYPE.replace(/[.+]/g, '\\$&')
 
-// every page but our own handler and next's internals
-const page = `/:path((?!${API_PATH.slice(1)}(?:/|$)|_next/).+)`
+// every page: not api routes (ours included) and not next's internals
+const page = '/:path((?!api/|_next/).+)'
 
 // the same url answers html or a graph: agents ask with Accept (GET), Content-Type (POST), or ?afford=1
 const conditions: NonNullable<Rewrite['has']>[] = [
@@ -51,11 +51,16 @@ const normalize = (
         fallback: (value?.fallback ?? []) as Rewrite[],
       }
 
+// a next config wrapper, the same shape as createMDX() or withMd: (config) => config
+export type AffordPlugin = <C extends Config>(config: C) => C
+
 export type AffordConfig = {
   // the site's name in /.well-known/afford.json
   name?: string
   // the project root; defaults to the directory next runs in
   root?: string
+  // more afford capabilities on the same app, applied in order after the graph, e.g. [md()] from @afford/md/next
+  plugins?: AffordPlugin[]
 }
 
 // the slice of NextConfig withAfford touches; generic so it accepts whichever copy of next the app has
@@ -84,7 +89,7 @@ export const withAfford = <C extends Config>(
     }).unref()
   }
 
-  return {
+  const afforded: C = {
     ...nextConfig,
     rewrites: async () => {
       const user = normalize(await nextConfig.rewrites?.())
@@ -98,4 +103,5 @@ export const withAfford = <C extends Config>(
       ...((await nextConfig.headers?.()) ?? []),
     ],
   }
+  return (options.plugins ?? []).reduce((config, plugin) => plugin(config), afforded)
 }

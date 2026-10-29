@@ -1,3 +1,4 @@
+import type { NextConfig } from 'next'
 import path from 'node:path'
 import { expect, test } from 'vitest'
 import { rewrites, toSource, withAfford } from '../src/config.ts'
@@ -12,10 +13,27 @@ test('the page rewrite skips our handler and next internals', () => {
   const source = rewrites.find((r) => r.source.startsWith('/:path'))!.source
   const re = new RegExp(`^/${source.slice('/:path'.length)}$`)
   expect(re.test('/products/tee')).toBe(true)
-  expect(re.test('/api/afforded')).toBe(true)
-  expect(re.test('/api/afford')).toBe(false)
-  expect(re.test('/api/afford/products')).toBe(false)
+  expect(re.test('/apis')).toBe(true)
+  expect(re.test('/api/afford/graph/products')).toBe(false)
+  expect(re.test('/api/other')).toBe(false)
   expect(re.test('/_next/static/x.js')).toBe(false)
+})
+
+test('plugins wrap the config in order, after the graph', async () => {
+  const order: string[] = []
+  const plugin =
+    (name: string) =>
+    <C extends object>(config: C): C => {
+      order.push(name)
+      return { ...config, [name]: true }
+    }
+  const config = withAfford({} as NextConfig, {
+    root: path.join(import.meta.dirname, 'fixture'),
+    plugins: [plugin('a'), plugin('b')],
+  })
+  expect(order).toEqual(['a', 'b'])
+  expect(config).toMatchObject({ a: true, b: true })
+  expect(config.rewrites).toBeTypeOf('function')
 })
 
 test('withAfford prepends its rewrites and keeps the user config', async () => {

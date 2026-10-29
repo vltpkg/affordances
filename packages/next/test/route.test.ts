@@ -12,7 +12,7 @@ beforeAll(async () => {
   handler = createRouteHandler(manifest)
 })
 
-const url = (p: string) => `http://shop.test/api/afford${p}`
+const url = (p: string) => `http://shop.test/api/afford/graph${p}`
 
 test('serves the graph for a rewritten page url', async () => {
   const graph = Graph.parse(await (await handler(new Request(url('/products/tee')))).json())
