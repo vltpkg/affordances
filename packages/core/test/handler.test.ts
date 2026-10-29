@@ -126,7 +126,7 @@ const handler = createHandler({
     },
   },
   basePath: '/api/afford',
-  rateLimit: ({ action }) => (action === 'lookup' && stock.M === 99 ? 10 : true),
+  rateLimit: (args) => (args.action === 'lookup' && stock.M === 99 ? 10 : true),
 })
 
 const origin = 'https://store.test'

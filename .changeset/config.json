@@ -2,8 +2,17 @@
   "$schema": "https://unpkg.com/@changesets/config@3/schema.json",
   "changelog": "@changesets/cli/changelog",
   "commit": false,
-  "fixed": [["@afford/protocol", "@afford/core", "@afford/react", "@afford/next", "@afford/mcp", "@afford/lint"]],
+  "fixed": [
+    [
+      "@afford/protocol",
+      "@afford/core",
+      "@afford/react",
+      "@afford/next",
+      "@afford/mcp",
+      "@afford/lint"
+    ]
+  ],
   "access": "public",
   "baseBranch": "main",
-  "ignore": ["@afford/ui", "@afford/docs", "@afford/example"]
+  "ignore": ["@afford/ui", "@afford/docs", "@afford/example", "@afford/bench"]
 }

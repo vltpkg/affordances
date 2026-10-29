@@ -10,7 +10,7 @@ All Afford documents use `application/vnd.afford+json`. A server must not return
 
 ## Discovery
 
-**Per page.** A client requests the page's own URL with `Accept: application/vnd.afford+json`. The server responds with a [graph](#graph) for that page, or `406` if the page has no Afford graph.
+**Per page.** A client requests the page's own URL with `Accept: application/vnd.afford+json`. The server responds with a [graph](#graph) for that page, or a `not_found` [delta](#delta) with status `404` if the page has no Afford graph.
 
 HTML responses for pages with a graph should advertise it in both places:
 

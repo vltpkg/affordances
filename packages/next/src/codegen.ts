@@ -69,8 +69,8 @@ const parseActions = (file: string, source: string) => {
 export const scan = (root: string): RouteEntry[] => {
   const appDir = findAppDir(root)
   const entries: RouteEntry[] = []
+  const relative = (file: string) => path.relative(root, file).replace(/\.[jt]sx?$/, '')
   const walk = (dir: string, segments: string[]) => {
-    const relative = (file: string) => path.relative(root, file).replace(/\.[jt]sx?$/, '')
     const stateFile = findFile(dir, 'state')
     const actionsFile = findFile(dir, 'actions')
     if (stateFile || actionsFile) {

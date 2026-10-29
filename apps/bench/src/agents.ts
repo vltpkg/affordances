@@ -4,10 +4,11 @@ import type { Tool } from './loop.ts'
 
 // each agent starts on a session the task set up, so the check can read that session's cart and orders
 
+const json = (value: unknown) => JSON.stringify(value)
+
 export const affordAgent = (site: string, sid: string) => {
   // the same session a browser would carry as its sid cookie
   const client = createClient(site, { token: sid })
-  const json = (value: unknown) => JSON.stringify(value)
   const tools: Tool[] = [
     {
       name: 'afford_open',
