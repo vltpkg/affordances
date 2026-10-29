@@ -1,0 +1,28 @@
+---
+title: Next.js
+description: '@affordances/next makes a Next.js App Router app agent-operable: it finds your actions, routes agent requests to them, and shares your session.'
+---
+
+`@affordances/next` connects Affordances to the App Router. You write a `state.ts` and an `actions.ts` next to a page. The package then does three things:
+
+- **Finds them.** Codegen reads those files at build time and writes a manifest of every route's state and actions.
+- **Routes agents to them.** `withAffordances` adds rewrites, so an agent asking for a page's graph, or calling one of its actions, reaches the Affordances route handler at the same URL a person visits.
+- **Shares your session.** `createAffordances({ auth })` resolves the same session for a form submit and an agent's call.
+
+## Entry points
+
+| Import                     | What it's for                                                                      |
+| -------------------------- | ---------------------------------------------------------------------------------- |
+| `@affordances/next`        | `defineAction`, `defineState`, `createAffordances`, `redirect`, `AffordancesError` |
+| `@affordances/next/config` | `withAffordances`, for `next.config.ts`                                            |
+| `@affordances/next/route`  | `createRouteHandler`, for the route handler                                        |
+| `affordances` (bin)        | `affordances init` and `affordances build`                                         |
+
+## In this guide
+
+- [Getting started](/docs/guides/nextjs/getting-started): set up an existing app, with an agent or by hand.
+- [Files and conventions](/docs/guides/nextjs/conventions): where `state.ts` and `actions.ts` go, and what codegen checks.
+- [Routing](/docs/guides/nextjs/routing): how one URL answers people and agents, and what's cached.
+- [Route handlers](/docs/guides/nextjs/route-handlers): the graph handler, its options, and the routes plugins add.
+- [Plugins](/docs/guides/nextjs/plugins): more capabilities on the same config, and how to write one.
+- [Sessions](/docs/guides/nextjs/sessions): one session resolver for the UI and for agents.

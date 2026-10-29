@@ -59,7 +59,7 @@ export type AffordancesConfig = {
   name?: string
   // the project root; defaults to the directory next runs in
   root?: string
-  // more afford capabilities on the same app, applied in order after the graph, e.g. [md()] from @affordances/md/next
+  // more Affordances capabilities on the same app, applied in order after the graph, e.g. [md()] from @affordances/md/next
   plugins?: AffordancesPlugin[]
 }
 

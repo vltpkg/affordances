@@ -30,4 +30,4 @@ export const sign = defineAction({
 
 `curl -H 'Accept: application/vnd.affordances+json' localhost:3000/guestbook` returns the page's graph, and a POST with `Content-Type: application/vnd.affordances+json` calls `sign`.
 
-Docs: [https://github.com/affordances/affordances/blob/main/apps/docs/content/quickstart.mdx](https://github.com/affordances/affordances/blob/main/apps/docs/content/quickstart.mdx) and [https://github.com/affordances/affordances/blob/main/apps/docs/content/nextjs.mdx](https://github.com/affordances/affordances/blob/main/apps/docs/content/nextjs.mdx)
+Docs: [https://github.com/affordances/affordances/blob/main/apps/docs/content/quickstart.mdx](https://github.com/affordances/affordances/blob/main/apps/docs/content/quickstart.mdx) and [https://github.com/affordances/affordances/blob/main/apps/docs/content/guides/nextjs/index.mdx](https://github.com/affordances/affordances/blob/main/apps/docs/content/guides/nextjs/index.mdx)

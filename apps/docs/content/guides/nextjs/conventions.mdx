@@ -1,0 +1,47 @@
+---
+title: Files and conventions
+description: Where state.ts and actions.ts go, how they map to routes, and what codegen checks before it writes the manifest.
+---
+
+Put `state.ts` and `actions.ts` next to the `page.tsx` they describe:
+
+```text
+app/
+  page.tsx
+  state.ts            → /
+  actions.ts          → /
+  (shop)/products/[slug]/
+    page.tsx
+    state.ts          → /products/[slug]
+    actions.ts        → /products/[slug]
+  api/affordances/graph/[[...path]]/
+    route.ts          (the route handler)
+```
+
+- Route groups like `(shop)` and parallel slots like `@modal` don't appear in the route.
+- Folders starting with `_` are skipped.
+- A route can have state without actions, or actions without state.
+- Dynamic segments work as they do in Next: `[slug]`, `[...slug]`, and `[[...slug]]`.
+
+## The manifest
+
+Codegen reads these files statically, without running them, and writes `.affordances/manifest.ts`. It imports each route's state and actions, and the route handler reads it.
+
+It's regenerated:
+
+- whenever Next loads the config (`withAffordances` runs it);
+- in `next dev`, whenever an `actions` or `state` file changes;
+- when you run `affordances build`, for scripts and CI.
+
+Commit it or not, as you like. `affordances init` adds `.affordances` to `.gitignore`.
+
+## What fails the build
+
+Codegen stops with an error when:
+
+- an `actions` file doesn't start with `'use server'`;
+- a `defineAction` call's `name` isn't a string literal;
+- two actions on one route share a name;
+- a `state` file has no default export.
+
+The [lint rules](/docs/guides/lint) catch the first two in your editor.

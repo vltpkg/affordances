@@ -23,10 +23,9 @@ import type { LucideIcon } from 'lucide-react'
 import { mdAlternate } from '@affordances/md/next'
 import { AgentMain, AgentText } from '@affordances/md/react'
 import { Button } from '@/components/ui/button'
-import { AgentPrompt } from '@/components/agent-prompt'
+import { SetupPrompt } from '@/components/setup-prompt'
 import { Book } from '@/components/book'
 import { benchResults } from '@/lib/bench'
-import { siteUrl } from '@/lib/site-url'
 
 const lede =
   'Everything on this site is readable without a browser. Start from llms.txt, read any page as Markdown, or ask the docs for their graph. To make an app agent-operable, hand your agent the prompt below.'
@@ -36,16 +35,6 @@ export const metadata: Metadata = {
   description: lede,
   alternates: { canonical: '/agents', ...mdAlternate('/agents') },
 }
-
-const docs = siteUrl.origin
-
-const prompt = `Help me make this Next.js app agent-operable with Affordances. Start by reading ${docs}/llms.txt, which lists every page of the Affordances docs. Any page is available as Markdown by adding .md to its URL (for example ${docs}/docs/quickstart.md), and ${docs}/llms-full.txt has the whole site in one file.
-
-1. Follow ${docs}/docs/quickstart.md: install @affordances/next, @affordances/react, and zod, then run \`vlx @affordances/next init\`. It writes the route handler, wraps next.config.ts with withAffordances, and generates the manifest.
-2. Next to each page an agent should operate, add a state.ts (what the page shows) and an actions.ts with defineAction. Set \`expose\` on every action an agent may call, and use 'confirm' for anything that spends money or can't be undone.
-3. Check your work with curl -H 'Accept: application/vnd.affordances+json' on the page's URL, and read ${docs}/docs/guides/security.md before exposing anything that needs a session.
-
-Only use APIs that appear in the docs.`
 
 type Card = {
   icon: LucideIcon
@@ -99,7 +88,7 @@ const guides: (Card & { color: string })[] = [
     icon: KeyRoundIcon,
     title: 'Share your session with agents',
     description: 'One auth resolver for the UI and the agent path.',
-    href: '/docs/guides/nextjs',
+    href: '/docs/guides/nextjs/sessions',
     color: 'oklch(0.72 0.13 250)',
   },
   {
@@ -284,9 +273,7 @@ const Agents = () => (
           all. Paste this prompt into your agent to point it at the docs:
         </p>
         <div className="mt-6">
-          <AgentText block md={`\`\`\`text\n${prompt}\n\`\`\``}>
-            <AgentPrompt prompt={prompt} />
-          </AgentText>
+          <SetupPrompt />
         </div>
         <div className="mt-4">
           <CardGrid items={cards} />

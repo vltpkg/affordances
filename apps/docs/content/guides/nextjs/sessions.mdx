@@ -1,0 +1,59 @@
+---
+title: Sessions
+description: One session resolver for the UI and for agents, with createAffordances, so actions run as the signed-in user either way.
+---
+
+Actions exposed as `session` or `confirm` need to know who's calling. `createAffordances({ auth })` returns a `defineAction` and `defineState` bound to one session resolver:
+
+```ts title="lib/affordances.ts"
+import { createAffordances } from '@affordances/next'
+import { sessionFromCookie, sessionFromToken } from '@/lib/auth'
+
+type Session = { userId: string }
+
+export const { defineAction, defineState } = createAffordances<Session>({
+  auth: async (request) => {
+    const token = request.headers.get('authorization')?.replace(/^Bearer /, '')
+    return token ? sessionFromToken(token) : sessionFromCookie(request.headers.get('cookie'))
+  },
+})
+```
+
+Import these instead of the defaults from `@affordances/next`:
+
+```ts title="app/cart/actions.ts"
+'use server'
+
+import { AffordancesError } from '@affordances/next'
+import { defineAction } from '@/lib/affordances'
+```
+
+## Where it runs
+
+`auth` receives a standard `Request` and returns your session object, or `null` for no session.
+
+- **Agent path:** the route handler calls `auth` with the agent's request.
+- **UI path:** the server action calls it with a `Request` built from `headers()`.
+
+So a session cookie works in both, and a browser agent acting in the person's tab is the person. Headless agents usually send a bearer token instead.
+
+The resolver is where Auth.js, Better Auth, Clerk, or your own sessions plug in: read the cookie or token from the request, and return what your actions need.
+
+## Using the session
+
+The session is on `ctx.session` in `run`, `guard`, and the state loader:
+
+```ts title="app/cart/actions.ts"
+export const addToCart = defineAction({
+  name: 'addToCart',
+  description: 'Add a product to the cart',
+  input: z.object({ slug: z.string() }),
+  expose: 'session',
+  run: (input, ctx) => {
+    if (!ctx.session) throw new AffordancesError('unauthorized', 'Sign in to add to your cart')
+    return carts.add(ctx.session.userId, input.slug)
+  },
+})
+```
+
+When an agent calls an action exposed as `session` or `confirm` without a session, the handler refuses it before `run`. A form submit runs the server action as usual, so check `ctx.session` yourself, as above, wherever a signed-out person can reach the form. See [Expose](/docs/concepts/expose) for what each level allows.
