@@ -222,6 +222,10 @@ export const benchRuns = (): BenchRun[] => {
 
 // every committed file, newest first: what it ran, against which commit, and its overall medians where the
 // file has them. partial runs (a --tasks subset) included, so the index's iterations read in order
+// runs that finished before this measured the browser agent without its radio and Agent view fixes (8b57e79,
+// see the Benchmarks page's changes to the method), so they're marked rather than compared as is
+const FAIRER_BROWSER_SINCE = '2026-10-29T20:30'
+
 export type BenchFile = {
   file: string
   model?: string
@@ -231,6 +235,8 @@ export type BenchFile = {
   dirty?: boolean
   partial: boolean
   tasks: string[]
+  // measured against the browser agent before its fixes
+  earlierBaseline: boolean
   browser?: Side
   afford?: Side
 }
@@ -255,6 +261,7 @@ export const benchHistory = (): BenchFile[] =>
         commit: str(run.commit?.sha)?.slice(0, 7),
         dirty: typeof run.commit?.dirty === 'boolean' ? run.commit.dirty : undefined,
         partial: run.partial === true,
+        earlierBaseline: (str(run.finishedAt) ?? '') < FAIRER_BROWSER_SINCE,
         tasks: (Array.isArray(run.tasks) ? run.tasks : []).flatMap((t) => str(t?.id) ?? []),
         browser: isSide(run.summary?.browser) ? run.summary.browser : undefined,
         afford: isSide(run.summary?.afford) ? run.summary.afford : undefined,

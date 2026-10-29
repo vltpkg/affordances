@@ -10,6 +10,16 @@ The bench runs the same tasks against the example store with two agents, using t
 
 The tasks are the ones a shopper does: find a product and add it to the cart, change a quantity, check out (including the confirm step), search, and look up an order. Each run records turns, tool calls, tokens (input, cache reads, cache writes, output), dollar cost, wall time, time to first action, a trace of every tool call, and whether the task succeeded, checked against the store rather than the agent's word. Results are committed as JSON in `apps/bench/results`, one file per model, with the commit they ran against.
 
+## What the numbers say
+
+As of the October 29, 2026 runs, on both models:
+
+- **Both agents finish every task.** What Affordances changes here is the cost of finishing, not whether it happens.
+- **The gain is biggest in actions.** Adding to the cart, changing a quantity, and checking out take the Affordances agent 3 to 4 turns against the browser agent's 5 to 8, and between a half and a sixth of the tokens, because one call replaces a run of clicks and snapshots.
+- **Search gains least.** It's close on Opus and a tie on Haiku: a results page the agent only reads is already cheap to read. Looking up an order still takes fewer turns and tokens, since the agent goes straight to the orders page's graph.
+
+These are five runs per task on one store. Read the per-task medians as a direction, not a precise ratio.
+
 ## Results
 
 The newest full run of each model.
@@ -21,3 +31,7 @@ The newest full run of each model.
 Every committed results file, newest first, with each agent's median tokens per run. A partial run re-ran some of the tasks (`--tasks`) and isn't used above.
 
 <BenchHistory />
+
+## Changes to the method
+
+**October 29, 2026: a fairer browser agent.** The store's size options are styled radios: a visually hidden input under its label, which takes the pointer. Every click the browser agent made on one waited 5 seconds and failed, which made up most of the add-to-cart gap and was why it failed add-to-cart on Haiku. It also kept clicking the store's Agent view toggle, a demo control no real store has, which put the page's graph in its snapshot. It now selects radios and checkboxes with `check()`, as clicking their label would, and the toggle is hidden from it. Runs before this change are marked in the history above; compare them only with each other.

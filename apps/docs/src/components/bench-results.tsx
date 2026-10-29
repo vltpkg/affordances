@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import { cn } from 'cn'
 import { AgentSkip, AgentText } from '@affordances/md/react'
 import {
@@ -259,43 +260,57 @@ export const BenchHistory = () => {
         </TableRow>
       </TableHeader>
       <TableBody>
-        {files.map((f) => (
-          <TableRow key={f.file} className="hover:bg-transparent">
-            <TableHead scope="row" className={cn(th, 'text-[0.8125rem] font-normal tabular-nums')}>
-              <a
-                href={`https://github.com/affordances/affordances/blob/main/apps/bench/results/${f.file}`}
+        {files.map((f, i) => (
+          <Fragment key={f.file}>
+            {/* one divider above the first run measured against the earlier browser agent */}
+            {f.earlierBaseline && !files[i - 1]?.earlierBaseline && (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={7} className={cn(td, 'text-muted-foreground')}>
+                  Earlier runs measured the browser agent before its fixes; see{' '}
+                  <a href="#changes-to-the-method">changes to the method</a>.
+                </TableCell>
+              </TableRow>
+            )}
+            <TableRow className="hover:bg-transparent">
+              <TableHead
+                scope="row"
+                className={cn(th, 'text-[0.8125rem] font-normal tabular-nums')}
               >
-                {f.finishedAt
-                  ? `${day(f.finishedAt)} ${f.finishedAt.slice(11, 16)}`
-                  : f.file.slice(0, 10)}
-              </a>
-            </TableHead>
-            {/* the column is narrow, and every model here is a Claude */}
-            <TableCell className={td}>
-              {f.model ? modelName(f.model).replace(/^Claude /, '') : '–'}
-            </TableCell>
-            <TableCell className={td}>
-              {f.partial ? (
-                <>
-                  {f.tasks.map(taskName).join(', ')}{' '}
-                  <span className="text-muted-foreground">(partial)</span>
-                </>
-              ) : (
-                `All ${f.tasks.length}`
-              )}
-            </TableCell>
-            <TableCell className={cn(td, num)}>{f.runs ?? '–'}</TableCell>
-            <TableCell className={cn(td, 'font-mono')}>
-              {f.commit ?? <span className="text-muted-foreground">–</span>}
-              {f.dirty && <span className="text-muted-foreground"> dirty</span>}
-            </TableCell>
-            <TableCell className={cn(td, num)}>
-              {f.browser ? int(f.browser.medianTokens) : '–'}
-            </TableCell>
-            <TableCell className={cn(td, num)}>
-              {f.afford ? int(f.afford.medianTokens) : '–'}
-            </TableCell>
-          </TableRow>
+                <a
+                  href={`https://github.com/affordances/affordances/blob/main/apps/bench/results/${f.file}`}
+                >
+                  {f.finishedAt
+                    ? `${day(f.finishedAt)} ${f.finishedAt.slice(11, 16)}`
+                    : f.file.slice(0, 10)}
+                </a>
+              </TableHead>
+              {/* the column is narrow, and every model here is a Claude */}
+              <TableCell className={td}>
+                {f.model ? modelName(f.model).replace(/^Claude /, '') : '–'}
+              </TableCell>
+              <TableCell className={td}>
+                {f.partial ? (
+                  <>
+                    {f.tasks.map(taskName).join(', ')}{' '}
+                    <span className="text-muted-foreground">(partial)</span>
+                  </>
+                ) : (
+                  `All ${f.tasks.length}`
+                )}
+              </TableCell>
+              <TableCell className={cn(td, num)}>{f.runs ?? '–'}</TableCell>
+              <TableCell className={cn(td, 'font-mono')}>
+                {f.commit ?? <span className="text-muted-foreground">–</span>}
+                {f.dirty && <span className="text-muted-foreground"> dirty</span>}
+              </TableCell>
+              <TableCell className={cn(td, num)}>
+                {f.browser ? int(f.browser.medianTokens) : '–'}
+              </TableCell>
+              <TableCell className={cn(td, num)}>
+                {f.afford ? int(f.afford.medianTokens) : '–'}
+              </TableCell>
+            </TableRow>
+          </Fragment>
         ))}
       </TableBody>
     </TypeTable>
