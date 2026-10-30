@@ -1,0 +1,3372 @@
+{
+  "model": "claude-opus-5-5",
+  "effort": "medium",
+  "runs": 5,
+  "commit": {
+    "sha": "1543f36b0e1ddcce8945319acec0895614864034",
+    "dirty": false
+  },
+  "finishedAt": "2026-10-29T18:16:24.474Z",
+  "node": "v24.14.1",
+  "tasks": [
+    {
+      "id": "add-to-cart",
+      "prompt": "Add a Heavyweight Tee in size M to my cart."
+    },
+    {
+      "id": "change-quantity",
+      "prompt": "I want 3 of the Graphite keycap set that is in my cart, not 1. Fix the quantity."
+    },
+    {
+      "id": "checkout",
+      "prompt": "Check out my cart. I approve placing the order."
+    },
+    {
+      "id": "search",
+      "prompt": "What's the cheapest product in stock right now? Tell me its name and price."
+    },
+    {
+      "id": "order-status",
+      "prompt": "What did I order most recently, and what was the total?"
+    }
+  ],
+  "summary": {
+    "browser": {
+      "successRate": 1,
+      "medianTurns": 7,
+      "medianTokens": 17992,
+      "medianMs": 15959,
+      "turns": {
+        "median": 7,
+        "min": 3,
+        "max": 15
+      },
+      "tokens": {
+        "median": 17992,
+        "min": 4786,
+        "max": 110962
+      },
+      "ms": {
+        "median": 15959,
+        "min": 5988,
+        "max": 43388
+      },
+      "firstActionMs": {
+        "median": 7470,
+        "min": 3614,
+        "max": 11812
+      },
+      "tokenSplit": {
+        "input": 16,
+        "cacheRead": 13843,
+        "cacheWrite": 843,
+        "output": 404
+      },
+      "readBytes": {
+        "median": 4492,
+        "min": 2886,
+        "max": 7788
+      },
+      "costUsd": 0.7410924000000001,
+      "costPerSuccessUsd": 0.029643696000000004
+    },
+    "afford": {
+      "successRate": 1,
+      "medianTurns": 3,
+      "medianTokens": 3985,
+      "medianMs": 6551,
+      "turns": {
+        "median": 3,
+        "min": 2,
+        "max": 4
+      },
+      "tokens": {
+        "median": 3985,
+        "min": 2176,
+        "max": 6438
+      },
+      "ms": {
+        "median": 6551,
+        "min": 2801,
+        "max": 12427
+      },
+      "firstActionMs": {
+        "median": 4115,
+        "min": 1913,
+        "max": 10802
+      },
+      "tokenSplit": {
+        "input": 8,
+        "cacheRead": 3779,
+        "cacheWrite": 0,
+        "output": 198
+      },
+      "readBytes": {
+        "median": 968,
+        "min": 232,
+        "max": 1462
+      },
+      "costUsd": 0.1693464,
+      "costPerSuccessUsd": 0.006773856
+    }
+  },
+  "perTask": {
+    "add-to-cart": {
+      "browser": {
+        "successRate": 1,
+        "medianTurns": 12,
+        "medianTokens": 81746,
+        "medianMs": 38655,
+        "turns": {
+          "median": 12,
+          "min": 11,
+          "max": 15
+        },
+        "tokens": {
+          "median": 81746,
+          "min": 61275,
+          "max": 110962
+        },
+        "ms": {
+          "median": 38655,
+          "min": 35584,
+          "max": 43388
+        },
+        "firstActionMs": {
+          "median": 5903,
+          "min": 5629,
+          "max": 6349
+        },
+        "tokenSplit": {
+          "input": 26,
+          "cacheRead": 71356,
+          "cacheWrite": 10216,
+          "output": 1570
+        },
+        "readBytes": {
+          "median": 5390,
+          "min": 4293,
+          "max": 7788
+        },
+        "costUsd": 0.4682562,
+        "costPerSuccessUsd": 0.09365124
+      },
+      "afford": {
+        "successRate": 1,
+        "medianTurns": 4,
+        "medianTokens": 6409,
+        "medianMs": 9077,
+        "turns": {
+          "median": 4,
+          "min": 4,
+          "max": 4
+        },
+        "tokens": {
+          "median": 6409,
+          "min": 6395,
+          "max": 6438
+        },
+        "ms": {
+          "median": 9077,
+          "min": 8732,
+          "max": 11673
+        },
+        "firstActionMs": {
+          "median": 2139,
+          "min": 1913,
+          "max": 5534
+        },
+        "tokenSplit": {
+          "input": 10,
+          "cacheRead": 4814,
+          "cacheWrite": 1245,
+          "output": 340
+        },
+        "readBytes": {
+          "median": 1094,
+          "min": 1094,
+          "max": 1094
+        },
+        "costUsd": 0.06911519999999999,
+        "costPerSuccessUsd": 0.013823039999999998
+      }
+    },
+    "change-quantity": {
+      "browser": {
+        "successRate": 1,
+        "medianTurns": 7,
+        "medianTokens": 18410,
+        "medianMs": 17163,
+        "turns": {
+          "median": 7,
+          "min": 5,
+          "max": 7
+        },
+        "tokens": {
+          "median": 18410,
+          "min": 11913,
+          "max": 18463
+        },
+        "ms": {
+          "median": 17163,
+          "min": 15959,
+          "max": 19069
+        },
+        "firstActionMs": {
+          "median": 10190,
+          "min": 7819,
+          "max": 11812
+        },
+        "tokenSplit": {
+          "input": 16,
+          "cacheRead": 16735,
+          "cacheWrite": 1272,
+          "output": 408
+        },
+        "readBytes": {
+          "median": 4880,
+          "min": 4039,
+          "max": 4880
+        },
+        "costUsd": 0.09833839999999999,
+        "costPerSuccessUsd": 0.01966768
+      },
+      "afford": {
+        "successRate": 1,
+        "medianTurns": 3,
+        "medianTokens": 4336,
+        "medianMs": 6978,
+        "turns": {
+          "median": 3,
+          "min": 3,
+          "max": 3
+        },
+        "tokens": {
+          "median": 4336,
+          "min": 4330,
+          "max": 4339
+        },
+        "ms": {
+          "median": 6978,
+          "min": 6199,
+          "max": 12427
+        },
+        "firstActionMs": {
+          "median": 5025,
+          "min": 4108,
+          "max": 10802
+        },
+        "tokenSplit": {
+          "input": 8,
+          "cacheRead": 4113,
+          "cacheWrite": 0,
+          "output": 215
+        },
+        "readBytes": {
+          "median": 968,
+          "min": 968,
+          "max": 968
+        },
+        "costUsd": 0.0339266,
+        "costPerSuccessUsd": 0.00678532
+      }
+    },
+    "checkout": {
+      "browser": {
+        "successRate": 1,
+        "medianTurns": 7,
+        "medianTokens": 18001,
+        "medianMs": 18339,
+        "turns": {
+          "median": 7,
+          "min": 7,
+          "max": 7
+        },
+        "tokens": {
+          "median": 18001,
+          "min": 17992,
+          "max": 18004
+        },
+        "ms": {
+          "median": 18339,
+          "min": 15205,
+          "max": 21991
+        },
+        "firstActionMs": {
+          "median": 9295,
+          "min": 6856,
+          "max": 9996
+        },
+        "tokenSplit": {
+          "input": 16,
+          "cacheRead": 17257,
+          "cacheWrite": 317,
+          "output": 411
+        },
+        "readBytes": {
+          "median": 4492,
+          "min": 4492,
+          "max": 4492
+        },
+        "costUsd": 0.08277419999999999,
+        "costPerSuccessUsd": 0.016554839999999998
+      },
+      "afford": {
+        "successRate": 1,
+        "medianTurns": 3,
+        "medianTokens": 3985,
+        "medianMs": 6551,
+        "turns": {
+          "median": 3,
+          "min": 3,
+          "max": 3
+        },
+        "tokens": {
+          "median": 3985,
+          "min": 3982,
+          "max": 3990
+        },
+        "ms": {
+          "median": 6551,
+          "min": 5620,
+          "max": 7336
+        },
+        "firstActionMs": {
+          "median": 4115,
+          "min": 3824,
+          "max": 5496
+        },
+        "tokenSplit": {
+          "input": 8,
+          "cacheRead": 3779,
+          "cacheWrite": 0,
+          "output": 198
+        },
+        "readBytes": {
+          "median": 593,
+          "min": 593,
+          "max": 593
+        },
+        "costUsd": 0.031334999999999995,
+        "costPerSuccessUsd": 0.006266999999999999
+      }
+    },
+    "search": {
+      "browser": {
+        "successRate": 1,
+        "medianTurns": 3,
+        "medianTokens": 5000,
+        "medianMs": 11092,
+        "turns": {
+          "median": 3,
+          "min": 3,
+          "max": 4
+        },
+        "tokens": {
+          "median": 5000,
+          "min": 4979,
+          "max": 9127
+        },
+        "ms": {
+          "median": 11092,
+          "min": 8182,
+          "max": 12124
+        },
+        "firstActionMs": {
+          "median": 7925,
+          "min": 7924,
+          "max": 7926
+        },
+        "tokenSplit": {
+          "input": 8,
+          "cacheRead": 4786,
+          "cacheWrite": 442,
+          "output": 198
+        },
+        "readBytes": {
+          "median": 3143,
+          "min": 3143,
+          "max": 3143
+        },
+        "costUsd": 0.040878000000000005,
+        "costPerSuccessUsd": 0.008175600000000002
+      },
+      "afford": {
+        "successRate": 1,
+        "medianTurns": 2,
+        "medianTokens": 2692,
+        "medianMs": 3246,
+        "turns": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "tokens": {
+          "median": 2692,
+          "min": 2658,
+          "max": 2696
+        },
+        "ms": {
+          "median": 3246,
+          "min": 2801,
+          "max": 3437
+        },
+        "firstActionMs": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "tokenSplit": {
+          "input": 6,
+          "cacheRead": 2570,
+          "cacheWrite": 0,
+          "output": 116
+        },
+        "readBytes": {
+          "median": 1462,
+          "min": 1462,
+          "max": 1462
+        },
+        "costUsd": 0.01363,
+        "costPerSuccessUsd": 0.002726
+      }
+    },
+    "order-status": {
+      "browser": {
+        "successRate": 1,
+        "medianTurns": 4,
+        "medianTokens": 8826,
+        "medianMs": 7409,
+        "turns": {
+          "median": 4,
+          "min": 3,
+          "max": 4
+        },
+        "tokens": {
+          "median": 8826,
+          "min": 4786,
+          "max": 8841
+        },
+        "ms": {
+          "median": 7409,
+          "min": 5988,
+          "max": 7658
+        },
+        "firstActionMs": {
+          "median": 3897.5,
+          "min": 3614,
+          "max": 4082
+        },
+        "tokenSplit": {
+          "input": 10,
+          "cacheRead": 8294,
+          "cacheWrite": 291,
+          "output": 231
+        },
+        "readBytes": {
+          "median": 2886,
+          "min": 2886,
+          "max": 2886
+        },
+        "costUsd": 0.0508456,
+        "costPerSuccessUsd": 0.01016912
+      },
+      "afford": {
+        "successRate": 1,
+        "medianTurns": 2,
+        "medianTokens": 2179,
+        "medianMs": 4069,
+        "turns": {
+          "median": 2,
+          "min": 2,
+          "max": 2
+        },
+        "tokens": {
+          "median": 2179,
+          "min": 2176,
+          "max": 2187
+        },
+        "ms": {
+          "median": 4069,
+          "min": 3174,
+          "max": 9348
+        },
+        "firstActionMs": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "tokenSplit": {
+          "input": 6,
+          "cacheRead": 1894,
+          "cacheWrite": 176,
+          "output": 103
+        },
+        "readBytes": {
+          "median": 232,
+          "min": 232,
+          "max": 232
+        },
+        "costUsd": 0.0213396,
+        "costPerSuccessUsd": 0.00426792
+      }
+    }
+  },
+  "rows": [
+    {
+      "run": 1,
+      "agent": "browser",
+      "task": "add-to-cart",
+      "turns": 11,
+      "toolCalls": 16,
+      "tokens": 70209,
+      "inputTokens": 24,
+      "cacheReadTokens": 57152,
+      "cacheWriteTokens": 11615,
+      "outputTokens": 1418,
+      "costUsd": 0.09796139999999999,
+      "ms": 35584,
+      "firstActionMs": 5984,
+      "stop": "end_turn",
+      "answer": "I added one Heavyweight Tee in size M (TEE-BLK-M, $48.00) to your cart, and the cart page now shows it.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 682,
+          "bytes": 2348
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/products/heavyweight-tee"
+          },
+          "ms": 598,
+          "bytes": 1083
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "radio",
+            "name": "M"
+          },
+          "ms": 5004,
+          "bytes": 0,
+          "error": "locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('radio', { name: 'M', exact: true }).first()\u001b[22m\n\u001b[2m    - locator resolved to <input name=\"sku\" type=\"radio\" class=\"sr-only\" value=\"TEE-BLK-M\"/>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <label class=\"flex h-11 cursor-pointer flex-col items-center justify-center rounded-md border text-sm transition-colors duration-150 ease-out hover:border-ring has-checked:border-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/30 has-disabled:cursor-not-allowed has-disabled:border-border has-disabled:text-muted-foreground has-disabled:line-through\">…</label> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <label class=\"flex h-11 cursor-pointer flex-col items-center justify-center rounded-md border text-sm transition-colors duration-150 ease-out hover:border-ring has-checked:border-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/30 has-disabled:cursor-not-allowed has-disabled:border-border has-disabled:text-muted-foreground has-disabled:line-through\">…</label> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    10 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <label class=\"flex h-11 cursor-pointer flex-col items-center justify-center rounded-md border text-sm transition-colors duration-150 ease-out hover:border-ring has-checked:border-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/30 has-disabled:cursor-not-allowed has-disabled:border-border has-disabled:text-muted-foreground has-disabled:line-through\">…</label> intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Agent view"
+          },
+          "ms": 59,
+          "bytes": 2817
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Agent view"
+          },
+          "ms": 20,
+          "bytes": 1083
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "text",
+            "name": "M"
+          },
+          "ms": 5002,
+          "bytes": 0,
+          "error": "locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('text', { name: 'M', exact: true }).first()\u001b[22m\n"
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/products/heavyweight-tee?sku=TEE-BLK-M"
+          },
+          "ms": 583,
+          "bytes": 1097
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "Tab"
+          },
+          "ms": 12,
+          "bytes": 1097
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "Tab"
+          },
+          "ms": 9,
+          "bytes": 1097
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "Tab"
+          },
+          "ms": 5,
+          "bytes": 1097
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "Tab"
+          },
+          "ms": 4,
+          "bytes": 1097
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "Tab"
+          },
+          "ms": 4,
+          "bytes": 1097
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "Tab"
+          },
+          "ms": 4,
+          "bytes": 1097
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "ArrowRight"
+          },
+          "ms": 11,
+          "bytes": 1097
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Add to cart"
+          },
+          "ms": 31,
+          "bytes": 1108
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 630,
+          "bytes": 862
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 1,
+      "agent": "afford",
+      "task": "add-to-cart",
+      "turns": 4,
+      "toolCalls": 3,
+      "tokens": 6433,
+      "inputTokens": 10,
+      "cacheReadTokens": 3873,
+      "cacheWriteTokens": 2204,
+      "outputTokens": 346,
+      "costUsd": 0.0187546,
+      "ms": 9077,
+      "firstActionMs": 2124,
+      "stop": "end_turn",
+      "answer": "I added one Heavyweight Tee in size M (black, $48.00) to your cart, and it's the only item there now.",
+      "trace": [
+        {
+          "tool": "afford_call",
+          "input": {
+            "path": "/",
+            "action": "search",
+            "input": {
+              "query": "Heavyweight Tee"
+            }
+          },
+          "ms": 6,
+          "bytes": 212
+        },
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/products/heavyweight-tee"
+          },
+          "ms": 4,
+          "bytes": 1094
+        },
+        {
+          "tool": "afford_call",
+          "input": {
+            "path": "/products/heavyweight-tee",
+            "action": "addToCart",
+            "input": {
+              "sku": "TEE-BLK-M",
+              "quantity": 1
+            }
+          },
+          "ms": 4,
+          "bytes": 676
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 1,
+      "agent": "browser",
+      "task": "change-quantity",
+      "turns": 5,
+      "toolCalls": 5,
+      "tokens": 11913,
+      "inputTokens": 12,
+      "cacheReadTokens": 7943,
+      "cacheWriteTokens": 3581,
+      "outputTokens": 377,
+      "costUsd": 0.027081599999999997,
+      "ms": 15959,
+      "firstActionMs": 10304,
+      "stop": "end_turn",
+      "answer": "The Graphite Keycap Set in your cart is now at quantity 3, for a total of $192.00 with free shipping. I reloaded the cart page to make sure the change stuck.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 700,
+          "bytes": 2350
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 604,
+          "bytes": 848
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "One more Keycap Set"
+          },
+          "ms": 38,
+          "bytes": 859
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "One more Keycap Set"
+          },
+          "ms": 55,
+          "bytes": 863
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 586,
+          "bytes": 841
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 1,
+      "agent": "afford",
+      "task": "change-quantity",
+      "turns": 3,
+      "toolCalls": 2,
+      "tokens": 4339,
+      "inputTokens": 8,
+      "cacheReadTokens": 2406,
+      "cacheWriteTokens": 1707,
+      "outputTokens": 218,
+      "costUsd": 0.0134082,
+      "ms": 6199,
+      "firstActionMs": 4108,
+      "stop": "end_turn",
+      "answer": "I changed the Graphite Keycap Set (KEY-GRA) in your cart from 1 to 3, so the cart subtotal is now $192.00.",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 5,
+          "bytes": 968
+        },
+        {
+          "tool": "afford_call",
+          "input": {
+            "path": "/cart",
+            "action": "updateQuantity",
+            "input": {
+              "sku": "KEY-GRA",
+              "quantity": 3
+            }
+          },
+          "ms": 6,
+          "bytes": 286
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 1,
+      "agent": "browser",
+      "task": "checkout",
+      "turns": 7,
+      "toolCalls": 6,
+      "tokens": 18004,
+      "inputTokens": 16,
+      "cacheReadTokens": 13843,
+      "cacheWriteTokens": 3731,
+      "outputTokens": 414,
+      "costUsd": 0.029767599999999998,
+      "ms": 15587,
+      "firstActionMs": 7470,
+      "stop": "end_turn",
+      "answer": "I placed your order, and it shows up as AS-1001 on your Orders page: 1 × Six-Panel Cap in Black, $36.00 total with free shipping. Your cart is now empty.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 683,
+          "bytes": 2350
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 600,
+          "bytes": 857
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "link",
+            "name": "Check out"
+          },
+          "ms": 24,
+          "bytes": 857
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/checkout"
+          },
+          "ms": 574,
+          "bytes": 734
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Place order"
+          },
+          "ms": 18,
+          "bytes": 745
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/account/orders"
+          },
+          "ms": 566,
+          "bytes": 551
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 1,
+      "agent": "afford",
+      "task": "checkout",
+      "turns": 3,
+      "toolCalls": 2,
+      "tokens": 3987,
+      "inputTokens": 8,
+      "cacheReadTokens": 2209,
+      "cacheWriteTokens": 1570,
+      "outputTokens": 200,
+      "costUsd": 0.0123238,
+      "ms": 7336,
+      "firstActionMs": 5114,
+      "stop": "end_turn",
+      "answer": "I placed your order for 1 Six-Panel Cap in black ($36.00 total), your cart is now empty, and the order appears under /account/orders.",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/checkout"
+          },
+          "ms": 4,
+          "bytes": 593
+        },
+        {
+          "tool": "afford_call",
+          "input": {
+            "path": "/checkout",
+            "action": "placeOrder",
+            "confirm": true
+          },
+          "ms": 6,
+          "bytes": 522
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 1,
+      "agent": "browser",
+      "task": "search",
+      "turns": 3,
+      "toolCalls": 2,
+      "tokens": 5000,
+      "inputTokens": 8,
+      "cacheReadTokens": 4352,
+      "cacheWriteTokens": 442,
+      "outputTokens": 198,
+      "costUsd": 0.0070723999999999995,
+      "ms": 11092,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "The cheapest product in stock is the **Sticker Sheet** at **$8.00**. Its product page says \"In stock,\" and the next cheapest is the Dot Grid Notebook, starting at $16.00.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 694,
+          "bytes": 2348
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/products/sticker-sheet"
+          },
+          "ms": 598,
+          "bytes": 795
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 1,
+      "agent": "afford",
+      "task": "search",
+      "turns": 2,
+      "toolCalls": 1,
+      "tokens": 2658,
+      "inputTokens": 6,
+      "cacheReadTokens": 2570,
+      "cacheWriteTokens": 0,
+      "outputTokens": 82,
+      "costUsd": 0.002178,
+      "ms": 2801,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "The cheapest product in stock right now is the **Sticker Sheet**, at **$8.00**.",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/"
+          },
+          "ms": 5,
+          "bytes": 1462
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 1,
+      "agent": "browser",
+      "task": "order-status",
+      "turns": 4,
+      "toolCalls": 3,
+      "tokens": 8826,
+      "inputTokens": 10,
+      "cacheReadTokens": 5411,
+      "cacheWriteTokens": 3174,
+      "outputTokens": 231,
+      "costUsd": 0.0216122,
+      "ms": 7100,
+      "firstActionMs": 3614,
+      "stop": "end_turn",
+      "answer": "Your most recent order is AS-1003, placed Oct 29, 2026 at 2:07 PM: 2 × Sticker Sheet, for a total of $16.00. It's the only order on your account.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 703,
+          "bytes": 2348
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "link",
+            "name": "Orders"
+          },
+          "ms": 24,
+          "bytes": 2348
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/account/orders"
+          },
+          "ms": 577,
+          "bytes": 538
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 1,
+      "agent": "afford",
+      "task": "order-status",
+      "turns": 2,
+      "toolCalls": 1,
+      "tokens": 2187,
+      "inputTokens": 6,
+      "cacheReadTokens": 947,
+      "cacheWriteTokens": 1123,
+      "outputTokens": 111,
+      "costUsd": 0.008048399999999999,
+      "ms": 4069,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "You have one order in this session, so that's the most recent: order AS-1004, placed 29 October 2026. It was for 2 Sticker Sheets, and the total was $16.00.",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/account/orders"
+          },
+          "ms": 3,
+          "bytes": 232
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 2,
+      "agent": "browser",
+      "task": "add-to-cart",
+      "turns": 12,
+      "toolCalls": 17,
+      "tokens": 81746,
+      "inputTokens": 26,
+      "cacheReadTokens": 71356,
+      "cacheWriteTokens": 8794,
+      "outputTokens": 1570,
+      "costUsd": 0.0897452,
+      "ms": 38655,
+      "firstActionMs": 5629,
+      "stop": "end_turn",
+      "answer": "I added one Heavyweight Tee in size M (TEE-BLK-M, $48.00) to your cart, and it's the only item there now.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 740,
+          "bytes": 2348
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/products/heavyweight-tee"
+          },
+          "ms": 575,
+          "bytes": 1083
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "radio",
+            "name": "M"
+          },
+          "ms": 5005,
+          "bytes": 0,
+          "error": "locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('radio', { name: 'M', exact: true }).first()\u001b[22m\n\u001b[2m    - locator resolved to <input name=\"sku\" type=\"radio\" class=\"sr-only\" value=\"TEE-BLK-M\"/>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <label class=\"flex h-11 cursor-pointer flex-col items-center justify-center rounded-md border text-sm transition-colors duration-150 ease-out hover:border-ring has-checked:border-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/30 has-disabled:cursor-not-allowed has-disabled:border-border has-disabled:text-muted-foreground has-disabled:line-through\">…</label> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <label class=\"flex h-11 cursor-pointer flex-col items-center justify-center rounded-md border text-sm transition-colors duration-150 ease-out hover:border-ring has-checked:border-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/30 has-disabled:cursor-not-allowed has-disabled:border-border has-disabled:text-muted-foreground has-disabled:line-through\">…</label> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    10 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <label class=\"flex h-11 cursor-pointer flex-col items-center justify-center rounded-md border text-sm transition-colors duration-150 ease-out hover:border-ring has-checked:border-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/30 has-disabled:cursor-not-allowed has-disabled:border-border has-disabled:text-muted-foreground has-disabled:line-through\">…</label> intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Agent view"
+          },
+          "ms": 51,
+          "bytes": 2817
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Agent view"
+          },
+          "ms": 24,
+          "bytes": 1083
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "link",
+            "name": "Index"
+          },
+          "ms": 37,
+          "bytes": 1083
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/products/heavyweight-tee"
+          },
+          "ms": 571,
+          "bytes": 1083
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "Tab"
+          },
+          "ms": 6,
+          "bytes": 1083
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "text",
+            "name": "M"
+          },
+          "ms": 5002,
+          "bytes": 0,
+          "error": "locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('text', { name: 'M', exact: true }).first()\u001b[22m\n"
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "Tab"
+          },
+          "ms": 7,
+          "bytes": 1083
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "Tab"
+          },
+          "ms": 4,
+          "bytes": 1083
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "Tab"
+          },
+          "ms": 3,
+          "bytes": 1083
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "Tab"
+          },
+          "ms": 3,
+          "bytes": 1083
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "Tab"
+          },
+          "ms": 3,
+          "bytes": 1083
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "ArrowRight"
+          },
+          "ms": 8,
+          "bytes": 1083
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Add to cart"
+          },
+          "ms": 24,
+          "bytes": 1094
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 577,
+          "bytes": 862
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 2,
+      "agent": "afford",
+      "task": "add-to-cart",
+      "turns": 4,
+      "toolCalls": 3,
+      "tokens": 6408,
+      "inputTokens": 10,
+      "cacheReadTokens": 4814,
+      "cacheWriteTokens": 1245,
+      "outputTokens": 339,
+      "costUsd": 0.014007799999999999,
+      "ms": 8732,
+      "firstActionMs": 1913,
+      "stop": "end_turn",
+      "answer": "I added one Heavyweight Tee in size M (black, $48.00) to your cart, which now has 1 item.",
+      "trace": [
+        {
+          "tool": "afford_call",
+          "input": {
+            "path": "/",
+            "action": "search",
+            "input": {
+              "query": "Heavyweight Tee"
+            }
+          },
+          "ms": 5,
+          "bytes": 212
+        },
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/products/heavyweight-tee"
+          },
+          "ms": 6,
+          "bytes": 1094
+        },
+        {
+          "tool": "afford_call",
+          "input": {
+            "path": "/products/heavyweight-tee",
+            "action": "addToCart",
+            "input": {
+              "sku": "TEE-BLK-M",
+              "quantity": 1
+            }
+          },
+          "ms": 3,
+          "bytes": 676
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 2,
+      "agent": "browser",
+      "task": "change-quantity",
+      "turns": 6,
+      "toolCalls": 6,
+      "tokens": 14932,
+      "inputTokens": 14,
+      "cacheReadTokens": 12774,
+      "cacheWriteTokens": 1736,
+      "outputTokens": 408,
+      "costUsd": 0.0194508,
+      "ms": 19069,
+      "firstActionMs": 11812,
+      "stop": "end_turn",
+      "answer": "I changed the Graphite Keycap Set (KEY-GRA) in your cart from 1 to 3, and after reloading the cart shows 3 for a total of $192.00 with free shipping.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 703,
+          "bytes": 2350
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 604,
+          "bytes": 848
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "One more Keycap Set"
+          },
+          "ms": 36,
+          "bytes": 859
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 593,
+          "bytes": 841
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "One more Keycap Set"
+          },
+          "ms": 21,
+          "bytes": 863
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 619,
+          "bytes": 841
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 2,
+      "agent": "afford",
+      "task": "change-quantity",
+      "turns": 3,
+      "toolCalls": 2,
+      "tokens": 4336,
+      "inputTokens": 8,
+      "cacheReadTokens": 4113,
+      "cacheWriteTokens": 0,
+      "outputTokens": 215,
+      "costUsd": 0.0051546000000000005,
+      "ms": 8560,
+      "firstActionMs": 6947,
+      "stop": "end_turn",
+      "answer": "I changed the Graphite Keycap Set in your cart from 1 to 3, so the subtotal is now $192.00 ($64.00 each).",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 2,
+          "bytes": 968
+        },
+        {
+          "tool": "afford_call",
+          "input": {
+            "path": "/cart",
+            "action": "updateQuantity",
+            "input": {
+              "sku": "KEY-GRA",
+              "quantity": 3
+            }
+          },
+          "ms": 3,
+          "bytes": 286
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 2,
+      "agent": "browser",
+      "task": "checkout",
+      "turns": 7,
+      "toolCalls": 6,
+      "tokens": 17992,
+      "inputTokens": 16,
+      "cacheReadTokens": 17257,
+      "cacheWriteTokens": 316,
+      "outputTokens": 403,
+      "costUsd": 0.0131554,
+      "ms": 15205,
+      "firstActionMs": 6856,
+      "stop": "end_turn",
+      "answer": "I placed the order: AS-1001 is for 1 Six-Panel Cap in black, $36.00 total with free shipping, and it now appears on your Orders page.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 662,
+          "bytes": 2350
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 596,
+          "bytes": 857
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "link",
+            "name": "Check out"
+          },
+          "ms": 23,
+          "bytes": 857
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/checkout"
+          },
+          "ms": 573,
+          "bytes": 734
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Place order"
+          },
+          "ms": 34,
+          "bytes": 745
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/account/orders"
+          },
+          "ms": 569,
+          "bytes": 551
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 2,
+      "agent": "afford",
+      "task": "checkout",
+      "turns": 3,
+      "toolCalls": 2,
+      "tokens": 3982,
+      "inputTokens": 8,
+      "cacheReadTokens": 3779,
+      "cacheWriteTokens": 0,
+      "outputTokens": 195,
+      "costUsd": 0.0046878,
+      "ms": 5657,
+      "firstActionMs": 4099,
+      "stop": "end_turn",
+      "answer": "I placed your order for 1 Six-Panel Cap in black ($36.00); your cart is now empty and the order appears under your orders.",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/checkout"
+          },
+          "ms": 4,
+          "bytes": 593
+        },
+        {
+          "tool": "afford_call",
+          "input": {
+            "path": "/checkout",
+            "action": "placeOrder",
+            "confirm": true
+          },
+          "ms": 4,
+          "bytes": 522
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 2,
+      "agent": "browser",
+      "task": "search",
+      "turns": 3,
+      "toolCalls": 2,
+      "tokens": 4979,
+      "inputTokens": 8,
+      "cacheReadTokens": 4786,
+      "cacheWriteTokens": 0,
+      "outputTokens": 185,
+      "costUsd": 0.0046892,
+      "ms": 8182,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "The cheapest product in stock is the **Sticker Sheet at $8.00**; its product page says it's in stock. The next cheapest is the Dot Grid Notebook, from $16.00.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 729,
+          "bytes": 2348
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/products/sticker-sheet"
+          },
+          "ms": 574,
+          "bytes": 795
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 2,
+      "agent": "afford",
+      "task": "search",
+      "turns": 2,
+      "toolCalls": 1,
+      "tokens": 2692,
+      "inputTokens": 6,
+      "cacheReadTokens": 2570,
+      "cacheWriteTokens": 0,
+      "outputTokens": 116,
+      "costUsd": 0.002858,
+      "ms": 3270,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "The cheapest product in stock right now is the **Sticker Sheet**, at **$8.00**. It comes in one size. The next cheapest is the Dot Grid Notebook, starting at $16.00.",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/"
+          },
+          "ms": 4,
+          "bytes": 1462
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 2,
+      "agent": "browser",
+      "task": "order-status",
+      "turns": 3,
+      "toolCalls": 2,
+      "tokens": 4786,
+      "inputTokens": 8,
+      "cacheReadTokens": 4325,
+      "cacheWriteTokens": 291,
+      "outputTokens": 162,
+      "costUsd": 0.005592,
+      "ms": 5988,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "Your most recent order is AS-1003, placed Oct 29, 2026 at 2:09 PM: 2 Sticker Sheets, for a total of $16.00. It's the only order on your account.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 694,
+          "bytes": 2348
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/account/orders"
+          },
+          "ms": 567,
+          "bytes": 538
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 2,
+      "agent": "afford",
+      "task": "order-status",
+      "turns": 2,
+      "toolCalls": 1,
+      "tokens": 2177,
+      "inputTokens": 6,
+      "cacheReadTokens": 1894,
+      "cacheWriteTokens": 176,
+      "outputTokens": 101,
+      "costUsd": 0.0033028000000000003,
+      "ms": 3564,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "Your most recent order is AS-1004, placed October 29, 2026. It was for 2 Sticker Sheets, and the total was $16.00.",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/account/orders"
+          },
+          "ms": 3,
+          "bytes": 232
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 3,
+      "agent": "browser",
+      "task": "add-to-cart",
+      "turns": 13,
+      "toolCalls": 18,
+      "tokens": 91393,
+      "inputTokens": 28,
+      "cacheReadTokens": 79446,
+      "cacheWriteTokens": 10216,
+      "outputTokens": 1703,
+      "costUsd": 0.1011412,
+      "ms": 41625,
+      "firstActionMs": 5903,
+      "stop": "end_turn",
+      "answer": "I added one Heavyweight Tee in size M ($48.00) to your cart, and it's the only item there. I added a size S by mistake first, then removed it.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 746,
+          "bytes": 2348
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/products/heavyweight-tee"
+          },
+          "ms": 592,
+          "bytes": 1083
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "radio",
+            "name": "M"
+          },
+          "ms": 5001,
+          "bytes": 0,
+          "error": "locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('radio', { name: 'M', exact: true }).first()\u001b[22m\n\u001b[2m    - locator resolved to <input name=\"sku\" type=\"radio\" class=\"sr-only\" value=\"TEE-BLK-M\"/>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <label class=\"flex h-11 cursor-pointer flex-col items-center justify-center rounded-md border text-sm transition-colors duration-150 ease-out hover:border-ring has-checked:border-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/30 has-disabled:cursor-not-allowed has-disabled:border-border has-disabled:text-muted-foreground has-disabled:line-through\">…</label> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <label class=\"flex h-11 cursor-pointer flex-col items-center justify-center rounded-md border text-sm transition-colors duration-150 ease-out hover:border-ring has-checked:border-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/30 has-disabled:cursor-not-allowed has-disabled:border-border has-disabled:text-muted-foreground has-disabled:line-through\">…</label> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    10 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <label class=\"flex h-11 cursor-pointer flex-col items-center justify-center rounded-md border text-sm transition-colors duration-150 ease-out hover:border-ring has-checked:border-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/30 has-disabled:cursor-not-allowed has-disabled:border-border has-disabled:text-muted-foreground has-disabled:line-through\">…</label> intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Add to cart"
+          },
+          "ms": 26,
+          "bytes": 1094
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 613,
+          "bytes": 862
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Remove"
+          },
+          "ms": 25,
+          "bytes": 873
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/products/heavyweight-tee"
+          },
+          "ms": 612,
+          "bytes": 1083
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "text",
+            "name": "M"
+          },
+          "ms": 5001,
+          "bytes": 0,
+          "error": "locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('text', { name: 'M', exact: true }).first()\u001b[22m\n"
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Agent view"
+          },
+          "ms": 33,
+          "bytes": 2817
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Agent view"
+          },
+          "ms": 31,
+          "bytes": 1083
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "group",
+            "name": "Size"
+          },
+          "ms": 29,
+          "bytes": 1083
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "Tab"
+          },
+          "ms": 11,
+          "bytes": 1083
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "ArrowRight"
+          },
+          "ms": 9,
+          "bytes": 1083
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "heading",
+            "name": "Heavyweight Tee"
+          },
+          "ms": 34,
+          "bytes": 1083
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "Tab"
+          },
+          "ms": 6,
+          "bytes": 1083
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "ArrowRight"
+          },
+          "ms": 7,
+          "bytes": 1083
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Add to cart"
+          },
+          "ms": 46,
+          "bytes": 1094
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 594,
+          "bytes": 862
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 3,
+      "agent": "afford",
+      "task": "add-to-cart",
+      "turns": 4,
+      "toolCalls": 3,
+      "tokens": 6409,
+      "inputTokens": 10,
+      "cacheReadTokens": 6059,
+      "cacheWriteTokens": 0,
+      "outputTokens": 340,
+      "costUsd": 0.0080518,
+      "ms": 8787,
+      "firstActionMs": 2139,
+      "stop": "end_turn",
+      "answer": "I added one Heavyweight Tee in size M (black, $48.00) to your cart, and it's the only item there now.",
+      "trace": [
+        {
+          "tool": "afford_call",
+          "input": {
+            "path": "/",
+            "action": "search",
+            "input": {
+              "query": "Heavyweight Tee"
+            }
+          },
+          "ms": 5,
+          "bytes": 212
+        },
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/products/heavyweight-tee"
+          },
+          "ms": 3,
+          "bytes": 1094
+        },
+        {
+          "tool": "afford_call",
+          "input": {
+            "path": "/products/heavyweight-tee",
+            "action": "addToCart",
+            "input": {
+              "sku": "TEE-BLK-M",
+              "quantity": 1
+            }
+          },
+          "ms": 7,
+          "bytes": 676
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 3,
+      "agent": "browser",
+      "task": "change-quantity",
+      "turns": 7,
+      "toolCalls": 6,
+      "tokens": 18410,
+      "inputTokens": 16,
+      "cacheReadTokens": 17147,
+      "cacheWriteTokens": 843,
+      "outputTokens": 404,
+      "costUsd": 0.0157884,
+      "ms": 18800,
+      "firstActionMs": 10190,
+      "stop": "end_turn",
+      "answer": "I changed the Graphite Keycap Set in your cart from 1 to 3, and reloading the cart confirms it now shows 3 items for $192.00 with free shipping.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 694,
+          "bytes": 2350
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 594,
+          "bytes": 848
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "One more Keycap Set"
+          },
+          "ms": 23,
+          "bytes": 859
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 586,
+          "bytes": 841
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "One more Keycap Set"
+          },
+          "ms": 31,
+          "bytes": 863
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 589,
+          "bytes": 841
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 3,
+      "agent": "afford",
+      "task": "change-quantity",
+      "turns": 3,
+      "toolCalls": 2,
+      "tokens": 4330,
+      "inputTokens": 8,
+      "cacheReadTokens": 4113,
+      "cacheWriteTokens": 0,
+      "outputTokens": 209,
+      "costUsd": 0.0050346,
+      "ms": 6506,
+      "firstActionMs": 4647,
+      "stop": "end_turn",
+      "answer": "I changed the Graphite Keycap Set in your cart from 1 to 3, so the cart subtotal is now $192.00.",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 4,
+          "bytes": 968
+        },
+        {
+          "tool": "afford_call",
+          "input": {
+            "path": "/cart",
+            "action": "updateQuantity",
+            "input": {
+              "sku": "KEY-GRA",
+              "quantity": 3
+            }
+          },
+          "ms": 5,
+          "bytes": 286
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 3,
+      "agent": "browser",
+      "task": "checkout",
+      "turns": 7,
+      "toolCalls": 6,
+      "tokens": 18002,
+      "inputTokens": 16,
+      "cacheReadTokens": 17257,
+      "cacheWriteTokens": 317,
+      "outputTokens": 412,
+      "costUsd": 0.013340399999999999,
+      "ms": 18339,
+      "firstActionMs": 9996,
+      "stop": "end_turn",
+      "answer": "I placed order AS-1001 for 1 × Six-Panel Cap in black. The total was $36.00 with free shipping, the order now shows on your Orders page, and your cart is empty.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 692,
+          "bytes": 2350
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 606,
+          "bytes": 857
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "link",
+            "name": "Check out"
+          },
+          "ms": 27,
+          "bytes": 857
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/checkout"
+          },
+          "ms": 570,
+          "bytes": 734
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Place order"
+          },
+          "ms": 29,
+          "bytes": 745
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/account/orders"
+          },
+          "ms": 572,
+          "bytes": 551
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 3,
+      "agent": "afford",
+      "task": "checkout",
+      "turns": 3,
+      "toolCalls": 2,
+      "tokens": 3985,
+      "inputTokens": 8,
+      "cacheReadTokens": 3779,
+      "cacheWriteTokens": 0,
+      "outputTokens": 198,
+      "costUsd": 0.0047478,
+      "ms": 6551,
+      "firstActionMs": 4115,
+      "stop": "end_turn",
+      "answer": "I placed your order for 1 Six-Panel Cap in black, for $36.00. Your cart is now empty, and the order appears under your orders.",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/checkout"
+          },
+          "ms": 4,
+          "bytes": 593
+        },
+        {
+          "tool": "afford_call",
+          "input": {
+            "path": "/checkout",
+            "action": "placeOrder",
+            "confirm": true
+          },
+          "ms": 6,
+          "bytes": 522
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 3,
+      "agent": "browser",
+      "task": "search",
+      "turns": 4,
+      "toolCalls": 3,
+      "tokens": 9127,
+      "inputTokens": 10,
+      "cacheReadTokens": 7288,
+      "cacheWriteTokens": 1544,
+      "outputTokens": 285,
+      "costUsd": 0.0149176,
+      "ms": 12124,
+      "firstActionMs": 7926,
+      "stop": "end_turn",
+      "answer": "The cheapest product in stock is the **Sticker Sheet** at **$8.00**. Its product page says \"In stock,\" and the next lowest price in the catalog is $16.00, for the Dot Grid Notebook.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 686,
+          "bytes": 2348
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "link",
+            "name": "Sticker Sheet Paper One size $8.00"
+          },
+          "ms": 39,
+          "bytes": 2348
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/products/sticker-sheet"
+          },
+          "ms": 590,
+          "bytes": 795
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 3,
+      "agent": "afford",
+      "task": "search",
+      "turns": 2,
+      "toolCalls": 1,
+      "tokens": 2693,
+      "inputTokens": 6,
+      "cacheReadTokens": 2570,
+      "cacheWriteTokens": 0,
+      "outputTokens": 117,
+      "costUsd": 0.002878,
+      "ms": 3246,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "The cheapest product in stock right now is the **Sticker Sheet**, at **$8.00**. It only comes in one size. The next cheapest is the Dot Grid Notebook, starting at $16.00.",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/"
+          },
+          "ms": 4,
+          "bytes": 1462
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 3,
+      "agent": "browser",
+      "task": "order-status",
+      "turns": 4,
+      "toolCalls": 3,
+      "tokens": 8827,
+      "inputTokens": 10,
+      "cacheReadTokens": 8294,
+      "cacheWriteTokens": 291,
+      "outputTokens": 232,
+      "costUsd": 0.0077938,
+      "ms": 7658,
+      "firstActionMs": 3856,
+      "stop": "end_turn",
+      "answer": "Your most recent order is AS-1003, placed Oct 29, 2026 at 2:11 PM. It was 2 Sticker Sheets, and the total was $16.00. It's the only order on your account.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 707,
+          "bytes": 2348
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "link",
+            "name": "Orders"
+          },
+          "ms": 31,
+          "bytes": 2348
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/account/orders"
+          },
+          "ms": 575,
+          "bytes": 538
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 3,
+      "agent": "afford",
+      "task": "order-status",
+      "turns": 2,
+      "toolCalls": 1,
+      "tokens": 2176,
+      "inputTokens": 6,
+      "cacheReadTokens": 1894,
+      "cacheWriteTokens": 176,
+      "outputTokens": 100,
+      "costUsd": 0.0032828,
+      "ms": 9348,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "Your most recent order is AS-1004, placed October 29, 2026. It was 2 Sticker Sheets, and the total was $16.00.",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/account/orders"
+          },
+          "ms": 4,
+          "bytes": 232
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 4,
+      "agent": "browser",
+      "task": "add-to-cart",
+      "turns": 15,
+      "toolCalls": 20,
+      "tokens": 110962,
+      "inputTokens": 32,
+      "cacheReadTokens": 98932,
+      "cacheWriteTokens": 10347,
+      "outputTokens": 1651,
+      "costUsd": 0.1046694,
+      "ms": 43388,
+      "firstActionMs": 6349,
+      "stop": "end_turn",
+      "answer": "I added one Heavyweight Tee in size M ($48.00) to your cart, and it's the only thing in there. My first try added a size S by mistake, so I removed that one before adding the M.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 730,
+          "bytes": 2348
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/products/heavyweight-tee"
+          },
+          "ms": 591,
+          "bytes": 1083
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "radio",
+            "name": "M"
+          },
+          "ms": 5003,
+          "bytes": 0,
+          "error": "locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('radio', { name: 'M', exact: true }).first()\u001b[22m\n\u001b[2m    - locator resolved to <input name=\"sku\" type=\"radio\" class=\"sr-only\" value=\"TEE-BLK-M\"/>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <label class=\"flex h-11 cursor-pointer flex-col items-center justify-center rounded-md border text-sm transition-colors duration-150 ease-out hover:border-ring has-checked:border-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/30 has-disabled:cursor-not-allowed has-disabled:border-border has-disabled:text-muted-foreground has-disabled:line-through\">…</label> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <label class=\"flex h-11 cursor-pointer flex-col items-center justify-center rounded-md border text-sm transition-colors duration-150 ease-out hover:border-ring has-checked:border-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/30 has-disabled:cursor-not-allowed has-disabled:border-border has-disabled:text-muted-foreground has-disabled:line-through\">…</label> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    10 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <label class=\"flex h-11 cursor-pointer flex-col items-center justify-center rounded-md border text-sm transition-colors duration-150 ease-out hover:border-ring has-checked:border-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/30 has-disabled:cursor-not-allowed has-disabled:border-border has-disabled:text-muted-foreground has-disabled:line-through\">…</label> intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Add to cart"
+          },
+          "ms": 24,
+          "bytes": 1094
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 611,
+          "bytes": 862
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Remove"
+          },
+          "ms": 37,
+          "bytes": 873
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 572,
+          "bytes": 453
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/products/heavyweight-tee"
+          },
+          "ms": 603,
+          "bytes": 1083
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "text",
+            "name": "M"
+          },
+          "ms": 5001,
+          "bytes": 0,
+          "error": "locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('text', { name: 'M', exact: true }).first()\u001b[22m\n"
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Agent view"
+          },
+          "ms": 40,
+          "bytes": 2817
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Agent view"
+          },
+          "ms": 19,
+          "bytes": 1083
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "link",
+            "name": "Index"
+          },
+          "ms": 35,
+          "bytes": 1083
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "Tab"
+          },
+          "ms": 13,
+          "bytes": 2362
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "ArrowRight"
+          },
+          "ms": 6,
+          "bytes": 2362
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/products/heavyweight-tee?sku=TEE-BLK-M"
+          },
+          "ms": 578,
+          "bytes": 1097
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "heading",
+            "name": "Heavyweight Tee"
+          },
+          "ms": 31,
+          "bytes": 1097
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "Tab"
+          },
+          "ms": 8,
+          "bytes": 1097
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "ArrowRight"
+          },
+          "ms": 7,
+          "bytes": 1097
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Add to cart"
+          },
+          "ms": 20,
+          "bytes": 1108
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 617,
+          "bytes": 862
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 4,
+      "agent": "afford",
+      "task": "add-to-cart",
+      "turns": 4,
+      "toolCalls": 3,
+      "tokens": 6438,
+      "inputTokens": 10,
+      "cacheReadTokens": 4822,
+      "cacheWriteTokens": 1249,
+      "outputTokens": 357,
+      "costUsd": 0.0143894,
+      "ms": 11673,
+      "firstActionMs": 2515,
+      "stop": "end_turn",
+      "answer": "I added one Heavyweight Tee in size M ($48.00, black, SKU TEE-BLK-M) to your cart, and it's the only item in it.",
+      "trace": [
+        {
+          "tool": "afford_call",
+          "input": {
+            "path": "/",
+            "action": "search",
+            "input": {
+              "query": "Heavyweight Tee"
+            }
+          },
+          "ms": 5,
+          "bytes": 212
+        },
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/products/heavyweight-tee"
+          },
+          "ms": 10,
+          "bytes": 1094
+        },
+        {
+          "tool": "afford_call",
+          "input": {
+            "path": "/products/heavyweight-tee",
+            "action": "addToCart",
+            "input": {
+              "sku": "TEE-BLK-M",
+              "quantity": 1
+            }
+          },
+          "ms": 5,
+          "bytes": 676
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 4,
+      "agent": "browser",
+      "task": "change-quantity",
+      "turns": 7,
+      "toolCalls": 6,
+      "tokens": 18424,
+      "inputTokens": 16,
+      "cacheReadTokens": 16735,
+      "cacheWriteTokens": 1258,
+      "outputTokens": 415,
+      "costUsd": 0.018001,
+      "ms": 16142,
+      "firstActionMs": 7819,
+      "stop": "end_turn",
+      "answer": "I changed the Graphite Keycap Set (KEY-GRA) in your cart from 1 to 3. I reloaded the cart to check, and it shows 3 items for $192.00 with free shipping.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 847,
+          "bytes": 2350
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 618,
+          "bytes": 848
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "One more Keycap Set"
+          },
+          "ms": 34,
+          "bytes": 859
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 576,
+          "bytes": 841
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "One more Keycap Set"
+          },
+          "ms": 31,
+          "bytes": 863
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 595,
+          "bytes": 841
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 4,
+      "agent": "afford",
+      "task": "change-quantity",
+      "turns": 3,
+      "toolCalls": 2,
+      "tokens": 4337,
+      "inputTokens": 8,
+      "cacheReadTokens": 4113,
+      "cacheWriteTokens": 0,
+      "outputTokens": 216,
+      "costUsd": 0.0051746000000000006,
+      "ms": 12427,
+      "firstActionMs": 10802,
+      "stop": "end_turn",
+      "answer": "I changed the Graphite Keycap Set (KEY-GRA) in your cart from 1 to 3, so the subtotal is now $192.00.",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 8,
+          "bytes": 968
+        },
+        {
+          "tool": "afford_call",
+          "input": {
+            "path": "/cart",
+            "action": "updateQuantity",
+            "input": {
+              "sku": "KEY-GRA",
+              "quantity": 3
+            }
+          },
+          "ms": 6,
+          "bytes": 286
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 4,
+      "agent": "browser",
+      "task": "checkout",
+      "turns": 7,
+      "toolCalls": 6,
+      "tokens": 18001,
+      "inputTokens": 16,
+      "cacheReadTokens": 17257,
+      "cacheWriteTokens": 317,
+      "outputTokens": 411,
+      "costUsd": 0.0133204,
+      "ms": 18823,
+      "firstActionMs": 9295,
+      "stop": "end_turn",
+      "answer": "I placed your order: AS-1001 is for 1 Six-Panel Cap in black, $36.00 total with free shipping. It's listed on your Orders page and your cart is now empty.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 725,
+          "bytes": 2350
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 621,
+          "bytes": 857
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "link",
+            "name": "Check out"
+          },
+          "ms": 22,
+          "bytes": 857
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/checkout"
+          },
+          "ms": 570,
+          "bytes": 734
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Place order"
+          },
+          "ms": 25,
+          "bytes": 745
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/account/orders"
+          },
+          "ms": 564,
+          "bytes": 551
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 4,
+      "agent": "afford",
+      "task": "checkout",
+      "turns": 3,
+      "toolCalls": 2,
+      "tokens": 3990,
+      "inputTokens": 8,
+      "cacheReadTokens": 3779,
+      "cacheWriteTokens": 0,
+      "outputTokens": 203,
+      "costUsd": 0.0048478,
+      "ms": 7231,
+      "firstActionMs": 5496,
+      "stop": "end_turn",
+      "answer": "I placed your order for 1 Six-Panel Cap in black ($36.00 subtotal), so your cart is now empty and the order appears under /account/orders.",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/checkout"
+          },
+          "ms": 6,
+          "bytes": 593
+        },
+        {
+          "tool": "afford_call",
+          "input": {
+            "path": "/checkout",
+            "action": "placeOrder",
+            "confirm": true
+          },
+          "ms": 10,
+          "bytes": 522
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 4,
+      "agent": "browser",
+      "task": "search",
+      "turns": 4,
+      "toolCalls": 3,
+      "tokens": 9119,
+      "inputTokens": 10,
+      "cacheReadTokens": 8832,
+      "cacheWriteTokens": 0,
+      "outputTokens": 277,
+      "costUsd": 0.0073463999999999995,
+      "ms": 11939,
+      "firstActionMs": 7924,
+      "stop": "end_turn",
+      "answer": "The cheapest product in stock is the **Sticker Sheet at $8.00**. Its product page says \"In stock.\" The next cheapest is the Dot Grid Notebook, from $16.00.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 688,
+          "bytes": 2348
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "link",
+            "name": "Sticker Sheet Paper One size $8.00"
+          },
+          "ms": 44,
+          "bytes": 2348
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/products/sticker-sheet"
+          },
+          "ms": 589,
+          "bytes": 795
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 4,
+      "agent": "afford",
+      "task": "search",
+      "turns": 2,
+      "toolCalls": 1,
+      "tokens": 2688,
+      "inputTokens": 6,
+      "cacheReadTokens": 2570,
+      "cacheWriteTokens": 0,
+      "outputTokens": 112,
+      "costUsd": 0.002778,
+      "ms": 3099,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "The cheapest product in stock right now is the **Sticker Sheet**, at **$8.00** (one size). The next cheapest is the Dot Grid Notebook, starting at $16.00.",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/"
+          },
+          "ms": 6,
+          "bytes": 1462
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 4,
+      "agent": "browser",
+      "task": "order-status",
+      "turns": 4,
+      "toolCalls": 3,
+      "tokens": 8826,
+      "inputTokens": 10,
+      "cacheReadTokens": 8294,
+      "cacheWriteTokens": 291,
+      "outputTokens": 231,
+      "costUsd": 0.0077738,
+      "ms": 7409,
+      "firstActionMs": 4082,
+      "stop": "end_turn",
+      "answer": "Your most recent order is AS-1003, placed Oct 29, 2026 at 2:14 PM: 2 × Sticker Sheet, for a total of $16.00. It's the only order on your account.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 718,
+          "bytes": 2348
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "link",
+            "name": "Orders"
+          },
+          "ms": 40,
+          "bytes": 2348
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/account/orders"
+          },
+          "ms": 570,
+          "bytes": 538
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 4,
+      "agent": "afford",
+      "task": "order-status",
+      "turns": 2,
+      "toolCalls": 1,
+      "tokens": 2179,
+      "inputTokens": 6,
+      "cacheReadTokens": 1894,
+      "cacheWriteTokens": 176,
+      "outputTokens": 103,
+      "costUsd": 0.0033428000000000004,
+      "ms": 3174,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "Your most recent order is AS-1004, placed on October 29, 2026. It contains 2 × Sticker Sheet, and the total was $16.00.",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/account/orders"
+          },
+          "ms": 2,
+          "bytes": 232
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 5,
+      "agent": "browser",
+      "task": "add-to-cart",
+      "turns": 11,
+      "toolCalls": 12,
+      "tokens": 61275,
+      "inputTokens": 24,
+      "cacheReadTokens": 52740,
+      "cacheWriteTokens": 7075,
+      "outputTokens": 1436,
+      "costUsd": 0.074739,
+      "ms": 37347,
+      "firstActionMs": 5841,
+      "stop": "end_turn",
+      "answer": "I added one Heavyweight Tee in size M (TEE-BLK-M, $48.00) to your cart, and the cart page shows it as the only item, at $48.00 total.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 727,
+          "bytes": 2348
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/products/heavyweight-tee"
+          },
+          "ms": 576,
+          "bytes": 1083
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "radio",
+            "name": "M"
+          },
+          "ms": 5003,
+          "bytes": 0,
+          "error": "locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('radio', { name: 'M', exact: true }).first()\u001b[22m\n\u001b[2m    - locator resolved to <input name=\"sku\" type=\"radio\" class=\"sr-only\" value=\"TEE-BLK-M\"/>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <label class=\"flex h-11 cursor-pointer flex-col items-center justify-center rounded-md border text-sm transition-colors duration-150 ease-out hover:border-ring has-checked:border-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/30 has-disabled:cursor-not-allowed has-disabled:border-border has-disabled:text-muted-foreground has-disabled:line-through\">…</label> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <label class=\"flex h-11 cursor-pointer flex-col items-center justify-center rounded-md border text-sm transition-colors duration-150 ease-out hover:border-ring has-checked:border-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/30 has-disabled:cursor-not-allowed has-disabled:border-border has-disabled:text-muted-foreground has-disabled:line-through\">…</label> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    10 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <label class=\"flex h-11 cursor-pointer flex-col items-center justify-center rounded-md border text-sm transition-colors duration-150 ease-out hover:border-ring has-checked:border-foreground has-focus-visible:ring-2 has-focus-visible:ring-ring/30 has-disabled:cursor-not-allowed has-disabled:border-border has-disabled:text-muted-foreground has-disabled:line-through\">…</label> intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Agent view"
+          },
+          "ms": 52,
+          "bytes": 2817
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Agent view"
+          },
+          "ms": 41,
+          "bytes": 1083
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "group",
+            "name": "Size"
+          },
+          "ms": 28,
+          "bytes": 1083
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "text",
+            "name": "M"
+          },
+          "ms": 5001,
+          "bytes": 0,
+          "error": "locator.click: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('text', { name: 'M', exact: true }).first()\u001b[22m\n"
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "ArrowRight"
+          },
+          "ms": 27,
+          "bytes": 1083
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "Shift+Tab"
+          },
+          "ms": 10,
+          "bytes": 1083
+        },
+        {
+          "tool": "press",
+          "input": {
+            "key": "ArrowRight"
+          },
+          "ms": 4,
+          "bytes": 1083
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Add to cart"
+          },
+          "ms": 29,
+          "bytes": 1094
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 614,
+          "bytes": 862
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 5,
+      "agent": "afford",
+      "task": "add-to-cart",
+      "turns": 4,
+      "toolCalls": 3,
+      "tokens": 6395,
+      "inputTokens": 10,
+      "cacheReadTokens": 4808,
+      "cacheWriteTokens": 1242,
+      "outputTokens": 335,
+      "costUsd": 0.0139116,
+      "ms": 11219,
+      "firstActionMs": 5534,
+      "stop": "end_turn",
+      "answer": "I added one Heavyweight Tee in size M ($48.00) to your cart, and it's the only item in there.",
+      "trace": [
+        {
+          "tool": "afford_call",
+          "input": {
+            "path": "/",
+            "action": "search",
+            "input": {
+              "query": "Heavyweight Tee"
+            }
+          },
+          "ms": 14,
+          "bytes": 212
+        },
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/products/heavyweight-tee"
+          },
+          "ms": 10,
+          "bytes": 1094
+        },
+        {
+          "tool": "afford_call",
+          "input": {
+            "path": "/products/heavyweight-tee",
+            "action": "addToCart",
+            "input": {
+              "sku": "TEE-BLK-M",
+              "quantity": 1
+            }
+          },
+          "ms": 24,
+          "bytes": 676
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 5,
+      "agent": "browser",
+      "task": "change-quantity",
+      "turns": 7,
+      "toolCalls": 6,
+      "tokens": 18463,
+      "inputTokens": 16,
+      "cacheReadTokens": 16763,
+      "cacheWriteTokens": 1272,
+      "outputTokens": 412,
+      "costUsd": 0.018016599999999997,
+      "ms": 17163,
+      "firstActionMs": 8953,
+      "stop": "end_turn",
+      "answer": "I changed the Graphite Keycap Set in your cart from 1 to 3, and the cart now shows 3 items for $192.00 with free shipping.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 758,
+          "bytes": 2350
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 637,
+          "bytes": 848
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "One more Keycap Set"
+          },
+          "ms": 24,
+          "bytes": 859
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 591,
+          "bytes": 841
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "One more Keycap Set"
+          },
+          "ms": 38,
+          "bytes": 863
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 586,
+          "bytes": 841
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 5,
+      "agent": "afford",
+      "task": "change-quantity",
+      "turns": 3,
+      "toolCalls": 2,
+      "tokens": 4336,
+      "inputTokens": 8,
+      "cacheReadTokens": 4113,
+      "cacheWriteTokens": 0,
+      "outputTokens": 215,
+      "costUsd": 0.0051546000000000005,
+      "ms": 6978,
+      "firstActionMs": 5025,
+      "stop": "end_turn",
+      "answer": "I changed the Graphite Keycap Set in your cart from 1 to 3, so the subtotal is now $192.00 ($64.00 each).",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 5,
+          "bytes": 968
+        },
+        {
+          "tool": "afford_call",
+          "input": {
+            "path": "/cart",
+            "action": "updateQuantity",
+            "input": {
+              "sku": "KEY-GRA",
+              "quantity": 3
+            }
+          },
+          "ms": 5,
+          "bytes": 286
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 5,
+      "agent": "browser",
+      "task": "checkout",
+      "turns": 7,
+      "toolCalls": 6,
+      "tokens": 17993,
+      "inputTokens": 16,
+      "cacheReadTokens": 17257,
+      "cacheWriteTokens": 315,
+      "outputTokens": 405,
+      "costUsd": 0.0131904,
+      "ms": 21991,
+      "firstActionMs": 9847,
+      "stop": "end_turn",
+      "answer": "I placed order AS-1001 for 1 Six-Panel Cap in black, $36.00 total with free shipping. It shows on your Orders page and your cart is now empty.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 705,
+          "bytes": 2350
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/cart"
+          },
+          "ms": 623,
+          "bytes": 857
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "link",
+            "name": "Check out"
+          },
+          "ms": 35,
+          "bytes": 857
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/checkout"
+          },
+          "ms": 567,
+          "bytes": 734
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "button",
+            "name": "Place order"
+          },
+          "ms": 41,
+          "bytes": 745
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/account/orders"
+          },
+          "ms": 572,
+          "bytes": 551
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 5,
+      "agent": "afford",
+      "task": "checkout",
+      "turns": 3,
+      "toolCalls": 2,
+      "tokens": 3984,
+      "inputTokens": 8,
+      "cacheReadTokens": 3779,
+      "cacheWriteTokens": 0,
+      "outputTokens": 197,
+      "costUsd": 0.0047278,
+      "ms": 5620,
+      "firstActionMs": 3824,
+      "stop": "end_turn",
+      "answer": "I placed your order for one black Six-Panel Cap at $36.00, and your cart is now empty. You'll find the order under /account/orders.",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/checkout"
+          },
+          "ms": 4,
+          "bytes": 593
+        },
+        {
+          "tool": "afford_call",
+          "input": {
+            "path": "/checkout",
+            "action": "placeOrder",
+            "confirm": true
+          },
+          "ms": 13,
+          "bytes": 522
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 5,
+      "agent": "browser",
+      "task": "search",
+      "turns": 3,
+      "toolCalls": 2,
+      "tokens": 4989,
+      "inputTokens": 8,
+      "cacheReadTokens": 4352,
+      "cacheWriteTokens": 442,
+      "outputTokens": 187,
+      "costUsd": 0.0068524,
+      "ms": 8967,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "The cheapest product in stock is the **Sticker Sheet** at **$8.00**; its product page shows it as in stock, and the next cheapest item starts at $16.00.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 697,
+          "bytes": 2348
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/products/sticker-sheet"
+          },
+          "ms": 598,
+          "bytes": 795
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 5,
+      "agent": "afford",
+      "task": "search",
+      "turns": 2,
+      "toolCalls": 1,
+      "tokens": 2696,
+      "inputTokens": 6,
+      "cacheReadTokens": 2570,
+      "cacheWriteTokens": 0,
+      "outputTokens": 120,
+      "costUsd": 0.002938,
+      "ms": 3437,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "The cheapest product in stock right now is the **Sticker Sheet**, at **$8.00**. It only comes in one size, and it's well below the next cheapest, the Dot Grid Notebook (from $16.00).",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/"
+          },
+          "ms": 9,
+          "bytes": 1462
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 5,
+      "agent": "browser",
+      "task": "order-status",
+      "turns": 4,
+      "toolCalls": 3,
+      "tokens": 8841,
+      "inputTokens": 10,
+      "cacheReadTokens": 8294,
+      "cacheWriteTokens": 291,
+      "outputTokens": 246,
+      "costUsd": 0.0080738,
+      "ms": 7646,
+      "firstActionMs": 3939,
+      "stop": "end_turn",
+      "answer": "Your most recent order is **AS-1003**, placed Oct 29, 2026 at 2:16 PM: 2 × Sticker Sheet, for a total of **$16.00**. It's the only order in your history.",
+      "trace": [
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/"
+          },
+          "ms": 757,
+          "bytes": 2348
+        },
+        {
+          "tool": "click",
+          "input": {
+            "role": "link",
+            "name": "Orders"
+          },
+          "ms": 42,
+          "bytes": 2348
+        },
+        {
+          "tool": "goto",
+          "input": {
+            "path": "/account/orders"
+          },
+          "ms": 587,
+          "bytes": 538
+        }
+      ],
+      "success": true
+    },
+    {
+      "run": 5,
+      "agent": "afford",
+      "task": "order-status",
+      "turns": 2,
+      "toolCalls": 1,
+      "tokens": 2180,
+      "inputTokens": 6,
+      "cacheReadTokens": 1894,
+      "cacheWriteTokens": 176,
+      "outputTokens": 104,
+      "costUsd": 0.0033628,
+      "ms": 6984,
+      "firstActionMs": null,
+      "stop": "end_turn",
+      "answer": "You have one order this session, AS-1004, placed on 29 Oct 2026. It was 2 × Sticker Sheet, and the total was $16.00.",
+      "trace": [
+        {
+          "tool": "afford_open",
+          "input": {
+            "path": "/account/orders"
+          },
+          "ms": 1,
+          "bytes": 232
+        }
+      ],
+      "success": true
+    }
+  ]
+}

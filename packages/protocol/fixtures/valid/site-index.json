@@ -1,0 +1,33 @@
+{
+  "v": "0",
+  "name": "Acme Store",
+  "routes": [
+    {
+      "route": "/products/[slug]",
+      "description": "One product: its variants, prices and stock",
+      "actions": [
+        {
+          "name": "addToCart",
+          "description": "Add a product variant to the cart",
+          "input": {
+            "type": "object",
+            "properties": {
+              "sku": { "type": "string" },
+              "quantity": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["sku"]
+          },
+          "expose": "public",
+          "guard": "The variant is in stock",
+          "effects": ["cart"]
+        }
+      ]
+    },
+    {
+      "route": "/account/orders",
+      "description": "Orders placed in this session, newest first",
+      "actions": []
+    }
+  ],
+  "auth": ["cookie", "bearer"]
+}

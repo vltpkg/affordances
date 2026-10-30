@@ -1,0 +1,51 @@
+---
+title: Plugins
+description: Add more capabilities to the same Next.js config through withAffordances's plugins, and write your own.
+---
+
+A plugin adds a capability to an Affordances app, such as serving every page as Markdown, without another config wrapper to order by hand. [Plugins](/docs/concepts/plugins) in Concepts explains what they are, and the [Plugins](/docs/plugins) section lists each one. Pass plugins to `withAffordances`:
+
+```ts title="next.config.ts"
+import { withAffordances } from '@affordances/next/config'
+import { md } from '@affordances/md/next'
+
+export default withAffordances(nextConfig, { name: 'Store', plugins: [md()] })
+```
+
+Then add each plugin's route handler. For `md()`:
+
+<Run cmd="@affordances/md init" />
+
+This site runs with `md()`: add `.md` to any page's URL. See [Markdown](/docs/plugins/md).
+
+## How they combine
+
+- Plugins run in order, after the graph's own rewrites and headers.
+- Each plugin owns a route handler under `/api/affordances/<name>`.
+- Each one matches its own requests, such as `Accept: text/markdown` for `md()`, so plugins and the graph never answer for each other.
+
+## Write a plugin
+
+A plugin is a config wrapper: it takes the Next config and returns it, the same shape as `createMDX()`. Call the config's own `rewrites` and `headers` so you keep what came before:
+
+```ts title="lib/well-known.ts"
+import type { AffordancesPlugin } from '@affordances/next/config'
+
+// serves /.well-known/agents.json from a route handler at /api/affordances/agents
+export const agents = (): AffordancesPlugin => (config) => ({
+  ...config,
+  rewrites: async () => {
+    const before = await config.rewrites?.()
+    const rule = { source: '/.well-known/agents.json', destination: '/api/affordances/agents' }
+    return Array.isArray(before)
+      ? [rule, ...before]
+      : { ...before, beforeFiles: [rule, ...(before?.beforeFiles ?? [])] }
+  },
+})
+```
+
+```ts title="next.config.ts"
+export default withAffordances(nextConfig, { plugins: [md(), agents()] })
+```
+
+Keep its route under `/api/affordances/<name>`, and match only the requests it's for: `withAffordances` already claims the Affordances media type and `?affordances=1`.

@@ -1,0 +1,77 @@
+---
+title: CLI
+description: The affordances CLI sets up a Next.js app, regenerates its manifest, and shows and calls any page the way an agent does. Every command takes --json.
+---
+
+`@affordances/cli` runs without installing:
+
+<Run cmd="@affordances/cli init" />
+
+It runs in your project's root, the folder with `next.config.ts`. `affordances --help` lists the commands, and `affordances <command> --help` describes each one.
+
+## Commands
+
+| Command                           | What it does                                                                                                              |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `affordances init`                | Writes the route handler, wraps `next.config` with `withAffordances`, ignores `.affordances`, and generates the manifest. |
+| `affordances build`               | Regenerates `.affordances/manifest.ts`. `withAffordances` does this when Next starts; use it in scripts and CI.           |
+| `affordances open <url>`          | Prints the page's graph as an agent receives it: entities, actions with their input, nav, and about how many tokens.      |
+| `affordances call <url> <action>` | Calls an action on the page, with the same checks an agent gets, and prints the delta.                                    |
+
+### init
+
+`init` skips anything that's already done, so it's safe to run again. When it can't wrap your config, such as a default export that isn't a plain identifier, it leaves the file alone and lists it as a todo:
+
+```text
+wrote    app/api/affordances/graph/[[...path]]/route.ts
+wrapped  next.config.ts                                  with withAffordances
+wrote    .gitignore                                      ignores .affordances
+wrote    .affordances/manifest.ts                        3 routes
+```
+
+### open
+
+```bash
+vlx @affordances/cli open localhost:3000/products/tee
+```
+
+```text
+/products/tee  (/products/[slug])  ~274 tokens
+
+Entities  product, cart
+
+Actions
+  ✓ addToCart(sku: string, quantity?: integer)  public
+```
+
+`✗` marks an action whose guard says no right now, with the reason. The token count is an estimate, about four characters per token.
+
+### call
+
+```bash
+vlx @affordances/cli call localhost:3000/products/tee addToCart --input '{"sku":"TEE-BLK-M"}'
+```
+
+| Flag        | What it does                                                                        |
+| ----------- | ----------------------------------------------------------------------------------- |
+| `--input`   | The action's input, as JSON.                                                        |
+| `--confirm` | Confirms an action exposed as `confirm`. Only pass it once the person approves.     |
+| `--token`   | Sent as `Authorization: Bearer`, to call as a signed-in user (`open` takes it too). |
+
+A call the server refuses, such as `unauthorized` or `unavailable`, prints why and exits with status 1.
+
+## JSON output
+
+Every command takes `--json`, for scripts and coding agents. A result prints as `{ "ok": true, ... }`, with the same fields the text shows. A failure prints `{ "ok": false, "error": { "code", "message" } }` and exits 1:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "Unreachable",
+    "message": "Couldn't reach localhost:3000/: ECONNREFUSED. Is the app running?"
+  }
+}
+```
+
+For `call`, `ok` is the delta's own `ok`, and the delta is under `delta`.

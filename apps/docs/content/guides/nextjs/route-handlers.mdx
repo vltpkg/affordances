@@ -1,0 +1,64 @@
+---
+title: Route handlers
+description: The graph route handler that answers every agent request, its options, and the routes plugins add under /api/affordances.
+---
+
+Affordances answers agents from route handlers under `/api/affordances/`. The graph's is at `/api/affordances/graph`, and each [plugin](/docs/guides/nextjs/plugins) owns its own `/api/affordances/<name>`. Rewrites send agent requests there, so agents never see these paths.
+
+## The graph handler
+
+One line answers both reading a graph (`GET`) and calling an action (`POST`):
+
+```ts title="app/api/affordances/graph/[[...path]]/route.ts"
+export { GET, POST } from '@affordances/next/route'
+```
+
+It must live at that path, in `app/` or `src/app/`, because the rewrites point there. The catch-all `[[...path]]` receives the page path the agent asked for.
+
+The handler reads the manifest from `@affordances/next/manifest`. `withAffordances` aliases that import to your app's `.affordances/manifest.ts`, so there's no relative path to keep right. If the config isn't wrapped, the first agent request fails with an error that says so.
+
+## Options
+
+To pass options, call `createRouteHandler` and export the handler as both methods. It takes the [handler options](/docs/reference/options#createhandler), except `basePath`, which it sets:
+
+```ts title="app/api/affordances/graph/[[...path]]/route.ts"
+import { createRouteHandler } from '@affordances/next/route'
+
+const handler = createRouteHandler({
+  // true allows the call; a number of seconds answers rate_limited with Retry-After
+  rateLimit: ({ action, session }) => limiter.check(`${action}:${session ?? 'anon'}`),
+  // origins besides the app's own that may make cookie-authenticated calls
+  allowedOrigins: ['https://admin.example.com'],
+})
+
+export { handler as GET, handler as POST }
+```
+
+| Option           | What it's for                                                                                                                                                                    |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rateLimit`      | Limit calls per action, per session, or per IP. Runs on every action call, after the session check and before validation.                                                        |
+| `allowedOrigins` | Let these origins make cookie-authenticated calls too. A cookie call from any other origin is refused; bearer-token calls aren't checked. See [Security](/docs/guides/security). |
+| `auth`           | Resolve the session here instead. Defaults to the `auth` your actions were defined with; see [Sessions](/docs/guides/nextjs/sessions).                                           |
+| `manifest`       | Use this manifest instead of the generated one, such as in tests.                                                                                                                |
+
+## Redirects
+
+An action can call Next's `redirect()`, as a server action would. On the UI path, Next handles it as usual. On the agent path, the handler catches it and returns the destination in the delta's `redirect`, so the agent knows where to go next:
+
+```json
+{ "ok": true, "changed": { "cart": { "count": 0 } }, "redirect": "/account/orders" }
+```
+
+## Plugin routes
+
+Each plugin's route handler sits next to the graph's. The Markdown plugin's is one line:
+
+```ts title="app/api/affordances/md/[[...path]]/route.ts"
+export { GET } from '@affordances/md/next'
+```
+
+```text
+app/api/affordances/
+  graph/[[...path]]/route.ts   the graph and actions
+  md/[[...path]]/route.ts      Markdown, from @affordances/md
+```

@@ -1,0 +1,3 @@
+{
+  "pages": ["index", "actions", "state", "expose", "guards", "deltas", "plugins"]
+}

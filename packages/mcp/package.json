@@ -1,0 +1,38 @@
+{
+  "name": "@affordances/mcp",
+  "version": "0.0.0",
+  "description": "Affordances over MCP: any Affordances site as two tools, for Claude, Cursor, and other MCP clients",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vltpkg/affordances.git",
+    "directory": "packages/mcp"
+  },
+  "bin": {
+    "affordances-mcp": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@affordances/protocol": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@affordances/core": "workspace:*"
+  }
+}

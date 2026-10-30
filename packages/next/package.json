@@ -1,0 +1,58 @@
+{
+  "name": "@affordances/next",
+  "version": "0.0.0",
+  "description": "Affordances for Next.js: withAffordances, codegen, and the route handler",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vltpkg/affordances.git",
+    "directory": "packages/next"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "default": "./dist/config.js"
+    },
+    "./route": {
+      "types": "./dist/route.d.ts",
+      "default": "./dist/route.js"
+    },
+    "./manifest": {
+      "types": "./dist/manifest.d.ts",
+      "default": "./dist/manifest.js"
+    },
+    "./codegen": {
+      "types": "./dist/codegen.d.ts",
+      "default": "./dist/codegen.js"
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@affordances/core": "workspace:*",
+    "@affordances/protocol": "workspace:*",
+    "oxc-parser": "^0.156.0"
+  },
+  "devDependencies": {
+    "next": "^16.4.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zod": "^4.6.7"
+  },
+  "peerDependencies": {
+    "next": ">=16",
+    "react": ">=19"
+  }
+}

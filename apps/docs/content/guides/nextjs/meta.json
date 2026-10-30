@@ -1,0 +1,4 @@
+{
+  "title": "Next.js",
+  "pages": ["getting-started", "conventions", "routing", "route-handlers", "plugins", "sessions"]
+}

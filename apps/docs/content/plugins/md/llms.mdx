@@ -1,0 +1,92 @@
+---
+title: llms.txt and llms-full
+description: An index of every page for agents, and the whole site's Markdown in one file, each from one route handler.
+---
+
+[`llms.txt`](https://llmstxt.org) is where agents look first: the site's name, a summary, and a link to every page's Markdown. `llms-full.txt` is every page's Markdown in one file. `@affordances/md` serves both, each from a route handler.
+
+## Both files in two lines
+
+On an Affordances site, neither handler needs a page list. They read the site's own [index](/docs/reference/protocol) at `/.well-known/affordances.json` and list every route that needs no params:
+
+```ts title="app/llms.txt/route.ts"
+export { GET } from '@affordances/md/next/llms'
+```
+
+```ts title="app/llms-full.txt/route.ts"
+export { GET } from '@affordances/md/next/llms-full'
+```
+
+`llms.txt` then has:
+
+- the site's name from the index, as its heading;
+- a line on reading any page as Markdown, linking `llms-full.txt`;
+- a line saying the site is Affordances-enabled: how to ask a page for its graph, and where the site index is. An agent that starts at `llms.txt` learns it can act on the site, not just read it;
+- a link to each page's Markdown, titled with the page's own title and described with its route's `description` from `state.ts` (written for agents), or else the page's meta description.
+
+```md title="/llms.txt"
+# Acme Store
+
+> Studio goods in small runs.
+
+Every page is also Markdown: add `.md` to its URL, or request it with `Accept: text/markdown`. [llms-full.txt](https://acme.store/llms-full.txt) has every page in one file.
+
+This site is Affordances-enabled: request any page with `Accept: application/vnd.affordances+json` for its graph (what the page shows, and the actions you can call there, with their inputs). [/.well-known/affordances.json](https://acme.store/.well-known/affordances.json) lists every route and its actions.
+
+## Pages
+
+- [Home](https://acme.store/index.md): Every product: its lowest in-stock price, options, and whether it is in stock
+- [Cart](https://acme.store/cart.md): The cart: items, quantities and subtotal
+```
+
+## Pages behind dynamic routes
+
+A route like `/products/[slug]` has no single page, so it isn't listed on its own. Call the handlers yourself and name its pages; you're given the routes that need no params:
+
+```ts title="app/llms.txt/route.ts"
+import { createLlmsTxtHandler } from '@affordances/md/next'
+import { products } from '@/lib/store'
+
+export const GET = createLlmsTxtHandler({
+  summary: 'Studio goods in small runs.',
+  sections: (request, routes) => [
+    { title: 'Pages', pages: routes },
+    { title: 'Products', pages: products().map((p) => `/products/${p.slug}`) },
+  ],
+})
+```
+
+```ts title="app/llms-full.txt/route.ts"
+import { createLlmsFullHandler } from '@affordances/md/next'
+import { products } from '@/lib/store'
+
+export const GET = createLlmsFullHandler({
+  pages: (request, routes) => [...routes, ...products().map((p) => `/products/${p.slug}`)],
+})
+```
+
+## Options
+
+`createLlmsTxtHandler`:
+
+| Option     | Type                                      | Description                                                                                                                                  |
+| ---------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `title`    | `string`                                  | The `#` heading. Defaults to the site index's `name`.                                                                                        |
+| `summary`  | `string`                                  | The `>` summary under it.                                                                                                                    |
+| `intro`    | `string`                                  | More Markdown before the page lists, such as how to use the site.                                                                            |
+| `sections` | `(request, routes) => { title, pages }[]` | The page lists, each under a `##` heading. A page is a path, whose title and description are read from it, or `{ url, title, description }`. |
+| `full`     | `string \| false`                         | Where `llms-full.txt` is, to link it. Defaults to `/llms-full.txt`; `false` leaves the line out.                                             |
+
+`createLlmsFullHandler` takes `pages: (request, routes) => string[]`, the paths in order, defaulting to the routes. Both also take the [Markdown handler's](/docs/plugins/md/setup) `origin` and `timeout`.
+
+A page given as a path is rendered the way `/page.md` is, to read its title and description. With many pages, give `{ url, title, description }` from your content source instead: nothing is rendered, and the file comes back faster. This site does that for its sidebar.
+
+## How the files are made
+
+- Each page goes through the same handler and converter as `/page.md`, so it matches what an agent reads one page at a time.
+- Pages are rendered without the caller's cookies: both files are the public site.
+- In `llms-full.txt`, frontmatter is stripped, and each page is headed `# Title (url)`. A page that fails is left out rather than failing the file.
+- Without an Affordances index (`@affordances/md` on its own), pass `sections` and `pages`: there are no routes to default to, and `llms.txt` leaves out the Affordances line.
+- Both are cached publicly for an hour (`s-maxage=3600`).
+
+Both render by requesting the site's own pages, so they run at request time. They read the request first, which keeps Next from prerendering them during the build, when no server is running.

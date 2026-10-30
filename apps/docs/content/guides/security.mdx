@@ -1,0 +1,42 @@
+---
+title: Security
+description: Default deny, explicit confirmation, Origin checks for cookies, and a fixed order of checks on every agent call.
+---
+
+Affordances adds an entry point to your app, so its defaults are conservative. This page lists what the handler enforces and what stays your job.
+
+## Default deny
+
+An action without `expose` isn't part of the protocol. It's missing from graphs and from `/.well-known/affordances.json`, and calling it answers `not_found`, the same as an action that doesn't exist. `defineAction` warns in development when `expose` is missing, so the omission is a decision rather than an accident.
+
+## Confirm
+
+`expose: 'confirm'` actions never run on the first call. The handler answers `confirm_required` with the action's `summary`, and runs only when the same call comes back with `confirm: true`. Clients acting for a person should show the summary and ask first. `@affordances/react` and `@affordances/mcp` both do. See [Expose](/docs/concepts/expose#confirm).
+
+## Origin and CSRF
+
+Next's server actions protect themselves with an Origin check, but Affordances calls arrive at a route handler, so the handler does its own:
+
+- A call that carries cookies and no bearer token must send an `Origin` header that matches the site, or one of `allowedOrigins`. Otherwise it answers `unauthorized`.
+- A call with `Authorization: Bearer` is exempt, because a browser can't attach a bearer token to a cross-site request on its own.
+- A call with neither carries no ambient credentials, so there's nothing to forge.
+
+## Order of checks
+
+Every agent call follows the same sequence and stops at the first failure: resolve the action, check Origin and `expose`, rate-limit, validate the input, run the guard, require confirmation, then run. Input is validated before the guard sees it, and the guard passes before `run` is called. See [Guards and confirm](/docs/concepts/guards#order).
+
+## Errors
+
+An error thrown from `run` that isn't an `AffordancesError` is logged on the server and answered as `internal` with the message `Something went wrong`. Stack traces, SQL, and secrets in error messages don't reach the caller.
+
+## Rate limits
+
+`rateLimit`, passed to `createRouteHandler({ rateLimit })`, runs on every call, after authorization and before validation, with the request, the action's name, and the session. Return `true` to allow it, or a number of seconds to answer `rate_limited` with `Retry-After`.
+
+## What stays yours
+
+- **Authorization inside actions.** `session` says who is calling, not what they may touch. Check ownership in `run` as you would in any server action.
+- **What entities contain.** A graph must not include anything the HTML page wouldn't show the same user. The loader runs with the caller's session; use it.
+- **URLs.** Don't put personal data in paths or query strings. Graph URLs are page URLs, and they end up in logs.
+- **The UI path.** A server action called from your components validates input but doesn't evaluate the guard or `expose`. Enforce invariants that matter for people in `run`.
+- **Bots.** Verified-agent and bot-protection checks, such as Vercel BotID, belong in `auth` or `rateLimit`. Affordances doesn't require one.

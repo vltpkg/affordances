@@ -1,0 +1,32 @@
+---
+title: Routing
+description: How the same URL answers people with HTML and agents with a graph, how agents discover it, and why graphs are never cached.
+---
+
+The same URL answers people and agents. `withAffordances` adds rewrites that run before Next's filesystem routes, and send a request to the route handler when it has any of:
+
+- `Accept: application/vnd.affordances+json` (reading a graph);
+- `Content-Type: application/vnd.affordances+json` (calling an action);
+- the query parameter `affordances=1`, for clients that can't set headers.
+
+`/.well-known/affordances.json`, the [site index](/docs/reference/protocol), is rewritten to the handler too.
+
+## What's left alone
+
+- Every browser request for HTML reaches your pages as before.
+- Requests to `/api/` routes, the handler's own included, and to `/_next` are never rewritten.
+- Your own rewrites are kept. `withAffordances` puts its rules first in `beforeFiles` and leaves the rest where they were.
+
+## Discovery
+
+For each route in the manifest, `withAffordances` adds a header to the HTML response, so a client that loaded the page can find its graph:
+
+```http
+Link: <?affordances=1>; rel="affordances"
+```
+
+## Caching
+
+Graphs and deltas are sent with `Cache-Control: private, no-store` and `Vary: Accept`. HTML responses keep whatever caching they had.
+
+Agent requests are rewritten to the handler before the filesystem and before any cached page. So a cached HTML page is never served to an agent, and a graph is never cached at all.

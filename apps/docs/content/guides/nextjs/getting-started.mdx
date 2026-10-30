@@ -1,0 +1,159 @@
+---
+title: Getting started
+description: Add Affordances to an existing Next.js app, either by handing your coding agent a prompt or by following the steps yourself.
+---
+
+You need a Next.js 16 app using the App Router, and zod 4 (or any schema library that implements Standard Schema and Standard JSON Schema). There are two ways to set it up.
+
+## With an agent
+
+Paste this prompt into Claude Code, Cursor, or any coding agent. It points the agent at these docs as Markdown and tells it what to build:
+
+<SetupPrompt />
+
+When it's done, check its work the same way you would your own: [read a graph with curl](#7-check-it).
+
+## By hand
+
+The steps below set up one page. `init` does steps 2 to 4 for you; they're spelled out so you know what it changed.
+
+### 1. Install
+
+<Install pkgs="@affordances/next @affordances/react zod" />
+
+### 2. Wrap the config
+
+`withAffordances` generates the manifest and adds the rewrites that send agent requests to the route handler. Your pages and their HTML are untouched.
+
+```ts title="next.config.ts"
+import type { NextConfig } from 'next'
+import { withAffordances } from '@affordances/next/config'
+
+const nextConfig: NextConfig = {}
+
+export default withAffordances(nextConfig, { name: 'My app' })
+```
+
+`name` is what agents see in `/.well-known/affordances.json`.
+
+### 3. Add the route handler
+
+Every agent request ends up here. It's one line, in `app/` or `src/app/`:
+
+```ts title="app/api/affordances/graph/[[...path]]/route.ts"
+export { GET, POST } from '@affordances/next/route'
+```
+
+The handler finds the generated manifest on its own: `withAffordances` points it there.
+
+[Route handlers](/docs/guides/nextjs/route-handlers) covers its options.
+
+### 4. Ignore the manifest
+
+`withAffordances` writes `.affordances/manifest.ts` every time Next loads the config, and again in `next dev` when an `actions` or `state` file changes. It's generated, so leave it out of git:
+
+```text title=".gitignore"
+.affordances
+```
+
+Or skip steps 2 to 4 and let `init` do them:
+
+<Run cmd="@affordances/cli init" />
+
+### 5. Describe a page
+
+Next to a page, `state.ts` returns what the page shows, and `actions.ts` defines what can be done on it:
+
+```ts title="app/guestbook/state.ts"
+import { defineState } from '@affordances/next'
+import { entries } from '@/lib/db'
+
+export default defineState(async () => ({ entries: await entries.list() }))
+```
+
+```ts title="app/guestbook/actions.ts"
+'use server'
+
+import { z } from 'zod'
+import { defineAction } from '@affordances/next'
+import { entries } from '@/lib/db'
+import guestbook from './state'
+
+export const sign = defineAction({
+  name: 'sign',
+  description: 'Add a message to the guestbook',
+  input: z.object({ name: z.string().min(1), message: z.string().max(280) }),
+  state: guestbook,
+  expose: 'public',
+  effects: ['entries'],
+  run: (input) => entries.add(input),
+})
+```
+
+`sign` is still a server action, so the page uses it like any other.
+
+### 6. Mark the controls
+
+Wrap the control a person uses for an action in `<Affordance>`, so agents that read the DOM, and the devtools, know which button does what:
+
+```tsx title="app/guestbook/page.tsx"
+import { Affordance } from '@affordances/react'
+import { sign } from './actions'
+
+export default function Page() {
+  return (
+    <form>
+      <input name="name" />
+      <textarea name="message" />
+      <Affordance action={sign}>
+        <button formAction={sign}>Sign</button>
+      </Affordance>
+    </form>
+  )
+}
+```
+
+`<Affordance>` renders no box of its own (`display: contents`) and changes nothing about the button. It adds `data-affordances-action="sign"` around it. The button carries the action with `formAction`, so what's marked is exactly what submits.
+
+When the whole form is the control, wrap the form instead. Pass `input` for values the control already fixes, such as the product a button adds:
+
+```tsx
+<Affordance action={addToCart} input={{ sku: variant.sku }}>
+  <form action={addToCart}>
+    <button>Add to cart</button>
+  </form>
+</Affordance>
+```
+
+In a client component, pass `name="sign"` instead of `action`: there, a server action arrives without the metadata `<Affordance>` reads its name from. The [`require-affordance`](/docs/guides/lint#require-affordance) lint rule warns about any control that calls a server action outside an `<Affordance>`, and [React and WebMCP](/docs/guides/react) adds the provider that turns these actions into browser tools.
+
+### 7. Check it
+
+Start the dev server and ask for the page as an agent would:
+
+```bash
+curl -H 'Accept: application/vnd.affordances+json' localhost:3000/guestbook
+```
+
+The response is the page's [graph](/docs/concepts/state): its entities and the `sign` action with its input schema. Call the action at the same URL:
+
+```bash
+curl localhost:3000/guestbook \
+  -H 'Content-Type: application/vnd.affordances+json' \
+  -d '{ "action": "sign", "input": { "name": "Ada", "message": "Hello" } }'
+```
+
+The response is a [delta](/docs/concepts/deltas) with the new `entries`.
+
+The [CLI](/docs/reference/cli) does both with a readable summary, including roughly how many tokens the page costs an agent:
+
+```bash
+vlx @affordances/cli open localhost:3000/guestbook
+vlx @affordances/cli call localhost:3000/guestbook sign --input '{"name":"Ada","message":"Hello"}'
+```
+
+## Next
+
+- [Sessions](/docs/guides/nextjs/sessions): let agents act as the signed-in user.
+- [Expose](/docs/concepts/expose): choose who may call each action, and which need a person's approval.
+- [MCP](/docs/guides/mcp): connect Claude or Cursor to the app.

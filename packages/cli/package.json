@@ -1,0 +1,32 @@
+{
+  "name": "@affordances/cli",
+  "version": "0.0.0",
+  "description": "The Affordances CLI: set up an app, and see and call any page the way an agent does",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vltpkg/affordances.git",
+    "directory": "packages/cli"
+  },
+  "bin": {
+    "affordances": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@affordances/mcp": "workspace:*",
+    "@affordances/next": "workspace:*",
+    "@affordances/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@effect/platform-node": "4.1.0",
+    "effect": "4.1.0"
+  }
+}

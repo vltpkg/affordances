@@ -1,0 +1,63 @@
+---
+title: Lint
+description: Two rules that keep the manifest buildable and every server-action control visible to agents.
+---
+
+`@affordances/lint` is an ESLint plugin, written against the ESLint rule API so oxlint's JS plugin support can load it too.
+
+<Install pkgs="@affordances/lint" dev />
+
+## ESLint
+
+```js title="eslint.config.js"
+import affordances from '@affordances/lint'
+
+export default [affordances.configs.recommended]
+```
+
+## oxlint
+
+```json title=".oxlintrc.json"
+{
+  "jsPlugins": ["@affordances/lint"],
+  "rules": {
+    "affordances/require-affordance": "warn",
+    "affordances/static-action-name": "error"
+  }
+}
+```
+
+## Rules
+
+| Rule                             | Recommended | What it checks                                               |
+| -------------------------------- | ----------- | ------------------------------------------------------------ |
+| `affordances/require-affordance` | `warn`      | Controls that call a server action are inside `<Affordance>` |
+| `affordances/static-action-name` | `error`     | `defineAction` has a `name`, and it's a string literal       |
+
+### require-affordance
+
+The rule tracks identifiers imported from an actions module (`./actions`, `../cart/actions`, `@/app/cart/actions`). It reports a JSX `action`, `formAction`, `onClick`, or `onSubmit` attribute that uses one, unless an `<Affordance>` element encloses it:
+
+```tsx
+import { addToCart } from './actions'
+
+// reported: addToCart is a server action, but this control isn't inside <Affordance>
+<button formAction={addToCart}>Add</button>
+
+// fine
+<Affordance action={addToCart}>
+  <button formAction={addToCart}>Add</button>
+</Affordance>
+```
+
+It follows the forms people write: `action={x}`, `formAction={x.bind(null, id)}`, `onClick={() => x(input)}`, and `onClick={async () => { await x(input) }}`.
+
+### static-action-name
+
+Codegen reads action names without running your code, so they have to be literals:
+
+```ts
+defineAction({ name: 'addToCart' }) // fine
+defineAction({ name: `add${kind}` }) // reported
+defineAction({ description: '…' }) // reported: no name
+```

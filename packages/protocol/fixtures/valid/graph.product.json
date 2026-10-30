@@ -1,0 +1,51 @@
+{
+  "v": "0",
+  "page": "/products/heavyweight-tee",
+  "route": "/products/[slug]",
+  "entities": {
+    "product": {
+      "slug": "heavyweight-tee",
+      "name": "Heavyweight Tee",
+      "price": { "amount": 4800, "currency": "USD" },
+      "variants": [
+        { "sku": "TEE-BLK-M", "color": "black", "size": "M", "stock": 12 },
+        { "sku": "TEE-BLK-L", "color": "black", "size": "L", "stock": 0 }
+      ]
+    },
+    "cart": { "count": 1, "subtotal": { "amount": 1200, "currency": "USD" } }
+  },
+  "actions": [
+    {
+      "name": "addToCart",
+      "description": "Add a product variant to the cart",
+      "input": {
+        "type": "object",
+        "properties": {
+          "sku": { "type": "string" },
+          "quantity": { "type": "integer", "minimum": 1 }
+        },
+        "required": ["sku"]
+      },
+      "expose": "session",
+      "guard": "The variant is in stock",
+      "available": true,
+      "effects": ["cart"]
+    },
+    {
+      "name": "notifyWhenInStock",
+      "description": "Email me when a sold-out variant is back",
+      "input": {
+        "type": "object",
+        "properties": { "sku": { "type": "string" } },
+        "required": ["sku"]
+      },
+      "expose": "session",
+      "available": false,
+      "reason": "Sign in to get notified"
+    }
+  ],
+  "nav": [
+    { "to": "/cart", "label": "Cart" },
+    { "to": "/checkout", "label": "Checkout", "when": "cart.count > 0" }
+  ]
+}

@@ -1,0 +1,42 @@
+---
+title: Deltas
+description: Calling an action returns what changed on the page, so the agent doesn't have to read it again.
+---
+
+After an action runs, the handler reloads the page's state and compares it with the state from before. The response is a delta:
+
+```json
+{
+  "ok": true,
+  "changed": { "cart": { "count": 2, "subtotal": { "amount": 6000, "currency": "USD" } } },
+  "message": "Added Heavyweight Tee (M) to your cart"
+}
+```
+
+| Field            | Present when                                                                        |
+| ---------------- | ----------------------------------------------------------------------------------- |
+| `changed`        | Some entity changed. With `effects`, it holds those keys; without, the diff         |
+| `output`         | `run` returned something other than `undefined`                                     |
+| `actionsAdded`   | An action appeared, or its descriptor changed (for example, `available` flipped)    |
+| `actionsRemoved` | An action is no longer listed                                                       |
+| `redirect`       | The action redirected; the agent should request this path next                      |
+| `message`        | The action has a `message` option                                                   |
+| `error`          | `ok` is `false`; see the [protocol](/docs/reference/protocol#error-codes) for codes |
+
+## Effects
+
+`effects` lists the entities an action changes. When it's set, `changed` holds the new value of exactly those entities, whether or not they differ. When it's omitted, the handler compares every top-level entity and includes the ones whose JSON changed.
+
+Declaring effects is cheaper to reason about and tells agents in advance what an action touches, since `effects` is part of the descriptor.
+
+## Availability
+
+Deltas carry action changes too. Adding the first item to a cart can make `checkout` available; placing the order makes it unavailable again. The descriptor in `actionsAdded` is the new one, with its `available` and `reason`, so the agent's picture of the page stays current without another `GET`.
+
+## Messages
+
+`message` is a short sentence an agent can repeat to the person:
+
+```ts
+message: ({ input, output }) => `Added ${input.quantity} × ${output.name} to the cart`,
+```

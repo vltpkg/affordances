@@ -1,0 +1,91 @@
+---
+title: Options
+description: Every option of defineAction, defineState, createAffordances, createHandler, and withAffordances, in one place. The generated API reference has the full signatures.
+---
+
+## defineAction
+
+```ts
+import { defineAction } from '@affordances/next'
+```
+
+Returns a server action that also carries the action's metadata. Use the one from `createAffordances({ auth })` to share a session resolver.
+
+| Option        | Type                                           | Description                                                                                          |
+| ------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `name`        | `string`                                       | Required. Unique on the route and stable across releases. Must be a string literal.                  |
+| `description` | `string`                                       | Required. What the action does, written for an agent.                                                |
+| `input`       | `StandardSchemaV1`                             | Required. Validated on every call. Its JSON Schema becomes the descriptor's `input`.                 |
+| `run`         | `(input, ctx) => Output`                       | Required. Does the work. May be async, may throw `AffordancesError` or `redirect()`.                 |
+| `expose`      | `'public' \| 'session' \| 'confirm'`           | Who may call it as an agent. Omitted: agents can't reach it.                                         |
+| `state`       | `StateDef`                                     | The route's state, so `guard`, `summary`, and `effects` are typed against it.                        |
+| `requires`    | `string`                                       | The precondition in words, shown as the descriptor's `guard`.                                        |
+| `guard`       | `({ input, state, ctx }) => boolean \| string` | `true` to allow, a string with the reason to refuse. `input` is `undefined` when building the graph. |
+| `summary`     | `({ input, state }) => string`                 | What a `confirm` action will do, shown to the person before they approve.                            |
+| `message`     | `({ input, output }) => string`                | A sentence for the delta's `message`.                                                                |
+| `effects`     | `string[]`                                     | Entity keys the action changes. The delta's `changed` holds exactly these.                           |
+| `readOnly`    | `boolean`                                      | Marks the action as side-effect free, for agents and WebMCP's `readOnlyHint`.                        |
+| `output`      | `StandardSchemaV1`                             | Describes the return value as the descriptor's `output`.                                             |
+| `jsonSchema`  | `Record<string, unknown>`                      | The input's JSON Schema, for schema libraries without Standard JSON Schema.                          |
+
+## defineState
+
+```ts
+defineState(loader, { nav })
+```
+
+| Option   | Type                                                         | Description                                          |
+| -------- | ------------------------------------------------------------ | ---------------------------------------------------- |
+| `loader` | `({ params, searchParams, ctx }) => Entities`                | Required. Returns the page's entities. May be async. |
+| `nav`    | `(state) => { to: string; label?: string; when?: string }[]` | Links an agent can follow from this page.            |
+
+## createAffordances
+
+```ts
+import { createAffordances } from '@affordances/next'
+
+export const { defineAction, defineState } = createAffordances<Session>({ auth })
+```
+
+| Option | Type                                    | Description                                                                                |
+| ------ | --------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `auth` | `(request: Request) => Session \| null` | Resolves the caller's session. Used by the route handler and by the UI path. May be async. |
+
+## createHandler
+
+```ts
+import { createHandler } from '@affordances/core'
+import { createRouteHandler } from '@affordances/next/route'
+```
+
+`createHandler` is the framework-agnostic handler: `(request: Request) => Promise<Response>`. `createRouteHandler(options)` wraps it for Next. It sets `basePath: '/api/affordances/graph'` and `redirectFrom` for Next's `redirect()`, and `manifest` defaults to the app's generated one. `GET` and `POST` from `@affordances/next/route` are `createRouteHandler()` with no options.
+
+| Option           | Type                                               | Description                                                                                          |
+| ---------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `manifest`       | `Manifest`                                         | Required. Route patterns mapped to their state and actions. `@affordances/next` generates it.        |
+| `basePath`       | `string`                                           | Stripped from the request path before matching, such as `/api/affordances/graph`.                    |
+| `auth`           | `(request: Request) => Session \| null`            | Defaults to the `auth` the actions were defined with.                                                |
+| `rateLimit`      | `({ request, action, session }) => true \| number` | `true` allows the call; a number of seconds answers `rate_limited` with `Retry-After`. May be async. |
+| `allowedOrigins` | `string[]`                                         | Origins besides the request's own that may make cookie-authenticated calls.                          |
+| `redirectFrom`   | `(error: unknown) => string \| undefined`          | Reads the path from a framework's own redirect error.                                                |
+
+## withAffordances
+
+```ts
+import { withAffordances } from '@affordances/next/config'
+import { md } from '@affordances/md/next'
+
+export default withAffordances(nextConfig, { name: 'Store', plugins: [md()] })
+```
+
+Returns the same config, with Affordances' rewrites put first in `beforeFiles` and a `Link` header on every page that has a graph, then each plugin applied in order. Your own `rewrites` and `headers` are kept.
+
+| Option    | Type                     | Description                                                                                                                                                    |
+| --------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`    | `string`                 | The site's name in `/.well-known/affordances.json`.                                                                                                            |
+| `root`    | `string`                 | The project root to scan for `app/` or `src/app/`. Defaults to the directory Next runs in.                                                                     |
+| `plugins` | `((config) => config)[]` | More Affordances capabilities, applied in order after the graph, e.g. `[md()]` from `@affordances/md/next`. Each owns a route under `/api/affordances/<name>`. |
+
+## CLI
+
+The `affordances` commands are in [`@affordances/cli`](/docs/reference/cli).

@@ -1,0 +1,48 @@
+---
+title: Guards and confirm
+description: A guard is the precondition an action checks before it runs. Agents see it before they call, and get its reason when it fails.
+---
+
+A guard is a function that returns `true` when the action may run, or a string saying why it can't:
+
+```ts
+defineAction({
+  name: 'addToCart',
+  // …
+  requires: 'The variant is in stock',
+  guard: ({ input, state }) => {
+    if (!input) return state.product.variants.some((v) => v.stock > 0) || 'Sold out'
+    const variant = state.product.variants.find((v) => v.sku === input.sku)
+    return (variant && variant.stock > 0) || `${input.sku} is out of stock`
+  },
+})
+```
+
+`requires` is the human-readable version, shown in the graph as the descriptor's `guard`. The function is what's enforced.
+
+## Two calls
+
+The handler calls the guard twice in an action's life:
+
+- **Building the graph**, with `input` undefined. The result becomes `available` and `reason`, so an agent knows what it can do before it tries. Return `true` here unless the action is unavailable whatever the input.
+- **Handling a call**, with the validated input and freshly loaded state. A failure answers `unavailable`, with the guard's string as the message.
+
+A guard may also return `false`, which fails without a reason. Prefer a sentence the agent can pass on.
+
+## Order
+
+Every agent call goes through the same steps, and stops at the first failure:
+
+1. Find the action on the page's route: `not_found`.
+2. Check the Origin of cookie-authenticated calls, and `expose`: `unauthorized`.
+3. Apply the rate limit: `rate_limited`.
+4. Validate the input: `invalid_input`, with the schema's issues.
+5. Run the guard: `unavailable`.
+6. For `confirm` actions without `confirm: true`: `confirm_required`, with the summary.
+7. Run the action, reload state, and answer with a delta.
+
+Input is always valid by the time the guard sees it, and the action never runs before the guard passes.
+
+## The UI path
+
+When your own components call the server action, it validates the input and runs. It doesn't evaluate `guard` or check `expose`: those protect the agent path, and your UI already decides what to render. If a check must hold for people too, such as stock at the moment of purchase, enforce it inside `run` as well.

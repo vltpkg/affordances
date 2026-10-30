@@ -1,0 +1,38 @@
+@import '@affordances/ui/globals.css';
+@import './sidebar.css';
+@import './book.css';
+
+/* the header's height, vlt docs' 3.5rem; the navbar, sidebar, toc, and sticky panels all offset by it */
+:root {
+  --header-height: 3.5rem;
+}
+
+/* a command renders once per package manager; only the one <html data-pm> names shows, vlt when none is
+   set (see lib/package-managers.ts) */
+html[data-pm]:not([data-pm='vlt']) [data-pm-only='vlt'],
+html:not([data-pm='npm']) [data-pm-only='npm'],
+html:not([data-pm='pnpm']) [data-pm-only='pnpm'],
+html:not([data-pm='yarn']) [data-pm-only='yarn'],
+html:not([data-pm='bun']) [data-pm-only='bun'],
+html:not([data-pm='deno']) [data-pm-only='deno'] {
+  display: none;
+}
+
+/* @affordances/ui's overlays are darker than the vlt docs'; match the reference's light dim (the blur stays) */
+[data-slot='sheet-overlay'],
+[data-slot='dialog-overlay'] {
+  background: oklch(0 0 0 / 10%);
+}
+
+/* the bench page draws the marketing proof chart; its tokens, as the docs' neutrals. the Affordances agent is
+   the foreground, the browser agent recedes, and the screenshot agent recedes further */
+.bench {
+  --bg: var(--background);
+  --fg: var(--foreground);
+  --fg2: color-mix(in oklch, var(--foreground) 72%, var(--background));
+  --fg3: var(--muted-foreground);
+  --line: var(--border);
+  --line2: var(--border);
+  --agent: var(--foreground);
+  --shot: color-mix(in oklch, var(--muted-foreground) 62%, var(--background));
+}

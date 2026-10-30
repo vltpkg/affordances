@@ -1,0 +1,44 @@
+---
+title: Benchmarks
+description: How the benchmark compares a browser agent, a screenshot agent and an Affordances agent on the same tasks, and where its results are published.
+---
+
+The bench runs the same tasks against the example store, Acme Store, with three agents, using the same model for all three:
+
+1. a **browser agent** driving Chromium through Playwright, reading each page as an accessibility snapshot (`goto`, `click`, `fill`, `press`). It selects radios and checkboxes with `check()`, as clicking their label would;
+2. a **screenshot agent** on Claude's computer use toolset, the way most browser agents work today: a 1280×800 Chromium screen, seen only as screenshots, and acted on by coordinates and keystrokes. Its actions answer OK, and it takes a screenshot when it wants to see. It has the same `goto` and the same session as the browser agent;
+3. an **Affordances agent**, headless, whose only tools are `affordances_open` and `affordances_call`, given the site index (every route and action) up front, as an MCP client gets it from `@affordances/mcp`.
+
+Neither baseline ever sees the store's demo-only Agent view toggle. Acme Store is built to read like a real shop: category menus, breadcrumbs, a product gallery, reviews, related products and a footer, rendered accessibly and never padded. Making it read that way changed none of its pages' graphs.
+
+The tasks are the ones a shopper does: find a product and add it to the cart, change a quantity, check out (including the confirm step), search, look up an order, and two longer ones: buy two named items and check out, and make three edits to a cart (swap a variant, change a quantity, add an item). Each run records turns, tool calls, tokens (input, cache reads, cache writes, output), dollar cost, wall time, time to first action, a trace of every tool call, and whether the task succeeded, checked against the store rather than the agent's word. Results are committed as JSON in `apps/bench/results`, one file per model, with the commit they ran against.
+
+## What the numbers say
+
+As of the October 29, 2026 runs, five per task on Claude Opus 5.5 and Claude Haiku 5.5:
+
+- **Nearly every run finishes.** On Opus, all three agents complete every task. On Haiku, the screenshot agent failed one of its five order-status runs; the other two agents completed everything. What Affordances changes here is mostly the cost of finishing.
+- **Against the stronger baseline, the Affordances agent uses about eight times fewer tokens.** The headline figures always compare with whichever baseline did better on that measure. Median per task on Opus: 4,093 tokens against the screenshot agent's 34,551 (8.4×) and the browser agent's 47,681 (11.6×); 8.9s against the browser agent's 17.1s (1.9×); $0.019 per successful task against the screenshot agent's $0.097 (5.1×). On Haiku: 7.8× fewer tokens than the screenshot agent, 2.5× faster than the browser agent, and 4.9× cheaper than the screenshot agent.
+- **The longer the task, the wider the gap.** Buying two items or editing a cart takes the browser agent 178,000 to 219,000 tokens on Opus, because it re-reads a large snapshot every turn; the screenshot agent about 107,000; the Affordances agent 16,000 to 19,000, in 5 to 7 turns against 10 to 13.
+- **The baselines trade places.** The screenshot agent reads fewer tokens than the browser agent on most tasks, but it's the slowest: a median 20.3s on Opus and up to 47s on editing a cart, one screenshot and one coordinate at a time.
+- **Search is the browser agent's win on time.** On Opus it answers in 6.9s against the Affordances agent's 7.9s, a results page being cheap to read; it still uses four times the tokens (10,825 against 2,724).
+
+These are five runs per task on one store. Read the per-task medians as a direction, not a precise ratio.
+
+## Results
+
+The newest full run of each model.
+
+<BenchResults />
+
+## Run history
+
+Every committed results file, newest first, with each agent's median tokens per run; a dash means the run didn't have that agent. A partial run re-ran some of the tasks (`--tasks`) and isn't used above.
+
+<BenchHistory />
+
+## Changes to the method
+
+**October 29, 2026, later that day: a realistic store, longer tasks, and a screenshot agent.** The store was unusually minimal, which flattered the browser agent. It now has what typical stores have (category menus, breadcrumbs, a gallery, reviews, related products, a footer), and its accessibility snapshots grew 2.9 to 6.4 times: a product page went from 1,151 to 7,313 characters, still lighter than most real stores. No page's graph changed with it; every one is byte-identical. Two longer tasks joined the five, and the screenshot agent joined as a second baseline. One change helps the Affordances agent: `search` now returns each result's variants with their SKUs, so adding to the cart is a search and an `addToCart`, three turns instead of four. Runs before this are marked in the history above; compare them only with each other.
+
+**October 29, 2026: a fairer browser agent.** The store's size options are styled radios: a visually hidden input under its label, which takes the pointer. Every click the browser agent made on one waited 5 seconds and failed, which made up most of the add-to-cart gap and was why it failed add-to-cart on Haiku. It also kept clicking the store's Agent view toggle, a demo control no real store has, which put the page's graph in its snapshot. It now selects radios and checkboxes with `check()`, as clicking their label would, and the toggle is hidden from it. Runs before this change are marked in the history above; compare them only with each other.

@@ -1,0 +1,48 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "import", "react", "jsx-a11y", "nextjs", "vitest"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "rules": {
+    "react/react-in-jsx-scope": "off",
+    "import/no-unassigned-import": [
+      "warn",
+      {
+        "allow": ["**/*.css"]
+      }
+    ],
+    "eslint/no-underscore-dangle": [
+      "warn",
+      {
+        "allow": ["_tag"]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["packages/ui/src/components/**"],
+      "rules": {
+        "jsx-a11y/prefer-tag-over-role": "off",
+        "jsx-a11y/click-events-have-key-events": "off",
+        "jsx-a11y/no-noninteractive-element-interactions": "off"
+      }
+    },
+    {
+      "files": ["**/test/**"],
+      "rules": {
+        "vitest/require-mock-type-parameters": "off",
+        "react/globals": "off"
+      }
+    },
+    {
+      "files": ["apps/docs/src/components/evilcharts/**"],
+      "rules": {
+        "react/no-unstable-nested-components": "off",
+        "eslint/no-shadow": "off"
+      }
+    }
+  ],
+  "ignorePatterns": ["**/dist/**", "**/.next/**", "**/.affordances/**", "**/.source/**"]
+}

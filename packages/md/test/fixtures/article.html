@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Shipping notes</title>
+    <meta name="description" content="How orders leave the studio." />
+    <link rel="canonical" href="https://shop.test/journal/shipping" />
+    <meta property="og:image" content="https://shop.test/og/shipping.png" />
+    <script type="application/ld+json">
+      { "@context": "https://schema.org", "@type": "Article", "headline": "Shipping notes" }
+    </script>
+    <style>
+      body {
+        color: red;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <nav><a href="/">Home</a> <a href="/journal">Journal</a></nav>
+    </header>
+    <main>
+      <h1>Shipping notes</h1>
+      <p>
+        Orders ship in <strong>two</strong> to <em>three</em> days, with <del>free</del>
+        <code>flat-rate</code> postage. E = mc<sup>2</sup>, H<sub>2</sub>O.
+      </p>
+      <h2>Steps</h2>
+      <ol>
+        <li>Pack</li>
+        <li>Label <a href="/labels" title="Label guide">guide</a></li>
+        <li>Ship</li>
+      </ol>
+      <ul>
+        <li><input type="checkbox" checked /> Weighed</li>
+        <li><input type="checkbox" /> Insured</li>
+      </ul>
+      <blockquote><p>We ship on Tuesdays.</p></blockquote>
+      <pre><code class="language-ts">const days = 3
+</code></pre>
+      <table>
+        <thead>
+          <tr>
+            <th>Region</th>
+            <th>Days</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>EU</td>
+            <td>3</td>
+          </tr>
+          <tr>
+            <td>US</td>
+            <td>5</td>
+          </tr>
+        </tbody>
+      </table>
+      <hr />
+      <p>
+        <a href="javascript:alert(1)">Click me</a>, <a href="#">top</a>, <a href="">nowhere</a>,
+        <a href="https://carrier.test/track">tracking</a>.
+      </p>
+      <p>
+        <img src="/img/box.png" alt="A packed box" /> <img src="/img/spacer.gif" alt="" />
+        <img src="/img/x.png" />
+      </p>
+      <details>
+        <summary>Returns</summary>
+        <p>Within 30 days.</p>
+      </details>
+      <dl>
+        <dt>Carrier</dt>
+        <dd>Post</dd>
+        <dt>Insured</dt>
+        <dd>Yes, up to $100</dd>
+      </dl>
+      <button type="button" onclick="share()">Share</button>
+      <!-- internal: deploy 42 -->
+      <div data-tracking="abc"><p>Thanks for reading.</p></div>
+    </main>
+    <footer>© 2026 Afford Supply</footer>
+    <script>
+      window.secret = 1
+    </script>
+  </body>
+</html>
