@@ -3,8 +3,7 @@
   "options": {
     "registry": "https://registry.npmjs.org/",
     "registries": {
-      "npm": "https://registry.npmjs.org/",
-      "main": "https://registry.vlt.io/acme/main/"
+      "npm": "https://registry.npmjs.org/"
     }
   },
   "nodes": {
