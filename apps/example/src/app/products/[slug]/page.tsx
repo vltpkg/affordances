@@ -30,9 +30,12 @@ export const generateStaticParams = () => listProducts().map(({ slug }) => ({ sl
 
 export const generateMetadata = async ({
   params,
-}: PageProps<'/products/[slug]'>): Promise<Metadata> => ({
-  title: getProduct((await params).slug)?.name ?? 'Not found',
-})
+}: PageProps<'/products/[slug]'>): Promise<Metadata> => {
+  const product = getProduct((await params).slug)
+  return product
+    ? { title: product.name, description: product.description }
+    : { title: 'Not found' }
+}
 
 // one honest sentence about what's scarce
 const availability = ({ name, option, variants }: ProductState['product']) => {
