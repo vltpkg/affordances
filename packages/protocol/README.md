@@ -17,4 +17,4 @@ const graph = Graph.parse(await response.json())
 
 The JSON Schemas are at `@affordances/protocol/schemas/*.json`, example documents at `@affordances/protocol/fixtures/*`, and the spec at `@affordances/protocol/spec.md`.
 
-Read the protocol: [https://github.com/affordances/affordances/blob/main/apps/docs/content/protocol.mdx](https://github.com/affordances/affordances/blob/main/apps/docs/content/protocol.mdx)
+Read the protocol: [https://github.com/vltpkg/affordances/blob/main/apps/docs/content/protocol.mdx](https://github.com/vltpkg/affordances/blob/main/apps/docs/content/protocol.mdx)

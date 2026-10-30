@@ -46,7 +46,7 @@ export const generateMetadata = async ({
 const editUrl = (path: string) =>
   path.startsWith('reference/api-reference/')
     ? undefined
-    : `https://github.com/affordances/affordances/edit/main/${path === 'reference/protocol.mdx' ? 'packages/protocol/spec.md' : `apps/docs/content/${path}`}`
+    : `https://github.com/vltpkg/affordances/edit/main/${path === 'reference/protocol.mdx' ? 'packages/protocol/spec.md' : `apps/docs/content/${path}`}`
 
 // the layout's navbar and sidebar paint at once; the slug read sits behind Suspense and the page streams in
 const Page = ({ params }: PageProps<'/docs/[[...slug]]'>) => (

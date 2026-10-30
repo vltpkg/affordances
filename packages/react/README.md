@@ -23,4 +23,4 @@ export const Agents = ({ children }: { children: React.ReactNode }) => {
 }
 ```
 
-Docs: [https://github.com/affordances/affordances/blob/main/apps/docs/content/react.mdx](https://github.com/affordances/affordances/blob/main/apps/docs/content/react.mdx)
+Docs: [https://github.com/vltpkg/affordances/blob/main/apps/docs/content/react.mdx](https://github.com/vltpkg/affordances/blob/main/apps/docs/content/react.mdx)

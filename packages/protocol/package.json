@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/affordances/affordances.git",
+    "url": "git+https://github.com/vltpkg/affordances.git",
     "directory": "packages/protocol"
   },
   "files": [

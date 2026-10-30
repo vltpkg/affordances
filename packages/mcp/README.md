@@ -16,4 +16,4 @@ vlx @affordances/mcp https://store.example.com --token "$STORE_TOKEN"
 
 Without a token it keeps the site's cookies like a browser would. As a library, `createClient(site, { token })` returns `index()`, `open(path)`, and `call(path, action, input, confirm)`, and `createServer(site, options)` returns the `McpServer`.
 
-Docs: [https://github.com/affordances/affordances/blob/main/apps/docs/content/guides/mcp.mdx](https://github.com/affordances/affordances/blob/main/apps/docs/content/guides/mcp.mdx)
+Docs: [https://github.com/vltpkg/affordances/blob/main/apps/docs/content/guides/mcp.mdx](https://github.com/vltpkg/affordances/blob/main/apps/docs/content/guides/mcp.mdx)

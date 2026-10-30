@@ -317,7 +317,7 @@ export const BenchHistory = () => {
                 className={cn(th, 'text-[0.8125rem] font-normal tabular-nums')}
               >
                 <a
-                  href={`https://github.com/affordances/affordances/blob/main/apps/bench/results/${f.file}`}
+                  href={`https://github.com/vltpkg/affordances/blob/main/apps/bench/results/${f.file}`}
                 >
                   {f.finishedAt
                     ? `${f.finishedAt.slice(5, 10)} ${f.finishedAt.slice(11, 16)}`

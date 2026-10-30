@@ -16,4 +16,4 @@ import affordances from '@affordances/lint'
 export default [affordances.configs.recommended]
 ```
 
-Docs: [https://github.com/affordances/affordances/blob/main/apps/docs/content/guides/lint.mdx](https://github.com/affordances/affordances/blob/main/apps/docs/content/guides/lint.mdx)
+Docs: [https://github.com/vltpkg/affordances/blob/main/apps/docs/content/guides/lint.mdx](https://github.com/vltpkg/affordances/blob/main/apps/docs/content/guides/lint.mdx)

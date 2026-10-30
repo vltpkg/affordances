@@ -27,4 +27,4 @@ export const handler = createHandler({
 })
 ```
 
-Docs: [https://github.com/affordances/affordances/blob/main/apps/docs/content/concepts/actions.mdx](https://github.com/affordances/affordances/blob/main/apps/docs/content/concepts/actions.mdx)
+Docs: [https://github.com/vltpkg/affordances/blob/main/apps/docs/content/concepts/actions.mdx](https://github.com/vltpkg/affordances/blob/main/apps/docs/content/concepts/actions.mdx)

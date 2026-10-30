@@ -11,4 +11,4 @@ vlx @affordances/cli call localhost:3000/products/tee addToCart --input '{"sku":
 
 Every command takes `--json` and exits 1 on failure, so scripts and coding agents can drive it. Built on [Effect](https://effect.website), which is bundled into the one file that ships.
 
-Docs: [https://github.com/affordances/affordances/blob/main/apps/docs/content/reference/cli.mdx](https://github.com/affordances/affordances/blob/main/apps/docs/content/reference/cli.mdx)
+Docs: [https://github.com/vltpkg/affordances/blob/main/apps/docs/content/reference/cli.mdx](https://github.com/vltpkg/affordances/blob/main/apps/docs/content/reference/cli.mdx)

@@ -1,6 +1,6 @@
 import { createClient, type AffordancesClient } from '@affordances/mcp'
 
-// the five tasks from PLAN.md §8, against apps/example's seed. setup runs on a fresh session as plain
+// the tasks a shopper does, against apps/example's seed. setup runs on a fresh session as plain
 // affordances calls; check reads that session afterwards. `oracle` is the scripted ideal, for --dry runs.
 
 type Cart = { items: { sku: string; quantity: number }[] }
