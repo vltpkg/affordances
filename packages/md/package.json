@@ -28,6 +28,14 @@
     "./next": {
       "types": "./dist/next.d.ts",
       "default": "./dist/next.js"
+    },
+    "./next/llms": {
+      "types": "./dist/next-llms.d.ts",
+      "default": "./dist/next-llms.js"
+    },
+    "./next/llms-full": {
+      "types": "./dist/next-llms-full.d.ts",
+      "default": "./dist/next-llms-full.js"
     }
   },
   "scripts": {

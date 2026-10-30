@@ -36,6 +36,15 @@ export default withAffordances(nextConfig, { plugins: [md()] })
 
 Add `alternates: mdAlternate(path)` to `generateMetadata` so crawlers and agents can find the markdown.
 
+`llms.txt` (an index of every page's markdown) and `llms-full.txt` (every page in one file) are one line each. On an Affordances site they list every route from the site index; pass `sections` / `pages` to `createLlmsTxtHandler` / `createLlmsFullHandler` to name pages behind dynamic routes:
+
+```ts
+// app/llms.txt/route.ts
+export { GET } from '@affordances/md/next/llms'
+// app/llms-full.txt/route.ts
+export { GET } from '@affordances/md/next/llms-full'
+```
+
 ## How it works
 
 `md()` adds rewrites (no `proxy.ts`): `Accept: text/markdown` at a page's url, `/x.md`, and `/index.md` all go to the route handler. The handler fetches the page from its own origin as HTML, forwarding the caller's cookies, so the markdown is the real render: RSC, data, auth, and streamed `<Suspense>` content included. It then converts the HTML. Content rendered only on the client (in `useEffect`) isn't included.

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import {
   createLlmsFullHandler,
+  createLlmsTxtHandler,
   createMdHandler,
   md,
   mdAlternate,
@@ -199,7 +200,84 @@ test('llms-full joins every page as public markdown, headed with its url, skippi
   expect(await response.text()).toBe(
     `# Page / (${site}/)\n\nBody.\n\n# Page /a (${site}/a)\n\nBody.\n`,
   )
-  expect(seen.map((call) => call.url.pathname)).toEqual(['/', '/a', '/gone'])
+  // the site index is read too, for its routes; then each page in order
+  expect(seen.map((call) => call.url.pathname)).toEqual([
+    '/.well-known/affordances.json',
+    '/',
+    '/a',
+    '/gone',
+  ])
   // the public site: the caller's cookies are not forwarded
   expect(seen.every((call) => !call.headers.has('cookie'))).toBe(true)
+})
+
+// an Affordances site: its index, and pages with titles in the 'Page · Site' form
+const affordancesSite = (url: URL) =>
+  url.pathname === '/.well-known/affordances.json'
+    ? Response.json({
+        name: 'Acme Store',
+        routes: [
+          { route: '/', description: 'Every product, with its price' },
+          { route: '/cart', description: 'What is in the cart' },
+          { route: '/products/[slug]' },
+        ],
+      })
+    : new Response(
+        page(
+          `<h1>${url.pathname}</h1><p>Body.</p>`,
+          `<title>${url.pathname === '/' ? 'Home' : 'Cart'} · Acme Store</title><meta name="description" content="The page's own words">`,
+        ),
+        { headers: { 'content-type': 'text/html' } },
+      )
+
+test('llms-full defaults to the site index routes that need no params', async () => {
+  upstream = affordancesSite
+  const response = await createLlmsFullHandler()(new Request(`${site}/llms-full.txt`))
+  const body = await response.text()
+  expect(body).toContain(`(${site}/)`)
+  expect(body).toContain(`(${site}/cart)`)
+  expect(body).not.toContain('[slug]')
+})
+
+test('llms.txt lists each page twin with its title and the route description, and says how to act', async () => {
+  upstream = affordancesSite
+  const llms = createLlmsTxtHandler({ summary: 'A demo store.' })
+  const body = await (await llms(new Request(`${site}/llms.txt`))).text()
+  expect(body).toBe(
+    [
+      '# Acme Store',
+      '> A demo store.',
+      `Every page is also Markdown: add \`.md\` to its URL, or request it with \`Accept: text/markdown\`. [llms-full.txt](${site}/llms-full.txt) has every page in one file.`,
+      `This site is Affordances-enabled: request any page with \`Accept: application/vnd.affordances+json\` for its graph (what the page shows, and the actions you can call there, with their inputs). [/.well-known/affordances.json](${site}/.well-known/affordances.json) lists every route and its actions.`,
+      `## Pages\n\n- [Home](${site}/index.md): Every product, with its price\n- [Cart](${site}/cart.md): What is in the cart`,
+    ].join('\n\n') + '\n',
+  )
+})
+
+test('llms.txt takes your sections, mixing rendered paths and given links, without an Affordances index', async () => {
+  upstream = (url) =>
+    url.pathname.startsWith('/.well-known')
+      ? new Response('', { status: 404 })
+      : new Response(
+          page('<p>x</p>', '<title>Post</title><meta name="description" content="About">'),
+          {
+            headers: { 'content-type': 'text/html' },
+          },
+        )
+  const llms = createLlmsTxtHandler({
+    title: 'Blog',
+    full: false,
+    sections: (_, routes) => [
+      { title: 'Posts', pages: ['/post'] },
+      { title: 'Elsewhere', pages: [{ url: '/about', title: 'About us', description: 'Who' }] },
+      { title: 'Empty', pages: routes },
+    ],
+  })
+  const body = await (await llms(new Request(`${site}/llms.txt`))).text()
+  expect(body).toContain('# Blog')
+  expect(body).toContain(`- [Post](${site}/post.md): About`)
+  expect(body).toContain(`- [About us](${site}/about.md): Who`)
+  expect(body).not.toContain('llms-full')
+  expect(body).not.toContain('Affordances-enabled')
+  expect(body).not.toContain('## Empty')
 })
