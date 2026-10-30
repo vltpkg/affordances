@@ -122,6 +122,8 @@ export const runAgent = async (
   // a function for a toolbox that changes as the agent goes, e.g. tools a page registers over WebMCP
   tools: Tool[] | (() => Promise<Tool[]>),
   onEvent?: (event: LoopEvent) => void,
+  // tools offered outside the tool list (page tools listed in results), reported with each turn's toolbox
+  offered?: () => Promise<string[]>,
 ): Promise<Omit<RunStats, 'success'>> => {
   const price = PRICES[model]
   if (!price) throw new Error(`No price for ${model}; add it to PRICES in src/loop.ts`)
@@ -136,6 +138,9 @@ export const runAgent = async (
         definition ?? { name, description, input_schema },
     )
     const byName = new Map(toolbox.map((tool) => [tool.name, tool]))
+    const offeredNow = [
+      ...new Set([...toolbox.map((tool) => tool.name), ...((await offered?.()) ?? [])]),
+    ]
     const asked = performance.now()
     const response = await client.messages.create({
       model,
@@ -169,7 +174,7 @@ export const runAgent = async (
       },
       text,
       calls: calls.map(({ id, name, input }) => ({ id, name, input })),
-      tools: toolbox.map((tool) => tool.name),
+      tools: offeredNow,
     })
     // refusal, end_turn, max_tokens: the run is over (a truncated tool input is never executed)
     if (response.stop_reason !== 'tool_use' || !calls.length) {

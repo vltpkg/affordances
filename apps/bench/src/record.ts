@@ -44,6 +44,14 @@ const VIEWPORT = { width: 1280, height: 800 }
 const shoot = async (page: import('playwright').Page) =>
   `data:image/jpeg;base64,${(await page.screenshot({ type: 'jpeg', quality: 55 })).toString('base64')}`
 
+// a page tool called through page_tool reads, in the recording, as the page tool it called
+const unwrap = <C extends { name: string; input: unknown }>(call: C): C => {
+  const { name, input } = (call.input ?? {}) as { name?: unknown; input?: unknown }
+  return call.name === 'page_tool' && typeof name === 'string'
+    ? { ...call, name, input: input ?? {} }
+    : call
+}
+
 const record = async (task: (typeof tasks)[number]) => {
   const store = await startStore(values.port!)
   const events: DemoEvent[] = []
@@ -114,14 +122,22 @@ const record = async (task: (typeof tasks)[number]) => {
         }))
 
       const onEvent = (e: LoopEvent) => {
-        if (e.type === 'turn') emit({ ...e, agent: kind, at: at() })
+        if (e.type === 'turn') emit({ ...e, calls: e.calls.map(unwrap), agent: kind, at: at() })
         else {
-          emit({ ...e, agent: kind, at: at() })
+          emit({ ...unwrap(e), agent: kind, at: at() })
           if (!e.error) frame(e.id, e.result, e.input as Record<string, unknown>)
         }
       }
       try {
-        const stats = await runAgent(model, agent.system, task.prompt, agent.tools, onEvent)
+        const offered = 'offered' in agent ? agent.offered : undefined
+        const stats = await runAgent(
+          model,
+          agent.system,
+          task.prompt,
+          agent.tools,
+          onEvent,
+          offered,
+        )
         await frames
         const success = await task.check(client, stats.answer)
         emit({

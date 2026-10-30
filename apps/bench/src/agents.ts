@@ -1,5 +1,5 @@
 import { chromium, type Browser } from 'playwright'
-import { createClient, describeSite } from '@affordances/mcp'
+import { createClient, describeSite, signature } from '@affordances/mcp'
 import type Anthropic from '@anthropic-ai/sdk'
 import type { Tool, ToolOutput } from './loop.ts'
 
@@ -163,7 +163,13 @@ type PageTool = { name: string; description: string; inputSchema: Tool['input_sc
 // the same browser agent in a browser that supports WebMCP: tools the current page registers join its toolbox
 // on the next turn, the way a WebMCP-capable browser offers them. nothing tells it about Affordances; the store's
 // <AffordancesProvider> registers each available action, and the agent decides whether to use them
-export const webmcpAgent = async (site: string, sid: string) => {
+export const webmcpAgent = async (
+  site: string,
+  sid: string,
+  // how page tools reach the model. 'toolbox': each joins the tool list, so the list changes page to page and
+  // the prompt cache with it. 'stable': one fixed page_tool, with each page's tools listed in the tool results
+  { delivery = 'stable' }: { delivery?: 'toolbox' | 'stable' } = {},
+) => {
   const agent = await browserAgent(site, sid)
   const { page } = agent
   // ponytail: a shim of WebMCP's registerTool (no shipping chromium has it yet); swap for the real API when
@@ -185,48 +191,94 @@ export const webmcpAgent = async (site: string, sid: string) => {
       },
     })
   })
-  // the page navigated or re-registered: read what it offers now
-  const pageTools = () =>
-    page
-      .evaluate(() =>
-        [
-          ...((
-            window as unknown as {
-              webmcpTools?: Map<string, { name: string; description: string; inputSchema: unknown }>
-            }
-          ).webmcpTools?.values() ?? []),
-        ].map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
-      )
-      .catch(() => [] as never[]) as Promise<PageTool[]>
   const builtIn = new Set(agent.tools.map((t) => t.name))
-  return {
-    ...agent,
-    name: 'webmcp' as const,
-    system: `${agent.system} Pages can register their own tools (WebMCP): while you're on such a page, they appear in your tool list.`,
-    tools: async (): Promise<Tool[]> => [
-      ...agent.tools,
-      ...(await pageTools())
-        .filter((tool) => !builtIn.has(tool.name))
-        .map((tool) => ({
+  // the page navigated or re-registered: read what it offers now
+  const pageTools = async () =>
+    (
+      (await page
+        .evaluate(() =>
+          [
+            ...((
+              window as unknown as {
+                webmcpTools?: Map<
+                  string,
+                  { name: string; description: string; inputSchema: unknown }
+                >
+              }
+            ).webmcpTools?.values() ?? []),
+          ].map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
+        )
+        .catch(() => [])) as PageTool[]
+    ).filter((tool) => !builtIn.has(tool.name))
+  const callPageTool = async (name: string, input: unknown) => {
+    const result = await page.evaluate(
+      ([tool, args]) => {
+        const registered = (
+          window as unknown as {
+            webmcpTools: Map<string, { execute: (input: unknown) => Promise<unknown> }>
+          }
+        ).webmcpTools.get(tool)
+        if (!registered) throw new Error(`This page has no tool named ${tool}`)
+        return registered.execute(args)
+      },
+      [name, input] as const,
+    )
+    return typeof result === 'string' ? result : JSON.stringify(result)
+  }
+
+  if (delivery === 'toolbox')
+    return {
+      ...agent,
+      name: 'webmcp' as const,
+      offered: async () => (await pageTools()).map((tool) => tool.name),
+      system: `${agent.system} Pages can register their own tools (WebMCP): while you're on such a page, they appear in your tool list.`,
+      tools: async (): Promise<Tool[]> => [
+        ...agent.tools,
+        ...(await pageTools()).map((tool) => ({
           name: tool.name,
           description: `${tool.description} (registered by the page)`,
           input_schema: tool.inputSchema,
-          run: async (input: Record<string, unknown>) => {
-            const result = await page.evaluate(
-              ([name, args]) =>
-                (
-                  window as unknown as {
-                    webmcpTools: Map<string, { execute: (input: unknown) => Promise<unknown> }>
-                  }
-                ).webmcpTools
-                  .get(name)!
-                  .execute(args),
-              [tool.name, input] as const,
-            )
-            return typeof result === 'string' ? result : JSON.stringify(result)
-          },
+          run: (input: Record<string, unknown>) => callPageTool(tool.name, input),
         })),
-    ],
+      ],
+    }
+
+  // what the page offers, under each result, so the model sees it the moment it lands on the page
+  const listing = async () => {
+    const tools = await pageTools()
+    return tools.length
+      ? `\n\nTools this page registered (WebMCP), callable with page_tool:\n${tools
+          .map(
+            (t) =>
+              `- ${signature(t.name, t.inputSchema as Parameters<typeof signature>[1])}: ${t.description}`,
+          )
+          .join('\n')}`
+      : ''
+  }
+  const tools: Tool[] = [
+    ...agent.tools.map((tool) => ({
+      ...tool,
+      run: async (input: Record<string, unknown>) => `${await tool.run(input)}${await listing()}`,
+    })),
+    {
+      name: 'page_tool',
+      description:
+        'Call a tool the current page registered over WebMCP, by name, with its input. The tools a page offers are listed under each result while you are on it.',
+      input_schema: {
+        type: 'object',
+        properties: { name: { type: 'string' }, input: { type: 'object' } },
+        required: ['name'],
+      },
+      run: async ({ name, input }) =>
+        `${await callPageTool(name as string, input ?? {})}${await listing()}`,
+    },
+  ]
+  return {
+    ...agent,
+    name: 'webmcp' as const,
+    offered: async () => (await pageTools()).map((tool) => tool.name),
+    system: `${agent.system} Pages can register their own tools (WebMCP): when a page does, they're listed under your tool results, and page_tool calls them.`,
+    tools,
   }
 }
 
