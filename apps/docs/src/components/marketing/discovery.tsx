@@ -21,82 +21,82 @@ type Step = {
 }
 type Run = { end: number; turns: number; steps: Step[]; title: string; sub: string }
 
-// one recorded run, apps/demo/recordings/2026-10-29T2351-add-to-cart-claude-opus-5-5-webmcp.json: both
+// one recorded run, apps/demo/recordings/2026-10-30T0011-add-to-cart-claude-opus-5-5-webmcp.json: both
 // agents on one clock, in ms since it started. `lit` marks the calls the story turns on
 const TEE = '/products/heavyweight-tee'
 const WEBMCP: Run = {
-  end: 9894,
+  end: 10638,
   turns: 4,
   title: 'Four turns.',
-  sub: 'One call to addToCart, a tool the page offered. 9.9s.',
+  sub: 'One call to addToCart, a tool the page offered. 10.6s.',
   steps: [
     {
       turn: 1,
-      at: 1940,
-      done: 2712,
+      at: 2080,
+      done: 2900,
       name: 'goto',
       arg: '/',
-      ms: 772,
+      ms: 820,
       page: '/',
       tools: ['search'],
     },
     {
       turn: 2,
-      at: 3941,
-      done: 4552,
+      at: 7132,
+      done: 7769,
       name: 'goto',
       arg: TEE,
-      ms: 611,
+      ms: 637,
       page: TEE,
       tools: ['addToCart'],
     },
     {
       turn: 3,
-      at: 6740,
-      done: 6762,
+      at: 9236,
+      done: 9254,
       name: 'addToCart',
       arg: '{ sku: "TEE-BLK-M", quantity: 1 }',
-      ms: 22,
+      ms: 18,
       lit: true,
     },
     {
       turn: 4,
-      at: 9887,
+      at: 10625,
       name: 'answer',
-      arg: 'I added 1 Heavyweight Tee in size M (SKU TEE-BLK-M, $48.00) to your cart, which now holds 1 item.',
+      arg: 'I added 1 Heavyweight Tee in size M ($48.00) to your cart, which now holds 1 item.',
     },
   ],
 }
 const BROWSER: Run = {
-  end: 13240,
+  end: 20805,
   turns: 6,
   title: 'Six turns.',
-  sub: 'Two clicks to add it, then a trip to the cart to check. 13.2s.',
+  sub: 'Two clicks to add it, then a trip to the cart to check. 20.8s.',
   steps: [
-    { turn: 1, at: 2029, done: 2714, name: 'goto', arg: '/', ms: 685, page: '/' },
-    { turn: 2, at: 4447, done: 5045, name: 'goto', arg: TEE, ms: 598, page: TEE },
-    { turn: 3, at: 6741, done: 6773, name: 'click', arg: 'radio "M"', ms: 32, lit: true },
+    { turn: 1, at: 5906, done: 6555, name: 'goto', arg: '/', ms: 649, page: '/' },
+    { turn: 2, at: 11518, done: 12170, name: 'goto', arg: TEE, ms: 653, page: TEE },
+    { turn: 3, at: 13904, done: 13971, name: 'click', arg: 'radio "M"', ms: 68, lit: true },
     {
       turn: 4,
-      at: 9171,
-      done: 9216,
+      at: 15700,
+      done: 15749,
       name: 'click',
       arg: 'button "Add to cart"',
-      ms: 45,
+      ms: 49,
       lit: true,
     },
-    { turn: 5, at: 10971, done: 11651, name: 'goto', arg: '/cart', ms: 680, page: '/cart' },
+    { turn: 5, at: 18390, done: 19065, name: 'goto', arg: '/cart', ms: 675, page: '/cart' },
     {
       turn: 6,
-      at: 13236,
+      at: 20798,
       name: 'answer',
       arg: 'I added one Heavyweight Tee in size M (TEE-BLK-M, $48.00) to your cart, and it’s the only item there.',
     },
   ],
 }
-const END = 13244
-// the replay runs twice as fast as the recording
-const SPEED = 2
+const END = 20810
+// the replay runs three times as fast as the recording
+const SPEED = 3
 
 const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`)
 const dur = (ms: number) => (ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`)
@@ -181,7 +181,7 @@ const Agent = ({ run, t, webmcp }: { run: Run; t: number; webmcp?: boolean }) =>
             <li className="flex min-h-8 items-center gap-2.5 border-t border-(--line) px-3 py-1.5">
               <span className="size-[7px] flex-none rounded-full bg-(--fg3)" />
               <span className="flex flex-wrap gap-x-2 text-(--fg2)">
-                {['goto', 'click', 'fill', 'press'].map((n) => (
+                {['goto', 'click', 'fill', 'press', ...(webmcp ? ['page_tool'] : [])].map((n) => (
                   <span key={n}>{n}</span>
                 ))}
               </span>
@@ -292,11 +292,11 @@ export const Discovery = () => {
         <p>
           With WebMCP: it went to the home page, which offered a search tool, then to the
           Heavyweight Tee’s page. That page offered addToCart instead, and the agent called it with
-          sku TEE-BLK-M and quantity 1. Done in 9.9 seconds, 4 turns.
+          sku TEE-BLK-M and quantity 1. Done in 10.6 seconds, 4 turns.
         </p>
         <p>
           Without WebMCP: it went to the home page, then the product page, clicked size M, clicked
-          Add to cart, then went to the cart to check. Done in 13.2 seconds, 6 turns.
+          Add to cart, then went to the cart to check. Done in 20.8 seconds, 6 turns.
         </p>
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-1 text-sm text-(--fg2)">

@@ -259,11 +259,11 @@ const Home = () => {
             <SectionHead eyebrow="Discovery" id="h-disc" title="Agents find it on their own.">
               A browser agent that has never heard of Affordances, asked to add a tee to a cart. Its
               browser supports WebMCP, and its prompt says only that pages can register tools. On
-              the product page, <Code>addToCart</Code> joins its toolbox, and it calls it.
+              the product page, the page offers <Code>addToCart</Code>, and it calls it.
             </SectionHead>
             <AgentText
               block
-              md={`One recorded run on Claude Opus 5.5, the task "Add a Heavyweight Tee in size M to my cart.", two browser agents on one clock. Both start with the same built-in tools: \`goto\`, \`click\`, \`fill\` and \`press\`.\n\n- **With WebMCP** (its prompt says only that pages can register tools): \`goto("/")\`, where the home page registered \`search\`. It went to the Heavyweight Tee's page, which registered \`addToCart\`, and \`search\` went away. It called \`addToCart({ sku: "TEE-BLK-M", quantity: 1 })\` and answered. 9.9s, 4 turns.\n- **Plain browser**: \`goto("/")\`, then the product page, clicked size M, clicked Add to cart, then went to \`/cart\` to check and answered. 13.2s, 6 turns.\n\nBoth added the tee to the cart. The [React and WebMCP guide](/docs/guides/react) shows how a page registers its actions.`}
+              md={`One recorded run on Claude Opus 5.5, the task "Add a Heavyweight Tee in size M to my cart.", two browser agents on one clock. Both start with the same built-in tools: \`goto\`, \`click\`, \`fill\` and \`press\`; the WebMCP browser adds \`page_tool\`, which calls whatever tools the current page registered, listed under each result.\n\n- **With WebMCP** (its prompt says only that pages can register tools): \`goto("/")\`, where the home page registered \`search\`. It went to the Heavyweight Tee's page, which registered \`addToCart\`, and \`search\` went away. It called \`addToCart({ sku: "TEE-BLK-M", quantity: 1 })\` and answered. 10.6s, 4 turns.\n- **Plain browser**: \`goto("/")\`, then the product page, clicked size M, clicked Add to cart, then went to \`/cart\` to check and answered. 20.8s, 6 turns.\n\nBoth added the tee to the cart. The [React and WebMCP guide](/docs/guides/react) shows how a page registers its actions.`}
             >
               <Discovery />
             </AgentText>
