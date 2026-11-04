@@ -1,0 +1,3 @@
+{
+  "buildCommand": "vlt run --workspace-group=packages --if-present --bail build && vlt run build"
+}
