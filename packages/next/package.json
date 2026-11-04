@@ -38,7 +38,7 @@
   "scripts": {
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests --no-file-parallelism"
   },
   "dependencies": {
     "@affordances/core": "workspace:*",
