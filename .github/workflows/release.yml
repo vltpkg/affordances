@@ -1,0 +1,56 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency: release
+
+jobs:
+  # Pending changesets on main -> open/update the "Release" PR (bumps versions, writes CHANGELOGs).
+  # No pending changesets (i.e. that PR was just merged) -> publish anything not yet on npm.
+  npm:
+    # the Run workflow button can pick any branch; only ever release from main
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    outputs:
+      released: ${{ steps.changesets.outputs.hasChangesets == 'false' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: npm install -g vlt
+      - run: vlt install --frozen-lockfile
+
+      - id: changesets
+        uses: changesets/action@v1
+        with:
+          title: Release
+          commit: Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_WORKFLOW_TOKEN }}
+
+      - if: steps.changesets.outputs.hasChangesets == 'false'
+        run: vlr build && scripts/publish.sh
+
+  vlt:
+    needs: npm
+    if: needs.npm.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: npm install -g vlt
+      - run: vlt install --frozen-lockfile
+      - run: vlr build && scripts/publish.sh
+        env:
+          VLT_REGISTRY: https://registry.vlt.io/affordances/main/
+          VLT_TOKEN: ${{ secrets.VLT_TOKEN }}

@@ -15,5 +15,5 @@
   ],
   "access": "public",
   "baseBranch": "main",
-  "ignore": ["@affordances/ui", "@affordances/docs", "@affordances/example", "@affordances/bench"]
+  "ignore": ["@affordances/ui"]
 }
