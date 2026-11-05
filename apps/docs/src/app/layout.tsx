@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { Analytics } from '@vercel/analytics/next'
 import { fontVariables } from '@affordances/ui/lib/fonts'
 import { Providers } from '@/providers'
 import { description, siteUrl } from '@/lib/site-url'
@@ -27,6 +28,7 @@ const RootLayout = ({ children }: LayoutProps<'/'>) => (
     </head>
     <body className="flex min-h-full flex-col text-body">
       <Providers>{children}</Providers>
+      <Analytics />
     </body>
   </html>
 )
