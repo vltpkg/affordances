@@ -19,7 +19,9 @@ for pkg in packages/*/package.json; do
   case "$status" in
     200) echo "skip $name@$version (already on $registry)" ;;
     404) echo "publish $name@$version -> $registry"
-         (cd "$(dirname "$pkg")" && vlt publish --access=public) ;;
+         (cd "$(dirname "$pkg")" && vlt publish --access=public)
+         # changesets/action looks for these lines to create the GitHub Releases
+         echo "New tag: $name@$version" ;;
     *)   echo "unexpected HTTP $status checking $name@$version on $registry" >&2; exit 1 ;;
   esac
 done

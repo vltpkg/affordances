@@ -13,7 +13,8 @@
     "lint": "oxlint",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
-    "changeset": "changeset"
+    "changeset": "changeset",
+    "release": "vlr build && scripts/publish.sh"
   },
   "devDependencies": {
     "@changesets/cli": "^3.0.3",
