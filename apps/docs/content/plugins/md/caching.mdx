@@ -21,9 +21,14 @@ import { createMdHandler } from '@affordances/md/next'
 export const GET = createMdHandler({ origin: 'http://localhost:3000', timeout: 5000 })
 ```
 
-| Option     | Default       | Description                                                |
-| ---------- | ------------- | ---------------------------------------------------------- |
-| `origin`   | the request's | Where to fetch pages from                                  |
-| `timeout`  | `10000`       | Milliseconds before answering `504`                        |
-| `maxBytes` | 6 MB          | The largest page it converts                               |
-| `append`   | none          | More Markdown after the page's, such as an actions summary |
+| Option     | Default       | Description                                                          |
+| ---------- | ------------- | -------------------------------------------------------------------- |
+| `origin`   | the request's | Where to fetch pages from                                            |
+| `timeout`  | `10000`       | Milliseconds before answering `504`                                  |
+| `maxBytes` | 6 MB          | The largest page it converts                                         |
+| `headers`  | none          | More headers on the page fetch: an object, or `(request) => headers` |
+| `append`   | none          | More Markdown after the page's, such as an actions summary           |
+
+`headers` are set after the forwarded ones, for a request the render needs that the caller didn't send, such as `x-vercel-protection-bypass` on a protected preview. A `cookie` or `authorization` added here makes the Markdown private, like the caller's own. The `llms.txt` and `llms-full.txt` handlers take it too.
+
+A path that would leave the origin, such as one starting with `//host`, answers `400` before anything is fetched, so the caller's credentials only go to your own site.

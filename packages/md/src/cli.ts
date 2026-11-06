@@ -2,6 +2,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { MD_PATH } from './next/index.ts'
+import { findAppDir } from './next/routes.ts'
 
 const root = process.cwd()
 const [command] = process.argv.slice(2)
@@ -10,7 +11,7 @@ if (command !== 'init') {
   process.exit(command ? 1 : 0)
 }
 
-const app = ['app', 'src/app'].map((dir) => path.join(root, dir)).find((dir) => existsSync(dir))
+const app = findAppDir(root)
 if (!app) {
   console.error('affordances-md  no app directory here')
   process.exit(1)

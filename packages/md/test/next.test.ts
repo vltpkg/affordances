@@ -1,14 +1,26 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import {
   createLlmsFullHandler,
   createLlmsTxtHandler,
   createMdHandler,
+  type Config,
+  type Has,
+  type Header,
+  isMdRequest,
   md,
   mdAlternate,
+  mdPagePath,
+  mdRewrite,
   RENDER_HEADER,
+  type Rewrite,
   rewrites,
   withMd,
 } from '../src/next/index.ts'
+import { ROUTES_ENV } from '../src/next/routes.ts'
 
 const site = 'https://shop.test'
 const page = (body: string, head = '<title>Tee</title>') =>
@@ -123,6 +135,16 @@ test('errors keep their status; non-html passes through', async () => {
   const json = await get('/data')
   expect(json.headers.get('content-type')).toContain('application/json')
   expect(await json.json()).toEqual({ a: 1 })
+  // fetch hands back the body decoded, so the encoding it came in no longer applies
+  upstream = () =>
+    new Response('body', {
+      headers: { 'content-type': 'image/png', 'content-encoding': 'gzip', 'content-length': '99' },
+    })
+  const file = await get('/logo.png')
+  expect(file.headers.get('content-type')).toBe('image/png')
+  expect(file.headers.get('content-encoding')).toBeNull()
+  expect(file.headers.get('content-length')).toBeNull()
+  expect(await file.text()).toBe('body')
 })
 
 test('loop guard, size limit, timeout', async () => {
@@ -152,15 +174,262 @@ test('origin override and append', async () => {
   expect(await response.text()).toMatch(/Boxy\.\n\n## Actions\n\n- addToCart\n$/)
 })
 
-test('rewrites send only markdown requests, never our own render, and skip api and files', () => {
+test('rewrites send only markdown requests, never our own render or an RSC fetch, and skip api', () => {
   const [, pageRule] = rewrites.beforeFiles
   const re = new RegExp(`^/${pageRule!.source.slice('/:path'.length)}$`)
   expect(re.test('/blog/post')).toBe(true)
+  // a dot isn't a file extension: package versions and names
+  expect(re.test('/version/5.3.0')).toBe(true)
+  expect(re.test('/package/chart.js')).toBe(true)
   expect(re.test('/api/affordances/md/x')).toBe(false)
   expect(re.test('/_next/static/a.js')).toBe(false)
-  expect(re.test('/sitemap.xml')).toBe(false)
-  for (const rule of [...rewrites.beforeFiles, ...rewrites.afterFiles])
+  // .md is afterFiles' job, so a real .md file in public/ wins
+  expect(re.test('/blog/post.md')).toBe(false)
+  for (const rule of rewrites.beforeFiles)
+    expect(rule.missing).toEqual([
+      { type: 'header', key: RENDER_HEADER },
+      { type: 'header', key: 'rsc' },
+    ])
+  for (const rule of rewrites.afterFiles)
     expect(rule.missing).toEqual([{ type: 'header', key: RENDER_HEADER }])
+})
+
+// next's own matching, to hold mdRewrite to the rewrites it copies for proxy.ts, and to fill in Link values
+const require = createRequire(import.meta.url)
+const { getPathMatch } = require('next/dist/shared/lib/router/utils/path-match.js') as {
+  getPathMatch: (source: string) => (pathname: string) => Record<string, unknown> | false
+}
+const { compileNonPath, matchHas } =
+  require('next/dist/shared/lib/router/utils/prepare-destination.js') as {
+    compileNonPath: (value: string, params: Record<string, unknown>) => string
+    matchHas: (
+      req: { headers: Record<string, string> },
+      query: object,
+      has?: Has[],
+      missing?: Has[],
+    ) => unknown
+  }
+const nextRewrites = (pathname: string, headers: Record<string, string>) =>
+  ([...rewrites.beforeFiles, ...rewrites.afterFiles] as Rewrite[]).some(
+    (rule) =>
+      getPathMatch(rule.source)(pathname) &&
+      matchHas({ headers }, {}, rule.has, rule.missing) !== false,
+  )
+
+test('mdRewrite matches exactly what the rewrites match', () => {
+  const markdown = { accept: 'text/markdown' }
+  const cases: [string, Record<string, string>][] = [
+    ['/', markdown],
+    ['/', {}],
+    ['/index.md', {}],
+    ['/INDEX.MD', {}],
+    ['/pricing.md', {}],
+    ['/pricing.MD', {}],
+    ['/blog/post', markdown],
+    ['/blog/post', { accept: 'text/html' }],
+    ['/blog/post', { accept: 'text/html, text/markdown;q=0.9' }],
+    ['/blog/post.md', markdown],
+    ['/version/5.3.0', markdown],
+    ['/dashboard/x.Y', markdown],
+    ['/api/x', markdown],
+    ['/API/x', markdown],
+    ['/api', markdown],
+    ['/_next/static/a.js', markdown],
+    ['/_NEXT/static/a.js', markdown],
+    ['/a/.md', {}],
+    ['/.md', {}],
+    ['/blog/post', { ...markdown, rsc: '1' }],
+    ['/blog/post', { ...markdown, [RENDER_HEADER]: '1' }],
+    ['/blog/post.md', { [RENDER_HEADER]: '1' }],
+  ]
+  for (const [pathname, headers] of cases)
+    expect({
+      pathname,
+      headers,
+      matched: isMdRequest(new Request(`${site}${pathname}`, { headers })),
+    }).toEqual({ pathname, headers, matched: nextRewrites(pathname, headers) })
+})
+
+test('mdRewrite gives the handler url, which maps back to the page', () => {
+  const at = (path: string, headers: Record<string, string> = {}) =>
+    mdRewrite(new Request(`${site}${path}`, { headers }))?.href
+  expect(at('/blog/post.md?x=1')).toBe(`${site}/api/affordances/md/blog/post?x=1`)
+  expect(at('/index.md')).toBe(`${site}/api/affordances/md`)
+  expect(at('/', { accept: 'text/markdown' })).toBe(`${site}/api/affordances/md`)
+  expect(at('/blog/post')).toBeUndefined()
+  expect(mdPagePath('/api/affordances/md/a')).toBe('/a')
+  expect(mdPagePath('/api/affordances/mdx')).toBe('/api/affordances/mdx')
+  expect(mdPagePath('/pricing.MD')).toBe('/pricing')
+  expect(mdPagePath('/docs/Index.md')).toBe('/docs/')
+})
+
+test('a path that starts with //host never leaves the origin', async () => {
+  const response = await get('//evil.example/x', { cookie: 'sid=1' })
+  expect(response.status).toBe(400)
+  expect(seen).toHaveLength(0)
+})
+
+test('the uppercase .MD next rewrites still finds the page', async () => {
+  await handler(new Request(`${site}/pricing.MD`))
+  expect(seen[0]!.url.pathname).toBe('/pricing')
+})
+
+test('headers adds to the page fetch, after the forwarded ones, but never replaces our own', async () => {
+  await createMdHandler({ headers: { 'x-vercel-protection-bypass': 's3cret', accept: 'x' } })(
+    new Request(`${site}/api/affordances/md/a`, { headers: { cookie: 'sid=1' } }),
+  )
+  await createMdHandler({ headers: (request) => ({ 'x-from': new URL(request.url).pathname }) })(
+    new Request(`${site}/api/affordances/md/b`),
+  )
+  expect(seen[0]!.headers.get('x-vercel-protection-bypass')).toBe('s3cret')
+  expect(seen[0]!.headers.get('cookie')).toBe('sid=1')
+  expect(seen[0]!.headers.get('accept')).toBe('text/html')
+  expect(seen[0]!.headers.get(RENDER_HEADER)).toBe('1')
+  expect(seen[1]!.headers.get('x-from')).toBe('/api/affordances/md/b')
+  // credentials added here are credentials too: the markdown stays private
+  const response = await createMdHandler({ headers: { authorization: 'Bearer x' } })(
+    new Request(`${site}/api/affordances/md/a`),
+  )
+  expect(response.headers.get('cache-control')).toBe('private, no-store')
+})
+
+test('the llms handlers resolve headers once, send them everywhere, and stay private with credentials', async () => {
+  upstream = affordancesSite
+  const headers = vi.fn(() => ({ 'x-vercel-protection-bypass': 's3cret' }))
+  const response = await createLlmsTxtHandler({ headers })(new Request(`${site}/llms.txt`))
+  expect(headers).toHaveBeenCalledTimes(1)
+  expect(seen.length).toBeGreaterThan(1)
+  expect(seen.every((call) => call.headers.get('x-vercel-protection-bypass') === 's3cret')).toBe(
+    true,
+  )
+  expect(response.headers.get('cache-control')).toBe('public, max-age=0, s-maxage=3600')
+  const signedIn = await createLlmsFullHandler({ headers: { authorization: 'Bearer svc' } })(
+    new Request(`${site}/llms-full.txt`),
+  )
+  expect(signedIn.headers.get('cache-control')).toBe('private, no-store')
+})
+
+// an app/ dir: groups, a dynamic segment, an optional catch-all, and folders that aren't urls
+let root: string
+const app = (files: string[]) => {
+  root = mkdtempSync(join(tmpdir(), 'md-app-'))
+  for (const file of files) {
+    mkdirSync(dirname(join(root, file)), { recursive: true })
+    writeFileSync(join(root, file), '')
+  }
+  return root
+}
+afterEach(() => {
+  if (root) rmSync(root, { recursive: true, force: true })
+  delete process.env[ROUTES_ENV]
+})
+const shop = [
+  'src/app/page.tsx',
+  'src/app/(shop)/cart/page.tsx',
+  'src/app/products/[slug]/page.tsx',
+  'src/app/team/[member-id]/page.tsx',
+  'src/app/docs/[[...slug]]/page.mdx',
+  'src/app/_private/page.tsx',
+  'src/app/@modal/(.)products/[slug]/page.tsx',
+  'src/app/api/x/route.ts',
+  'src/app/robots.ts',
+]
+
+test('md() finds the pages in app/ and hands them to the handlers', () => {
+  const config = md({ root: app(shop) })({} as Config)
+  expect(JSON.parse(config.env![ROUTES_ENV]!)).toEqual([
+    '/',
+    '/cart',
+    '/docs/[[...slug]]',
+    '/products/[slug]',
+    '/team/[member-id]',
+  ])
+  // without an app/ there are no pages, and it says so rather than leaving Link and llms.txt quietly empty
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  expect(md({ root: app([]) })({} as Config).env![ROUTES_ENV]).toBe('[]')
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining('no app/ directory'))
+  warn.mockRestore()
+})
+
+test('llms defaults to the pages md() found when the site has no Affordances index', async () => {
+  process.env[ROUTES_ENV] = JSON.stringify(['/', '/cart', '/products/[slug]'])
+  upstream = (url) =>
+    url.pathname.startsWith('/.well-known')
+      ? new Response('', { status: 404 })
+      : new Response(page('<p>x</p>', `<title>${url.pathname}</title>`), {
+          headers: { 'content-type': 'text/html' },
+        })
+  const body = await (await createLlmsTxtHandler()(new Request(`${site}/llms.txt`))).text()
+  expect(body).toContain(`- [/](${site}/index.md)`)
+  expect(body).toContain(`- [/cart](${site}/cart.md)`)
+  expect(body).not.toContain('slug')
+})
+
+test("llms keeps the site index's order, then adds the pages only md() found", async () => {
+  process.env[ROUTES_ENV] = JSON.stringify(['/about', '/concepts'])
+  upstream = (url) =>
+    url.pathname === '/.well-known/affordances.json'
+      ? Response.json({
+          routes: [{ route: '/' }, { route: '/quickstart' }, { route: '/concepts' }],
+        })
+      : new Response(page(`<h1>${url.pathname}</h1>`), { headers: { 'content-type': 'text/html' } })
+  await createLlmsFullHandler()(new Request(`${site}/llms-full.txt`))
+  expect(seen.map((call) => call.url.pathname)).toEqual([
+    '/.well-known/affordances.json',
+    '/',
+    '/quickstart',
+    '/concepts',
+    '/about',
+  ])
+})
+
+const linkOn = (rules: Header[], pathname: string) => {
+  // next applies every matching rule in order; the last value set for a key wins
+  let value: string | undefined
+  for (const rule of rules) {
+    const params = getPathMatch(rule.source)(pathname)
+    const link = params && rule.headers.find((h) => h.key.toLowerCase() === 'link')
+    if (link) value = compileNonPath(link.value, params)
+  }
+  return value
+}
+const alternate = (path: string) => `<${path}>; rel="alternate"; type="text/markdown"`
+
+test('md() points every page at its markdown twin with a Link header', async () => {
+  const rules = await md({ root: app(shop) })({} as Config).headers!()
+  expect(linkOn(rules, '/')).toBe(alternate('/index.md'))
+  expect(linkOn(rules, '/cart')).toBe(alternate('/cart.md'))
+  expect(linkOn(rules, '/products/tee')).toBe(alternate('/products/tee.md'))
+  expect(linkOn(rules, '/docs')).toBe(alternate('/docs.md'))
+  expect(linkOn(rules, '/docs/a/b')).toBe(alternate('/docs/a/b.md'))
+  expect(linkOn(rules, '/team/ada')).toBe(alternate('/team/ada.md'))
+  // a page's own twin isn't pointed at a .md.md
+  expect(linkOn(rules, '/products/tee.md')).toBeUndefined()
+  expect(linkOn(rules, '/docs/a/b.md')).toBeUndefined()
+  expect(linkOn(rules, '/api/x')).toBeUndefined()
+  expect(linkOn(rules, '/robots.txt')).toBeUndefined()
+  expect(await md({ root, link: false })({} as Config).headers!()).toEqual([])
+})
+
+test("md() adds its Link to Affordances' own, which a separate rule would replace", async () => {
+  const graph = '<?affordances=1>; rel="affordances"'
+  const user: Header[] = [
+    { source: '/', headers: [{ key: 'Link', value: graph }] },
+    { source: '/cart', headers: [{ key: 'Link', value: graph }] },
+    { source: '/docs/:slug*', headers: [{ key: 'Link', value: graph }] },
+    { source: '/:path*', headers: [{ key: 'x-other', value: '1' }] },
+    { source: '/', headers: [{ key: 'Link', value: '</font.woff2>; rel=preload' }] },
+  ]
+  const rules = await md({ root: app(shop) })({ headers: async () => user } as Config).headers!()
+  expect(linkOn(rules, '/cart')).toBe(`${graph}, ${alternate('/cart.md')}`)
+  // two rules set Link on /: the last one wins in next, so it has to carry the twin too
+  expect(linkOn(rules, '/')).toBe(`</font.woff2>; rel=preload, ${alternate('/index.md')}`)
+  // an optional catch-all's rule is split like ours, so both urls keep the graph's Link and get the twin
+  expect(linkOn(rules, '/docs')).toBe(`${graph}, ${alternate('/docs.md')}`)
+  expect(linkOn(rules, '/docs/a/b')).toBe(`${graph}, ${alternate('/docs/a/b.md')}`)
+  expect(rules).toContainEqual(user[3])
+  // the app's own rules aren't changed in place
+  expect(user[0]!.headers[0]!.value).toBe(graph)
 })
 
 test('md() composes with existing rewrites in either shape', async () => {

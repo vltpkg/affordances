@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type APIResponse, type Page } from '@playwright/test'
 
 const MEDIA_TYPE = 'application/vnd.affordances+json'
 
@@ -155,4 +155,51 @@ test('every page reads as markdown: .md urls and Accept: text/markdown', async (
     headers: { accept: 'application/vnd.affordances+json' },
   })
   expect((await graph.json()).route).toBe('/products/[slug]')
+})
+
+// every Link header on a response, however next splits them
+const links = async (response: APIResponse) =>
+  response
+    .headersArray()
+    .filter(({ name }) => name.toLowerCase() === 'link')
+    .map(({ value }) => value)
+    .join(', ')
+
+test('pages advertise their markdown twin, and the rewrites leave everything else alone', async ({
+  request,
+}) => {
+  // next keeps one value per header, so the twin is merged into the graph's own Link rather than replacing it
+  for (const [path, twin] of [
+    ['/', '/index.md'],
+    ['/cart', '/cart.md'],
+    ['/products/heavyweight-tee', '/products/heavyweight-tee.md'],
+  ] as const) {
+    const link = await links(await request.get(path))
+    expect(link).toContain('<?affordances=1>; rel="affordances"')
+    expect(link).toContain(`<${twin}>; rel="alternate"; type="text/markdown"`)
+  }
+  // the twin itself matches the page's rule's path, but isn't pointed at a .md.md
+  expect(await links(await request.get('/products/heavyweight-tee.md'))).not.toContain('.md.md')
+
+  // next matches case-insensitively, and a dot in the last segment isn't a file extension
+  const markdown = 'text/markdown; charset=utf-8'
+  expect((await request.get('/cart.MD')).headers()['content-type']).toBe(markdown)
+  const dotted = await request.get('/products/v1.2.3', { headers: { accept: 'text/markdown' } })
+  expect(dotted.headers()['content-type']).toBe(markdown)
+
+  // next's own client navigations ask for the RSC payload, never markdown
+  const rsc = await request.get('/cart', {
+    headers: { accept: 'text/markdown', rsc: '1' },
+    maxRedirects: 0,
+  })
+  expect(rsc.headers()['content-type'] ?? '').not.toContain('text/markdown')
+
+  // anything that isn't html passes through the handler intact (the stale-encoding case is a unit test: this app
+  // has no file next compresses)
+  const direct = await (await request.get('/llms.txt')).text()
+  const passed = await request.get('/llms.txt', {
+    headers: { accept: 'text/markdown', 'accept-encoding': 'gzip' },
+  })
+  expect(passed.headers()['content-type']).toBe('text/plain; charset=utf-8')
+  expect(await passed.text()).toBe(direct)
 })
