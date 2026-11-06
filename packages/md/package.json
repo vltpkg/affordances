@@ -1,6 +1,6 @@
 {
   "name": "@affordances/md",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Serve any Next.js page as clean markdown at the same URL",
   "license": "MIT",
   "repository": {
