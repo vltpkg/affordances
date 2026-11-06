@@ -32,17 +32,25 @@ export { GET } from '@affordances/md/next'
 
 ## Routing
 
-The config only adds rewrites, so nothing runs per request until an agent asks:
+The config only adds rewrites and headers, so nothing runs per request until an agent asks:
 
-- A page requested with `Accept: text/markdown` is rewritten to the handler. API routes, `/_next`, and URLs with a file extension are left alone.
-- `/blog/post.md` and `/index.md` (for `/`) are rewritten after Next's own files, so a real `.md` file in `public/` still wins.
+- A page requested with `Accept: text/markdown` is rewritten to the handler. API routes, `/_next`, and Next's own client navigations (the `RSC` header) are left alone. A dot in the path is fine, so `/version/5.3.0` and `/package/chart.js` work; a file in `public/` asked for this way comes back as itself, since the handler passes anything that isn't HTML through.
+- `/blog/post.md` and `/index.md` (for `/`) are rewritten after Next's own files, so a real `.md` file in `public/` still wins. Like all of Next's matching, `.MD` works too.
 - The handler's own request for the page carries an `x-affordances-md-render` header, which the rewrites skip, so it can't loop.
 
 Next matches `Accept` as a pattern, so a header that lists `text/markdown` with a low q-value still gets Markdown. Browsers never send it, so in practice only agents do.
 
 ## Advertise it
 
-`mdAlternate(path)` returns metadata alternates for a page's Markdown twin:
+Every page answers with a `Link` header pointing at its Markdown twin, so an agent that fetched the HTML can find it:
+
+```http
+Link: </blog/post.md>; rel="alternate"; type="text/markdown"
+```
+
+`md()` finds your pages in `app/` when Next loads the config, so a page added during `next dev` gets its header after a restart. On an Affordances site, the value is added to the graph's own `Link` header. Turn it off with `md({ link: false })`, and point it at another project root with `md({ root })`.
+
+For a `<link>` element in the HTML as well, `mdAlternate(path)` returns metadata alternates for a page's Markdown twin:
 
 ```ts title="app/blog/[slug]/page.tsx"
 import { mdAlternate } from '@affordances/md/next'
@@ -54,3 +62,19 @@ export const generateMetadata = async ({ params }) => {
 ```
 
 That renders `<link rel="alternate" type="text/markdown" href="/blog/post.md">`. For `/`, it points at `/index.md`.
+
+## With a proxy.ts
+
+Next runs `proxy.ts` (or `middleware.ts`) before any rewrite, so a proxy that treats Markdown requests differently, to skip a gate or redirect, needs the same match the rewrites make. Don't copy it: `isMdRequest` and `mdRewrite` are that match, including Next's case-insensitive paths.
+
+```ts title="proxy.ts"
+import { NextResponse, type NextRequest } from 'next/server'
+import { isMdRequest } from '@affordances/md/next'
+
+export const proxy = (request: NextRequest) => {
+  if (isMdRequest(request)) return NextResponse.next()
+  // …the rest of your proxy
+}
+```
+
+`mdRewrite(request)` returns the handler URL the request would be rewritten to, or `undefined`, for a proxy that rewrites it itself: `NextResponse.rewrite(url)`. A proxy can't see `public/`, so a real `.md` file there matches too.

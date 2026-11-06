@@ -7,7 +7,7 @@ description: An index of every page for agents, and the whole site's Markdown in
 
 ## Both files in two lines
 
-On an Affordances site, neither handler needs a page list. They read the site's own [index](/docs/reference/protocol) at `/.well-known/affordances.json` and list every route that needs no params:
+Neither handler needs a page list. They list every page that needs no params: the ones `md()` found in `app/`, and on an Affordances site, the routes in its [index](/docs/reference/protocol) at `/.well-known/affordances.json`:
 
 ```ts title="app/llms.txt/route.ts"
 export { GET } from '@affordances/md/next/llms'
@@ -19,7 +19,7 @@ export { GET } from '@affordances/md/next/llms-full'
 
 `llms.txt` then has:
 
-- the site's name from the index, as its heading;
+- the site's name from the index, as its heading (or the host, without one);
 - a line on reading any page as Markdown, linking `llms-full.txt`;
 - a line saying the site is Affordances-enabled: how to ask a page for its graph, and where the site index is. An agent that starts at `llms.txt` learns it can act on the site, not just read it;
 - a link to each page's Markdown, titled with the page's own title and described with its route's `description` from `state.ts` (written for agents), or else the page's meta description.
@@ -77,7 +77,7 @@ export const GET = createLlmsFullHandler({
 | `sections` | `(request, routes) => { title, pages }[]` | The page lists, each under a `##` heading. A page is a path, whose title and description are read from it, or `{ url, title, description }`. |
 | `full`     | `string \| false`                         | Where `llms-full.txt` is, to link it. Defaults to `/llms-full.txt`; `false` leaves the line out.                                             |
 
-`createLlmsFullHandler` takes `pages: (request, routes) => string[]`, the paths in order, defaulting to the routes. Both also take the [Markdown handler's](/docs/plugins/md/setup) `origin` and `timeout`.
+`createLlmsFullHandler` takes `pages: (request, routes) => string[]`, the paths in order, defaulting to the routes. Both also take the [Markdown handler's](/docs/plugins/md/caching#behind-a-proxy) `origin`, `timeout`, and `headers`.
 
 A page given as a path is rendered the way `/page.md` is, to read its title and description. With many pages, give `{ url, title, description }` from your content source instead: nothing is rendered, and the file comes back faster. This site does that for its sidebar.
 
@@ -86,7 +86,7 @@ A page given as a path is rendered the way `/page.md` is, to read its title and 
 - Each page goes through the same handler and converter as `/page.md`, so it matches what an agent reads one page at a time.
 - Pages are rendered without the caller's cookies: both files are the public site.
 - In `llms-full.txt`, frontmatter is stripped, and each page is headed `# Title (url)`. A page that fails is left out rather than failing the file.
-- Without an Affordances index (`@affordances/md` on its own), pass `sections` and `pages`: there are no routes to default to, and `llms.txt` leaves out the Affordances line.
+- Without an Affordances index (`@affordances/md` on its own), the pages come from `app/` alone, and `llms.txt` leaves out the Affordances line.
 - Both are cached publicly for an hour (`s-maxage=3600`).
 
 Both render by requesting the site's own pages, so they run at request time. They read the request first, which keeps Next from prerendering them during the build, when no server is running.

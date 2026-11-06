@@ -25,6 +25,10 @@
       "types": "./dist/react.d.ts",
       "default": "./dist/react.js"
     },
+    "./react/client": {
+      "types": "./dist/react-client.d.ts",
+      "default": "./dist/react-client.js"
+    },
     "./next": {
       "types": "./dist/next.d.ts",
       "default": "./dist/next.js"

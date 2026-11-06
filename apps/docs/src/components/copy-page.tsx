@@ -1,7 +1,8 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { CheckIcon, ChevronRightIcon, CircleAlertIcon, CopyIcon, TerminalIcon } from 'lucide-react'
+import { mdPath, openInHrefs, usePageMarkdown } from '@affordances/md/react/client'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,27 +38,26 @@ const MenuLink = ({
   />
 )
 
-// prompts stay short and link to the markdown twin: query strings get long fast (claude-cli:// caps q at 5,000 chars).
 // rendered only inside the open menu, so reading the origin never runs on the server
 const AiActions = ({ url }: { url: string }) => {
-  const md = `${window.location.origin}${url}.md`
-  const q = encodeURIComponent(`Read ${md} so I can ask questions about it.`)
-  // claude-cli://open starts in the home directory, so have it ask for the project first
-  const cli = encodeURIComponent(
-    `Read ${md} from the Affordances docs. Before changing anything, ask me which project to work in.`,
-  )
+  const md = new URL(mdPath(url), window.location.origin).href
+  const links = openInHrefs({
+    prompt: `Read ${md} so I can ask questions about it.`,
+    // claude-cli://open starts in the home directory, so have it ask for the project first
+    claudeCode: `Read ${md} from the Affordances docs. Before changing anything, ask me which project to work in.`,
+  })
   return (
     <>
       <DropdownMenuSeparator className="-mx-1 my-1 h-px bg-border-illustration" />
-      <MenuLink href={`https://claude.ai/new?q=${q}`}>
+      <MenuLink href={links.claude}>
         <Claude aria-hidden />
         Open in Claude
       </MenuLink>
-      <MenuLink href={`https://chatgpt.com/?hints=search&q=${q}`}>
+      <MenuLink href={links.chatgpt}>
         <OpenAI aria-hidden />
         Open in ChatGPT
       </MenuLink>
-      <MenuLink href={`claude-cli://open?q=${cli}`} external={false}>
+      <MenuLink href={links.claudeCode} external={false}>
         <TerminalIcon aria-hidden />
         Open in Claude Code
       </MenuLink>
@@ -71,23 +71,8 @@ const AiActions = ({ url }: { url: string }) => {
 export const CopyPage = ({ url }: { url: string }) => {
   const { copied, copy } = useCopy(1500)
   const [failed, setFailed] = useState(false)
-  const markdown = useRef<Promise<string>>(null)
-
-  // fetch on hover/focus so the copy only awaits an already-settled promise;
-  // Safari drops clipboard writes that happen too long after the click.
-  // a failed fetch is forgotten, so the next hover or click retries instead of reusing it
-  const load = () =>
-    (markdown.current ??= fetch(`${url}.md`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`${url}.md: ${res.status}`)
-        return res.text()
-      })
-      .catch((error: unknown) => {
-        markdown.current = null
-        throw error
-      }))
-  // the click reports a failure; a failed preload has nobody to tell
-  const preload = () => void load().catch(() => {})
+  // fetched on hover/focus, so the click's clipboard write comes soon enough for Safari
+  const { load, preload } = usePageMarkdown(url)
   const copyPage = () => {
     setFailed(false)
     load().then(copy, () => setFailed(true))
@@ -140,7 +125,7 @@ export const CopyPage = ({ url }: { url: string }) => {
           sideOffset={8}
           className="z-50 w-auto min-w-52 rounded-xl bg-card p-1 shadow-lg ring-1 shadow-black/6.5 ring-border-illustration"
         >
-          <MenuLink href={`${url}.md`}>
+          <MenuLink href={mdPath(url)}>
             <Markdown aria-hidden />
             View as Markdown
           </MenuLink>
