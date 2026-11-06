@@ -9,7 +9,8 @@ concurrency: release
 
 jobs:
   # Pending changesets on main -> open/update the "Release" PR (bumps versions, writes CHANGELOGs).
-  # No pending changesets (i.e. that PR was just merged) -> publish anything not yet on npm.
+  # No pending changesets (i.e. that PR was just merged) -> publish anything not yet on npm,
+  # then create a GitHub Release per published package from its CHANGELOG.
   npm:
     # the Run workflow button can pick any branch; only ever release from main
     if: github.ref == 'refs/heads/main'
@@ -19,7 +20,7 @@ jobs:
       pull-requests: write
       id-token: write
     outputs:
-      released: ${{ steps.changesets.outputs.hasChangesets == 'false' }}
+      released: ${{ steps.changesets.outputs.published }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -33,11 +34,9 @@ jobs:
         with:
           title: Release
           commit: Release
+          publish: vlr release
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_WORKFLOW_TOKEN }}
-
-      - if: steps.changesets.outputs.hasChangesets == 'false'
-        run: vlr build && scripts/publish.sh
 
   vlt:
     needs: npm
@@ -50,7 +49,7 @@ jobs:
           node-version: 24
       - run: npm install -g vlt
       - run: vlt install --frozen-lockfile
-      - run: vlr build && scripts/publish.sh
+      - run: vlr release
         env:
           VLT_REGISTRY: https://registry.vlt.io/affordances/main/
           VLT_TOKEN: ${{ secrets.VLT_TOKEN }}
