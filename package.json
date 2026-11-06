@@ -10,6 +10,8 @@
     "build": "vlr --recursive --if-present --bail build",
     "test": "vlr --recursive --if-present --bail test",
     "typecheck": "vlr --recursive --if-present --bail typecheck",
+    "wipe": "vlt query ':root, :workspace' --view=json | jq -r '.[].to.location + \"/node_modules\"' | sort -u | xargs -n1 rm -rf --",
+    "clean": "rm vlt-lock.json && vlr wipe",
     "lint": "oxlint",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
