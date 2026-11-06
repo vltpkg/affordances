@@ -1,0 +1,63 @@
+---
+title: Copy Page and Open in
+description: A hook that fetches a page's Markdown for a Copy Page button, and links that open it in Claude, ChatGPT, or Claude Code.
+---
+
+A page whose Markdown is one request away can offer it to people too: a button that copies the page for pasting into a chat, and links that open a chat already reading it. `@affordances/md/react/client` has the parts that don't depend on your design system. The menu and its labels are yours.
+
+## Copy Page
+
+`usePageMarkdown(path)` returns `load`, which fetches the page's Markdown twin (`/blog/post.md`, or `/index.md` for `/`), and `preload`, which starts it early:
+
+```tsx title="components/copy-page.tsx"
+'use client'
+
+import { usePageMarkdown } from '@affordances/md/react/client'
+
+export const CopyPage = ({ path }: { path: string }) => {
+  const { load, preload } = usePageMarkdown(path)
+  return (
+    <button
+      onPointerEnter={preload}
+      onFocus={preload}
+      onClick={() => load().then((markdown) => navigator.clipboard.writeText(markdown))}
+    >
+      Copy Page
+    </button>
+  )
+}
+```
+
+- **Preload on hover and focus.** Safari drops a clipboard write that happens too long after the click, so the click should only await a fetch that has already finished.
+- **One fetch per path.** `load` and `preload` share it. A failed fetch is forgotten, so the next hover or click tries again; `load` rejects with the error, and `preload` stays quiet.
+- **Only Markdown.** A response that isn't `text/markdown`, such as a sign-in page, is refused rather than copied.
+- **The page as the person sees it.** It fetches with the browser's default `credentials: 'same-origin'`, which also gets past a protected preview's login. Pass `usePageMarkdown(path, { credentials: 'omit' })` to copy the public page an agent reading the URL would get.
+
+## Open in
+
+`openInHrefs({ prompt })` builds links that start a chat with a prompt:
+
+```tsx
+import { mdPath, openInHrefs } from '@affordances/md/react/client'
+
+const md = new URL(mdPath(path), window.location.origin).href
+const links = openInHrefs({
+  prompt: `Read ${md} so I can ask questions about it.`,
+  // claude-cli://open starts in the home directory, so ask for the project first
+  claudeCode: `Read ${md}. Before changing anything, ask me which project to work in.`,
+})
+
+<a href={links.claude}>Open in Claude</a>
+<a href={links.chatgpt}>Open in ChatGPT</a>
+<a href={links.claudeCode}>Open in Claude Code</a>
+```
+
+| Link         | Opens                                                        |
+| ------------ | ------------------------------------------------------------ |
+| `claude`     | `https://claude.ai/new?q=…`                                  |
+| `chatgpt`    | `https://chatgpt.com/?hints=search&q=…`                      |
+| `claudeCode` | `claude-cli://open?q=…`, with its own prompt when it's given |
+
+Link the Markdown twin in the prompt rather than pasting the page: `claude-cli://open` takes at most 5,000 characters (`OPEN_IN_MAX`), and a longer prompt is cut there. The web links take the whole prompt.
+
+This site's Copy Page menu, at the top of every docs page, is built from both.
