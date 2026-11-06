@@ -9,7 +9,7 @@
     "directory": "packages/md"
   },
   "bin": {
-    "affordances-md": "./dist/cli.js"
+    "affordances-md": "dist/cli.js"
   },
   "files": [
     "dist"
