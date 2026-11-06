@@ -53,6 +53,14 @@ const mode = (node: Element) =>
       ? 'skip'
       : undefined
 
+// what an icon or avatar link (an image without alt) is called: its aria-label, then its title
+const linkLabel = (a: Element) =>
+  String(a.properties.ariaLabel ?? '').trim() || String(a.properties.title ?? '').trim()
+
+// a link with nothing to read: no text, no described image, no label
+const nameless = (a: Element) =>
+  !toString(a).trim() && !select('img[alt]:not([alt=""])', a) && !linkLabel(a)
+
 // drop what never belongs (scripts, controls, comments) and apply skip/text/only markers, in place
 const prune = (parent: HastRoot | Element) => {
   parent.children = parent.children.flatMap((child): ElementContent[] => {
@@ -85,6 +93,8 @@ const prune = (parent: HastRoot | Element) => {
       // hidden from people means hidden from agents, unless it was marked for them
       return []
     prune(child)
+    // gone before the spacing below, so it leaves no gap
+    if (child.tagName === 'a' && nameless(child)) return []
     return [child]
   })
   // links laid out side by side with css gaps have no text between them; give them a space
@@ -288,7 +298,14 @@ const link: Handle = (state, node, parent) => {
   if (!href || href === '#' || /^javascript:/i.test(href)) return children
   // a heading's link to its own anchor (the usual self-link) is the heading, not a link
   if (href.startsWith('#') && isElement(parent) && /^h[1-6]$/.test(parent.tagName)) return children
-  return { type: 'link', url: href, title: (node.properties.title as string) ?? null, children }
+  const title = (node.properties.title as string) ?? null
+  if (!children.some((child) => child.type !== 'text' || child.value.trim())) {
+    // an icon or avatar link reads as its label; prune dropped those without one
+    const name = linkLabel(node)
+    if (!name) return
+    return { type: 'link', url: href, title, children: [{ type: 'text', value: name }] }
+  }
+  return { type: 'link', url: href, title, children }
 }
 
 const img: Handle = (_, node) => {
