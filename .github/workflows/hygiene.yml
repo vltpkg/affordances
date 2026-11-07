@@ -32,7 +32,7 @@ jobs:
           node-version: 24
       - run: npm install -g vlt
       - run: vlt install --frozen-lockfile
-      - run: vlr changeset status --since=origin/main
+      - run: vlr changeset status -- --since=origin/main
 
   lint:
     runs-on: ubuntu-latest
