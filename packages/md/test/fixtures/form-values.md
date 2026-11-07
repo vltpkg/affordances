@@ -8,7 +8,7 @@ url: "https://shop.test/page"
 **Form**
 
 - Display name: Acme Inc
-- Contact email (email): ops\@acme.test
+- Contact email (email): ops@acme.test
 - Region (select): Europe
 - Time zone (select): UTC
 - Profile: Public profile (selected)

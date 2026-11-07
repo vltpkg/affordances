@@ -222,7 +222,7 @@ test('a secret is told apart from a field that only shares a word with one', () 
     expect({ label, shown: markdown.includes(`VALUE-${i}\n`) }).toEqual({ label, shown: false })
   for (const [i, label] of shown.entries()) expect(markdown).toContain(`${label}: VALUE-${i + 100}`)
   expect(markdown).not.toContain('hunter2')
-  expect(markdown).toContain('Homepage: https\\://shop.test/about')
+  expect(markdown).toContain('Homepage: https://shop.test/about')
 })
 
 test('never outputs values, tokens, scripts, comments, or data attributes', () => {
@@ -255,6 +255,8 @@ test('never outputs values, tokens, scripts, comments, or data attributes', () =
     'UPPER-PW-LEAK',
     'HIDDEN-LEAK',
     '4111111111111111',
+    // vlt-settings: a select whose label says it's a secret
+    'dk_live_LEAK',
   ])
     expect(all).not.toContain(secret)
 })
