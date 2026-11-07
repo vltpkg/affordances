@@ -1,13 +1,14 @@
-import { htmlToMarkdown } from '../convert/index.ts'
+import { htmlToMarkdown, yaml } from '../convert/index.ts'
 import { mdPath } from '../path.ts'
 import {
   builtLiteral,
   builtPages,
   LITERAL_ENV,
   ROUTES_ENV,
-  scanPages,
+  scanApp,
   sourceRegex,
   toSource,
+  writeMarkdownRoutes,
 } from './routes.ts'
 
 export { mdPath }
@@ -25,6 +26,11 @@ export type Config = {
   rewrites?: () => Promise<unknown> | unknown
   headers?: () => Promise<Header[]> | Header[]
   env?: Record<string, string | undefined>
+  // the slice md() touches; as loose as next's own type (an interface with no index signature), so a NextConfig fits
+  turbopack?: { resolveAlias?: Record<string, unknown> }
+  // typed loosely: its context drags in all of NextConfig, which two copies of next don't agree on
+  // oxlint-disable-next-line no-explicit-any
+  webpack?: ((config: any, context: any) => any) | null
 }
 
 const accepts: Has[] = [{ type: 'header', key: 'accept', value: '.*text/markdown.*' }]
@@ -217,8 +223,9 @@ export type MdOptions = {
 export const md =
   ({ root = process.cwd(), link = true, literalMd = [] }: MdOptions = {}) =>
   <C extends Config>(config: C): C => {
-    // read once, when next loads its config; a page added during next dev shows up after a restart
-    const pages = scanPages(root)
+    // read once, when next loads its config; a page or markdown.ts added during next dev shows up after a restart
+    const { pages, markdown } = scanApp(root)
+    const generated = writeMarkdownRoutes(root, markdown)
     // a source next would reject throws here, not on the first request
     for (const source of literalMd) sourceRegex(source)
     return {
@@ -252,6 +259,23 @@ export const md =
         const user = (await config.headers?.()) ?? []
         return link ? withAlternates(user, pages) : user
       },
+      // the handler imports @affordances/md/routes; point it at this app's generated one
+      ...(generated && {
+        turbopack: {
+          ...config.turbopack,
+          // turbopack takes a path relative to the project (md()'s root), not an absolute one, nor one from the cwd,
+          // which differs when next runs another directory (next dev apps/web)
+          resolveAlias: {
+            ...config.turbopack?.resolveAlias,
+            '@affordances/md/routes': `./${process.getBuiltinModule('node:path').relative(root, generated)}`,
+          },
+        },
+        // oxlint-disable-next-line no-explicit-any
+        webpack: (webpack: any, context: any) => {
+          webpack.resolve.alias['@affordances/md/routes'] = generated
+          return config.webpack ? config.webpack(webpack, context) : webpack
+        },
+      }),
     }
   }
 
@@ -437,7 +461,7 @@ const pageUrl = (request: Request, options: MdHandlerOptions, path: string) => {
 // renders the page as html the normal way (real RSC, Suspense, auth), then converts it
 const convertPage =
   (options: MdHandlerOptions) =>
-  async (request: Request, pagePath: string): Promise<Response> => {
+  async (request: Request, pagePath: string, direct: boolean): Promise<Response> => {
     const { timeout = TIMEOUT, maxBytes = 6 * 1024 * 1024, append } = options
     if (request.headers.has(RENDER_HEADER)) return fail(508, 'Loop detected')
 
@@ -457,6 +481,14 @@ const convertPage =
         (await passPage(request, target, options)) ??
         fail(504, `${target.pathname} took longer than ${timeout}ms to render`)
       )
+    // the route's own markdown.ts, when it has one and gives something, instead of rendering the page
+    // only for a request that came in at the page's own url (/x.md, or /x with Accept), the url proxy.ts gated. one
+    // made straight to the handler's url (/api/affordances/md/x) skipped a page-scoped gate, so it gets the html render,
+    // which goes through the proxy at the page's url
+    const authored = direct
+      ? undefined
+      : await authoredMarkdown(request, target, append, negotiated)
+    if (authored) return authored
     const headers = new Headers()
     for (const name of FORWARD) {
       const value = request.headers.get(name)
@@ -590,16 +622,18 @@ export const createMdHandler = (options: MdHandlerOptions = {}) => {
   const convert = convertPage(options)
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url)
-    // a rewritten request keeps its original url in next (/blog/post.md, or /blog/post with Accept)
+    // a rewritten request keeps its original url in next (/blog/post.md, or /blog/post with Accept); one made straight
+    // to the handler's url (/api/affordances/md/x) skipped a page-scoped proxy.ts gate, so it never gets a markdown.ts
+    const direct = handlerPrefix.test(url.pathname)
     const asked = url.pathname.replace(handlerPrefix, '') || '/'
     if (isLiteral(asked) && !request.headers.has(RENDER_HEADER)) {
       const markdown = present(request, url, accepts[0]!) && !request.headers.get('rsc')
       const found = markdown
-        ? await convert(request, asked)
+        ? await convert(request, asked, direct)
         : await literalPage(request, asked, options)
       if (found.status !== 404) return found
     }
-    return convert(request, mdPagePath(url.pathname))
+    return convert(request, mdPagePath(url.pathname), direct)
   }
 }
 
@@ -615,8 +649,154 @@ const literalPage = async (request: Request, page: string, options: MdHandlerOpt
   return passed ?? fail(504, `${page} took longer than ${options.timeout ?? TIMEOUT}ms to render`)
 }
 
+// app/**/markdown.ts, next to page.tsx: the page's markdown from its data, without rendering it
+export type MarkdownArgs = {
+  params: Record<string, string | string[]>
+  searchParams: URLSearchParams
+  request: Request
+}
+export type MarkdownResult =
+  | string
+  | { markdown: string; title?: string; description?: string }
+  | Response
+  | undefined
+export type Markdown = (args: MarkdownArgs) => MarkdownResult | Promise<MarkdownResult>
+export type MarkdownRoutes = Record<string, () => Promise<{ default: Markdown }>>
+
+// a route's segments ranked as next ranks them: static, then [param], then [...catchAll], then [[...optional]]
+const rank = (segment: string) =>
+  segment.startsWith('[[...') ? 3 : segment.startsWith('[...') ? 2 : segment.startsWith('[') ? 1 : 0
+const byRank = (a: string, b: string) => {
+  const [x, y] = [a.split('/').slice(1), b.split('/').slice(1)]
+  for (let i = 0; i < Math.max(x.length, y.length); i += 1) {
+    const order = rank(x[i] ?? '') - rank(y[i] ?? '')
+    if (order) return order
+  }
+  return y.length - x.length
+}
+// the route a pathname is a page of, and its params; undefined when it's none of them
+// strict, as next's own page routing is: case-sensitive, and segments compared and passed on as requested, never
+// decoded (next gives a page its params encoded too), with no empty segment (//, a trailing /). the rewrites match loosely, so /Dashboard/1.md
+// or /%64ashboard/1.md can reach the handler without a path-scoped proxy.ts matcher seeing it; those never get a
+// markdown.ts, only the html render, whose own request the proxy gates
+// a param as next gives it to the page: still encoded, in next's own encoding (x=1 is x%3D1)
+const asParam = (segment: string) => {
+  try {
+    return encodeURIComponent(decodeURIComponent(segment))
+  } catch {
+    return segment
+  }
+}
+
+const matchRoute = (ranked: string[], pathname: string) => {
+  const parts = pathname === '/' ? [] : pathname.split('/').slice(1)
+  if (parts.some((part) => !part)) return undefined
+  for (const route of ranked) {
+    const segments = route.split('/').slice(1).filter(Boolean)
+    const params: Record<string, string | string[]> = {}
+    const matched = segments.every((segment, i) => {
+      const name = segment.replace(/^\[+(?:\.\.\.)?|\]+$/g, '')
+      if (rank(segment) >= 2) {
+        const rest = parts.slice(i)
+        if (rest.length) params[name] = rest.map(asParam)
+        return rest.length > 0 || rank(segment) === 3
+      }
+      if (rank(segment) === 1) {
+        if (parts[i] === undefined) return false
+        params[name] = asParam(parts[i]!)
+        return true
+      }
+      return parts[i] === segment
+    })
+    const whole = segments.some((segment) => rank(segment) >= 2) || parts.length === segments.length
+    if (matched && whole) return { route, params }
+  }
+  return undefined
+}
+
+// md()'s pages and the markdown.ts routes, in next's order, sorted once per value of the env and the routes
+let rankedCache: { key: string; ranked: string[] } | undefined
+const rankedRoutes = (routes: MarkdownRoutes) => {
+  // spelled out: next inlines process.env.NAME, never process.env[name]
+  const key = `${process.env.AFFORDANCES_MD_ROUTES}\0${Object.keys(routes).join('\0')}`
+  if (!rankedCache || rankedCache.key !== key)
+    rankedCache = {
+      key,
+      ranked: [...new Set([...builtPages(), ...Object.keys(routes)])].toSorted(byRank),
+    }
+  return rankedCache.ranked
+}
+
+const firstHeading = (markdown: string) => /^# (.+)$/m.exec(markdown)?.[1]?.trim()
+
+// what a route's markdown.ts gives, as the handler's response: its markdown with the frontmatter, append and token
+// count a converted page gets, or its own Response. private whenever the request carried credentials, since it read
+// data as that person. undefined when there's no markdown.ts for the page, or it returned nothing
+const authoredMarkdown = async (
+  request: Request,
+  target: URL,
+  append: MdHandlerOptions['append'],
+  negotiated: boolean,
+): Promise<Response | undefined> => {
+  // never next's internals or an api route, whatever a root catch-all would match
+  if (/^\/(?:api|_next)(?:\/|$)/i.test(target.pathname)) return undefined
+  const { routes } = await import('@affordances/md/routes')
+  if (!routes) return undefined
+  // the page next would render for this url, among all of md()'s pages: a static page without a markdown.ts isn't
+  // taken over by a sibling [param] that has one
+  const found = matchRoute(rankedRoutes(routes), target.pathname)
+  if (!found || !(found.route in routes)) return undefined
+  const { default: markdown } = await routes[found.route]!()
+  const result = await markdown({
+    params: found.params,
+    searchParams: new URLSearchParams(target.search),
+    request,
+  })
+  const personal = credentialed(request.headers)
+  if (result instanceof Response) {
+    const passed = new Response(result.body, {
+      status: result.status,
+      statusText: result.statusText,
+      headers: result.headers,
+    })
+    // the author's own caching holds, but only when they set one, only at the .md url (at the page's own url,
+    // negotiated, that url serves the html too), and never for a credentialed request
+    const own = passed.headers.get('cache-control') ?? ''
+    if (personal || /private|no-store/.test(own)) passed.headers.set(PERSONAL_HEADER, '1')
+    if (personal || negotiated || !own) passed.headers.set('cache-control', 'private, no-store')
+    const vary = passed.headers.get('vary')
+    if (!vary) passed.headers.set('vary', 'Accept')
+    else if (!/(^|,)\s*accept\s*(,|$)/i.test(vary)) passed.headers.set('vary', `${vary}, Accept`)
+    return passed
+  }
+  if (result === undefined) {
+    if (process.env.NODE_ENV !== 'production')
+      console.warn(
+        `[affordances-md] ${found.route}/markdown.ts returned nothing for ${target.pathname}, so its HTML is converted`,
+      )
+    return undefined
+  }
+  const given = typeof result === 'string' ? { markdown: result } : result
+  const meta = {
+    title: given.title ?? firstHeading(given.markdown),
+    description: given.description,
+    url: target.href,
+  }
+  const page = `${yaml(meta)}${given.markdown.trim()}\n`
+  const extra = await append?.(request)
+  const body = extra ? `${page}\n${extra.trim()}\n` : page
+  return respond(body, 200, {
+    'x-affordances-tokens': String(Math.ceil(body.length / 4)),
+    link: `<${target.href}>; rel="canonical"`,
+    // it read data with whatever the request carried, which the handler can't tell a credential from (an x-api-key):
+    // never cached. an author who wants caching returns a Response with its own cache-control
+    'cache-control': 'private, no-store',
+    ...(personal && { [PERSONAL_HEADER]: '1' }),
+  })
+}
+
 // app/api/affordances/md/[[...path]]/route.ts: export { GET } from '@affordances/md/next'
-export const GET = createMdHandler()
+export const GET = /* @__PURE__ */ createMdHandler()
 
 // llms.txt and llms-full.txt. both list the pages md() found in app/ and the routes of the site's own Affordances
 // index when it serves one, which also gives the site's name and each route's description
@@ -651,21 +831,45 @@ const staticRoutes = (index?: SiteIndex) =>
     (route) => !route.includes('['),
   )
 
-// the public markdown of each page, rendered the way /page.md is, without the caller's cookies
+// the public markdown of each page: its own url asked for with Accept: text/markdown, as an anonymous agent would,
+// through the rewrites and proxy.ts, so each page renders in a request of its own. not its twin: on a literalMd route
+// /x/notes.md may be a page of its own, and the Accept form is never ambiguous. in this one, a markdown.ts reading cookies() from
+// next/headers would get the caller's, and its markdown would end up in a file cached for everyone. only the headers
+// option goes along (never our own render header, which the route answers with a 508). a page the proxy turns away
+// (a redirect to log in) is left out, not followed
 const renderPages = async (
   request: Request,
   paths: string[],
-  options: Omit<MdHandlerOptions, 'append'>,
-) => {
-  const render = createMdHandler(options)
-  return Promise.all(
+  options: LlmsFetchOptions & { headers: Headers },
+) =>
+  Promise.all(
     paths.map(async (path) => {
-      const response = await render(new Request(new URL(handlerPath(path), request.url)))
-      const ok = response.ok && response.headers.get('content-type')?.startsWith('text/markdown')
-      return { path, markdown: ok ? await response.text() : undefined }
+      // a path from the site index, pages() or sections() that starts with //host or names another origin is never
+      // fetched: the headers option (a bearer token, a bypass secret) stays on this site
+      const target = pageUrl(request, options, path)
+      if (!target) return { path, markdown: undefined }
+      try {
+        const headers = new Headers(options.headers)
+        headers.set('accept', 'text/markdown')
+        const response = await fetch(target, {
+          headers,
+          redirect: 'manual',
+          signal: AbortSignal.timeout(options.timeout ?? TIMEOUT),
+        })
+        // a page its markdown route rendered privately (with credentials of the route's own, a private page, a
+        // cookie set in answer) isn't the public view: left out, so the files stay public. negotiated markdown is
+        // private too, but only because of where it was served, so it counts
+        const ok =
+          response.ok &&
+          response.headers.get('content-type')?.startsWith('text/markdown') &&
+          !response.headers.has(PERSONAL_HEADER) &&
+          !response.headers.has('set-cookie')
+        return { path, markdown: ok ? await response.text() : undefined }
+      } catch {
+        return { path, markdown: undefined }
+      }
     }),
   )
-}
 
 // the converter's frontmatter: title, description and url, as JSON-quoted values
 const frontmatter = (markdown: string) => {
@@ -696,17 +900,20 @@ const text = (body: string, headers: Headers) =>
   new Response(body, {
     headers: {
       'content-type': 'text/plain; charset=utf-8',
-      'cache-control':
-        headers.has('cookie') || headers.has('authorization')
-          ? 'private, no-store'
-          : 'public, max-age=0, s-maxage=3600',
+      'cache-control': credentialed(headers)
+        ? 'private, no-store'
+        : 'public, max-age=0, s-maxage=3600',
     },
   })
 
 // which pages to include: yours, given the index's routes without a dynamic segment, or those routes as they are
 export type Pages = (request: Request, routes: string[]) => string[] | Promise<string[]>
 
-export type LlmsFullOptions = Omit<MdHandlerOptions, 'append'> & {
+// what the llms handlers use for their own requests. how each page renders is its markdown route's (createMdHandler's
+// options there), since each page is fetched from it
+export type LlmsFetchOptions = Pick<MdHandlerOptions, 'origin' | 'headers' | 'timeout'>
+
+export type LlmsFullOptions = LlmsFetchOptions & {
   // the paths to include, in order; defaults to every page that needs no params
   pages?: Pages
 }
@@ -733,7 +940,7 @@ export const createLlmsFullHandler =
 // a page in llms.txt: a path whose title and description come from its own markdown, or given outright
 export type LlmsLink = string | { url: string; title: string; description?: string }
 
-export type LlmsTxtOptions = Omit<MdHandlerOptions, 'append'> & {
+export type LlmsTxtOptions = LlmsFetchOptions & {
   // the `# ` heading; defaults to the site index's name
   title?: string
   // the `> ` summary under it

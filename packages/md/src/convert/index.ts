@@ -697,7 +697,8 @@ const absolutize = (tree: MdastRoot, base: string | undefined, relink: Options['
   })
 }
 
-const yaml = (data: Record<string, string | undefined>) => {
+// frontmatter, the handler's for a markdown.ts page too
+export const yaml = (data: Record<string, string | undefined>) => {
   const lines = Object.entries(data).flatMap(([key, value]) =>
     value ? [`${key}: ${JSON.stringify(value)}`] : [],
   )

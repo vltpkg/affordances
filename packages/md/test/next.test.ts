@@ -1,4 +1,13 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -23,7 +32,14 @@ import {
   rewrites,
   withMd,
 } from '../src/next/index.ts'
-import { LITERAL_ENV, ROUTES_ENV, sourceRegex } from '../src/next/routes.ts'
+import {
+  LITERAL_ENV,
+  ROUTES_ENV,
+  scanApp,
+  sourceRegex,
+  writeMarkdownRoutes,
+} from '../src/next/routes.ts'
+import { routes as authored } from './markdown-routes.ts'
 
 const site = 'https://shop.test'
 const page = (body: string, head = '<title>Tee</title>') =>
@@ -31,12 +47,24 @@ const page = (body: string, head = '<title>Tee</title>') =>
 
 let upstream: (url: URL, init: RequestInit) => Response
 let seen: { url: URL; headers: Headers }[]
+// the app's markdown route, as a request of its own: next/headers reads each request's own headers, which this
+// stands in for
+let routed: { url: URL; headers: Headers }[]
+const requestContext = new AsyncLocalStorage<Headers>()
 beforeEach(() => {
   seen = []
+  routed = []
   upstream = () =>
     new Response(page('<h1>Tee</h1><p>Boxy.</p>'), { headers: { 'content-type': 'text/html' } })
   vi.stubGlobal('fetch', async (url: URL, init: RequestInit) => {
-    seen.push({ url, headers: new Headers(init.headers) })
+    const headers = new Headers(init.headers)
+    // what the app's rewrites send to the markdown route, which next hands the url as requested; or the route's own url
+    const asked = new Request(url, { headers })
+    if (mdRewrite(asked) || new URL(url).pathname.startsWith('/api/affordances/md')) {
+      routed.push({ url: new URL(url), headers })
+      return requestContext.run(headers, () => createMdHandler()(asked))
+    }
+    seen.push({ url, headers })
     return upstream(url, init)
   })
 })
@@ -821,6 +849,528 @@ test('a literalMd source next would reject fails at config time', () => {
   }
 })
 
+// the app's markdown.ts files, as md()'s generated module would give them to the handler: the tests' routes module,
+// which vitest.config.ts aliases @affordances/md/routes to
+const clear = () => {
+  for (const route of Object.keys(authored)) delete authored[route]
+}
+afterEach(clear)
+const markdownFiles = (
+  routes: Record<
+    string,
+    (args: {
+      params: Record<string, string | string[]>
+      searchParams: URLSearchParams
+      request: Request
+    }) => unknown
+  >,
+) => {
+  const calls: { route: string; params: unknown }[] = []
+  clear()
+  Object.assign(
+    authored,
+    Object.fromEntries(
+      Object.entries(routes).map(([route, markdown]) => [
+        route,
+        async () => ({
+          default: (args: Parameters<typeof markdown>[0]) => {
+            calls.push({ route, params: args.params })
+            return markdown(args) as never
+          },
+        }),
+      ]),
+    ),
+  )
+  return calls
+}
+
+test("a route's markdown.ts gives its markdown without rendering the page", async () => {
+  const calls = markdownFiles({
+    '/blog/[slug]': ({ params, searchParams }) =>
+      `# Post ${params.slug}\n\nTab ${searchParams.get('tab')}.`,
+  })
+  const response = await createMdHandler({ append: () => '## More' })(
+    new Request(`${site}/blog/hello.md?tab=2`),
+  )
+  expect(seen).toHaveLength(0)
+  expect(calls).toEqual([{ route: '/blog/[slug]', params: { slug: 'hello' } }])
+  expect(response.status).toBe(200)
+  expect(response.headers.get('content-type')).toBe('text/markdown; charset=utf-8')
+  expect(response.headers.get('link')).toBe(`<${site}/blog/hello?tab=2>; rel="canonical"`)
+  const text = await response.text()
+  expect(text).toBe(
+    `---\ntitle: "Post hello"\nurl: "${site}/blog/hello?tab=2"\n---\n\n# Post hello\n\nTab 2.\n\n## More\n`,
+  )
+  expect(response.headers.get('x-affordances-tokens')).toBe(String(Math.ceil(text.length / 4)))
+  // it read data with whatever the request carried, which may be a key the handler can't recognise: never cached
+  // unless the author says so with a Response
+  expect(response.headers.get('cache-control')).toBe('private, no-store')
+  expect(response.headers.get('vary')).toBe('Accept')
+
+  // the Accept path reaches it too, and the request it gets is the visitor's
+  let request: Request | undefined
+  markdownFiles({
+    '/blog/[slug]': (args) => {
+      request = args.request
+      return { markdown: '# Hi', title: 'A title', description: 'About it' }
+    },
+  })
+  const asked = await handler(
+    new Request(`${site}/blog/hello`, { headers: { accept: 'text/markdown', cookie: 'sid=1' } }),
+  )
+  expect(await asked.text()).toBe(
+    `---\ntitle: "A title"\ndescription: "About it"\nurl: "${site}/blog/hello"\n---\n\n# Hi\n`,
+  )
+  expect(request!.headers.get('cookie')).toBe('sid=1')
+  expect(asked.headers.get('cache-control')).toBe('private, no-store')
+  expect(seen).toHaveLength(0)
+})
+
+test("a markdown.ts Response is passed on, kept private with credentials; undefined falls back to the page's html", async () => {
+  markdownFiles({
+    '/gone': () =>
+      new Response('# Gone\n', { status: 410, headers: { 'cache-control': 'public, max-age=60' } }),
+    '/later': () => undefined,
+  })
+  const gone = await handler(new Request(`${site}/gone.md`))
+  expect([gone.status, gone.headers.get('cache-control'), await gone.text()]).toEqual([
+    410,
+    'public, max-age=60',
+    '# Gone\n',
+  ])
+  expect(
+    (
+      await handler(new Request(`${site}/gone.md`, { headers: { authorization: 'Bearer x' } }))
+    ).headers.get('cache-control'),
+  ).toBe('private, no-store')
+  expect(seen).toHaveLength(0)
+
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  expect(await (await handler(new Request(`${site}/later.md`))).text()).toContain('# Tee')
+  expect(seen.map((call) => call.url.pathname)).toEqual(['/later'])
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining('/later/markdown.ts returned nothing'))
+  warn.mockClear()
+  vi.stubEnv('NODE_ENV', 'production')
+  await handler(new Request(`${site}/later.md`))
+  expect(warn).not.toHaveBeenCalled()
+  warn.mockRestore()
+})
+
+test('markdown.ts output is private unless its own Response says otherwise, always varies on Accept, and gets its params encoded', async () => {
+  const calls = markdownFiles({
+    '/shop/[...slug]': ({ params }) => `# ${String(params.slug)}`,
+    '/plain': () => ({ markdown: '# Plain' }),
+    '/cached': () =>
+      new Response('# Cached\n', {
+        headers: { 'cache-control': 'public, max-age=60', vary: 'Cookie' },
+      }),
+    '/bare': () => new Response('# Bare\n'),
+  })
+  // an x-api-key the handler doesn't know is a credential: still private
+  const keyed = await handler(new Request(`${site}/plain.md`, { headers: { 'x-api-key': 'k' } }))
+  expect([keyed.headers.get('cache-control'), keyed.headers.get('vary')]).toEqual([
+    'private, no-store',
+    'Accept',
+  ])
+  const cached = await handler(new Request(`${site}/cached.md`))
+  expect([cached.headers.get('cache-control'), cached.headers.get('vary')]).toEqual([
+    'public, max-age=60',
+    'Cookie, Accept',
+  ])
+  const signedIn = await handler(new Request(`${site}/cached.md`, { headers: { cookie: 'sid=1' } }))
+  expect(signedIn.headers.get('cache-control')).toBe('private, no-store')
+  const bare = await handler(new Request(`${site}/bare.md`))
+  expect([bare.headers.get('cache-control'), bare.headers.get('vary')]).toEqual([
+    'private, no-store',
+    'Accept',
+  ])
+  // a path-traversal-looking param stays encoded, as the page would get it
+  await handler(new Request(`${site}/shop/a%2F..%2F..%2Fadmin%3Fx=1.md`))
+  expect(calls.at(-1)).toEqual({
+    route: '/shop/[...slug]',
+    params: { slug: ['a%2F..%2F..%2Fadmin%3Fx%3D1'] },
+  })
+})
+
+test('markdown.ts routes match as next matches them: static before dynamic, then catch-alls', async () => {
+  const calls = markdownFiles({
+    '/': () => '# Home',
+    '/x/new': () => '# New',
+    '/x/[pkg]': () => '# Pkg',
+    '/x/[pkg]/v/[version]': () => '# Version',
+    '/docs/[[...slug]]': () => '# Docs',
+    '/[...rest]': () => '# Rest',
+  })
+  for (const path of [
+    '/index.md',
+    '/x/new.md',
+    '/x/%40babel%2Fcore.md',
+    '/x/a/v/1.0.0.md',
+    '/docs.md',
+    '/docs/a/b.md',
+    '/x/a/b.md',
+  ])
+    await handler(new Request(`${site}${path}`))
+  expect(calls).toEqual([
+    { route: '/', params: {} },
+    { route: '/x/new', params: {} },
+    // encoded, as next gives the page its params
+    { route: '/x/[pkg]', params: { pkg: '%40babel%2Fcore' } },
+    { route: '/x/[pkg]/v/[version]', params: { pkg: 'a', version: '1.0.0' } },
+    { route: '/docs/[[...slug]]', params: {} },
+    { route: '/docs/[[...slug]]', params: { slug: ['a', 'b'] } },
+    { route: '/[...rest]', params: { rest: ['x', 'a', 'b'] } },
+  ])
+  // a page without a markdown.ts renders as before, a static one included, even beside a [param] that has one
+  process.env[ROUTES_ENV] = JSON.stringify(['/about', '/x/new', '/x/[pkg]'])
+  const pkg = markdownFiles({ '/x/[pkg]': () => '# Pkg' })
+  for (const path of ['/about.md', '/x/new.md', '/x/express.md'])
+    await handler(new Request(`${site}${path}`))
+  expect(seen.map((call) => call.url.pathname)).toEqual(['/about', '/x/new'])
+  expect(pkg).toEqual([{ route: '/x/[pkg]', params: { pkg: 'express' } }])
+})
+
+test("on a literalMd route, markdown.ts's 404 for a name is what makes .md the twin suffix", async () => {
+  literally({ '/x/readme.md': 200 })
+  const calls = markdownFiles({
+    '/x/[pkg]': ({ params }) =>
+      ['express', 'readme.md'].includes(String(params.pkg))
+        ? `# ${params.pkg}`
+        : new Response(null, { status: 404 }),
+  })
+  const markdown = { accept: 'text/markdown' }
+  expect(
+    await (await handler(new Request(`${site}/x/express.md`, { headers: markdown }))).text(),
+  ).toContain('# express')
+  expect(
+    await (await handler(new Request(`${site}/x/readme.md`, { headers: markdown }))).text(),
+  ).toContain('# readme.md')
+  expect(calls.map((call) => call.params)).toEqual([
+    { pkg: 'express.md' },
+    { pkg: 'express' },
+    { pkg: 'readme.md' },
+  ])
+  expect(seen).toHaveLength(0)
+})
+
+test('on a literalMd route, markdown.ts returning undefined for a name falls back to the page, whose 404 makes it the twin', async () => {
+  literally({ '/x/readme.md': 200 })
+  const calls = markdownFiles({
+    '/x/[pkg]': ({ params }) => (params.pkg === 'express' ? '# express' : undefined),
+  })
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const response = await handler(
+    new Request(`${site}/x/express.md`, { headers: { accept: 'text/markdown' } }),
+  )
+  warn.mockRestore()
+  expect(await response.text()).toContain('# express')
+  expect(calls.map((call) => call.params)).toEqual([{ pkg: 'express.md' }, { pkg: 'express' }])
+  // the page's own html, asked for express.md, 404s
+  expect(seen.map((call) => call.url.pathname)).toEqual(['/x/express.md'])
+})
+
+test("llms-full and llms.txt render each page as an anonymous visitor, so markdown.ts never sees the caller's cookies", async () => {
+  process.env[ROUTES_ENV] = JSON.stringify(['/about', '/me'])
+  // like cookies() from next/headers: the cookie of the request it runs in
+  const cookie = () => requestContext.getStore()?.get('cookie')
+  markdownFiles({
+    '/about': () => ({ markdown: '# About us\n\nWe make tees.', title: 'About us' }),
+    '/me': () => `# Me\n\n${cookie() ? `Signed in as ${cookie()}.` : 'Not signed in.'}`,
+  })
+  upstream = () => new Response('', { status: 404 })
+  const caller = new Headers({ cookie: 'sid=ALICE-SECRET' })
+  const full = await requestContext.run(caller, () =>
+    createLlmsFullHandler()(new Request(`${site}/llms-full.txt`, { headers: caller })),
+  )
+  const text = await full.text()
+  expect(text).toContain(`# About us (${site}/about)\n\nWe make tees.`)
+  expect(text).toContain('Not signed in.')
+  expect(text).not.toContain('ALICE-SECRET')
+  expect(full.headers.get('cache-control')).toBe('public, max-age=0, s-maxage=3600')
+  // each page's own url asked for with Accept, which the rewrites and proxy.ts see like any visitor's request
+  expect(routed.map((call) => call.url.pathname)).toEqual(['/about', '/me'])
+  expect(routed.every((call) => call.headers.get('accept') === 'text/markdown')).toBe(true)
+  for (const call of routed) {
+    expect(call.headers.has('cookie')).toBe(false)
+    expect(call.headers.has(RENDER_HEADER)).toBe(false)
+  }
+
+  routed = []
+  const index = await requestContext.run(caller, () =>
+    createLlmsTxtHandler({ title: 'Shop' })(new Request(`${site}/llms.txt`, { headers: caller })),
+  )
+  expect(await index.text()).toContain(`- [About us](${site}/about.md)`)
+  expect(index.headers.get('cache-control')).toBe('public, max-age=0, s-maxage=3600')
+  expect(routed.every((call) => !call.headers.has('cookie'))).toBe(true)
+})
+
+// a markdown request's body, at any url
+const markdownAt = async (url: string, headers: Record<string, string> = {}) =>
+  (await handler(new Request(url, { headers }))).text()
+
+test("a markdown.ts Response's own caching holds only at the .md url; at the page url it's private", async () => {
+  markdownFiles({
+    '/cached': () =>
+      new Response('# Cached\n', { headers: { 'cache-control': 'public, s-maxage=3600' } }),
+  })
+  const atPage = await handler(
+    new Request(`${site}/cached`, { headers: { accept: 'text/markdown' } }),
+  )
+  expect(atPage.headers.get('cache-control')).toBe('private, no-store')
+  expect((await handler(new Request(`${site}/cached.md`))).headers.get('cache-control')).toBe(
+    'public, s-maxage=3600',
+  )
+})
+
+test('markdown.ts never runs for a path under _next or api, even reached straight', async () => {
+  process.env[ROUTES_ENV] = JSON.stringify(['/[...slug]'])
+  const calls = markdownFiles({ '/[...slug]': () => '# Caught' })
+  for (const path of ['/_next/static/x.md', '/api/x.md'])
+    await handler(new Request(`${site}${path}`))
+  expect(calls).toEqual([])
+  await handler(new Request(`${site}/guide.md`))
+  expect(calls).toHaveLength(1)
+})
+
+test('llms leaves out a page its markdown route rendered privately, so the files stay the public view', async () => {
+  process.env[ROUTES_ENV] = JSON.stringify(['/about', '/me'])
+  markdownFiles({
+    '/about': () =>
+      new Response('---\ntitle: "About"\n---\n\n# About\n\nPublic.\n', {
+        headers: {
+          'content-type': 'text/markdown; charset=utf-8',
+          'cache-control': 'public, max-age=60',
+        },
+      }),
+    // its author marks it private
+    '/me': () =>
+      new Response('---\ntitle: "Service view"\n---\n\n# Me\n\nSERVICE-ONLY\n', {
+        headers: { 'content-type': 'text/markdown; charset=utf-8', 'cache-control': 'private' },
+      }),
+  })
+  upstream = () => new Response('', { status: 404 })
+  const full = await createLlmsFullHandler()(new Request(`${site}/llms-full.txt`))
+  const text = await full.text()
+  expect(text).toContain('Public.')
+  expect(text).not.toContain('SERVICE-ONLY')
+  expect(full.headers.get('cache-control')).toBe('public, max-age=0, s-maxage=3600')
+  const index = await (
+    await createLlmsTxtHandler({ title: 'Shop' })(new Request(`${site}/llms.txt`))
+  ).text()
+  expect(index).toContain(`- [About](${site}/about.md)`)
+  // still listed, by its path: no title taken from a private render
+  expect(index).toContain(`- [/me](${site}/me.md)`)
+  expect(index).not.toContain('Service view')
+
+  // a converted page the route rendered with its own service credentials is marked personal, so llms leaves it out
+  upstream = () =>
+    new Response(page('<h1>Account</h1>'), { headers: { 'content-type': 'text/html' } })
+  const service = await createMdHandler({ headers: { cookie: 'sid=SERVICE' } })(
+    new Request(`${site}/account`, { headers: { accept: 'text/markdown' } }),
+  )
+  expect(service.headers.get('x-affordances-md-personal')).toBe('1')
+  // nor a dynamic page next marks private, no-store, rendered with no credentials at all: it's the public view
+  upstream = () =>
+    new Response(page('<h1>Dynamic</h1>'), {
+      headers: {
+        'content-type': 'text/html',
+        'cache-control': 'private, no-cache, no-store, max-age=0, must-revalidate',
+      },
+    })
+  const dynamic = await handler(
+    new Request(`${site}/dyn`, { headers: { accept: 'text/markdown' } }),
+  )
+  expect([
+    dynamic.headers.get('cache-control'),
+    dynamic.headers.has('x-affordances-md-personal'),
+  ]).toEqual(['private, no-store', false])
+  process.env[ROUTES_ENV] = JSON.stringify(['/dyn'])
+  markdownFiles({})
+  const dynamicFull = await (
+    await createLlmsFullHandler()(new Request(`${site}/llms-full.txt`))
+  ).text()
+  expect(dynamicFull).toContain(`# Dynamic (${site}/dyn)`)
+  upstream = () =>
+    new Response(page('<h1>Account</h1>'), { headers: { 'content-type': 'text/html' } })
+  // merely negotiated (private only for where it was served) isn't
+  const negotiated = await handler(
+    new Request(`${site}/account`, { headers: { accept: 'text/markdown' } }),
+  )
+  expect([
+    negotiated.headers.get('cache-control'),
+    negotiated.headers.has('x-affordances-md-personal'),
+  ]).toEqual(['private, no-store', false])
+})
+
+test("markdown.ts answers only at the page's own url, the one proxy.ts gated, matched as strictly as next routes", async () => {
+  process.env[ROUTES_ENV] = JSON.stringify(['/dashboard/[id]', '/docs/[...slug]'])
+  const calls = markdownFiles({
+    '/dashboard/[id]': ({ params }) => `# Dashboard ${params.id}\n\nSECRET`,
+    '/docs/[...slug]': () => '# Docs\n\nSECRET',
+  })
+
+  // at the page's url: /x.md, /x asked for with Accept, a percent-encoded param
+  expect(await markdownAt(`${site}/dashboard/123.md`)).toContain('SECRET')
+  expect(await markdownAt(`${site}/dashboard/123`, { accept: 'text/markdown' })).toContain('SECRET')
+  expect(await markdownAt(`${site}/dashboard/%31%32%33.md`)).toContain('# Dashboard 123')
+  expect(calls).toHaveLength(3)
+  expect(seen).toHaveLength(0)
+
+  // straight to the handler's url, which a page-scoped proxy matcher never saw: the html render, at the page's url
+  for (const url of [
+    `${site}/api/affordances/md/dashboard/123`,
+    `${site}/api/affordances/md/dashboard/123.md`,
+    `${site}/API/affordances/md/dashboard/123`,
+  ]) {
+    seen = []
+    expect(await markdownAt(url)).not.toContain('SECRET')
+    expect(seen.map((call) => call.url.pathname)).toEqual(['/dashboard/123'])
+  }
+  // urls the rewrites match but next's routing (and a proxy matcher) wouldn't call that page: never markdown.ts
+  for (const path of [
+    '/Dashboard/123.md',
+    '/DASHBOARD/123.md',
+    '/%64ashboard/123.md',
+    '/dashboard//123.md',
+    '/dashboard/123/.md',
+    '/docs//a.md',
+    '/docs/a//b.md',
+    // next's own routing isn't strict about a trailing /, but it 308s /x/ to /x before any rewrite or proxy, so a
+    // trailing / only reaches here hand-made; strict is the safe side
+    '/dashboard/123/',
+  ]) {
+    seen = []
+    expect({ path, body: await markdownAt(`${site}${path}`) }).not.toEqual({
+      path,
+      body: expect.stringContaining('SECRET'),
+    })
+    expect(seen).toHaveLength(1)
+  }
+  expect(calls).toHaveLength(3)
+})
+
+test("llms asks for each page's own url with Accept, so a literal route's x and x.md are each themselves, and skips one the proxy redirects", async () => {
+  vi.stubEnv(LITERAL_ENV, JSON.stringify(['/x/:pkg']))
+  markdownFiles({ '/': () => '# Home' })
+  process.env[ROUTES_ENV] = JSON.stringify(['/', '/x/[pkg]'])
+  // the package readme, and a package actually named readme.md
+  upstream = (url) =>
+    ['/x/readme', '/x/readme.md'].includes(url.pathname)
+      ? new Response(page(`<h1>${url.pathname}</h1>`), { headers: { 'content-type': 'text/html' } })
+      : new Response('', { status: 404 })
+  const appFetch = globalThis.fetch
+  // a proxy.ts gate, turning the anonymous request for /private away
+  vi.stubGlobal('fetch', (url: URL, init: RequestInit) =>
+    new URL(url).pathname === '/private'
+      ? Promise.resolve(new Response(null, { status: 307, headers: { location: '/login' } }))
+      : appFetch(url, init),
+  )
+  const text = await (
+    await createLlmsFullHandler({ pages: () => ['/', '/x/readme', '/x/readme.md', '/private'] })(
+      new Request(`${site}/llms-full.txt`),
+    )
+  ).text()
+  expect(routed.map((call) => call.url.pathname)).toEqual(['/', '/x/readme', '/x/readme.md'])
+  expect(text).toBe(
+    `# Home (${site}/)\n\n# /x/readme (${site}/x/readme)\n\n# /x/readme.md (${site}/x/readme.md)\n`,
+  )
+})
+
+test("llms never fetches a path that leaves the site's origin, nor sends it the headers option", async () => {
+  const bearer = { authorization: 'Bearer svc' }
+  const offsite = ['//evil.example/x', 'https://other.test/y', '/\\evil.example/z']
+  upstream = (url) =>
+    url.pathname === '/.well-known/affordances.json'
+      ? Response.json({ routes: [{ route: '//evil.example/index' }, { route: '/about' }] })
+      : new Response('', { status: 404 })
+  await createLlmsFullHandler({ headers: bearer, pages: (_, routes) => [...routes, ...offsite] })(
+    new Request(`${site}/llms-full.txt`),
+  )
+  await createLlmsTxtHandler({
+    headers: bearer,
+    sections: () => [{ title: 'Pages', pages: offsite }],
+  })(new Request(`${site}/llms.txt`))
+  const origins = [...seen, ...routed].map((call) => new URL(call.url).origin)
+  expect(new Set(origins)).toEqual(new Set([site]))
+  expect(routed.map((call) => call.url.pathname)).toEqual(['/about'])
+})
+
+test('the llms handlers take only the options they use for their own requests', () => {
+  expect(createLlmsFullHandler({ origin: site, headers: { a: 'b' }, timeout: 1 })).toBeTypeOf(
+    'function',
+  )
+  expect(createLlmsTxtHandler({ origin: site, headers: () => ({}), timeout: 1 })).toBeTypeOf(
+    'function',
+  )
+  // each page renders as its markdown route answers it, so these belong on createMdHandler there
+  // @ts-expect-error maxBytes is the route's
+  createLlmsFullHandler({ maxBytes: 1 })
+  // @ts-expect-error append is the route's
+  createLlmsTxtHandler({ append: () => '' })
+})
+
+test('md() records each markdown.ts next to a page, generates .affordances/md.ts and aliases it', async () => {
+  const project = app([
+    'app/page.tsx',
+    'app/markdown.ts',
+    'app/(shop)/products/[slug]/page.tsx',
+    'app/(shop)/products/[slug]/markdown.tsx',
+    'app/registry/[registry]/npm/package/[pkg]/page.tsx',
+    'app/registry/[registry]/npm/package/[pkg]/markdown.ts',
+    'app/orphan/markdown.ts',
+  ])
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  expect(scanApp(project).markdown).toEqual([
+    { route: '/', file: 'app/markdown' },
+    { route: '/products/[slug]', file: 'app/(shop)/products/[slug]/markdown' },
+    {
+      route: '/registry/[registry]/npm/package/[pkg]',
+      file: 'app/registry/[registry]/npm/package/[pkg]/markdown',
+    },
+  ])
+  expect(warn).toHaveBeenCalledWith(
+    expect.stringContaining('app/orphan/markdown.ts has no page.tsx'),
+  )
+  warn.mockRestore()
+
+  const config = md({ root: project })({
+    turbopack: { resolveAlias: { '@affordances/next/manifest': './.affordances/manifest.ts' } },
+    webpack: (webpack: { marked?: boolean }) => ({ ...webpack, marked: true }),
+  } as Config)
+  const generated = join(project, '.affordances', 'md.ts')
+  expect(readFileSync(generated, 'utf8'))
+    .toBe(`// generated by @affordances/md from app/**/markdown.ts; don't edit
+import type { MarkdownRoutes } from '@affordances/md/next'
+
+export const routes = {
+  "/": () => import("../app/markdown"),
+  "/products/[slug]": () => import("../app/(shop)/products/[slug]/markdown"),
+  "/registry/[registry]/npm/package/[pkg]": () => import("../app/registry/[registry]/npm/package/[pkg]/markdown"),
+} satisfies MarkdownRoutes
+`)
+  // both aliases: withAffordances' manifest and ours, sharing .affordances/
+  expect(config.turbopack!.resolveAlias).toEqual({
+    '@affordances/next/manifest': './.affordances/manifest.ts',
+    // relative to md()'s root, the project, whatever directory next runs from
+    '@affordances/md/routes': './.affordances/md.ts',
+  })
+  const webpack = config.webpack!({ resolve: { alias: {} } }, {})
+  expect(webpack).toEqual({
+    resolve: { alias: { '@affordances/md/routes': generated } },
+    marked: true,
+  })
+
+  // written only when it changed, so watchers don't loop
+  const written = statSync(generated).mtimeMs
+  writeMarkdownRoutes(project, scanApp(project).markdown)
+  expect(statSync(generated).mtimeMs).toBe(written)
+
+  // no markdown.ts: no file and no alias
+  const plain = md({ root: app(['app/page.tsx']) })({} as Config)
+  expect(plain.turbopack).toBeUndefined()
+  expect(existsSync(join(root, '.affordances'))).toBe(false)
+})
+
 test('the uppercase .MD next rewrites still finds the page', async () => {
   await handler(new Request(`${site}/pricing.MD`))
   expect(seen[0]!.url.pathname).toBe('/pricing')
@@ -892,8 +1442,10 @@ test('the llms handlers resolve headers once, send them everywhere, and stay pri
   const headers = vi.fn(() => ({ 'x-vercel-protection-bypass': 's3cret' }))
   const response = await createLlmsTxtHandler({ headers })(new Request(`${site}/llms.txt`))
   expect(headers).toHaveBeenCalledTimes(1)
-  expect(seen.length).toBeGreaterThan(1)
-  expect(seen.every((call) => call.headers.get('x-vercel-protection-bypass') === 's3cret')).toBe(
+  // the site index, and each page's markdown route; the route's own fetch of the page takes the route's options
+  const own = [...seen.filter((call) => call.url.pathname.startsWith('/.well-known')), ...routed]
+  expect(routed.length).toBeGreaterThan(1)
+  expect(own.every((call) => call.headers.get('x-vercel-protection-bypass') === 's3cret')).toBe(
     true,
   )
   expect(response.headers.get('cache-control')).toBe('public, max-age=0, s-maxage=3600')

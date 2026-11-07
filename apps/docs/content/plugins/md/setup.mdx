@@ -82,17 +82,26 @@ That renders `<link rel="alternate" type="text/markdown" href="/blog/post.md">`.
 
 ## With a proxy.ts
 
-Next runs `proxy.ts` (or `middleware.ts`) before any rewrite, so a proxy that treats Markdown requests differently, to skip a gate or redirect, needs the same match the rewrites make. Don't copy it: `isMdRequest` and `mdRewrite` are that match, including Next's case-insensitive paths.
+Next runs `proxy.ts` (or `middleware.ts`) before any rewrite, so a proxy that treats Markdown requests differently, to skip a locale redirect or an A/B rewrite, needs the same match the rewrites make. Don't copy it: `isMdRequest` and `mdRewrite` are that match, including Next's case-insensitive paths.
+
+**Never skip your auth gate for Markdown requests.** Run it first, then route Markdown:
 
 ```ts title="proxy.ts"
 import { NextResponse, type NextRequest } from 'next/server'
 import { isMdRequest } from '@affordances/md/next'
 
 export const proxy = (request: NextRequest) => {
+  // your gate, first: a Markdown request is a request for the page
+  if (!request.cookies.has('session')) return NextResponse.redirect(new URL('/login', request.url))
+  // then what's only for Markdown, such as skipping a locale redirect
   if (isMdRequest(request)) return NextResponse.next()
   // …the rest of your proxy
 }
 ```
+
+The proxy runs once, on the URL that was requested: `/dashboard/1.md`, or `/dashboard/1` with `Accept: text/markdown`. For a page converted from its HTML, the handler's own request for the page goes through the proxy again, but a route with a [`markdown.ts`](/docs/plugins/md/markdown-file) isn't rendered, so that first run is its only gate. With 0.1.0's recipe, which returned early for Markdown requests, remove that skip before adding a `markdown.ts`.
+
+Your proxy's matcher has to match a page's `.md` URL as well as the page. `'/dashboard/:path*'` covers `/dashboard/123.md`, but `'/dashboard/:id(\\d+)'` doesn't: the `.md` URL slips past the gate. Add `'/dashboard/:id(\\d+).md'` to the matcher, or run the gate-first recipe above with no `matcher` at all. The handler never runs a `markdown.ts` for a request made straight to its own URL (`/api/affordances/md/…`), which a proxy matcher scoped to your pages wouldn't see; that gets the page's HTML render, gated at the page's URL.
 
 `mdRewrite(request)` returns the handler URL the request would be rewritten to, or `undefined`, for a proxy that rewrites it itself: `NextResponse.rewrite(url)`. A proxy can't see `public/`, so a real `.md` file there matches too.
 

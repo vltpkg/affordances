@@ -71,6 +71,24 @@ Without markers, the converter uses `<main>` (or `[role=main]`); failing that, i
 
 `htmlToMarkdown(html, options)` from `@affordances/md` is the converter on its own: pure and deterministic, with no React or Next.
 
+## markdown.ts
+
+A route can give its Markdown from its data instead of its rendered HTML: put a `markdown.ts` next to its `page.tsx`.
+
+```ts
+// app/products/[slug]/markdown.ts
+import type { MarkdownArgs } from '@affordances/md/next'
+
+export default async function markdown({ params, searchParams, request }: MarkdownArgs) {
+  const product = await api.products.get(String(params.slug))
+  return { title: product.name, markdown: `# ${product.name}\n\n${product.description}` }
+}
+```
+
+It returns a string, `{ markdown, title?, description? }` (the handler adds the frontmatter, runs `append`, and counts tokens), a `Response` (sent as it is), or `undefined` (the page's HTML is converted as usual; development logs a warning). `md()` finds each `markdown.ts` next to a page, writes `.affordances/md.ts`, and aliases `@affordances/md/routes` to it; adding one in `next dev` needs a restart.
+
+**It doesn't render the page, so auth checks in a layout or page don't run for it.** Your `proxy.ts` runs once, on the requested URL, so never skip its gate for markdown requests (0.1.0's recipe did; remove that before adding a `markdown.ts`). A request straight to the handler's URL, or at a URL Next wouldn't route to the page, never runs `markdown.ts`. Read data only through fetchers the API authorizes with the request's cookies or token, so it shows only what that person could see. With credentials, the response is always `private, no-store`.
+
 ## Caching and privacy
 
 Markdown rendered with the caller's cookies or authorization, or from a page that is `private`/`no-store` or sets cookies, is sent as `private, no-store`. Otherwise it mirrors the page's `cache-control`.

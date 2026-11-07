@@ -11,5 +11,8 @@ export default defineConfig({
     'next-llms': 'src/next/llms.ts',
     'next-llms-full': 'src/next/llms-full.ts',
     cli: 'src/cli.ts',
+    routes: 'src/next/markdown-routes.ts',
   },
+  // the handler's routes import stays a package import, so the app's alias can replace it
+  external: ['@affordances/md/routes'],
 })

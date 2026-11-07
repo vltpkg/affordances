@@ -1,4 +1,13 @@
 {
   "title": "Markdown",
-  "pages": ["setup", "markers", "conversion", "caching", "llms", "page-actions", "converter"]
+  "pages": [
+    "setup",
+    "markers",
+    "conversion",
+    "markdown-file",
+    "caching",
+    "llms",
+    "page-actions",
+    "converter"
+  ]
 }
