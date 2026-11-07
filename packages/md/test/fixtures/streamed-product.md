@@ -27,4 +27,4 @@ Size L is sold out. 3 left in XL.
 
 **Care**: Cold wash
 
-**SKU**: TEE-BLK-STEE-BLK-MTEE-BLK-LTEE-BLK-XL
+**SKU**: TEE-BLK-S TEE-BLK-M TEE-BLK-L TEE-BLK-XL

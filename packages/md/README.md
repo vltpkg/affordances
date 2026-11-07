@@ -62,7 +62,9 @@ Markers render `<affordances-md style="display:contents">`, so they don't affect
 
 Without markers, the converter uses `<main>` (or `[role=main]`); failing that, it uses the body minus `nav`, `header`, `footer`, `aside`, dialogs, and hidden content.
 
-- **Forms:** listed as the fields they ask for, with radio groups labelled by their legend. Values, hidden inputs, and tokens are never output.
+- **Forms:** listed as the fields they ask for, with radio groups labelled by their legend. Values, hidden inputs, and tokens are never output, unless the form opts in with `data-affordances-md="values"` (a settings page). Then each field's value is listed, except for hidden, password, and secret-looking fields.
+- **Cleanups:** skeleton tables (no cell text, or a header over empty rows) are dropped, a run of the same link becomes one, and inline elements spaced only by CSS get a space between words.
+- **Twin links:** in the handler's markdown, links to the site's own pages (the ones `md()` found) point at their `.md` twins, keeping query and hash; other origins, `#fragments`, files and API routes are left alone. `createMdHandler({ linkTwins: false })` turns it off, and `htmlToMarkdown(html, { link })` takes the hook directly.
 - **Never output:** buttons, scripts, styles, comments, and `data-*` attributes.
 - **Frontmatter:** title, description, canonical url, og:image, and lang.
 - **JSON-LD:** appended as fenced blocks.
@@ -74,7 +76,7 @@ Without markers, the converter uses `<main>` (or `[role=main]`); failing that, i
 Markdown rendered with the caller's cookies or authorization, or from a page that is `private`/`no-store` or sets cookies, is sent as `private, no-store`. Otherwise it mirrors the page's `cache-control`.
 
 - **Redirects:** a same-origin redirect becomes a redirect to the `.md` url. A cross-origin redirect is passed through, never followed.
-- **Limits:** a page has 10s to render (`timeout`) and at most 6 MiB of HTML (`maxBytes`).
+- **Limits:** a page has 10s to render (`timeout`) and at most 6 MiB of HTML (`maxBytes`). A page still streaming at the timeout is converted as far as it got: unresolved boundaries keep their fallback, a note says so, and the response is `private, no-store` with `x-affordances-md-partial: 1`. One that sends nothing by then is a `504`.
 - **Origin:** set `AFFORDANCES_MD_ORIGIN` when the server can't reach itself at the request's origin. A path that would leave the origin (`//host/…`) answers 400 before anything is fetched.
 - **Headers:** `createMdHandler({ headers })` adds request headers to the page fetch, e.g. `x-vercel-protection-bypass` on a protected preview.
 

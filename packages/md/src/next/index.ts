@@ -260,19 +260,94 @@ export const withMd = <C extends Config>(config: C, options?: MdOptions): C => m
 // for generateMetadata: { alternates: mdAlternate('/blog/post') }
 export const mdAlternate = (path: string) => ({ types: { 'text/markdown': mdPath(path) } })
 
+// a route md() found as a regex over a pathname: /products/[slug], /docs/[...slug], /docs/[[...slug]]
+const segmentRegex = (segment: string) => {
+  if (segment.startsWith('[[...')) return '(?:/.+)?'
+  if (segment.startsWith('[...')) return '/.+'
+  if (segment.startsWith('[')) return '/[^/]+'
+  return segment && `/${segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`
+}
+const routeRegex = (route: string) =>
+  new RegExp(`^${route.split('/').slice(1).map(segmentRegex).join('') || '/'}$`, 'i')
+
+// a same-origin link to one of md()'s pages, as that page's twin with its search and hash. other origins, api
+// routes, next's internals and links already ending in .md stay as they are, by the rewrites' own page rule, whatever
+// routes there are; without md()'s pages, every link does
+// compiled once per value of the env next inlined, not per conversion
+let pageCache: { key: string | undefined; routes: RegExp[] } | undefined
+const pageRoutes = () => {
+  // spelled out: next inlines process.env.NAME, never process.env[name]
+  const key = process.env.AFFORDANCES_MD_ROUTES
+  if (!pageCache || pageCache.key !== key) pageCache = { key, routes: builtPages().map(routeRegex) }
+  return pageCache.routes
+}
+const twinLinks = (base: URL) => {
+  const routes = pageRoutes()
+  if (!routes.length) return undefined
+  return (url: URL) => {
+    const path = url.pathname.replace(/(.)\/$/, '$1')
+    // pageRegex leaves a .md path alone, since it's already a twin, except on a literalMd route, where /x/readme.md
+    // is a page of its own and its twin is /x/readme.md.md
+    const page = path === '/' || pageRegex.test(path) || isLiteral(path)
+    if (url.origin !== base.origin || !page) return
+    if (!routes.some((route) => route.test(path))) return
+    // set on the url itself, so a path that starts with //host (/.//evil.test/x resolves to one) stays a path here
+    const twin = new URL(url)
+    twin.pathname = mdPath(path)
+    return twin.href
+  }
+}
+
 export type MdHandlerOptions = {
   // where to fetch pages from; defaults to the request's own origin, or AFFORDANCES_MD_ORIGIN behind a proxy
   origin?: string
   timeout?: number
   maxBytes?: number
-  // more headers on the handler's own fetch of the page, after the caller's forwarded ones, e.g.
+  // more headers on the handler's own fetch of the page, after the caller's forwarded ones (a cookie or authorization
+  // here only when the caller sent neither), e.g.
   // x-vercel-protection-bypass for a protected preview
   headers?: HeadersInit | ((request: Request) => HeadersInit | Promise<HeadersInit>)
   // more markdown after the page's, e.g. an Affordances graph summary
   append?: (request: Request) => Promise<string | undefined> | string | undefined
+  // links to the site's own pages (the ones md() found) point at their markdown twins, so an agent stays in markdown
+  linkTwins?: boolean
 }
 
 const FORWARD = ['cookie', 'authorization', 'accept-language']
+
+// set on markdown converted from a page that hadn't finished streaming by the timeout
+export const PARTIAL_HEADER = 'x-affordances-md-partial'
+// set on markdown that's private for a personal reason (credentials, a private page, a cookie set in answer), not just
+// because of where it was served: llms reads it to leave such a page out of its public files
+const PERSONAL_HEADER = 'x-affordances-md-personal'
+
+// the page's html as far as it streams before the deadline. undefined past maxBytes; complete is false when the
+// deadline or a broken stream cut it short
+const streamed = async (response: Response, deadline: Promise<void>, maxBytes: number) => {
+  if (!response.body) return { html: '', complete: true }
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  const late = deadline.then(() => undefined)
+  let html = ''
+  let size = 0
+  try {
+    for (;;) {
+      const chunk = await Promise.race([reader.read(), late])
+      if (!chunk) break
+      if (chunk.done) return { html: html + decoder.decode(), complete: true }
+      size += chunk.value.byteLength
+      if (size > maxBytes) {
+        void reader.cancel().catch(() => {})
+        return undefined
+      }
+      html += decoder.decode(chunk.value, { stream: true })
+    }
+  } catch {
+    // the fetch was aborted at the deadline mid-read
+  }
+  void reader.cancel().catch(() => {})
+  return { html: html + decoder.decode(), complete: false }
+}
 
 const extraHeaders = async (request: Request, headers: MdHandlerOptions['headers']) =>
   new Headers(typeof headers === 'function' ? await headers(request) : headers)
@@ -369,6 +444,12 @@ const convertPage =
     const url = new URL(request.url)
     const target = pageUrl(request, options, pagePath + url.search)
     if (!target) return fail(400, 'Not a page on this site')
+    // markdown served at a url that also serves the page's html: /x asked for with Accept, or a literalMd page whose
+    // own url ends in .md. a cache that ignores Vary (Cloudflare's Cache Everything) would serve one for the other, so
+    // none of it is ever public, on any branch. the .md twin url is its own; a direct hit is the handler's own url
+    const negotiated =
+      !handlerPrefix.test(url.pathname) &&
+      (!/\.md$/i.test(url.pathname) || pagePath === url.pathname)
     // a client navigation reaches here when a proxy.ts rewrote it (next hides its RSC header from the proxy, then
     // puts it back): it wants the page's RSC payload, so it gets that, never markdown
     if (request.headers.get('rsc'))
@@ -381,60 +462,125 @@ const convertPage =
       const value = request.headers.get(name)
       if (value) headers.set(name, value)
     }
-    for (const [name, value] of await extraHeaders(request, options.headers))
-      headers.set(name, value)
+    // the headers option's cookie and authorization (a service account's) apply only to a request that sent neither:
+    // a signed-in person's markdown is rendered as them alone, never as more than they could see. all or nothing,
+    // since an app checking a bearer first would otherwise render a cookie-signed-in person as the service
+    const anonymous = !credentialed(request.headers)
+    const optionHeaders = await extraHeaders(request, options.headers)
+    for (const [name, value] of optionHeaders)
+      if (anonymous || !CREDENTIALS.includes(name)) headers.set(name, value)
     headers.set('accept', 'text/html')
     headers.set(RENDER_HEADER, '1')
+    // whose response this is: the caller's own credentials, or the service's that stood in, whose refreshed cookie
+    // must never reach the caller
+    const callerCredentials = credentialed(request.headers)
+    const serviceCredentials = anonymous && credentialed(optionHeaders)
+
+    // one deadline for the whole render: the fetch until its headers, then the streamed body
+    const controller = new AbortController()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const deadline = new Promise<void>((resolve) => {
+      timer = setTimeout(() => {
+        controller.abort()
+        resolve()
+      }, timeout)
+    })
+    const slow = () => fail(504, `${target.pathname} took longer than ${timeout}ms to render`)
 
     let upstream: Response
     try {
-      upstream = await fetch(target, {
-        headers,
-        redirect: 'manual',
-        signal: AbortSignal.timeout(timeout),
-      })
+      upstream = await fetch(target, { headers, redirect: 'manual', signal: controller.signal })
     } catch {
-      return fail(504, `${target.pathname} took longer than ${timeout}ms to render`)
+      clearTimeout(timer)
+      return slow()
     }
 
-    // a same-origin redirect stays in markdown; one to another origin is passed on untouched, never followed
+    // a same-origin redirect stays in markdown; one to another origin is passed on untouched, never followed. a
+    // twin path that starts with //host (a return-to of /.//evil.test/x is same-origin) gets /. so a client resolves
+    // it as a path on this site, never as another site. it's cached as the page would be, and varies on Accept
     if (upstream.status >= 300 && upstream.status < 400) {
       const location = upstream.headers.get('location')
       const next = location ? new URL(location, target) : undefined
+      const twin = next && mdPath(next.pathname)
       const to =
-        next?.origin === target.origin ? `${mdPath(next.pathname)}${next.search}` : location
-      return new Response(null, { status: upstream.status, headers: to ? { location: to } : {} })
+        next?.origin === target.origin
+          ? `${twin!.startsWith('//') ? '/.' : ''}${twin}${next.search}`
+          : location
+      const redirectCache = upstream.headers.get('cache-control') ?? ''
+      const privately =
+        negotiated ||
+        callerCredentials ||
+        serviceCredentials ||
+        /private|no-store/.test(redirectCache) ||
+        upstream.headers.has('set-cookie')
+      clearTimeout(timer)
+      return new Response(null, {
+        status: upstream.status,
+        headers: {
+          ...(to && { location: to }),
+          vary: 'Accept',
+          ...(privately
+            ? { 'cache-control': 'private, no-store' }
+            : redirectCache && { 'cache-control': redirectCache }),
+        },
+      })
     }
 
     // anything else (a file in public/, json) is passed on as it came. fetch has already decoded the body, so its
     // encoding and length no longer describe it
     if (!upstream.headers.get('content-type')?.includes('text/html')) {
+      // the deadline is for rendering a page; a file streams on to its end
+      clearTimeout(timer)
       const passed = new Headers(upstream.headers)
       passed.delete('content-encoding')
       passed.delete('content-length')
+      // credentialed means private; a cookie set in answer to the headers option's credentials is the service's
+      if (serviceCredentials) passed.delete('set-cookie')
+      if (callerCredentials || serviceCredentials) passed.set('cache-control', 'private, no-store')
       return new Response(upstream.body, { status: upstream.status, headers: passed })
     }
-    if (Number(upstream.headers.get('content-length') ?? 0) > maxBytes)
-      return fail(413, 'The page is too large to convert')
-    const html = await upstream.text()
-    if (html.length > maxBytes) return fail(413, 'The page is too large to convert')
+    const tooLarge = () => fail(413, 'The page is too large to convert')
+    if (Number(upstream.headers.get('content-length') ?? 0) > maxBytes) {
+      clearTimeout(timer)
+      return tooLarge()
+    }
+    const body = await streamed(upstream, deadline, maxBytes)
+    clearTimeout(timer)
+    if (!body) return tooLarge()
+    // a page whose shell arrived is converted as far as it streamed: boundaries still loading keep their fallback
+    const partial = !body.complete
+    if (partial && !body.html.trim()) return slow()
 
-    const result = htmlToMarkdown(html, { url: target.href })
+    const result = htmlToMarkdown(body.html, {
+      url: target.href,
+      link: options.linkTwins === false ? undefined : twinLinks(target),
+    })
+    const page = partial
+      ? `${result.markdown}\n> Some of this page was still loading after ${timeout}ms and is missing or shown as its loading state.\n`
+      : result.markdown
     const extra = await append?.(request)
-    const markdown = extra ? `${result.markdown}\n${extra.trim()}\n` : result.markdown
+    const markdown = extra ? `${page}\n${extra.trim()}\n` : page
 
     // anything rendered with the caller's credentials, or that the page itself keeps private, stays private
     const cacheControl = upstream.headers.get('cache-control') ?? ''
-    const personal =
-      FORWARD.slice(0, 2).some((name) => headers.has(name)) ||
-      /private|no-store/.test(cacheControl) ||
-      upstream.headers.has('set-cookie')
+    // personal: rendered with someone's credentials (the caller's, or the route's service ones), or answered with a
+    // cookie. a credential-free render is the anonymous public view, whatever cache-control next put on it (next
+    // sends private, no-store for every dynamic render), so only this marks a page for llms to leave out
+    const personalOnly = credentialed(headers) || upstream.headers.has('set-cookie')
+    const personal = personalOnly || /private|no-store/.test(cacheControl) || negotiated
     return respond(markdown, upstream.status, {
+      // the handler forwards accept-language, so a page that varies on it varies the markdown too
+      vary: /(^|,)\s*accept-language\s*(,|$)/i.test(upstream.headers.get('vary') ?? '')
+        ? 'Accept, Accept-Language'
+        : 'Accept',
       'x-affordances-tokens': String(Math.ceil(markdown.length / 4)),
       ...(result.url && { link: `<${result.url}>; rel="canonical"` }),
-      ...(personal
+      // a partial page is never cached, so the next request gets the whole one
+      ...(personal || partial
         ? { 'cache-control': 'private, no-store' }
         : cacheControl && { 'cache-control': cacheControl }),
+      ...(partial && { [PARTIAL_HEADER]: '1' }),
+      ...(personalOnly && { [PERSONAL_HEADER]: '1' }),
     })
   }
 

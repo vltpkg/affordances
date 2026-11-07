@@ -15,6 +15,7 @@ import {
   mdAlternate,
   mdLink,
   mdPagePath,
+  PARTIAL_HEADER,
   mdRewrite,
   RENDER_HEADER,
   type Rewrite,
@@ -163,6 +164,197 @@ test('loop guard, size limit, timeout', async () => {
   )
   expect(
     (await createMdHandler({ timeout: 5 })(new Request(`${site}/api/affordances/md/slow`))).status,
+  ).toBe(504)
+})
+
+// a page that streams its shell, then never finishes: one boundary resolved, one still on its fallback
+const stalls = (chunks: string[]) => () => {
+  const encoder = new TextEncoder()
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk))
+    },
+  })
+  return new Response(body, {
+    headers: { 'content-type': 'text/html', 'cache-control': 'public, max-age=60' },
+  })
+}
+
+test('markdown served at a url that also serves html is never cached publicly, on every branch', async () => {
+  const accept = { accept: 'text/markdown' }
+  // a permanent redirect at the page url
+  upstream = () =>
+    new Response(null, {
+      status: 308,
+      headers: { location: '/login', 'cache-control': 's-maxage=31536000' },
+    })
+  expect(
+    (await handler(new Request(`${site}/public/old`, { headers: accept }))).headers.get(
+      'cache-control',
+    ),
+  ).toBe('private, no-store')
+  // the twin url is its own, so it mirrors the page
+  expect((await handler(new Request(`${site}/public/old.md`))).headers.get('cache-control')).toBe(
+    's-maxage=31536000',
+  )
+  // a page with no cache-control of its own
+  upstream = () =>
+    new Response(page('<h1>Plain</h1>'), { headers: { 'content-type': 'text/html' } })
+  expect(
+    (await handler(new Request(`${site}/plain`, { headers: accept }))).headers.get('cache-control'),
+  ).toBe('private, no-store')
+  // a literalMd page whose own url ends in .md also serves html
+  literally({ '/x/readme.md': 200 })
+  upstream = () =>
+    new Response(page('<h1>readme.md</h1>'), {
+      headers: { 'content-type': 'text/html', 'cache-control': 's-maxage=31536000' },
+    })
+  expect(
+    (await handler(new Request(`${site}/x/readme.md`, { headers: accept }))).headers.get(
+      'cache-control',
+    ),
+  ).toBe('private, no-store')
+})
+
+test("markdown follows the page's Vary on Accept-Language, since the handler forwards it", async () => {
+  upstream = () =>
+    new Response(page('<h1>Hallo</h1>'), {
+      headers: {
+        'content-type': 'text/html',
+        vary: 'RSC, Accept-Language',
+        'cache-control': 'public, max-age=60',
+      },
+    })
+  const response = await handler(
+    new Request(`${site}/hello.md`, { headers: { 'accept-language': 'de' } }),
+  )
+  expect(response.headers.get('vary')).toBe('Accept, Accept-Language')
+  upstream = () => new Response(page('<h1>Hi</h1>'), { headers: { 'content-type': 'text/html' } })
+  expect((await handler(new Request(`${site}/hello.md`))).headers.get('vary')).toBe('Accept')
+})
+
+// an upstream that redirects to location
+const redirect =
+  (location: string, headers: Record<string, string> = {}) =>
+  () =>
+    new Response(null, { status: 307, headers: { location, ...headers } })
+
+test('a same-origin redirect stays on the site in markdown, varies on Accept, and is private when credentialed', async () => {
+  // a return-to check passes /.//evil.test/x as same-origin; its twin must never read as //evil.test
+  for (const location of [
+    '/.//evil.test/x',
+    '/..//evil.test/x',
+    '/a/..//evil.test/x',
+    '/./\\evil.test/x',
+  ]) {
+    upstream = redirect(location)
+    const to = (await get('/go')).headers.get('location')!
+    expect({ location, origin: new URL(to, site).origin }).toEqual({ location, origin: site })
+  }
+  upstream = redirect('/login?next=%2Fcart', { 'cache-control': 'public, max-age=60' })
+  const plain = await get('/go')
+  expect(plain.headers.get('location')).toBe('/login.md?next=%2Fcart')
+  expect([plain.headers.get('vary'), plain.headers.get('cache-control')]).toEqual([
+    'Accept',
+    'public, max-age=60',
+  ])
+  expect((await get('/go', { cookie: 'sid=1' })).headers.get('cache-control')).toBe(
+    'private, no-store',
+  )
+  upstream = redirect('/login', { 'set-cookie': 'flash=1' })
+  expect((await get('/go')).headers.get('cache-control')).toBe('private, no-store')
+  // another origin is passed on as it came
+  upstream = redirect('https://idp.test/authorize')
+  expect((await get('/go')).headers.get('location')).toBe('https://idp.test/authorize')
+})
+
+test('markdown asked for with Accept at the page url is never cached publicly; the .md url mirrors the page', async () => {
+  upstream = () =>
+    new Response(page('<h1>Home</h1>'), {
+      headers: { 'content-type': 'text/html', 'cache-control': 'public, s-maxage=31536000' },
+    })
+  const negotiated = await handler(
+    new Request(`${site}/`, { headers: { accept: 'text/markdown' } }),
+  )
+  expect(negotiated.headers.get('cache-control')).toBe('private, no-store')
+  const twin = await handler(new Request(`${site}/index.md`))
+  expect(twin.headers.get('cache-control')).toBe('public, s-maxage=31536000')
+})
+
+test("a file passed through never carries a cookie set for the headers option's credentials, and is private when credentialed", async () => {
+  upstream = () =>
+    new Response('<rss/>', {
+      headers: [
+        ['content-type', 'application/rss+xml'],
+        ['cache-control', 'public, max-age=60'],
+        ['set-cookie', 'session=svc-refreshed'],
+      ],
+    })
+  const service = createMdHandler({ headers: { cookie: 'session=svc' } })
+  const anonymous = await service(new Request(`${site}/feed.md`))
+  expect(anonymous.headers.getSetCookie()).toEqual([])
+  expect(anonymous.headers.get('cache-control')).toBe('private, no-store')
+  const person = await handler(
+    new Request(`${site}/feed.md`, { headers: { cookie: 'session=alice' } }),
+  )
+  expect(person.headers.get('cache-control')).toBe('private, no-store')
+  const plain = await handler(new Request(`${site}/feed.md`))
+  expect([plain.headers.get('cache-control'), plain.headers.getSetCookie()]).toEqual([
+    'public, max-age=60',
+    ['session=svc-refreshed'],
+  ])
+})
+
+test('a file passed through streams to the end, however long past the timeout', async () => {
+  // a real fetch's body errors once its signal aborts
+  upstream = (_, init) => {
+    const encoder = new TextEncoder()
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        init.signal!.addEventListener('abort', () => controller.error(new Error('aborted')))
+        controller.enqueue(encoder.encode('first half, '))
+        setTimeout(() => {
+          controller.enqueue(encoder.encode('second half'))
+          controller.close()
+        }, 60)
+      },
+    })
+    return new Response(body, { headers: { 'content-type': 'application/pdf' } })
+  }
+  const response = await createMdHandler({ timeout: 20 })(new Request(`${site}/manual.pdf.md`))
+  expect(response.status).toBe(200)
+  expect(await response.text()).toBe('first half, second half')
+})
+
+test('a page still streaming at the timeout is converted as far as it got, never cached', async () => {
+  upstream = stalls([
+    '<html><head><title>Tee</title></head><body><main><h1>Tee</h1>',
+    '<!--$?--><template id="B:0"></template><p>Loading price…</p><!--/$-->',
+    '<!--$?--><template id="B:1"></template><p>Loading stock…</p><!--/$--></main>',
+    '<div hidden id="S:0"><p>$48</p></div><script>$RC("B:0","S:0")</script>',
+  ])
+  const response = await createMdHandler({ timeout: 50 })(
+    new Request(`${site}/api/affordances/md/tee`),
+  )
+  expect(response.status).toBe(200)
+  expect(response.headers.get('cache-control')).toBe('private, no-store')
+  expect(response.headers.get(PARTIAL_HEADER)).toBe('1')
+  const markdown = await response.text()
+  expect(markdown).toContain('$48')
+  expect(markdown).toContain('Loading stock…')
+  expect(markdown).not.toContain('Loading price…')
+  expect(
+    markdown
+      .trim()
+      .endsWith(
+        '> Some of this page was still loading after 50ms and is missing or shown as its loading state.',
+      ),
+  ).toBe(true)
+
+  // headers, but nothing of the page by the deadline: still too slow
+  upstream = stalls([])
+  expect(
+    (await createMdHandler({ timeout: 20 })(new Request(`${site}/api/affordances/md/tee`))).status,
   ).toBe(504)
 })
 
@@ -634,6 +826,48 @@ test('the uppercase .MD next rewrites still finds the page', async () => {
   expect(seen[0]!.url.pathname).toBe('/pricing')
 })
 
+test("the headers option's cookie and authorization apply only to a request that sent neither", async () => {
+  upstream = () =>
+    new Response(page('<h1>Account</h1>'), {
+      headers: [
+        ['content-type', 'text/html'],
+        ['set-cookie', 'session=svc-refreshed'],
+      ],
+    })
+  const service = createMdHandler({
+    headers: { cookie: 'session=svc', authorization: 'Bearer svc', 'x-bypass': 'b' },
+  })
+  const sent = async (headers: Record<string, string>) => {
+    seen = []
+    const response = await service(new Request(`${site}/account.md`, { headers }))
+    return { headers: seen[0]!.headers, response }
+  }
+  // signed in with a cookie: hers alone, and no service bearer either, which an app checking a bearer first would
+  // render her as
+  const person = await sent({ cookie: 'session=alice' })
+  expect([person.headers.get('cookie'), person.headers.get('authorization')]).toEqual([
+    'session=alice',
+    null,
+  ])
+  expect(person.headers.get('x-bypass')).toBe('b')
+  // anonymous: the service's credentials render it
+  const anonymous = await sent({})
+  expect([anonymous.headers.get('cookie'), anonymous.headers.get('authorization')]).toEqual([
+    'session=svc',
+    'Bearer svc',
+  ])
+  const bearer = await sent({ authorization: 'Bearer alice' })
+  expect([bearer.headers.get('cookie'), bearer.headers.get('authorization')]).toEqual([
+    null,
+    'Bearer alice',
+  ])
+  // every one of them is private, and markdown never carries a cookie set for anyone
+  for (const { response } of [person, anonymous, bearer]) {
+    expect(response.headers.get('cache-control')).toBe('private, no-store')
+    expect(response.headers.getSetCookie()).toEqual([])
+  }
+})
+
 test('headers adds to the page fetch, after the forwarded ones, but never replaces our own', async () => {
   await createMdHandler({ headers: { 'x-vercel-protection-bypass': 's3cret', accept: 'x' } })(
     new Request(`${site}/api/affordances/md/a`, { headers: { cookie: 'sid=1' } }),
@@ -930,4 +1164,84 @@ test('llms.txt takes your sections, mixing rendered paths and given links, witho
   expect(body).not.toContain('llms-full')
   expect(body).not.toContain('Affordances-enabled')
   expect(body).not.toContain('## Empty')
+})
+
+test("the markdown links the site's own pages to their twins, keeping search and hash", async () => {
+  process.env[ROUTES_ENV] = JSON.stringify(['/', '/blog/[slug]', '/docs/[[...slug]]', '/about'])
+  upstream = () =>
+    new Response(
+      page(`<h1>Links</h1><p>
+        <a href="/">Home</a> <a href="/blog/post?ref=1#comments">Post</a> <a href="/about/">About</a>
+        <a href="/docs">Docs</a> <a href="/docs/a/b">Deep</a> <a href="#links">Here</a>
+        <a href="/blog/post.md">Twin</a> <a href="/api/cart">API</a> <a href="/logo.png">Logo</a>
+        <a href="/blog/a/b">Not a post</a> <a href="https://other.test/about">Elsewhere</a></p>`),
+      { headers: { 'content-type': 'text/html' } },
+    )
+  const linked = await (await get('/page')).text()
+  for (const link of [
+    '[Home](https://shop.test/index.md)',
+    '[Post](https://shop.test/blog/post.md?ref=1#comments)',
+    '[About](https://shop.test/about.md)',
+    '[Docs](https://shop.test/docs.md)',
+    '[Deep](https://shop.test/docs/a/b.md)',
+    '[Here](https://shop.test/page#links)',
+    '[Twin](https://shop.test/blog/post.md)',
+    '[API](https://shop.test/api/cart)',
+    '[Logo](https://shop.test/logo.png)',
+    '[Not a post](https://shop.test/blog/a/b)',
+    '[Elsewhere](https://other.test/about)',
+  ])
+    expect(linked).toContain(link)
+
+  // off, or without md()'s pages, links are as the page has them
+  const off = await (
+    await createMdHandler({ linkTwins: false })(new Request(`${site}/page.md`))
+  ).text()
+  expect(off).toContain('[Post](https://shop.test/blog/post?ref=1#comments)')
+  delete process.env[ROUTES_ENV]
+  expect(await (await get('/page')).text()).toContain('[About](https://shop.test/about/)')
+
+  // a root catch-all matches every path, but api routes and next's internals are never pages
+  process.env[ROUTES_ENV] = JSON.stringify(['/', '/[...slug]'])
+  upstream = () =>
+    new Response(
+      page(
+        '<h1>All</h1><p><a href="/api/cart">API</a> <a href="/_next/static/x.js">Chunk</a> <a href="/guide">Guide</a> <a href="/guide.md">Twin</a></p>',
+      ),
+      { headers: { 'content-type': 'text/html' } },
+    )
+  const caught = await (await get('/page')).text()
+  expect(caught).toContain(
+    '[API](https://shop.test/api/cart) [Chunk](https://shop.test/_next/static/x.js)',
+  )
+  expect(caught).toContain('[Guide](https://shop.test/guide.md) [Twin](https://shop.test/guide.md)')
+
+  // a path that starts with //host once resolved (/.//evil.test/x) is twinned on this site, never another's
+  upstream = () =>
+    new Response(
+      page(
+        '<h1>Links</h1><p><a href="/.//evil.test/phish">A</a> <a href="/./\\evil.test/x">B</a> <a href="/a/..//evil.test/x">C</a></p>',
+      ),
+      { headers: { 'content-type': 'text/html' } },
+    )
+  const twins = await (await get('/page')).text()
+  for (const [, href] of twins.matchAll(/\]\(([^)]+)\)/g))
+    expect({ href, origin: new URL(href!).origin }).toEqual({ href, origin: site })
+})
+
+test('on a literalMd route, a link to a page named x.md is twinned like any page, as x.md.md', async () => {
+  vi.stubEnv(LITERAL_ENV, JSON.stringify(['/x/:pkg']))
+  process.env[ROUTES_ENV] = JSON.stringify(['/x/[pkg]', '/blog/[slug]'])
+  upstream = () =>
+    new Response(
+      page(
+        '<h1>Links</h1><p><a href="/x/readme.md">Readme</a> <a href="/x/express">Express</a> <a href="/blog/post.md">Post</a></p>',
+      ),
+      { headers: { 'content-type': 'text/html' } },
+    )
+  const text = await (await get('/page')).text()
+  expect(text).toContain('[Readme](https://shop.test/x/readme.md.md)')
+  expect(text).toContain('[Express](https://shop.test/x/express.md)')
+  // off a literal route, a .md link is already a twin
+  expect(text).toContain('[Post](https://shop.test/blog/post.md)')
 })

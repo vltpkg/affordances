@@ -6,10 +6,13 @@ description: The Markdown is the page that caller would see, and it's only cache
 The handler forwards the caller's `cookie`, `authorization`, and `accept-language` headers, so a signed-in agent gets the page that person would see. Everything about that response stays personal:
 
 - With a cookie or bearer token, or when the page is `private` or `no-store`, or sets a cookie, the Markdown is sent with `Cache-Control: private, no-store`.
+- Markdown served at a URL that also serves the page's HTML is `private, no-store` too, whatever it is: converted Markdown, a redirect, or what a `markdown.ts` returns. That's the page's own URL asked for with `Accept: text/markdown`, and a `literalMd` page whose own URL ends in `.md`. A cache that ignores `Vary` (Cloudflare's Cache Everything does) would serve one for the other. The `.md` twin URL is its own, so it keeps the page's `Cache-Control`.
 - Otherwise it keeps the page's own `Cache-Control`.
-- Every response has `Vary: Accept`, `X-Affordances-Tokens` with an estimate of its length in tokens, and a `Link` to the canonical page when it has one.
+- Converted Markdown has `Vary: Accept` (and `Accept-Language` too when the page varies on it, since the handler forwards the caller's language), `X-Affordances-Tokens` with an estimate of its length in tokens, and a `Link` to the canonical page when it has one.
 
-The status code is the page's. A redirect to the same site stays in Markdown (to the target's `.md`); one to another origin is passed on, never followed. A page that takes longer than 10 seconds answers `504`, and one larger than 6 MB answers `413`.
+A response the handler passes on rather than converts (a file in `public/`, JSON, a client navigation's RSC payload, a `.md`-named page's HTML) keeps the page's own headers, except that it's `private, no-store` whenever the request carried a cookie or an `authorization` header, and a cookie set in answer to the `headers` option's credentials never goes out.
+
+The status code is the page's. A redirect to the same site stays in Markdown (to the target's `.md`), varies on `Accept`, and is cached as the page would be (private when it's credentialed, private, or sets a cookie). One to another origin is passed on as it came, never followed: the agent decides whether to follow it. A page that is still streaming after 10 seconds is converted as far as it got, marked partial and never cached ([slow boundaries](/docs/plugins/md/conversion#slow-boundaries)); one that sends nothing by then answers `504`, and one larger than 6 MB answers `413`.
 
 ## Behind a proxy
 
@@ -24,11 +27,11 @@ export const GET = createMdHandler({ origin: 'http://localhost:3000', timeout: 5
 | Option     | Default       | Description                                                          |
 | ---------- | ------------- | -------------------------------------------------------------------- |
 | `origin`   | the request's | Where to fetch pages from                                            |
-| `timeout`  | `10000`       | Milliseconds before answering `504`                                  |
+| `timeout`  | `10000`       | Milliseconds before converting what has streamed, or answering `504` |
 | `maxBytes` | 6 MB          | The largest page it converts                                         |
 | `headers`  | none          | More headers on the page fetch: an object, or `(request) => headers` |
 | `append`   | none          | More Markdown after the page's, such as an actions summary           |
 
-`headers` are set after the forwarded ones, for a request the render needs that the caller didn't send, such as `x-vercel-protection-bypass` on a protected preview. A `cookie` or `authorization` added here makes the Markdown private, like the caller's own. The `llms.txt` and `llms-full.txt` handlers take it too.
+`headers` are set after the forwarded ones, for a request the render needs that the caller didn't send, such as `x-vercel-protection-bypass` on a protected preview. A `cookie` or `authorization` here applies only to a request that sent neither: a signed-in person's Markdown is rendered with their own credentials alone, never the service account's, so it never shows more than they could see, while an anonymous request renders with the service's. It's all or nothing, so a visitor carrying any cookie, even an unrelated one (analytics, consent), is rendered without the option's credentials, as if there were none; it fails closed. On a protected preview whose bypass rides on a `cookie` or `authorization` here, that visitor's Markdown may be the protection or login page rather than the content; a bypass in its own header, such as `x-vercel-protection-bypass`, isn't a credential and always applies, so use one of those for a protected preview. Either way the Markdown is private, and a cookie set in answer to the service's never goes out. Put a service account's credentials in `cookie` or `authorization`: the handler can't tell any other header (an `x-api-key`) is one, so it wouldn't keep a person's request from using it, nor treat the response as theirs. The `llms.txt` and `llms-full.txt` handlers take it too: they render anonymously, so its credentials always apply there, and the files are then `private, no-store`.
 
 A path that would leave the origin, such as one starting with `//host`, answers `400` before anything is fetched, so the caller's credentials only go to your own site.

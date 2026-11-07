@@ -11,11 +11,53 @@ Scripts, styles, SVG, media, iframes, and anything hidden from people with `hidd
 
 ## Streamed content
 
-The handler waits for the whole response. React streams each resolved `<Suspense>` boundary after the page's shell, and the converter moves each one into place, as the browser would. So data loaded behind a fallback is in the Markdown, and the fallback isn't. Content rendered only on the client, in an effect, isn't: the handler converts what the server sent.
+The handler waits for the whole response. React streams each resolved `<Suspense>` boundary after the page's shell, and the converter moves each one into place, as the browser would. So data loaded behind a fallback is in the Markdown, and the fallback isn't. Content rendered only on the client, in an effect, isn't: the handler converts what the server sent. A boundary that failed on the server, which React leaves for the client to retry, keeps its fallback.
+
+With TanStack Query, prefetch on the server without awaiting, dehydrate the pending query, and read it with `useSuspenseQuery` inside `<Suspense>`. The shell streams at once, and the data streams into its boundary, so it's in the Markdown too:
+
+```tsx title="app/products/[slug]/page.tsx"
+import {
+  defaultShouldDehydrateQuery,
+  dehydrate,
+  HydrationBoundary,
+  QueryClient,
+} from '@tanstack/react-query'
+import { Suspense } from 'react'
+import { Product } from './product' // 'use client': useSuspenseQuery({ queryKey: ['product', slug], queryFn })
+
+export default async function Page({ params }) {
+  const { slug } = await params
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      dehydrate: {
+        shouldDehydrateQuery: (query) =>
+          defaultShouldDehydrateQuery(query) || query.state.status === 'pending',
+      },
+    },
+  })
+  // not awaited: the query keeps running while the shell streams
+  void queryClient.prefetchQuery({ queryKey: ['product', slug], queryFn: () => getProduct(slug) })
+  return (
+    <HydrationBoundary state={dehydrate(queryClient)}>
+      <Suspense fallback={<p>Loading product…</p>}>
+        <Product slug={slug} />
+      </Suspense>
+    </HydrationBoundary>
+  )
+}
+```
+
+The dehydrated state travels in the page's scripts, which are never part of the Markdown.
+
+### Slow boundaries
+
+If the page is still streaming when the handler's `timeout` runs out (10 seconds by default), the handler converts what has arrived. Boundaries that resolved in time are in place, and the rest show their fallback. The Markdown ends with a note saying the page was still loading, and it's sent with `cache-control: private, no-store` and an `x-affordances-md-partial: 1` header, so a partial page is never cached. If nothing of the page has arrived by then, the answer is `504`.
 
 ## Elements
 
 - Headings, paragraphs, lists, blockquotes, tables, and rules, with GitHub-flavored Markdown for tables, strikethrough, and task lists.
+- A skeleton table, waiting on data, is dropped: one with no text in any cell, or with header text over body rows that are all empty. The header is the `<thead>`, or without one, a first row of only `<th>` cells. Any table with text in a body cell is kept.
+- Inline elements laid out side by side with CSS gaps, such as `<span>express</span><span class="ml-2">5.3.0</span>`, get a space where a letter or digit meets another: `express 5.3.0`. Where punctuation meets, as in `<span>$</span><span>48</span>`, they stay together, and so do single characters: a heading split into one `<span>` per letter stays `Hello`, an odometer's digits stay `123`. Code is left as written.
 - A heading's link to its own `#fragment` (the usual self-link) is unwrapped, so it reads `## Effects`.
 - `<details>` becomes its summary in bold followed by its content, and `<dl>` becomes `**term**: definition`.
 - Images need both an `http` or `https` `src` and alt text; without alt text, they tell an agent nothing.
@@ -33,12 +75,35 @@ export { GET } from '@affordances/md/next'
 
 ## Links
 
-Links and images get absolute URLs. A link to `#` or `javascript:` keeps only its text. Links laid out side by side, with no text between them, get a space, so they don't run together.
+Links and images get absolute URLs. A link to `#`, or to anything but `http`, `https`, `mailto`, or `tel` (such as `javascript:` or `data:`), keeps only its text, however the scheme is spelled. Links laid out side by side, with no text between them, get a space, so they don't run together. A run of the same link, with the same URL and text and only whitespace between, such as a row of avatars all labelled "View all contributors", becomes one.
+
+In the handler's Markdown, a link to one of your own pages (one `md()` found in `app/`, dynamic routes included) points at that page's Markdown twin, with its query and hash kept, so an agent that follows it stays in Markdown: `/blog/post?ref=1#comments` becomes `/blog/post.md?ref=1#comments`. Links to other sites, to a `#fragment` of the same page, to API routes and `/_next`, and links already ending in `.md` stay as they are, and so do files, unless a root catch-all route (`app/[...slug]`) matches them too: a file's URL can't be told from a page with a dot in it, so there a link to `/logo.png` becomes `/logo.png.md`, which still serves the file. Turn it off with `createMdHandler({ linkTwins: false })`. `htmlToMarkdown` takes the same hook as `link: (url) => string | undefined`, called with each link's absolute URL.
 
 ## Forms
 
-A form becomes a list of what it asks for: each field's label, with its type when it isn't text, and each choice group with its options and which are selected or unavailable. Values, placeholders, hidden inputs, and tokens never appear. The form's other text, such as hints and errors, follows the list.
+A form becomes a list of what it asks for: each field's label (its `<label>` or `aria-label`), with its type when it isn't text, and each choice group with its legend, its options, and which are selected or unavailable. A field's placeholder and `name` are never its label, so a field with neither label is left out, and so is a choice without a label. A group without a `<legend>` or an `aria-label` on its fieldset lists its options alone. Values, placeholders, hidden inputs, and tokens never appear. The form's other text, such as hints and errors, follows the list.
+
+On a settings page the values are the content. Mark the form with `data-affordances-md="values"` to include each field's current value, the selected option of each select, and the state of each checkbox:
+
+```html
+<form data-affordances-md="values">
+  <label for="name">Display name</label>
+  <input id="name" name="name" value="Acme Inc" />
+  <label for="region">Region</label>
+  <select id="region" name="region">
+    <option>United States</option>
+    <option selected>Europe</option>
+  </select>
+</form>
+```
+
+```md
+- Display name: Acme Inc
+- Region (select): Europe
+```
+
+Values appear only on forms marked this way. Even then, hidden inputs, password fields, and any field whose `name`, `id`, `autocomplete`, label, `aria-label`, or placeholder looks like a secret gives only its label (`<label>API key <input name="k"></label>` does). That's a whole word such as `cvv`, `cvc`, `ssn`, `social_security`, `jwt`, `csrf`, `dsn`, `card_number`, `credit_card`, `one-time-code`, `bearer`, `credential`, `iban`, `account_number`, `routing_number`, any key (`key`, `api_key`, `service_role_key`) but a public, primary, foreign, sort, partition or musical key and key features, a URL with credentials in it (`database_url`, `webhook_url`), or "password" in another language (`passwort`, `contraseña`, `wachtwoord`, `senha`, `пароль`, `密码`, `パスワード` and more); one ending in `secret`, `password`, `pwd`, `passcode` or `passphrase` (`webhook_secret`); `token`, `pin`, `otp`, `totp`, `mfa`, `2fa`, `seed`, `mnemonic`, `pw`, `pass` or `session` when it ends the name, has a number or version, or names the secret (`authToken`, `pin_v2`, `session_id`, but not `token_name`, `pin_to_top` or `session_title`); `recovery`, `backup`, `verification` or `security` followed by what the secret is (`recovery_phrase`, `verification_code`, but not `recovery_email`); or one of autocomplete's `cc-` card fields. A value that's a URL with a user and password (`postgres://app:pw@db`) is hidden whatever its field says. Words are matched whole, in any case or separator style, with a number as a word of its own (`cvv2`, `apiKey1`), so `pinned`, `tokenizer` and an email's `cc` still show their values. The handler already marks Markdown rendered with the caller's cookies `private, no-store`.
 
 ## The page around it
 
-At the top, YAML frontmatter carries the page's `title`, `description`, canonical `url`, `image`, and `lang`, from its metadata. If the content has no `#` heading, the title becomes one. JSON-LD scripts are appended as fenced JSON.
+At the top, YAML frontmatter carries the page's `title`, `description`, canonical `url`, `image`, and `lang`, from its metadata. If the content has no `#` heading, the title becomes one. The canonical `url` is the `<head>`'s `<link rel="canonical">`, if it's an `http` or `https` URL. JSON-LD scripts are appended as fenced JSON.
