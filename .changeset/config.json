@@ -15,5 +15,6 @@
   ],
   "access": "public",
   "baseBranch": "main",
-  "ignore": ["@affordances/ui"]
+  "ignore": ["@affordances/ui"],
+  "changedFilePatterns": ["**", "!test/**", "!README.md", "!vitest.config.ts"]
 }
