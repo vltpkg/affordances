@@ -40,6 +40,14 @@
     "./next/llms-full": {
       "types": "./dist/next-llms-full.d.ts",
       "default": "./dist/next-llms-full.js"
+    },
+    "./next/proxy": {
+      "types": "./dist/next-proxy.d.ts",
+      "default": "./dist/next-proxy.js"
+    },
+    "./routes": {
+      "types": "./dist/routes.d.ts",
+      "default": "./dist/routes.js"
     }
   },
   "scripts": {

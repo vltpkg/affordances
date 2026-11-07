@@ -1,0 +1,94 @@
+---
+title: markdown.ts
+description: Write a route's Markdown from its data, instead of converting its rendered HTML.
+---
+
+The handler normally renders a page and converts its HTML. A page whose content loads on the client, or whose HTML says less than its data, can give its Markdown directly: put a `markdown.ts` next to its `page.tsx`.
+
+```ts title="app/registry/[registry]/npm/package/[pkg]/markdown.ts"
+import type { MarkdownArgs } from '@affordances/md/next'
+import { getPackage } from '@/lib/api'
+
+export default async function markdown({ params }: MarkdownArgs) {
+  const pkg = await getPackage(String(params.registry), String(params.pkg))
+  return {
+    title: pkg.name,
+    description: pkg.description,
+    markdown: `# ${pkg.name}\n\n${pkg.description}\n\n${pkg.readme}`,
+  }
+}
+```
+
+`/registry/npm/npm/package/express.md` and `/registry/npm/npm/package/express` asked for with `Accept: text/markdown` now call it, with no render of the page. Pages without a `markdown.ts` are converted from their HTML, as before.
+
+## Authorization
+
+**`markdown.ts` doesn't render the page, so checks in its layout or page don't run for it.** A `redirect('/login')` in `layout.tsx`, or a `notFound()` in `page.tsx` for a record the person can't see, never happens on this path. Your `proxy.ts` runs once, on the URL that was requested (`/dashboard/1.md`, not the page's path), and only if its matcher covers that URL, so don't let `markdown.ts` depend on it. A matcher that names the page's exact shape (`'/dashboard/:id(\\d+)'`) misses its `.md` URL, `/dashboard/123.md`; [match that too](/docs/plugins/md/setup#with-a-proxyts), or gate with no matcher. A proxy that skips its gate for Markdown requests, as 0.1.0's setup recipe did, leaves nothing in front of `markdown.ts` at all: see [the proxy recipe](/docs/plugins/md/setup#with-a-proxyts).
+
+So `markdown.ts` must read its data through fetchers that the API itself authorizes, with the cookies or token the request carries. That's what keeps its Markdown to what that person could see on the page. `cookies()` and `headers()` from `next/headers` work in it, since it runs inside the visitor's own Markdown request, and `request` is that request:
+
+```ts
+import { cookies } from 'next/headers'
+
+export default async function markdown({ params }: MarkdownArgs) {
+  const session = (await cookies()).get('session')?.value
+  if (!session) return new Response(null, { status: 401 })
+  const order = await api.orders.get(String(params.id), { session }) // the API checks it's theirs
+  return `# Order ${order.number}\n\n…`
+}
+```
+
+What `markdown.ts` returns is `Cache-Control: private, no-store` by default, since it reads data with whatever the request carries, and the handler can't tell every credential (a cookie, a bearer token, an `x-api-key`) from a harmless header. To have a public page cached, return a `Response` with your own `Cache-Control`; it's kept at the `.md` URL, except that a request with a cookie or an `authorization` header still gets `private, no-store`. At the page's own URL (asked for with `Accept: text/markdown`) it's always `private, no-store`, since that URL serves the page's HTML too. Every response varies on `Accept`. `llms.txt` and `llms-full.txt` render each page as an anonymous visitor, in a request of its own, so what `markdown.ts` gives there is what it gives someone who isn't signed in.
+
+## Arguments
+
+- `params`: the route's params as Next gives them to the page, still URL-encoded: `{ pkg: '%40babel%2Fcore' }`, and arrays for catch-alls (`{ slug: ['a', 'b'] }`). An empty optional catch-all is left out. Decode a param yourself where you need its text, and never build a path or an API URL from a decoded one without checking it: `a%2F..%2Fadmin` decodes to `a/../admin`.
+- `searchParams`: the page URL's query, as `URLSearchParams`.
+- `request`: the visitor's request.
+
+## What it returns
+
+- **A string**: the page's Markdown. The handler adds the frontmatter every page gets (`title` from its first `# ` heading, and `url`), runs your `append`, sets `x-affordances-tokens`, and sends it `private, no-store`.
+- **`{ markdown, title?, description? }`**: the same, with the title and description given. `llms.txt` labels pages with them.
+- **A `Response`**: sent as it is, such as a 404, a redirect, or Markdown with your own caching. Without a `Cache-Control` of its own it's `private, no-store`, and it always is when the request carried a cookie or an `authorization` header. `Vary: Accept` is added.
+- **`undefined`**: the page is converted from its HTML, as if there were no `markdown.ts`. Use it to cover some cases of a route and not others. In development, the handler logs a warning naming the route, so a forgotten `return` doesn't go unnoticed.
+
+`llms.txt`, `llms-full.txt`, and Copy Page go through the same handler, so they use it too.
+
+## With TanStack Query
+
+Call the same fetcher your query uses, so the Markdown and the page read the same data:
+
+```ts title="app/products/[slug]/queries.ts"
+import { queryOptions } from '@tanstack/react-query'
+import { api } from '@/lib/api'
+
+export const productQuery = (slug: string) =>
+  queryOptions({ queryKey: ['product', slug], queryFn: () => api.products.get(slug) })
+```
+
+```ts title="app/products/[slug]/markdown.ts"
+import { QueryClient } from '@tanstack/react-query'
+import type { MarkdownArgs } from '@affordances/md/next'
+import { productQuery } from './queries'
+
+export default async function markdown({ params }: MarkdownArgs) {
+  const product = await new QueryClient().fetchQuery(productQuery(String(params.slug)))
+  return {
+    title: product.name,
+    markdown: `# ${product.name}\n\n${product.price}\n\n${product.description}`,
+  }
+}
+```
+
+A new `QueryClient` per request keeps one visitor's data out of another's.
+
+## How it's found
+
+`md()` scans `app/` when Next loads the config. It records each `markdown.ts` (or `.tsx`, `.js`) that sits next to a `page`, writes `.affordances/md.ts` with one lazy import per route, and points `@affordances/md/routes` at it for Turbopack and webpack. It works with `withMd` on its own and with `withAffordances(config, { plugins: [md()] })`, which share `.affordances/`. Add `.affordances/` to `.gitignore`.
+
+- A `markdown.ts` with no `page` next to it has no URL. It's ignored, with a warning.
+- In `next dev`, adding or removing a `markdown.ts` needs a restart, like adding a page. Edits to one reload as usual.
+- `markdown.ts` answers only at a page's own URL. A request made straight to the handler (`/api/affordances/md/…`) gets the page's HTML render, and so does a URL Next wouldn't route to that page (`/Dashboard/1.md`, `/%64ashboard/1.md`, an empty segment), since the rewrites match more loosely than Next's routing and a proxy matcher may miss it.
+- A URL matches routes the way Next matches it, case-sensitively and across all your pages: a static segment before `[param]`, before `[...catchAll]`, before `[[...optional]]`. `markdown.ts` runs only when the page Next would render is the one it sits next to, so a static `/x/new` page isn't answered by `/x/[pkg]/markdown.ts`.
+- On a [`literalMd`](/docs/plugins/md/setup#pages-whose-url-ends-in-md) route, a Markdown request for `/package/readme.md` calls `markdown.ts` with `pkg: 'readme.md'` first, and only a 404 makes `.md` the twin suffix. So for a name that doesn't exist, return `new Response(null, { status: 404 })`, or `undefined` to let the page's own `notFound()` answer; either makes it the twin. A 200 with "not found" text is a bug there: the request for the twin `/package/express.md` would get it instead of `express`'s Markdown.

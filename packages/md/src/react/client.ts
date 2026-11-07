@@ -9,6 +9,17 @@ export type PageMarkdownOptions = {
   credentials?: RequestCredentials
 }
 
+// the twin is this site's page: //evil.test/x or https://evil.test/x would copy another site's response as if it
+// were the page. outside a browser, any origin stands in for the page's
+const sameOrigin = (url: string) => {
+  const origin = globalThis.location?.origin ?? 'https://same.invalid'
+  try {
+    return new URL(url, origin).origin === origin
+  } catch {
+    return false
+  }
+}
+
 // a page's markdown twin, for a Copy Page button. call preload on hover and focus, so a click only awaits an
 // already-settled promise: Safari drops clipboard writes that happen too long after the click. a failed fetch
 // is forgotten, so the next hover or click retries instead of reusing it
@@ -20,7 +31,11 @@ export const usePageMarkdown = (
   const load = (): Promise<string> => {
     if (cached.current?.path === path) return cached.current.markdown
     const url = mdPath(path)
-    const markdown = fetch(url, { credentials })
+    const markdown = (
+      sameOrigin(url)
+        ? fetch(url, { credentials })
+        : Promise.reject(new Error(`${url}: not this site's page`))
+    )
       .then((response) => {
         if (!response.ok) throw new Error(`${url}: ${response.status}`)
         // a login page or a file passed through is not the page's markdown

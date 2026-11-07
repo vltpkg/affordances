@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+  <head>
+    <title>API keys</title>
+  </head>
+  <body>
+    <main>
+      <h1>API keys</h1>
+      <form action="/keys" method="post">
+        <label>Key <textarea name="api_key">sk-LIVE-SECRET-wrapped</textarea></label>
+        <label for="notes">Notes <textarea id="notes" name="notes">for-label-private-note</textarea></label>
+        <label>Region <select name="region"><option>United States</option><option selected>Europe</option></select></label>
+        <label>Email <input type="email" name="email" value="label-wrapped@example.com" /> <output>label-output-value</output></label>
+        <fieldset>
+          <legend>Plan <output>legend-output-value</output></legend>
+          <label><input type="radio" name="plan" value="free" /> Free</label>
+          <label><input type="radio" name="plan" value="pro" checked /> Pro</label>
+        </fieldset>
+        <button type="submit">Save</button>
+      </form>
+    </main>
+  </body>
+</html>

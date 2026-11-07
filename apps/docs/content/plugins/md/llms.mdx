@@ -77,14 +77,17 @@ export const GET = createLlmsFullHandler({
 | `sections` | `(request, routes) => { title, pages }[]` | The page lists, each under a `##` heading. A page is a path, whose title and description are read from it, or `{ url, title, description }`. |
 | `full`     | `string \| false`                         | Where `llms-full.txt` is, to link it. Defaults to `/llms-full.txt`; `false` leaves the line out.                                             |
 
-`createLlmsFullHandler` takes `pages: (request, routes) => string[]`, the paths in order, defaulting to the routes. Both also take the [Markdown handler's](/docs/plugins/md/caching#behind-a-proxy) `origin`, `timeout`, and `headers`.
+`createLlmsFullHandler` takes `pages: (request, routes) => string[]`, the paths in order, defaulting to the routes. Both also take the [Markdown handler's](/docs/plugins/md/caching#behind-a-proxy) `origin`, `timeout`, and `headers`, for the requests they make. Each page's Markdown is exactly what its Markdown route returns, so the rest (`maxBytes`, `linkTwins`, `append`, and `headers` for the page render itself) is configured on that route's `createMdHandler`. That fetch needs `md()`'s rewrites in `next.config`, or a `proxy.ts` that rewrites with `mdRewrite`.
 
 A page given as a path is rendered the way `/page.md` is, to read its title and description. With many pages, give `{ url, title, description }` from your content source instead: nothing is rendered, and the file comes back faster. This site does that for its sidebar.
 
 ## How the files are made
 
-- Each page goes through the same handler and converter as `/page.md`, so it matches what an agent reads one page at a time.
-- Pages are rendered without the caller's cookies: both files are the public site.
+- Each page is fetched at its own URL with `Accept: text/markdown`, through your rewrites and `proxy.ts` like any anonymous agent's request, so it matches what an agent reads one page at a time, a [`markdown.ts`](/docs/plugins/md/markdown-file) included. A page your proxy turns away (a redirect to log in) is left out.
+- That request carries none of the caller's cookies, and each page renders in a request of its own: both files are the public site, even for a `markdown.ts` that reads `cookies()`.
+- Both files are cached publicly (`s-maxage=3600`), so `pages` and `sections`, which get the request, must not tailor the list to the person asking.
+- They're the public view, so a page that only renders privately is left out of `llms-full.txt`, and `llms.txt` lists it by its path, with no title or description from that render. That's a page whose Markdown route rendered it with credentials (the route's own `headers` option, say), one that sets a cookie, or a `markdown.ts` `Response` marked private. A page Next sends as `private, no-store` only because it's dynamic is still in: rendered without credentials, it's the public view. If your Markdown route's `headers` option carries a service `cookie` or `authorization`, every page these files fetch renders with it, so `llms-full.txt` comes out with no pages; use a header that isn't a credential (such as `x-vercel-protection-bypass`) for that route instead.
+- A `Set-Cookie` your `proxy.ts` adds to the response comes after the handler, which can't see it, and would go out on that publicly cached file. Don't refresh session cookies on `/llms.txt` and `/llms-full.txt` in your proxy (skip those paths in its matcher).
 - In `llms-full.txt`, frontmatter is stripped, and each page is headed `# Title (url)`. A page that fails is left out rather than failing the file.
 - Without an Affordances index (`@affordances/md` on its own), the pages come from `app/` alone, and `llms.txt` leaves out the Affordances line.
 - Both are cached publicly for an hour (`s-maxage=3600`).
