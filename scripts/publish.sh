@@ -20,7 +20,8 @@ for pkg in packages/*/package.json; do
     200) echo "skip $name@$version (already on $registry)" ;;
     404) echo "publish $name@$version -> $registry"
          (cd "$(dirname "$pkg")" && vlt publish --access=public)
-         # changesets/action looks for these lines to create the GitHub Releases
+         # changesets/action pushes each "New tag:" (it must exist locally) and creates a GitHub Release for it
+         git tag "$name@$version"
          echo "New tag: $name@$version" ;;
     *)   echo "unexpected HTTP $status checking $name@$version on $registry" >&2; exit 1 ;;
   esac
