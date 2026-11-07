@@ -100,11 +100,21 @@ export const builtPages = (): string[] => strings(process.env.AFFORDANCES_MD_ROU
 const param = (name: string) => name.replace(/\W/g, '')
 
 // /products/[slug] → /products/:slug, the path-to-regexp form next's headers() matches
+// a folder name is matched as itself: path-to-regexp's own characters in it (x(.*), p:id, star*) are escaped
 export const toSource = (route: string) =>
   route
-    .replace(/\[\[\.\.\.([^\]]+)\]\]/g, (_, name: string) => `:${param(name)}*`)
-    .replace(/\[\.\.\.([^\]]+)\]/g, (_, name: string) => `:${param(name)}+`)
-    .replace(/\[([^\]]+)\]/g, (_, name: string) => `:${param(name)}`)
+    .split('/')
+    .map((segment) =>
+      segment
+        .replace(/[\\:()*+?{}]/g, '\\$&')
+        .replace(/^\[\[\.\.\.([^\]]+)\]\]$/, (_, name: string) => `:${param(name)}*`)
+        .replace(/^\[\.\.\.([^\]]+)\]$/, (_, name: string) => `:${param(name)}+`)
+        .replace(/^\[([^\]]+)\]$/, (_, name: string) => `:${param(name)}`),
+    )
+    .join('/')
+
+// a source's literal text, its escapes undone: a header value's Link path
+export const unescapeSource = (source: string) => source.replace(/\\(.)/g, '$1')
 
 // md({ literalMd }): routes whose own urls may end in .md, passed to the handlers the same way
 export const LITERAL_ENV = 'AFFORDANCES_MD_LITERAL'

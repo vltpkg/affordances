@@ -1,26 +1,47 @@
 import { htmlToMarkdown, yaml } from '../convert/index.ts'
 import { mdPath } from '../path.ts'
+import { mdPagePath } from './proxy.ts'
 import {
-  builtLiteral,
   builtPages,
   LITERAL_ENV,
   ROUTES_ENV,
   scanApp,
   sourceRegex,
   toSource,
+  unescapeSource,
   writeMarkdownRoutes,
 } from './routes.ts'
+import {
+  accepts,
+  apiRoute,
+  handlerPrefix,
+  isLiteral,
+  LINK,
+  MD_PATH,
+  notOursOrRsc,
+  pageRegex,
+  present,
+  RENDER_HEADER,
+  rewrites,
+  type Rewrite,
+  type Rewrites,
+} from './rules.ts'
 
-export { mdPath }
+// the proxy side, implemented once in ./proxy.ts (@affordances/md/next/proxy)
+export {
+  isMdRequest,
+  MD_PATH,
+  mdLink,
+  mdPagePath,
+  mdPath,
+  mdRewrite,
+  RENDER_HEADER,
+  rewrites,
+  type Has,
+  type Rewrite,
+  type Rewrites,
+} from './proxy.ts'
 
-// where the rewrites send markdown requests; `affordances-md init` puts the route handler here
-export const MD_PATH = '/api/affordances/md'
-// set on the handler's own fetch of the page, so it never gets rewritten back to markdown
-export const RENDER_HEADER = 'x-affordances-md-render'
-
-export type Has = { type: 'header' | 'query'; key: string; value?: string }
-export type Rewrite = { source: string; destination: string; has?: Has[]; missing?: Has[] }
-export type Rewrites = { beforeFiles: Rewrite[]; afterFiles: Rewrite[]; fallback: Rewrite[] }
 export type Header = { source: string; headers: { key: string; value: string }[] }
 export type Config = {
   rewrites?: () => Promise<unknown> | unknown
@@ -33,38 +54,6 @@ export type Config = {
   webpack?: ((config: any, context: any) => any) | null
 }
 
-const accepts: Has[] = [{ type: 'header', key: 'accept', value: '.*text/markdown.*' }]
-const notOurs: Has[] = [{ type: 'header', key: RENDER_HEADER }]
-// not our own render, and not next's client navigations, which ask for the RSC payload with an RSC header and an
-// _rsc param. next hides both from a proxy.ts unless skipProxyUrlNormalize is set
-const notOursOrRsc: Has[] = [
-  ...notOurs,
-  { type: 'header', key: 'rsc' },
-  { type: 'query', key: '_rsc' },
-]
-// pages: not api routes, not next's internals. a dot is fine (/version/5.3.0, /package/chart.js): a file in public/
-// still comes back as itself, since the handler passes anything that isn't html through. .md is left to afterFiles,
-// so a real .md file in public/ wins
-const pagePattern = '(?!api/|_next/)(?!.*\\.md$).+'
-
-export const rewrites = {
-  // Accept: text/markdown at the page's own url (browsers never ask for it, so a pattern match is enough)
-  beforeFiles: [
-    { source: '/', has: accepts, missing: notOursOrRsc, destination: MD_PATH },
-    {
-      source: `/:path(${pagePattern})`,
-      has: accepts,
-      missing: notOursOrRsc,
-      destination: `${MD_PATH}/:path`,
-    },
-  ],
-  // /blog/post.md and /index.md; afterFiles, so a real .md file in public/ still wins
-  afterFiles: [
-    { source: '/index.md', missing: notOurs, destination: MD_PATH },
-    { source: '/:path+.md', missing: notOurs, destination: `${MD_PATH}/:path+` },
-  ],
-} satisfies Partial<Rewrites>
-
 const normalize = (value: unknown): Rewrites =>
   Array.isArray(value)
     ? { beforeFiles: [], afterFiles: value as Rewrite[], fallback: [] }
@@ -75,85 +64,11 @@ const normalize = (value: unknown): Rewrites =>
         ...(value as Partial<Rewrites> | undefined),
       }
 
-// the page a markdown request is for, from every shape next hands the handler: /api/affordances/md/x, /x.md,
-// /index.md, and /x asked for with Accept → /x and /. case-insensitive, like next's own matching
-const handlerPrefix = new RegExp(`^${MD_PATH}(?=/|$)`, 'i')
-export const mdPagePath = (pathname: string) =>
-  pathname
-    .replace(handlerPrefix, '')
-    .replace(/(^|\/)index\.md$/i, '/')
-    .replace(/\.md$/i, '') || '/'
-
-// the handler's path for a page: / → /api/affordances/md, /x → /api/affordances/md/x
-const handlerPath = (page: string) => `${MD_PATH}${page === '/' ? '' : page}`
-
-// next's `has` and `missing`: a header or query param that's present, not empty, and matches the value pattern if
-// there is one
-// each rule's value compiled once: mdRewrite runs on every request a proxy.ts sees
-const patterns = new Map<string, RegExp>()
-const pattern = (value: string) => {
-  const compiled = patterns.get(value) ?? new RegExp(`^${value}$`)
-  patterns.set(value, compiled)
-  return compiled
-}
-const present = (request: Request, url: URL, { type, key, value }: Has) => {
-  const actual = type === 'query' ? url.searchParams.get(key) : request.headers.get(key)
-  return Boolean(actual) && (!value || pattern(value).test(actual!))
-}
-const matches = (request: Request, url: URL, { has = [], missing = [] }: Partial<Rewrite>) =>
-  has.every((h) => present(request, url, h)) && !missing.some((h) => present(request, url, h))
-
-// the rewrites' paths as regexes; the header and query conditions are read off the rules themselves
-const pageRegex = new RegExp(`^/(?:${pagePattern})$`, 'i')
-const isPage = (pathname: string) => pathname === '/' || pageRegex.test(pathname)
-const suffixRegex = /^\/(?:[^/]+\/)*[^/]+\.md$/i
-
-// the rewrites' own match, for a proxy.ts (next runs it before any rewrite): the handler url a markdown request
-// goes to, or undefined when it isn't one. a proxy can't see public/, so a real .md file there matches too
-export const mdRewrite = (request: Request): URL | undefined => {
-  const url = new URL(request.url)
-  const asked = isPage(url.pathname) && matches(request, url, rewrites.beforeFiles[1]!)
-  const suffixed = suffixRegex.test(url.pathname) && matches(request, url, rewrites.afterFiles[1]!)
-  if (!asked && !suffixed) return
-  // a literalMd route's .md path goes as it is, so the handler can tell the page readme.md from a twin
-  const page = isLiteral(url.pathname) ? url.pathname : mdPagePath(url.pathname)
-  return new URL(handlerPath(page) + url.search, url)
-}
-
-// a .md path on a md({ literalMd }) route, which may be a page of its own (/package/readme.md) or a twin
-// compiled once per value of the env next inlined: mdRewrite runs on every request a proxy.ts sees
-let literalCache: { key: string | undefined; routes: RegExp[] } | undefined
-const literalRoutes = () => {
-  // spelled out: next inlines process.env.NAME, never process.env[name]
-  const key = process.env.AFFORDANCES_MD_LITERAL
-  if (!literalCache || literalCache.key !== key)
-    literalCache = { key, routes: builtLiteral().map(sourceRegex) }
-  return literalCache.routes
-}
-const isLiteral = (pathname: string) =>
-  /\.md$/i.test(pathname) && literalRoutes().some((route) => route.test(pathname))
-
-export const isMdRequest = (request: Request) => mdRewrite(request) !== undefined
-
-const LINK = 'rel="alternate"; type="text/markdown"'
-const apiRoute = /^\/api(\/|$)/i
-
-// the Link value md() sets on a page, for a proxy.ts that knows the page's public url when md()'s rules don't: a
-// route whose public url isn't its folder's (one the proxy rewrites). undefined for anything that isn't a page
-// request: api routes, next's internals, a markdown request, an RSC fetch. a Link the proxy sets replaces the one
-// md() would, rather than adding to it
-export const mdLink = (request: Request): string | undefined => {
-  const url = new URL(request.url)
-  if (!isPage(url.pathname) || apiRoute.test(url.pathname)) return
-  if (isMdRequest(request) || !matches(request, url, { missing: notOursOrRsc })) return
-  return `<${mdPath(url.pathname)}>; ${LINK}`
-}
-
 // a page's last param as one that never ends in .md, so a page's own twin (/docs/x.md on /docs/:slug+) doesn't
 // match its rule and get pointed at /docs/x.md.md
 const notTwin = (source: string) =>
   source.replace(
-    /:(\w+)\+?$/,
+    /(?<!\\):(\w+)\+?$/,
     (whole, name: string) => `:${name}((?!.*\\.md$)${whole.endsWith('+') ? '.+' : '[^/]+'})`,
   )
 
@@ -179,7 +94,7 @@ const alternates = (pages: string[]) =>
         source: toSource(route),
         parts: parts.map(toSource).map((source) => ({
           source: notInternal(notTwin(source)),
-          value: `<${mdPath(source.replace(/\+$/, ''))}>; ${LINK}`,
+          value: `<${mdPath(unescapeSource(source.replace(/(?<!\\)\+$/, ''))).replace(/[?#\\]/g, encodeURIComponent)}>; ${LINK}`,
         })),
       }
     })

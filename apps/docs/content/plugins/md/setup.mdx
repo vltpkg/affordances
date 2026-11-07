@@ -82,13 +82,13 @@ That renders `<link rel="alternate" type="text/markdown" href="/blog/post.md">`.
 
 ## With a proxy.ts
 
-Next runs `proxy.ts` (or `middleware.ts`) before any rewrite, so a proxy that treats Markdown requests differently, to skip a locale redirect or an A/B rewrite, needs the same match the rewrites make. Don't copy it: `isMdRequest` and `mdRewrite` are that match, including Next's case-insensitive paths.
+Next runs `proxy.ts` (or `middleware.ts`) before any rewrite, so a proxy that treats Markdown requests differently, to skip a locale redirect or an A/B rewrite, needs the same match the rewrites make. Don't copy it: `isMdRequest` and `mdRewrite` are that match, including Next's case-insensitive paths. Import them (and `mdLink`) from `@affordances/md/next/proxy`, which holds only the matching, so your proxy's bundle carries neither the converter nor any `markdown.ts`; `@affordances/md/next` exports the same functions.
 
 **Never skip your auth gate for Markdown requests.** Run it first, then route Markdown:
 
 ```ts title="proxy.ts"
 import { NextResponse, type NextRequest } from 'next/server'
-import { isMdRequest } from '@affordances/md/next'
+import { isMdRequest } from '@affordances/md/next/proxy'
 
 export const proxy = (request: NextRequest) => {
   // your gate, first: a Markdown request is a request for the page
@@ -113,7 +113,7 @@ Next hides a client navigation's `RSC` header and `_rsc` param from the proxy, s
 
 ```ts title="proxy.ts"
 import { NextResponse, type NextRequest } from 'next/server'
-import { mdLink, mdRewrite } from '@affordances/md/next'
+import { mdLink, mdRewrite } from '@affordances/md/next/proxy'
 // your own rewrite: /package/@scope/name → the URL app/package/[pkg] answers, or undefined
 import { route } from './route'
 

@@ -534,6 +534,28 @@ test("md()'s Link never lands on api routes or next's internals, even under a ro
   expect(linkOn(rules, '/docs/a')).toBe(alternate('/docs/a.md'))
 })
 
+test('mdLink never points off the site, whatever slashes the path starts with', () => {
+  for (const path of [
+    '//evil.test/phish',
+    '/.//evil.test/x',
+    '/..//evil.test/x',
+    '/a/..//evil.test/x',
+    '/./\\evil.test/x',
+  ])
+    expect({ path, link: linkFor(path) }).toEqual({ path, link: undefined })
+  expect(linkFor('/a//b')).toBe('</a//b.md>; rel="alternate"; type="text/markdown"')
+})
+
+test("next's internals and api routes never reach the handler's rewrites", () => {
+  for (const path of ['/_next/static/x.md', '/_next/image.md', '/api/x.md', '/API/cart.md'])
+    expect({ path, rewrite: mdRewrite(new Request(`${site}${path}`)) }).toEqual({
+      path,
+      rewrite: undefined,
+    })
+  expect(mdRewrite(new Request(`${site}/guide.md`))?.pathname).toBe('/api/affordances/md/guide')
+  expect(mdRewrite(new Request(`${site}/apiary.md`))?.pathname).toBe('/api/affordances/md/apiary')
+})
+
 test('mdRewrite gives the handler url, which maps back to the page', () => {
   const at = (path: string, headers: Record<string, string> = {}) =>
     mdRewrite(new Request(`${site}${path}`, { headers }))?.href
@@ -840,6 +862,42 @@ test('literalMd routes follow the env they were compiled from, and a trailing / 
   expect(getPathMatch('/y/:pkg')('/y/readme.md/')).not.toBe(false)
   expect(sourceRegex('/y/:pkg').test('/y/readme.md/')).toBe(false)
   expect(rewrittenTo('/y/readme.md/')).toBeUndefined()
+})
+
+test("a folder name with path-to-regexp's characters is matched as itself, never as a pattern", async () => {
+  const rules = await md({
+    root: app([
+      'app/x(.*)/page.tsx',
+      'app/p:id/page.tsx',
+      'app/star*/page.tsx',
+      'app/g{a}?/page.tsx',
+      'app/w+/[slug]/page.tsx',
+      'app/plus+/page.tsx',
+    ]),
+  })({} as Config).headers!()
+  for (const path of ['/x(.*)', '/p:id', '/star*', '/plus+'])
+    expect(linkOn(rules, path)).toBe(alternate(`${path}.md`))
+  // a ? can't stand in a url's path as itself
+  expect(linkOn(rules, '/g{a}?')).toBe(alternate('/g{a}%3F.md'))
+  expect(linkOn(rules, '/w+/a')).toBe(alternate('/w+/a.md'))
+  // characters a url can't hold as they are go out encoded
+  const odd = await md({ root: app(['app/w/q?z/page.tsx']) })({} as Config).headers!()
+  expect(odd.flatMap((rule) => rule.headers.map((h) => h.value))).toEqual([
+    alternate('/w/q%3Fz.md'),
+  ])
+  for (const path of [
+    '/xyz',
+    '/x',
+    '/p',
+    '/pid',
+    '/star',
+    '/starstar',
+    '/g',
+    '/ga',
+    '/w/a',
+    '/ww/a',
+  ])
+    expect({ path, link: linkOn(rules, path) }).toEqual({ path, link: undefined })
 })
 
 test('a literalMd source next would reject fails at config time', () => {
@@ -1307,6 +1365,42 @@ test('the llms handlers take only the options they use for their own requests', 
   createLlmsFullHandler({ maxBytes: 1 })
   // @ts-expect-error append is the route's
   createLlmsTxtHandler({ append: () => '' })
+})
+
+test('@affordances/md/next/proxy is the same proxy side as @affordances/md/next, and reaches no converter or markdown.ts', async () => {
+  const next = await import('../src/next/index.ts')
+  const proxy = await import('../src/next/proxy.ts')
+  expect(Object.keys(proxy).toSorted()).toEqual([
+    'MD_PATH',
+    'RENDER_HEADER',
+    'isMdRequest',
+    'mdLink',
+    'mdPagePath',
+    'mdPath',
+    'mdRewrite',
+    'rewrites',
+  ])
+  for (const [name, value] of Object.entries(proxy))
+    expect({ name, same: next[name as keyof typeof next] === value }).toEqual({ name, same: true })
+
+  // everything proxy.ts imports, all the way down
+  const visited = new Set<string>()
+  const packages: string[] = []
+  const walk = (file: URL) => {
+    if (visited.has(file.href)) return
+    visited.add(file.href)
+    for (const [, spec] of readFileSync(file, 'utf8').matchAll(
+      /^\s*(?:import|export)\b[^'"]*?(?:from\s+)?'([^']+)'/gm,
+    ))
+      if (spec!.startsWith('.')) walk(new URL(spec!, file))
+      else packages.push(spec!)
+  }
+  walk(new URL('../src/next/proxy.ts', import.meta.url))
+  const files = [...visited].map((href) => href.replace(/^.*\/src\//, ''))
+  expect(files.toSorted()).toEqual(['next/proxy.ts', 'next/routes.ts', 'next/rules.ts', 'path.ts'])
+  expect(packages.filter((spec) => /^@affordances\/md\/routes$|hast-|mdast-/.test(spec))).toEqual(
+    [],
+  )
 })
 
 test('md() records each markdown.ts next to a page, generates .affordances/md.ts and aliases it', async () => {
