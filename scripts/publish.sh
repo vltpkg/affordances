@@ -19,7 +19,13 @@ for pkg in packages/*/package.json; do
   case "$status" in
     200) echo "skip $name@$version (already on $registry)" ;;
     404) echo "publish $name@$version -> $registry"
-         (cd "$(dirname "$pkg")" && vlt publish --access=public)
+         if ! out=$(cd "$(dirname "$pkg")" && vlt publish --access=public 2>&1); then
+           echo "$out"
+           # npm 404s a new version for a few minutes while it's processed, so the check above can be stale
+           grep -q "already exists in the registry" <<<"$out" && { echo "skip $name@$version (still processing)"; continue; }
+           exit 1
+         fi
+         echo "$out"
          # changesets/action pushes each "New tag:" (it must exist locally) and creates a GitHub Release for it
          git tag "$name@$version"
          echo "New tag: $name@$version" ;;
