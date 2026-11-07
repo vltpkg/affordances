@@ -34,11 +34,28 @@ export { GET } from '@affordances/md/next'
 
 The config only adds rewrites and headers, so nothing runs per request until an agent asks:
 
-- A page requested with `Accept: text/markdown` is rewritten to the handler. API routes, `/_next`, and Next's own client navigations (the `RSC` header) are left alone. A dot in the path is fine, so `/version/5.3.0` and `/package/chart.js` work; a file in `public/` asked for this way comes back as itself, since the handler passes anything that isn't HTML through.
+- A page requested with `Accept: text/markdown` is rewritten to the handler. API routes, `/_next`, and Next's own client navigations (the `RSC` header or `_rsc` param) are left alone. A dot in the path is fine, so `/version/5.3.0` and `/package/chart.js` work; a file in `public/` asked for this way comes back as itself, since the handler passes anything that isn't HTML through.
 - `/blog/post.md` and `/index.md` (for `/`) are rewritten after Next's own files, so a real `.md` file in `public/` still wins. Like all of Next's matching, `.MD` works too.
 - The handler's own request for the page carries an `x-affordances-md-render` header, which the rewrites skip, so it can't loop.
 
 Next matches `Accept` as a pattern, so a header that lists `text/markdown` with a low q-value still gets Markdown. Browsers never send it, so in practice only agents do.
+
+### Pages whose URL ends in .md
+
+On some routes a page's own URL can end in `.md`: a package registry has a package named `readme.md`, so `/package/readme.md` is a page, while `/package/express.md` is the twin of `/package/express`. List those routes as Next sources, and the handler tells them apart by asking for the page:
+
+```ts title="next.config.ts"
+export default withMd(nextConfig, { literalMd: ['/package/:name'] })
+```
+
+They're matched the way Next matches a rewrite's `source` (named and unnamed params, patterns, `{}` groups, `?` `*` `+`), and a source Next would reject throws when the config loads.
+
+For a URL on those routes that ends in `.md`, the handler first fetches the page at that exact URL:
+
+- If it answers with anything but a 404, it's the page. A request for Markdown (`Accept: text/markdown`) gets it converted; any other request gets the page's HTML as it came. A redirect, a 401, or a 500 counts as an answer, so an error is never hidden behind a twin.
+- If it 404s, the `.md` is the twin suffix, and the request gets the Markdown of the URL without it. So `/package/readme.md.md` is the Markdown of the page `readme.md`.
+
+The twin of any page is still its URL plus `.md`, so links, `Link` headers and `llms.txt` don't change. The page needs to 404 for a name it doesn't have (`notFound()`), not render a 200 "not found" page. Each twin request on these routes costs that 404 render before the real one; routes not listed make one request, as before.
 
 ## Advertise it
 
@@ -78,3 +95,30 @@ export const proxy = (request: NextRequest) => {
 ```
 
 `mdRewrite(request)` returns the handler URL the request would be rewritten to, or `undefined`, for a proxy that rewrites it itself: `NextResponse.rewrite(url)`. A proxy can't see `public/`, so a real `.md` file there matches too.
+
+Next hides a client navigation's `RSC` header and `_rsc` param from the proxy, so there `mdRewrite` can't tell one from a page request. Next puts the header back before the handler runs, so the handler passes such a request through: it fetches the page with the request's own headers and returns the page's RSC payload as it came (status, headers, and body), never markdown. With `skipProxyUrlNormalize: true` in `next.config`, the proxy sees them and `mdRewrite` leaves the request alone, like the rewrites do.
+
+### Link from the proxy
+
+`md()` sets the `Link` header by matching your `app/` routes against the URL as it was requested. A route whose public URL isn't its folder's, one your proxy rewrites, gets no header: `/package/@babel/core` has two segments, but `app/package/[pkg]` matches one. `mdLink(request)` returns the `Link` value for the request's public URL, or `undefined` for anything that isn't a page request (API routes, `/_next`, `.md` URLs, Markdown and RSC requests):
+
+```ts title="proxy.ts"
+import { NextResponse, type NextRequest } from 'next/server'
+import { mdLink, mdRewrite } from '@affordances/md/next'
+// your own rewrite: /package/@scope/name → the URL app/package/[pkg] answers, or undefined
+import { route } from './route'
+
+export const proxy = (request: NextRequest) => {
+  const markdown = mdRewrite(request)
+  if (markdown) return NextResponse.rewrite(markdown)
+
+  const url = route(request.nextUrl)
+  if (!url) return NextResponse.next()
+  const response = NextResponse.rewrite(url)
+  const link = mdLink(request)
+  if (link) response.headers.set('Link', link)
+  return response
+}
+```
+
+A `Link` the proxy sets replaces the one `md()` sets for the same URL, rather than adding to it, and that includes an Affordances graph's `rel="affordances"` value. Call `mdLink` only for the URLs `md()`'s rules miss, as above, or join the values yourself.

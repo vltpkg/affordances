@@ -1,6 +1,14 @@
 import { htmlToMarkdown } from '../convert/index.ts'
 import { mdPath } from '../path.ts'
-import { builtPages, ROUTES_ENV, scanPages, toSource } from './routes.ts'
+import {
+  builtLiteral,
+  builtPages,
+  LITERAL_ENV,
+  ROUTES_ENV,
+  scanPages,
+  sourceRegex,
+  toSource,
+} from './routes.ts'
 
 export { mdPath }
 
@@ -21,8 +29,13 @@ export type Config = {
 
 const accepts: Has[] = [{ type: 'header', key: 'accept', value: '.*text/markdown.*' }]
 const notOurs: Has[] = [{ type: 'header', key: RENDER_HEADER }]
-// not our own render, and not next's client navigations, which ask for the RSC payload
-const notOursOrRsc: Has[] = [...notOurs, { type: 'header', key: 'rsc' }]
+// not our own render, and not next's client navigations, which ask for the RSC payload with an RSC header and an
+// _rsc param. next hides both from a proxy.ts unless skipProxyUrlNormalize is set
+const notOursOrRsc: Has[] = [
+  ...notOurs,
+  { type: 'header', key: 'rsc' },
+  { type: 'query', key: '_rsc' },
+]
 // pages: not api routes, not next's internals. a dot is fine (/version/5.3.0, /package/chart.js): a file in public/
 // still comes back as itself, since the handler passes anything that isn't html through. .md is left to afterFiles,
 // so a real .md file in public/ wins
@@ -68,34 +81,67 @@ export const mdPagePath = (pathname: string) =>
 // the handler's path for a page: / → /api/affordances/md, /x → /api/affordances/md/x
 const handlerPath = (page: string) => `${MD_PATH}${page === '/' ? '' : page}`
 
-// next's `has` and `missing`: a header that's present, not empty, and matches the value pattern if there is one
-const hasHeader = (headers: Headers, { key, value }: Has) => {
-  const actual = headers.get(key)
-  return Boolean(actual) && (!value || new RegExp(`^${value}$`).test(actual!))
+// next's `has` and `missing`: a header or query param that's present, not empty, and matches the value pattern if
+// there is one
+// each rule's value compiled once: mdRewrite runs on every request a proxy.ts sees
+const patterns = new Map<string, RegExp>()
+const pattern = (value: string) => {
+  const compiled = patterns.get(value) ?? new RegExp(`^${value}$`)
+  patterns.set(value, compiled)
+  return compiled
 }
-const matchesHeaders = (headers: Headers, { has = [], missing = [] }: Partial<Rewrite>) =>
-  has.every((h) => hasHeader(headers, h)) && !missing.some((h) => hasHeader(headers, h))
+const present = (request: Request, url: URL, { type, key, value }: Has) => {
+  const actual = type === 'query' ? url.searchParams.get(key) : request.headers.get(key)
+  return Boolean(actual) && (!value || pattern(value).test(actual!))
+}
+const matches = (request: Request, url: URL, { has = [], missing = [] }: Partial<Rewrite>) =>
+  has.every((h) => present(request, url, h)) && !missing.some((h) => present(request, url, h))
 
-// the rewrites' paths as regexes; the header conditions are read off the rules themselves
+// the rewrites' paths as regexes; the header and query conditions are read off the rules themselves
 const pageRegex = new RegExp(`^/(?:${pagePattern})$`, 'i')
+const isPage = (pathname: string) => pathname === '/' || pageRegex.test(pathname)
 const suffixRegex = /^\/(?:[^/]+\/)*[^/]+\.md$/i
 
 // the rewrites' own match, for a proxy.ts (next runs it before any rewrite): the handler url a markdown request
 // goes to, or undefined when it isn't one. a proxy can't see public/, so a real .md file there matches too
 export const mdRewrite = (request: Request): URL | undefined => {
   const url = new URL(request.url)
-  const asked =
-    (url.pathname === '/' || pageRegex.test(url.pathname)) &&
-    matchesHeaders(request.headers, rewrites.beforeFiles[1]!)
-  const suffixed =
-    suffixRegex.test(url.pathname) && matchesHeaders(request.headers, rewrites.afterFiles[1]!)
+  const asked = isPage(url.pathname) && matches(request, url, rewrites.beforeFiles[1]!)
+  const suffixed = suffixRegex.test(url.pathname) && matches(request, url, rewrites.afterFiles[1]!)
   if (!asked && !suffixed) return
-  return new URL(handlerPath(mdPagePath(url.pathname)) + url.search, url)
+  // a literalMd route's .md path goes as it is, so the handler can tell the page readme.md from a twin
+  const page = isLiteral(url.pathname) ? url.pathname : mdPagePath(url.pathname)
+  return new URL(handlerPath(page) + url.search, url)
 }
+
+// a .md path on a md({ literalMd }) route, which may be a page of its own (/package/readme.md) or a twin
+// compiled once per value of the env next inlined: mdRewrite runs on every request a proxy.ts sees
+let literalCache: { key: string | undefined; routes: RegExp[] } | undefined
+const literalRoutes = () => {
+  // spelled out: next inlines process.env.NAME, never process.env[name]
+  const key = process.env.AFFORDANCES_MD_LITERAL
+  if (!literalCache || literalCache.key !== key)
+    literalCache = { key, routes: builtLiteral().map(sourceRegex) }
+  return literalCache.routes
+}
+const isLiteral = (pathname: string) =>
+  /\.md$/i.test(pathname) && literalRoutes().some((route) => route.test(pathname))
 
 export const isMdRequest = (request: Request) => mdRewrite(request) !== undefined
 
 const LINK = 'rel="alternate"; type="text/markdown"'
+const apiRoute = /^\/api(\/|$)/i
+
+// the Link value md() sets on a page, for a proxy.ts that knows the page's public url when md()'s rules don't: a
+// route whose public url isn't its folder's (one the proxy rewrites). undefined for anything that isn't a page
+// request: api routes, next's internals, a markdown request, an RSC fetch. a Link the proxy sets replaces the one
+// md() would, rather than adding to it
+export const mdLink = (request: Request): string | undefined => {
+  const url = new URL(request.url)
+  if (!isPage(url.pathname) || apiRoute.test(url.pathname)) return
+  if (isMdRequest(request) || !matches(request, url, { missing: notOursOrRsc })) return
+  return `<${mdPath(url.pathname)}>; ${LINK}`
+}
 
 // a page's last param as one that never ends in .md, so a page's own twin (/docs/x.md on /docs/:slug+) doesn't
 // match its rule and get pointed at /docs/x.md.md
@@ -105,18 +151,28 @@ const notTwin = (source: string) =>
     (whole, name: string) => `:${name}((?!.*\\.md$)${whole.endsWith('+') ? '.+' : '[^/]+'})`,
   )
 
+// a source whose first segment is a param, kept off api routes and next's internals as the rewrites are: a root
+// catch-all (/:slug+) would otherwise put a page's Link on /api/cart and /_next/static/…
+const notInternal = (source: string) =>
+  source.replace(
+    /^\/:(\w+)(?:\((.*)\))?/,
+    (_, name: string, own?: string) =>
+      // a lookahead's $ is the whole path's end, so a segment's end is spelled (?:/|$)
+      `/:${name}((?!(?:api|_next)(?:/|$))${own ?? '[^/]+'})`,
+  )
+
 // each page's Link header: /products/[slug] → </products/:slug.md>, filled in by next per request. next can't fill
 // in an empty optional catch-all (/docs/:slug* at /docs), so its parent's url gets a part of its own
 const alternates = (pages: string[]) =>
   pages
-    .filter((route) => !/^\/api(\/|$)/.test(route))
+    .filter((route) => !apiRoute.test(route))
     .map((route) => {
       const optional = route.match(/^(.*?)\/?\[\[\.\.\.([^\]]+)\]\]$/)
       const parts = optional ? [optional[1] || '/', `${optional[1]}/[...${optional[2]}]`] : [route]
       return {
         source: toSource(route),
         parts: parts.map(toSource).map((source) => ({
-          source: notTwin(source),
+          source: notInternal(notTwin(source)),
           value: `<${mdPath(source.replace(/\+$/, ''))}>; ${LINK}`,
         })),
       }
@@ -152,23 +208,43 @@ export type MdOptions = {
   root?: string
   // Link: </x.md>; rel="alternate"; type="text/markdown" on every page, so agents can find the markdown
   link?: boolean
+  // routes whose pages' own urls may end in .md, as next sources (['/package/:name']): there /x/readme.md is the page
+  // readme.md when it exists, and the twin of /x/readme when it 404s. costs that 404 render on each twin request
+  literalMd?: string[]
 }
 
 // a next config wrapper, like createMDX(): md()(config), or withAffordances(config, { plugins: [md()] })
 export const md =
-  ({ root = process.cwd(), link = true }: MdOptions = {}) =>
+  ({ root = process.cwd(), link = true, literalMd = [] }: MdOptions = {}) =>
   <C extends Config>(config: C): C => {
     // read once, when next loads its config; a page added during next dev shows up after a restart
     const pages = scanPages(root)
+    // a source next would reject throws here, not on the first request
+    for (const source of literalMd) sourceRegex(source)
     return {
       ...config,
-      env: { ...config.env, [ROUTES_ENV]: JSON.stringify(pages) },
+      env: {
+        ...config.env,
+        [ROUTES_ENV]: JSON.stringify(pages),
+        ...(literalMd.length && { [LITERAL_ENV]: JSON.stringify(literalMd) }),
+      },
       rewrites: async () => {
         const user = normalize(await config.rewrites?.())
         // after whatever came first (e.g. Affordances' graph rewrites), so each keeps its own media type
         return {
           ...user,
-          beforeFiles: [...user.beforeFiles, ...rewrites.beforeFiles],
+          // a literal route's page that ends in .md, asked for with Accept: the general rule leaves .md to afterFiles,
+          // which a static page of that name would beat
+          beforeFiles: [
+            ...user.beforeFiles,
+            ...rewrites.beforeFiles,
+            ...literalMd.map((source) => ({
+              source,
+              has: accepts,
+              missing: notOursOrRsc,
+              destination: MD_PATH,
+            })),
+          ],
           afterFiles: [...rewrites.afterFiles, ...user.afterFiles],
         }
       },
@@ -207,21 +283,99 @@ const respond = (body: string, status: number, headers: Record<string, string> =
     headers: { 'content-type': 'text/markdown; charset=utf-8', vary: 'Accept', ...headers },
   })
 
+// a request (or the headers option) that carries someone's credentials, whose response is theirs alone
+const CREDENTIALS = ['cookie', 'authorization']
+const credentialed = (headers: Headers) => CREDENTIALS.some((name) => headers.has(name))
+
+// the headers a page's own response depends on, which a passthrough forwards: the caller's credentials and
+// language, content negotiation, conditional requests, and next's flight headers for a client navigation (as of
+// next 16.4's app-router-headers). nothing else the caller sent, so no internal or forwarding header reaches the page
+const AS_IS = [
+  ...FORWARD,
+  'accept',
+  'user-agent',
+  'if-none-match',
+  'if-modified-since',
+  'rsc',
+  'next-router-state-tree',
+  'next-router-prefetch',
+  'next-router-segment-prefetch',
+  'next-url',
+  'next-hmr-refresh',
+]
+
+// a request for the page itself rather than its markdown, as the handler fetches it: the caller's own headers from
+// AS_IS, then the headers option's (never its credentials: this is the person's page, not a render of ours), and
+// ours, so the rewrites leave the fetch alone
+const asIs = async (request: Request, options: MdHandlerOptions) => {
+  const headers = new Headers()
+  for (const name of AS_IS) {
+    const value = request.headers.get(name)
+    if (value) headers.set(name, value)
+  }
+  for (const [name, value] of await extraHeaders(request, options.headers))
+    if (!CREDENTIALS.includes(name)) headers.set(name, value)
+  headers.set(RENDER_HEADER, '1')
+  return headers
+}
+
+// how long a page may take to render, by default
+const TIMEOUT = 10_000
+
+// the page's response as it came: status, headers (set-cookie and vary too) and body. undefined when its headers
+// didn't arrive by the timeout; the body then streams on, never cut short. fetch has already decoded the body, so
+// its encoding and length no longer describe it
+const passPage = async (request: Request, target: URL, options: MdHandlerOptions) => {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), options.timeout ?? TIMEOUT)
+  try {
+    const upstream = await fetch(target, {
+      headers: await asIs(request, options),
+      redirect: 'manual',
+      signal: controller.signal,
+    })
+    const headers = new Headers(upstream.headers)
+    headers.delete('content-encoding')
+    headers.delete('content-length')
+    // the caller's credentials make it theirs alone. the headers option's are never sent here (asIs), so a cookie
+    // set in answer is the caller's own, and goes out as the page sent it
+    if (credentialed(request.headers)) headers.set('cache-control', 'private, no-store')
+    return new Response(upstream.body, { status: upstream.status, headers })
+  } catch {
+    return undefined
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+const fail = (status: number, message: string) =>
+  respond(`# ${message}\n`, status, { 'cache-control': 'private, no-store' })
+
+// a path on the site's own origin as a url, or undefined: new URL reads one that starts with //host as another
+// origin, and the caller's credentials (or the headers option) never go there
+const pageUrl = (request: Request, options: MdHandlerOptions, path: string) => {
+  const base = new URL(origin(request, options))
+  const url = new URL(path, base)
+  return url.origin === base.origin ? url : undefined
+}
+
 // renders the page as html the normal way (real RSC, Suspense, auth), then converts it
-export const createMdHandler =
-  (options: MdHandlerOptions = {}) =>
-  async (request: Request): Promise<Response> => {
-    const { timeout = 10_000, maxBytes = 6 * 1024 * 1024, append } = options
-    const fail = (status: number, message: string) =>
-      respond(`# ${message}\n`, status, { 'cache-control': 'private, no-store' })
+const convertPage =
+  (options: MdHandlerOptions) =>
+  async (request: Request, pagePath: string): Promise<Response> => {
+    const { timeout = TIMEOUT, maxBytes = 6 * 1024 * 1024, append } = options
     if (request.headers.has(RENDER_HEADER)) return fail(508, 'Loop detected')
 
     const url = new URL(request.url)
-    // a rewritten request keeps its original url in next (/blog/post.md, or /blog/post with Accept)
-    const base = new URL(origin(request, options))
-    const target = new URL(mdPagePath(url.pathname) + url.search, base)
-    // new URL reads a path that starts with //host as another origin; the caller's credentials never go there
-    if (target.origin !== base.origin) return fail(400, 'Not a page on this site')
+    const target = pageUrl(request, options, pagePath + url.search)
+    if (!target) return fail(400, 'Not a page on this site')
+    // a client navigation reaches here when a proxy.ts rewrote it (next hides its RSC header from the proxy, then
+    // puts it back): it wants the page's RSC payload, so it gets that, never markdown
+    if (request.headers.get('rsc'))
+      return (
+        (await passPage(request, target, options)) ??
+        fail(504, `${target.pathname} took longer than ${timeout}ms to render`)
+      )
     const headers = new Headers()
     for (const name of FORWARD) {
       const value = request.headers.get(name)
@@ -284,6 +438,37 @@ export const createMdHandler =
     })
   }
 
+// the markdown of the page a request is for. a .md path on a literalMd route is the page itself when that answers
+// with anything but a 404 (converted for a markdown request, passed through for any other), and a twin when it 404s
+export const createMdHandler = (options: MdHandlerOptions = {}) => {
+  const convert = convertPage(options)
+  return async (request: Request): Promise<Response> => {
+    const url = new URL(request.url)
+    // a rewritten request keeps its original url in next (/blog/post.md, or /blog/post with Accept)
+    const asked = url.pathname.replace(handlerPrefix, '') || '/'
+    if (isLiteral(asked) && !request.headers.has(RENDER_HEADER)) {
+      const markdown = present(request, url, accepts[0]!) && !request.headers.get('rsc')
+      const found = markdown
+        ? await convert(request, asked)
+        : await literalPage(request, asked, options)
+      if (found.status !== 404) return found
+    }
+    return convert(request, mdPagePath(url.pathname))
+  }
+}
+
+// the literal page as it came, for a request that isn't for markdown: the person asked for a page named x.md
+const literalPage = async (request: Request, page: string, options: MdHandlerOptions) => {
+  const target = pageUrl(request, options, page + new URL(request.url).search)
+  if (!target) return fail(400, 'Not a page on this site')
+  const passed = await passPage(request, target, options)
+  if (passed?.status === 404) void passed.body?.cancel().catch(() => {})
+  // its Link, which md()'s rules leave off a url ending in .md, since there it would be a twin's too
+  else if (passed?.ok && passed.headers.get('content-type')?.includes('text/html'))
+    passed.headers.append('link', `<${mdPath(page)}>; ${LINK}`)
+  return passed ?? fail(504, `${page} took longer than ${options.timeout ?? TIMEOUT}ms to render`)
+}
+
 // app/api/affordances/md/[[...path]]/route.ts: export { GET } from '@affordances/md/next'
 export const GET = createMdHandler()
 
@@ -304,7 +489,7 @@ const siteIndex = async (
     headers.set('accept', 'application/json')
     const response = await fetch(new URL(SITE_INDEX, origin(request, options)), {
       headers,
-      signal: AbortSignal.timeout(options.timeout ?? 10_000),
+      signal: AbortSignal.timeout(options.timeout ?? TIMEOUT),
     })
     const body = response.ok ? ((await response.json()) as Partial<SiteIndex>) : undefined
     return Array.isArray(body?.routes) ? (body as SiteIndex) : undefined

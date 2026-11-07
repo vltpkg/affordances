@@ -13,14 +13,16 @@ import {
   isMdRequest,
   md,
   mdAlternate,
+  mdLink,
   mdPagePath,
   mdRewrite,
   RENDER_HEADER,
   type Rewrite,
+  type Rewrites,
   rewrites,
   withMd,
 } from '../src/next/index.ts'
-import { ROUTES_ENV } from '../src/next/routes.ts'
+import { LITERAL_ENV, ROUTES_ENV, sourceRegex } from '../src/next/routes.ts'
 
 const site = 'https://shop.test'
 const page = (body: string, head = '<title>Tee</title>') =>
@@ -189,6 +191,7 @@ test('rewrites send only markdown requests, never our own render or an RSC fetch
     expect(rule.missing).toEqual([
       { type: 'header', key: RENDER_HEADER },
       { type: 'header', key: 'rsc' },
+      { type: 'query', key: '_rsc' },
     ])
   for (const rule of rewrites.afterFiles)
     expect(rule.missing).toEqual([{ type: 'header', key: RENDER_HEADER }])
@@ -209,12 +212,15 @@ const { compileNonPath, matchHas } =
       missing?: Has[],
     ) => unknown
   }
-const nextRewrites = (pathname: string, headers: Record<string, string>) =>
-  ([...rewrites.beforeFiles, ...rewrites.afterFiles] as Rewrite[]).some(
+const nextRewrites = (path: string, headers: Record<string, string>) => {
+  const { pathname, searchParams } = new URL(path, site)
+  const query = Object.fromEntries(searchParams)
+  return ([...rewrites.beforeFiles, ...rewrites.afterFiles] as Rewrite[]).some(
     (rule) =>
       getPathMatch(rule.source)(pathname) &&
-      matchHas({ headers }, {}, rule.has, rule.missing) !== false,
+      matchHas({ headers }, query, rule.has, rule.missing) !== false,
   )
+}
 
 test('mdRewrite matches exactly what the rewrites match', () => {
   const markdown = { accept: 'text/markdown' }
@@ -239,6 +245,10 @@ test('mdRewrite matches exactly what the rewrites match', () => {
     ['/a/.md', {}],
     ['/.md', {}],
     ['/blog/post', { ...markdown, rsc: '1' }],
+    // next takes the RSC header from a proxy.ts, but not always the _rsc param
+    ['/blog/post?_rsc=abc', markdown],
+    ['/blog/post?_rsc=', markdown],
+    ['/blog/post?x=1', markdown],
     ['/blog/post', { ...markdown, [RENDER_HEADER]: '1' }],
     ['/blog/post.md', { [RENDER_HEADER]: '1' }],
   ]
@@ -248,6 +258,60 @@ test('mdRewrite matches exactly what the rewrites match', () => {
       headers,
       matched: isMdRequest(new Request(`${site}${pathname}`, { headers })),
     }).toEqual({ pathname, headers, matched: nextRewrites(pathname, headers) })
+})
+
+test('an RSC fetch is never markdown, even when it asks for it', () => {
+  const at = (path: string) =>
+    mdRewrite(new Request(`${site}${path}`, { headers: { accept: 'text/markdown' } }))?.href
+  expect(at('/pricing?_rsc=abc')).toBeUndefined()
+  expect(at('/?_rsc=abc')).toBeUndefined()
+  expect(at('/pricing')).toBe(`${site}/api/affordances/md/pricing`)
+  expect(at('/pricing?x=1')).toBe(`${site}/api/affordances/md/pricing?x=1`)
+})
+
+const linkFor = (path: string, headers: Record<string, string> = {}) =>
+  mdLink(new Request(`${site}${path}`, { headers }))
+
+test("mdLink gives a page's Link value for its public url, and nothing for what isn't a page", () => {
+  const scoped = '/registry/upstream/npm/package/@babel/core/version/8.1.0'
+  expect(linkFor(scoped)).toBe(`<${scoped}.md>; rel="alternate"; type="text/markdown"`)
+  expect(linkFor('/')).toBe('</index.md>; rel="alternate"; type="text/markdown"')
+  expect(linkFor('/blog/post/?x=1')).toBe('</blog/post.md>; rel="alternate"; type="text/markdown"')
+  expect(linkFor('/blog/post', { accept: 'text/html' })).toBeDefined()
+  for (const [path, headers] of [
+    ['/api/x', {}],
+    ['/api', {}],
+    ['/_next/static/a.js', {}],
+    ['/x.md', {}],
+    ['/index.md', {}],
+    ['/x', { accept: 'text/markdown' }],
+    ['/x?_rsc=abc', {}],
+    ['/x', { rsc: '1' }],
+    ['/x', { [RENDER_HEADER]: '1' }],
+  ] as const)
+    expect({ path, link: linkFor(path, headers) }).toEqual({ path, link: undefined })
+})
+
+test("md()'s Link never lands on api routes or next's internals, even under a root catch-all", async () => {
+  const rules = await md({
+    root: app([
+      'app/[...slug]/page.tsx',
+      'app/[team]/settings/page.tsx',
+      'app/docs/[[...page]]/page.tsx',
+    ]),
+  })({} as Config).headers!()
+  for (const path of [
+    '/api/cart',
+    '/api',
+    '/_next/static/chunks/a.js',
+    '/api/settings',
+    '/_next/settings',
+  ])
+    expect({ path, link: linkOn(rules, path) }).toEqual({ path, link: undefined })
+  expect(linkOn(rules, '/guide/intro')).toBe(alternate('/guide/intro.md'))
+  expect(linkOn(rules, '/acme/settings')).toBe(alternate('/acme/settings.md'))
+  expect(linkOn(rules, '/apiary')).toBe(alternate('/apiary.md'))
+  expect(linkOn(rules, '/docs/a')).toBe(alternate('/docs/a.md'))
 })
 
 test('mdRewrite gives the handler url, which maps back to the page', () => {
@@ -267,6 +331,302 @@ test('a path that starts with //host never leaves the origin', async () => {
   const response = await get('//evil.example/x', { cookie: 'sid=1' })
   expect(response.status).toBe(400)
   expect(seen).toHaveLength(0)
+})
+
+test("a passthrough sends only the page's own headers, never the headers option's credentials, and keeps credentialed responses private", async () => {
+  upstream = () =>
+    new Response('0:[]\n', {
+      headers: [
+        ['content-type', 'text/x-component'],
+        ['cache-control', 'public, max-age=60'],
+        ['set-cookie', 'session=refreshed'],
+      ],
+    })
+  const service = createMdHandler({ headers: { cookie: 'session=svc', 'x-bypass': 'b' } })
+  const rsc = (headers: Record<string, string> = {}) =>
+    service(new Request(`${site}/feed`, { headers: { rsc: '1', ...headers } }))
+
+  // anonymous: the option's cookie is never sent, and a cookie the page sets in answer never goes out
+  const anonymous = await rsc({
+    'user-agent': 'agent/1',
+    'if-none-match': '"v1"',
+    'next-router-segment-prefetch': '/_tree',
+    'x-forwarded-host': 'evil.test',
+    'x-middleware-subrequest': 'proxy',
+    'x-custom-auth': 'internal',
+  })
+  const sent = seen[0]!.headers
+  expect(sent.has('cookie')).toBe(false)
+  expect(sent.get('x-bypass')).toBe('b')
+  expect(sent.get('user-agent')).toBe('agent/1')
+  expect(sent.get('if-none-match')).toBe('"v1"')
+  expect(sent.get('next-router-segment-prefetch')).toBe('/_tree')
+  for (const name of ['x-forwarded-host', 'x-middleware-subrequest', 'x-custom-auth'])
+    expect({ name, sent: sent.has(name) }).toEqual({ name, sent: false })
+  // the option's credentials never went, so this answer is the page's own to an anonymous request, cookie and all
+  expect(anonymous.headers.getSetCookie()).toEqual(['session=refreshed'])
+  expect(anonymous.headers.get('cache-control')).toBe('public, max-age=60')
+
+  // a person's own request carries their own cookie, never the service's, and stays private
+  seen = []
+  const person = await rsc({ cookie: 'session=alice' })
+  expect(seen[0]!.headers.get('cookie')).toBe('session=alice')
+  expect(person.headers.get('cache-control')).toBe('private, no-store')
+
+  // without credentials anywhere, the page's own caching and cookies pass as they came
+  seen = []
+  const plain = await handler(new Request(`${site}/feed`, { headers: { rsc: '1' } }))
+  expect(plain.headers.get('cache-control')).toBe('public, max-age=60')
+  expect(plain.headers.getSetCookie()).toEqual(['session=refreshed'])
+})
+
+test("an RSC fetch the proxy sent here gets the page's own RSC payload, unconverted", async () => {
+  upstream = () =>
+    new Response('0:["$","div",null,{}]\n', {
+      status: 200,
+      headers: [
+        ['content-type', 'text/x-component'],
+        ['vary', 'RSC, Next-Router-State-Tree, Next-Router-Prefetch'],
+        ['set-cookie', 'a=1'],
+        ['set-cookie', 'b=2'],
+        ['content-encoding', 'gzip'],
+        ['content-length', '99'],
+      ],
+    })
+  const response = await handler(
+    new Request(`${site}/api/affordances/md/pricing?_rsc=abc`, {
+      headers: {
+        rsc: '1',
+        accept: 'text/markdown',
+        'next-router-state-tree': '%5B%22%22%5D',
+        'next-router-prefetch': '1',
+        'next-url': '/pricing',
+        cookie: 'sid=1',
+        connection: 'keep-alive, x-hop',
+        'x-hop': 'no',
+      },
+    }),
+  )
+  expect(response.status).toBe(200)
+  expect(response.headers.get('content-type')).toBe('text/x-component')
+  expect(await response.text()).toBe('0:["$","div",null,{}]\n')
+  expect(response.headers.get('vary')).toBe('RSC, Next-Router-State-Tree, Next-Router-Prefetch')
+  expect(response.headers.getSetCookie()).toEqual(['a=1', 'b=2'])
+  expect(response.headers.has('content-encoding')).toBe(false)
+  expect(response.headers.has('content-length')).toBe(false)
+  const [call] = seen
+  expect(seen).toHaveLength(1)
+  expect(call!.url.href).toBe(`${site}/pricing?_rsc=abc`)
+  expect(Object.fromEntries(call!.headers)).toEqual({
+    rsc: '1',
+    accept: 'text/markdown',
+    'next-router-state-tree': '%5B%22%22%5D',
+    'next-router-prefetch': '1',
+    'next-url': '/pricing',
+    cookie: 'sid=1',
+    [RENDER_HEADER]: '1',
+  })
+
+  // a status and a redirect come back as they are, not as markdown's
+  upstream = () => new Response(null, { status: 307, headers: { location: '/login' } })
+  const redirected = await get('/pricing', { rsc: '1' })
+  expect(redirected.status).toBe(307)
+  expect(redirected.headers.get('location')).toBe('/login')
+
+  // the loop guard and the timeout still hold
+  expect((await get('/pricing', { rsc: '1', [RENDER_HEADER]: '1' })).status).toBe(508)
+  vi.stubGlobal(
+    'fetch',
+    (_: URL, init: RequestInit) =>
+      new Promise((_resolve, reject) =>
+        init.signal!.addEventListener('abort', () => reject(new Error('aborted'))),
+      ),
+  )
+  const slow = await createMdHandler({ timeout: 20 })(
+    new Request(`${site}/pricing`, { headers: { rsc: '1' } }),
+  )
+  expect(slow.status).toBe(504)
+})
+
+// a literalMd route, /x/:pkg, where the package readme.md is a page of its own and express isn't one named .md
+const literally = (pages: Record<string, number>) => {
+  vi.stubEnv(LITERAL_ENV, JSON.stringify(['/x/:pkg']))
+  upstream = (url) => {
+    const status = pages[url.pathname] ?? 404
+    return new Response(page(`<h1>${url.pathname}</h1>`), {
+      status,
+      headers: { 'content-type': 'text/html', ...(status === 302 && { location: '/login' }) },
+    })
+  }
+}
+afterEach(() => vi.unstubAllEnvs())
+
+test('on a literalMd route, a .md page that exists is itself: passed through, or converted for markdown', async () => {
+  literally({ '/x/readme.md': 200, '/x/readme': 200 })
+  const html = await handler(
+    new Request(`${site}/x/readme.md?tab=1`, { headers: { cookie: 'sid=1' } }),
+  )
+  expect(html.status).toBe(200)
+  expect(html.headers.get('content-type')).toBe('text/html')
+  expect(await html.text()).toContain('<h1>/x/readme.md</h1>')
+  expect(html.headers.get('link')).toBe(alternate('/x/readme.md.md'))
+  expect(seen.map((call) => call.url.pathname + call.url.search)).toEqual(['/x/readme.md?tab=1'])
+  expect(seen[0]!.headers.get('cookie')).toBe('sid=1')
+  expect(seen[0]!.headers.get(RENDER_HEADER)).toBe('1')
+
+  seen = []
+  const markdown = await handler(
+    new Request(`${site}/x/readme.md`, { headers: { accept: 'text/markdown' } }),
+  )
+  expect(markdown.headers.get('content-type')).toBe('text/markdown; charset=utf-8')
+  expect(await markdown.text()).toContain('# /x/readme.md')
+  expect(seen.map((call) => call.url.pathname)).toEqual(['/x/readme.md'])
+  // the proxy's handler url, which keeps the .md
+  seen = []
+  await handler(new Request(`${site}/api/affordances/md/x/readme.md`))
+  expect(seen.map((call) => call.url.pathname)).toEqual(['/x/readme.md'])
+})
+
+test('on a literalMd route, a .md page that 404s is a twin: the markdown of the page without it', async () => {
+  literally({ '/x/express': 200, '/x/readme.md': 200 })
+  for (const headers of [{}, { accept: 'text/markdown' }] as Record<string, string>[]) {
+    seen = []
+    const twin = await handler(new Request(`${site}/x/express.md?v=1`, { headers }))
+    expect(twin.status).toBe(200)
+    expect(twin.headers.get('content-type')).toBe('text/markdown; charset=utf-8')
+    expect(await twin.text()).toContain('# /x/express')
+    expect(seen.map((call) => call.url.pathname + call.url.search)).toEqual([
+      '/x/express.md?v=1',
+      '/x/express?v=1',
+    ])
+  }
+  // readme.md's own twin
+  seen = []
+  const twice = await handler(new Request(`${site}/x/readme.md.md`))
+  expect(await twice.text()).toContain('# /x/readme.md')
+  expect(seen.map((call) => call.url.pathname)).toEqual(['/x/readme.md.md', '/x/readme.md'])
+  // neither exists: the twin's own 404
+  expect((await handler(new Request(`${site}/x/nope.md`))).status).toBe(404)
+})
+
+test('on a literalMd route, any answer but a 404 is the page: a redirect or an error never falls back', async () => {
+  literally({ '/x/moved.md': 302, '/x/broken.md': 500, '/x/moved': 200, '/x/broken': 200 })
+  for (const headers of [{}, { accept: 'text/markdown' }] as Record<string, string>[]) {
+    seen = []
+    const moved = await handler(new Request(`${site}/x/moved.md`, { headers }))
+    expect(moved.status).toBe(302)
+    const broken = await handler(new Request(`${site}/x/broken.md`, { headers }))
+    expect(broken.status).toBe(500)
+    expect(seen.map((call) => call.url.pathname)).toEqual(['/x/moved.md', '/x/broken.md'])
+  }
+  // the markdown request's redirect stays in markdown, as anywhere else
+  const moved = await handler(
+    new Request(`${site}/x/moved.md`, { headers: { accept: 'text/markdown' } }),
+  )
+  expect(moved.headers.get('location')).toBe('/login.md')
+})
+
+test('off a literalMd route, a .md path is a twin with one fetch, as before', async () => {
+  literally({ '/blog/post': 200, '/x/a/b': 200 })
+  await handler(new Request(`${site}/blog/post.md`))
+  await handler(new Request(`${site}/x/a/b.md`))
+  expect(seen.map((call) => call.url.pathname)).toEqual(['/blog/post', '/x/a/b'])
+  // without literalMd, /x/readme.md is a twin too
+  vi.unstubAllEnvs()
+  seen = []
+  await handler(new Request(`${site}/x/readme.md`))
+  expect(seen.map((call) => call.url.pathname)).toEqual(['/x/readme'])
+})
+
+test("mdRewrite sends a literalMd route's .md path to the handler as it is", () => {
+  vi.stubEnv(LITERAL_ENV, JSON.stringify(['/x/:pkg']))
+  const at = (path: string, headers: Record<string, string> = {}) =>
+    mdRewrite(new Request(`${site}${path}`, { headers }))?.href
+  expect(at('/x/readme.md')).toBe(`${site}/api/affordances/md/x/readme.md`)
+  expect(at('/x/readme.md', { accept: 'text/markdown' })).toBe(
+    `${site}/api/affordances/md/x/readme.md`,
+  )
+  expect(at('/x/readme.md.md?a=1')).toBe(`${site}/api/affordances/md/x/readme.md.md?a=1`)
+  expect(at('/blog/post.md')).toBe(`${site}/api/affordances/md/blog/post`)
+  expect(at('/x/readme.md', { [RENDER_HEADER]: '1' })).toBeUndefined()
+})
+
+test("sourceRegex matches a .md path exactly when next's own matcher does", () => {
+  const sources = [
+    '/registry/:registry/npm/package/:pkg',
+    '/x/:pkg',
+    '/x/:pkg?',
+    '/x/:pkg*',
+    '/x/:pkg+',
+    '/x/:pkg(\\d+)',
+    '/x/:pkg([a-z]+\\.md)',
+    '/x/:a/:b?',
+    '/x/:pkg(.*)',
+    '/docs/:slug*',
+    '/x/:pkg((?:@[^/]+/)?[^/]+)',
+    '/X/:pkg',
+    '/x-:pkg',
+    '/x/(.*)',
+    '/x/(.*)?',
+    '/x{/:pkg}?',
+    '/x{/:pkg}*',
+    '/x{-:a}?/:b',
+    '/x/:a-:b',
+    '/x/:pkg.md',
+    '/x.:ext?',
+    '/x/\\(:pkg\\)',
+    '/x/{readme}?.md',
+  ]
+  const paths = [
+    '/x/readme.md',
+    '/x/a/b.md',
+    '/x/abc.md',
+    '/X/readme.md',
+    '/x/@babel/core.md',
+    '/registry/upstream/npm/package/readme.md',
+    '/registry/upstream/npm/package/@babel/core.md',
+    '/x-foo.md',
+    '/docs/a/b/c.md',
+    '/docs.md',
+    '/x/Readme.MD',
+    '/x/a%2Fb.md',
+    '/x/ü.md',
+    '/y/readme.md',
+    '/x/a-b.md',
+    '/x/(readme).md',
+    '/x/.md',
+    '/x.md',
+    '/x-a/readme.md',
+  ]
+  for (const source of sources)
+    for (const path of paths)
+      expect({ source, path, matched: sourceRegex(source).test(path) }).toEqual({
+        source,
+        path,
+        matched: getPathMatch(source)(path) !== false,
+      })
+})
+
+const rewrittenTo = (path: string) => mdRewrite(new Request(`${site}${path}`))?.pathname
+
+test('literalMd routes follow the env they were compiled from, and a trailing / never matches', () => {
+  vi.stubEnv(LITERAL_ENV, JSON.stringify(['/x/:pkg']))
+  expect(rewrittenTo('/x/readme.md')).toBe('/api/affordances/md/x/readme.md')
+  vi.stubEnv(LITERAL_ENV, JSON.stringify(['/y/:pkg']))
+  expect(rewrittenTo('/x/readme.md')).toBe('/api/affordances/md/x/readme')
+  expect(rewrittenTo('/y/readme.md')).toBe('/api/affordances/md/y/readme.md')
+  // next's matcher isn't strict about a trailing /, ours is; next 308s /x/ to /x before any rewrite, and a literal
+  // path has to end in .md anyway
+  expect(getPathMatch('/y/:pkg')('/y/readme.md/')).not.toBe(false)
+  expect(sourceRegex('/y/:pkg').test('/y/readme.md/')).toBe(false)
+  expect(rewrittenTo('/y/readme.md/')).toBeUndefined()
+})
+
+test('a literalMd source next would reject fails at config time', () => {
+  for (const source of ['/x/:', '/x/(?:a)', '/x/((a))', '/x/(a', '/x{/:pkg', '/x/:a:b']) {
+    expect(() => getPathMatch(source)).toThrow(TypeError)
+    expect(() => md({ root, literalMd: [source] })({} as Config)).toThrow(TypeError)
+  }
 })
 
 test('the uppercase .MD next rewrites still finds the page', async () => {
@@ -409,6 +769,27 @@ test('md() points every page at its markdown twin with a Link header', async () 
   expect(linkOn(rules, '/api/x')).toBeUndefined()
   expect(linkOn(rules, '/robots.txt')).toBeUndefined()
   expect(await md({ root, link: false })({} as Config).headers!()).toEqual([])
+})
+
+test('md({ literalMd }) hands the routes to the handlers and rewrites their .md pages asked for with Accept', async () => {
+  const config = md({ root: app(['app/x/[pkg]/page.tsx']), literalMd: ['/x/:pkg'] })({} as Config)
+  expect(JSON.parse(config.env![LITERAL_ENV]!)).toEqual(['/x/:pkg'])
+  const { beforeFiles } = (await config.rewrites!()) as Rewrites
+  expect(beforeFiles.at(-1)).toEqual({
+    source: '/x/:pkg',
+    has: [{ type: 'header', key: 'accept', value: '.*text/markdown.*' }],
+    missing: [
+      { type: 'header', key: RENDER_HEADER },
+      { type: 'header', key: 'rsc' },
+      { type: 'query', key: '_rsc' },
+    ],
+    destination: '/api/affordances/md',
+  })
+  // config rules can't tell the page readme.md from a twin, so .md urls get no Link there; the handler adds it
+  const rules = await config.headers!()
+  expect(linkOn(rules, '/x/express')).toBe(alternate('/x/express.md'))
+  expect(linkOn(rules, '/x/readme.md')).toBeUndefined()
+  expect(md({ root })({} as Config).env![LITERAL_ENV]).toBeUndefined()
 })
 
 test("md() adds its Link to Affordances' own, which a separate rule would replace", async () => {
