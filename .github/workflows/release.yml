@@ -20,7 +20,8 @@ jobs:
       pull-requests: write
       id-token: write
     outputs:
-      released: ${{ steps.changesets.outputs.published }}
+      # not `published`: publish.sh skips existing versions, so rerunning after a failed npm job still reaches vlt.io
+      released: ${{ steps.changesets.outputs.hasChangesets == 'false' }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
