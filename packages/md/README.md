@@ -93,7 +93,7 @@ It returns a string, `{ markdown, title?, description? }` (the handler adds the 
 
 Markdown rendered with the caller's cookies or authorization, or from a page that is `private`/`no-store` or sets cookies, is sent as `private, no-store`. Otherwise it mirrors the page's `cache-control`.
 
-- **Redirects:** a same-origin redirect becomes a redirect to the `.md` url. A cross-origin redirect is passed through, never followed.
+- **Redirects:** a same-origin redirect becomes a redirect to the `.md` url, including a `redirect()` that runs after the page started streaming (Next sends that as a 200 that refreshes; the handler answers 307, or 308 when permanent). A cross-origin redirect is passed through, never followed.
 - **Limits:** a page has 10s to render (`timeout`) and at most 6 MiB of HTML (`maxBytes`). A page still streaming at the timeout is converted as far as it got: unresolved boundaries keep their fallback, a note says so, and the response is `private, no-store` with `x-affordances-md-partial: 1`. One that sends nothing by then is a `504`.
 - **Origin:** set `AFFORDANCES_MD_ORIGIN` when the server can't reach itself at the request's origin. A path that would leave the origin (`//host/…`) answers 400 before anything is fetched.
 - **Headers:** `createMdHandler({ headers })` adds request headers to the page fetch, e.g. `x-vercel-protection-bypass` on a protected preview.

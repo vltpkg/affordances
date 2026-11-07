@@ -336,9 +336,18 @@ const asIs = async (request: Request, options: MdHandlerOptions) => {
 // how long a page may take to render, by default
 const TIMEOUT = 10_000
 
+// the page's headers, for a response of ours that passes it on. fetch has already decoded the body, so its encoding
+// and length no longer describe it, and next's x-middleware-* (set when a proxy.ts rewrote the page) make it throw
+// on a route handler's response
+const passedHeaders = (upstream: Response) => {
+  const headers = new Headers(upstream.headers)
+  const internal = [...upstream.headers.keys()].filter((name) => name.startsWith('x-middleware-'))
+  for (const name of ['content-encoding', 'content-length', ...internal]) headers.delete(name)
+  return headers
+}
+
 // the page's response as it came: status, headers (set-cookie and vary too) and body. undefined when its headers
-// didn't arrive by the timeout; the body then streams on, never cut short. fetch has already decoded the body, so
-// its encoding and length no longer describe it
+// didn't arrive by the timeout; the body then streams on, never cut short
 const passPage = async (request: Request, target: URL, options: MdHandlerOptions) => {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), options.timeout ?? TIMEOUT)
@@ -348,9 +357,7 @@ const passPage = async (request: Request, target: URL, options: MdHandlerOptions
       redirect: 'manual',
       signal: controller.signal,
     })
-    const headers = new Headers(upstream.headers)
-    headers.delete('content-encoding')
-    headers.delete('content-length')
+    const headers = passedHeaders(upstream)
     // the caller's credentials make it theirs alone. the headers option's are never sent here (asIs), so a cookie
     // set in answer is the caller's own, and goes out as the page sent it
     if (credentialed(request.headers)) headers.set('cache-control', 'private, no-store')
@@ -360,6 +367,22 @@ const passPage = async (request: Request, target: URL, options: MdHandlerOptions
   } finally {
     clearTimeout(timer)
   }
+}
+
+// the redirect next streams into a page that called redirect() after its shell was sent (as of next 16.3 and 16.4's
+// make-get-server-inserted-html): a refresh meta of its own, after 0 seconds for a permanent redirect, 1 for any other.
+// react escapes the url as an attribute
+const STREAMED_REDIRECT =
+  /<meta id="__next-page-redirect" http-equiv="refresh" content="([01]);url=([^"]*)"/
+const ATTRIBUTE = { '&amp;': '&', '&quot;': '"', '&#x27;': "'", '&lt;': '<', '&gt;': '>' }
+const streamedRedirect = (html: string) => {
+  const [, delay, url] = STREAMED_REDIRECT.exec(html) ?? []
+  if (url === undefined) return undefined
+  const location = url.replace(
+    /&(?:amp|quot|#x27|lt|gt);/g,
+    (entity) => ATTRIBUTE[entity as keyof typeof ATTRIBUTE],
+  )
+  return { status: delay === '0' ? 308 : 307, location }
 }
 
 const fail = (status: number, message: string) =>
@@ -445,8 +468,7 @@ const convertPage =
     // a same-origin redirect stays in markdown; one to another origin is passed on untouched, never followed. a
     // twin path that starts with //host (a return-to of /.//evil.test/x is same-origin) gets /. so a client resolves
     // it as a path on this site, never as another site. it's cached as the page would be, and varies on Accept
-    if (upstream.status >= 300 && upstream.status < 400) {
-      const location = upstream.headers.get('location')
+    const redirected = (status: number, location: string | null) => {
       const next = location ? new URL(location, target) : undefined
       const twin = next && mdPath(next.pathname)
       const to =
@@ -460,9 +482,8 @@ const convertPage =
         serviceCredentials ||
         /private|no-store/.test(redirectCache) ||
         upstream.headers.has('set-cookie')
-      clearTimeout(timer)
       return new Response(null, {
-        status: upstream.status,
+        status,
         headers: {
           ...(to && { location: to }),
           vary: 'Accept',
@@ -472,15 +493,16 @@ const convertPage =
         },
       })
     }
+    if (upstream.status >= 300 && upstream.status < 400) {
+      clearTimeout(timer)
+      return redirected(upstream.status, upstream.headers.get('location'))
+    }
 
-    // anything else (a file in public/, json) is passed on as it came. fetch has already decoded the body, so its
-    // encoding and length no longer describe it
+    // anything else (a file in public/, json) is passed on as it came
     if (!upstream.headers.get('content-type')?.includes('text/html')) {
       // the deadline is for rendering a page; a file streams on to its end
       clearTimeout(timer)
-      const passed = new Headers(upstream.headers)
-      passed.delete('content-encoding')
-      passed.delete('content-length')
+      const passed = passedHeaders(upstream)
       // credentialed means private; a cookie set in answer to the headers option's credentials is the service's
       if (serviceCredentials) passed.delete('set-cookie')
       if (callerCredentials || serviceCredentials) passed.set('cache-control', 'private, no-store')
@@ -497,6 +519,10 @@ const convertPage =
     // a page whose shell arrived is converted as far as it streamed: boundaries still loading keep their fallback
     const partial = !body.complete
     if (partial && !body.html.trim()) return slow()
+    // a redirect() after the shell went out can't change the status any more, so next streams it into the page
+    // instead: a 200 whose html sends the browser on. it's the same redirect, so it gets the same answer
+    const late = streamedRedirect(body.html)
+    if (late) return redirected(late.status, late.location)
 
     const result = htmlToMarkdown(body.html, {
       url: target.href,

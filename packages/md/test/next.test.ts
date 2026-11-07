@@ -296,6 +296,81 @@ test('a same-origin redirect stays on the site in markdown, varies on Accept, an
   expect((await get('/go')).headers.get('location')).toBe('https://idp.test/authorize')
 })
 
+// what next 16.3.0 and 16.4.3 stream for a redirect() after the layout's shell went out: a 200, the shell, the
+// redirect's digest in the flight data, and a refresh meta (a next start capture, trimmed)
+const streamedRedirect =
+  (url: string, delay = 1, status = 307) =>
+  () =>
+    new Response(
+      `<!DOCTYPE html><html><head><title>Site</title></head><body><header><h1>Site header</h1></header><main><!--$?--><template id="B:0"></template><p>Loading…</p><!--/$--></main>` +
+        `<script>self.__next_f.push([1,"5:E{\\"digest\\":\\"NEXT_REDIRECT;replace;${url};${status};\\"}\\n"])</script>` +
+        `<meta id="__next-page-redirect" http-equiv="refresh" content="${delay};url=${url}"/></body></html>`,
+      {
+        headers: {
+          'content-type': 'text/html; charset=utf-8',
+          'cache-control': 'public, max-age=60',
+        },
+      },
+    )
+
+test("a redirect() streamed after the shell is a redirect to the target's .md, not the half page", async () => {
+  upstream = streamedRedirect('/target?from=late&amp;x=1')
+  const late = await handler(new Request(`${site}/r/late.md`))
+  expect([late.status, late.headers.get('location'), await late.text()]).toEqual([
+    307,
+    '/target.md?from=late&x=1',
+    '',
+  ])
+  expect(late.headers.get('vary')).toBe('Accept')
+  // permanentRedirect() refreshes after 0 seconds
+  upstream = streamedRedirect('/', 0, 308)
+  const gone = await handler(new Request(`${site}/gone.md`))
+  expect([gone.status, gone.headers.get('location')]).toEqual([308, '/index.md'])
+  // the same rules as a redirect with its own status: cached as the page is, private when credentialed or negotiated
+  expect(gone.headers.get('cache-control')).toBe('public, max-age=60')
+  upstream = streamedRedirect('/target')
+  const signedIn = await handler(new Request(`${site}/r/late.md`, { headers: { cookie: 'sid=1' } }))
+  expect(signedIn.headers.get('cache-control')).toBe('private, no-store')
+  const negotiated = await handler(
+    new Request(`${site}/r/late`, { headers: { accept: 'text/markdown' } }),
+  )
+  expect([negotiated.status, negotiated.headers.get('cache-control')]).toEqual([
+    307,
+    'private, no-store',
+  ])
+  // a twin path that starts with //host stays a path on this site
+  upstream = streamedRedirect('/.//evil.test/x')
+  const sneaky = (await handler(new Request(`${site}/r/late.md`))).headers.get('location')!
+  expect(new URL(sneaky, site).origin).toBe(site)
+  // another origin is passed on as it came, never made a .md of ours or followed
+  upstream = streamedRedirect('https://evil.test/x')
+  const away = await handler(new Request(`${site}/r/away.md`))
+  expect([away.status, away.headers.get('location')]).toEqual([307, 'https://evil.test/x'])
+  expect(seen.map((call) => call.url.pathname)).toEqual([
+    '/r/late',
+    '/gone',
+    '/r/late',
+    '/r/late',
+    '/r/late',
+    '/r/away',
+  ])
+})
+
+test("a page that only shows next's redirect meta as text, or a refresh meta of its own, is converted", async () => {
+  upstream = () =>
+    new Response(
+      page(
+        '<h1>Docs</h1><pre><code>&lt;meta id="__next-page-redirect" http-equiv="refresh" content="1;url=/x"/&gt;</code></pre>' +
+          '<meta http-equiv="refresh" content="1;url=/elsewhere">',
+      ),
+      { headers: { 'content-type': 'text/html' } },
+    )
+  const response = await get('/docs')
+  expect(response.status).toBe(200)
+  expect(response.headers.has('location')).toBe(false)
+  expect(await response.text()).toContain('# Docs')
+})
+
 test('markdown asked for with Accept at the page url is never cached publicly; the .md url mirrors the page', async () => {
   upstream = () =>
     new Response(page('<h1>Home</h1>'), {
@@ -620,6 +695,35 @@ test("a passthrough sends only the page's own headers, never the headers option'
   const plain = await handler(new Request(`${site}/feed`, { headers: { rsc: '1' } }))
   expect(plain.headers.get('cache-control')).toBe('public, max-age=60')
   expect(plain.headers.getSetCookie()).toEqual(['session=refreshed'])
+})
+
+test("a page a proxy.ts rewrote is passed on without next's x-middleware-* headers, which a route handler can't send", async () => {
+  const proxied = {
+    'x-middleware-rewrite': '/real-pricing',
+    'x-middleware-next': '1',
+    'x-middleware-set-cookie': 'a=1',
+    'x-nextjs-rewritten-path': '/real-pricing',
+  }
+  upstream = () =>
+    new Response('0:["$","div",null,{}]\n', {
+      headers: { 'content-type': 'text/x-component', ...proxied },
+    })
+  // an RSC request that also asks for markdown, as vlt.io's proxy sends one here
+  const rsc = await handler(
+    new Request(`${site}/pricing?_rsc`, { headers: { rsc: '1', accept: 'text/markdown' } }),
+  )
+  // and a file the handler passes through as it came
+  upstream = () =>
+    new Response('{}', { headers: { 'content-type': 'application/json', ...proxied } })
+  const file = await get('/data.json')
+  for (const response of [rsc, file]) {
+    expect(response.status).toBe(200)
+    expect([...response.headers.keys()].filter((name) => name.startsWith('x-middleware-'))).toEqual(
+      [],
+    )
+    expect(response.headers.get('x-nextjs-rewritten-path')).toBe('/real-pricing')
+  }
+  expect(await rsc.text()).toBe('0:["$","div",null,{}]\n')
 })
 
 test("an RSC fetch the proxy sent here gets the page's own RSC payload, unconverted", async () => {
