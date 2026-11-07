@@ -1,6 +1,6 @@
 {
   "name": "@affordances/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The Affordances CLI: set up an app, and see and call any page the way an agent does",
   "license": "MIT",
   "repository": {
