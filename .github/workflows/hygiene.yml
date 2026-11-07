@@ -17,6 +17,23 @@ jobs:
       - run: vlt install --frozen-lockfile
       - run: vlr fmt:check
 
+  # Fails a PR that changes a package without a changeset. PRs that shouldn't release
+  # anything (tests, refactors) add one with `vlr changeset --empty`.
+  changeset:
+    # the Release PR consumes the changesets, so it would always fail this
+    if: github.event_name == 'pull_request' && !startsWith(github.head_ref, 'changeset-release/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: npm install -g vlt
+      - run: vlt install --frozen-lockfile
+      - run: vlr changeset status --since=origin/main
+
   lint:
     runs-on: ubuntu-latest
     steps:
