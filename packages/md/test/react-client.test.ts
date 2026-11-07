@@ -52,6 +52,16 @@ test('refuses an error or a response that is not markdown, and forgets it so the
   expect(calls).toHaveLength(3)
 })
 
+test('refuses a path on another origin, and never fetches it', async () => {
+  // a backslash is a slash to a url parser: /\evil.test/x is //evil.test/x
+  for (const path of ['//evil.test/x', 'https://evil.test/x', '/\\evil.test/x'])
+    await expect(hook(path).load()).rejects.toThrow("not this site's page")
+  vi.stubGlobal('location', { origin: 'https://shop.test' })
+  await expect(hook('https://evil.test/x').load()).rejects.toThrow("not this site's page")
+  expect(await hook('https://shop.test/x').load()).toBe('# Tee\n')
+  expect(calls).toEqual([{ url: 'https://shop.test/x.md', init: { credentials: 'same-origin' } }])
+})
+
 test('a failed preload stays quiet', async () => {
   respond = () => new Response('', { status: 404 })
   const { preload } = hook('/a')

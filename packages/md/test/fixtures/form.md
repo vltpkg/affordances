@@ -9,6 +9,5 @@ url: "https://shop.test/page"
 
 - Email (email)
 - Password (password)
-- Promo code
 - Country (select)
 - Note (textarea)

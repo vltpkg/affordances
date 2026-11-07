@@ -53,6 +53,38 @@ const mode = (node: Element) =>
       ? 'skip'
       : undefined
 
+// a code point a css escape names, or U+FFFD where css reads one instead: zero, a surrogate, or past the last code point
+const codePoint = (hex: string) => {
+  const code = Number.parseInt(hex, 16)
+  return code === 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)
+    ? '\ufffd'
+    : String.fromCodePoint(code)
+}
+// a style attribute as css reads it: comments gone, escapes (n\one, \6e one) decoded
+const cssText = (style: string) =>
+  style
+    .replace(/\/\*[\s\S]*?(\*\/|$)/g, '')
+    .replace(/\\([0-9a-f]{1,6})[ \t\n\r\f]?|\\([^\n0-9a-f])/gi, (_, hex: string, char: string) =>
+      hex ? codePoint(hex) : char,
+    )
+// display: none, visibility: hidden or content-visibility: hidden in a style attribute, however it's spaced, cased,
+// commented, escaped or marked !important. opacity: 0 isn't hidden: motion libraries render it on the server as the
+// first frame of an entrance animation, so it would drop content people see a moment later
+const styleHidden = (node: Element) =>
+  cssText(String(node.properties.style ?? ''))
+    .split(';')
+    .some((declaration) => {
+      const [property = '', value = ''] = declaration
+        .split(':')
+        .map((part) => part.trim().toLowerCase())
+      const keyword = value.replace(/\s*!\s*important$/, '')
+      return (
+        (property === 'display' && keyword === 'none') ||
+        (property === 'visibility' && (keyword === 'hidden' || keyword === 'collapse')) ||
+        (property === 'content-visibility' && keyword === 'hidden')
+      )
+    })
+
 // what an icon or avatar link (an image without alt) is called: its aria-label, then its title
 const linkLabel = (a: Element) =>
   String(a.properties.ariaLabel ?? '').trim() || String(a.properties.title ?? '').trim()
@@ -67,6 +99,8 @@ const prune = (parent: HastRoot | Element) => {
     if (child.type === 'comment' || child.type === 'doctype') return []
     if (!isElement(child)) return [child as ElementContent]
     if (ALWAYS_DROP.has(child.tagName)) return []
+    // only an <AgentText> flattened below is emitted verbatim; the page's own attribute is just an attribute
+    delete child.properties.dataAffordancesMdText
     const m = mode(child)
     if (m === 'skip') return []
     if (m === 'text') {
@@ -88,7 +122,8 @@ const prune = (parent: HastRoot | Element) => {
       child.properties = properties
     } else if (
       (child.properties.hidden !== undefined && child.properties.hidden !== false) ||
-      String(child.properties.ariaHidden) === 'true'
+      String(child.properties.ariaHidden) === 'true' ||
+      styleHidden(child)
     )
       // hidden from people means hidden from agents, unless it was marked for them
       return []
@@ -162,7 +197,14 @@ const extract = (body: HastRoot, how: Options['extract']): HastRoot => {
       ),
   )
   if (outer.length) return { type: 'root', children: outer }
-  const main = select('main, [role=main]', body)
+  // the outermost landmark, so a <main> or role=main in a comment inside it never replaces it; among several, a real
+  // <main> before a [role=main], since a role survives sanitizers that keep attributes
+  const landmarks = selectAll('main, [role=main]', body)
+  const outermost = landmarks.filter(
+    (m) =>
+      !landmarks.some((other) => other !== m && selectAll('main, [role=main]', other).includes(m)),
+  )
+  const main = outermost.find((m) => m.tagName === 'main') ?? outermost[0]
   if (main) return { type: 'root', children: [main] }
   // the page has no landmark: take the body and drop its chrome, but keep what was marked for agents
   const chrome = new Set(selectAll(CHROME, body).filter((el) => mode(el) !== 'only'))
@@ -209,17 +251,38 @@ const closest = (node: Element, tag: string, up: Map<Element, Element>) => {
 
 const text = (node: Element | undefined) => (node ? toString(node).replace(/\s+/g, ' ').trim() : '')
 
+// a label's or legend's own words. a control inside one carries a value (a textarea's text, a select's options),
+// which never leaves the page this way
+const VALUED = new Set([
+  'input',
+  'select',
+  'option',
+  'optgroup',
+  'textarea',
+  'datalist',
+  'output',
+  'button',
+])
+const words = (node: Element | undefined): string => {
+  const strip = (el: Element): Element => ({
+    ...el,
+    children: el.children.flatMap((child): ElementContent[] =>
+      isElement(child) ? (VALUED.has(child.tagName) ? [] : [strip(child)]) : [child],
+    ),
+  })
+  return node ? text(strip(node)) : ''
+}
+
 const labelOf = (field: Element, form: Element, up: Map<Element, Element>) => {
   const id = field.properties.id
   const forLabel = id
     ? selectAll('label', form).find((l) => String(l.properties.htmlFor) === String(id))
     : undefined
   return (
-    text(forLabel) ||
-    text(closest(field, 'label', up)) ||
-    String(
-      field.properties.ariaLabel ?? field.properties.placeholder ?? field.properties.name ?? '',
-    ).trim()
+    words(forLabel) ||
+    words(closest(field, 'label', up)) ||
+    // a placeholder is an example of what to type, and a name is the server's: neither is the label
+    String(field.properties.ariaLabel ?? '').trim()
   )
 }
 
@@ -248,19 +311,24 @@ const form: Handle = (state, node) => {
     const label = labelOf(field, node, up)
     if (label) entries.push(type === 'text' ? label : `${label} (${type})`)
   }
-  const lines = entries.map((entry) => {
-    if (typeof entry === 'string') return entry
+  const lines = entries.flatMap((entry) => {
+    if (typeof entry === 'string') return [entry]
     const fieldset = closest(entry[0]!, 'fieldset', up)
     const legend = fieldset && select('legend', fieldset)
-    const options = entry.map((choice) => {
-      const label = labelOf(choice, node, up) || String(choice.properties.value ?? '')
+    // a group with no legend or aria-label lists its options alone
+    const name = words(legend ?? undefined) || String(fieldset?.properties.ariaLabel ?? '').trim()
+    // an option without a label is left out: its value is the server's, and values never leave the page
+    const options = entry.flatMap((choice) => {
+      const label = labelOf(choice, node, up)
+      if (!label) return []
       const flags = [
         choice.properties.checked && 'selected',
         choice.properties.disabled && 'unavailable',
       ].filter(Boolean)
-      return flags.length ? `${label} (${flags.join(', ')})` : label
+      return [flags.length ? `${label} (${flags.join(', ')})` : label]
     })
-    return `${text(legend ?? undefined) || String(entry[0]!.properties.name)}: ${options.join(', ')}`
+    if (!options.length) return []
+    return [name ? `${name}: ${options.join(', ')}` : options.join(', ')]
   })
 
   // everything that isn't a control or a label still says something: hints, stock, errors
@@ -292,10 +360,22 @@ const form: Handle = (state, node) => {
   ] as never
 }
 
+// a url's scheme as a browser reads it: new URL drops the tabs, newlines and controls that hide java\nscript:.
+// a relative url is the page's own, so it's http(s) whatever the base
+const scheme = (url: string) => {
+  try {
+    return new URL(url, 'https://relative.invalid/').protocol
+  } catch {
+    return undefined
+  }
+}
+const LINK_SCHEMES = new Set(['http:', 'https:', 'mailto:', 'tel:'])
+const IMAGE_SCHEMES = new Set(['http:', 'https:'])
+
 const link: Handle = (state, node, parent) => {
   const href = String(node.properties.href ?? '').trim()
   const children = state.all(node) as PhrasingContent[]
-  if (!href || href === '#' || /^javascript:/i.test(href)) return children
+  if (!href || href === '#' || !LINK_SCHEMES.has(scheme(href) ?? '')) return children
   // a heading's link to its own anchor (the usual self-link) is the heading, not a link
   if (href.startsWith('#') && isElement(parent) && /^h[1-6]$/.test(parent.tagName)) return children
   const title = (node.properties.title as string) ?? null
@@ -311,7 +391,8 @@ const link: Handle = (state, node, parent) => {
 const img: Handle = (_, node) => {
   const alt = String(node.properties.alt ?? '').trim()
   // no alt is decorative or undescribed; either way it tells an agent nothing
-  if (!alt || !node.properties.src) return
+  if (!alt || !node.properties.src || !IMAGE_SCHEMES.has(scheme(String(node.properties.src)) ?? ''))
+    return
   return {
     type: 'image',
     url: String(node.properties.src),
@@ -440,7 +521,20 @@ const firstTitle = (node: HastRoot | Element): Element | undefined => {
   }
 }
 
-const head = (tree: HastRoot) => {
+// the page's canonical, if it's an http(s) url that fits in a Link header: only the <head>'s, since content in the
+// body (a comment, a sanitized post) can carry a <link> too, and never one with a , or ; that would end the header's value
+// early (URL already encodes <, >, quotes and whitespace)
+const canonicalOf = (href: string | undefined, base: string | undefined) => {
+  if (!href) return undefined
+  try {
+    const url = new URL(href, base)
+    return /^https?:$/.test(url.protocol) && !/[,;]/.test(url.href) ? url.href : undefined
+  } catch {
+    return undefined
+  }
+}
+
+const head = (tree: HastRoot, base: string | undefined) => {
   const meta = (selector: string) =>
     String(select(selector, tree)?.properties.content ?? '').trim() || undefined
   // next streams metadata for dynamic pages, so <title> may arrive in the body; an svg's <title> isn't the page's
@@ -448,13 +542,22 @@ const head = (tree: HastRoot) => {
   return {
     title: (title && toString(title).trim()) || meta('meta[property="og:title"]'),
     description: meta('meta[name=description]') ?? meta('meta[property="og:description"]'),
-    canonical: String(select('link[rel=canonical]', tree)?.properties.href ?? '') || undefined,
+    canonical: canonicalOf(
+      String(select('head link[rel=canonical]', tree)?.properties.href ?? ''),
+      base,
+    ),
     image: meta('meta[property="og:image"]'),
     lang: String(select('html', tree)?.properties.lang ?? '') || undefined,
     jsonLd: selectAll('script[type="application/ld+json"]', tree)
       .map((s) => toString(s).trim())
       .filter(Boolean),
   }
+}
+
+// a fence longer than any run of backticks in what it holds, so text that isn't valid json can't close it
+const fenced = (lang: string, value: string) => {
+  const fence = '`'.repeat(Math.max(3, ...(value.match(/`+/g) ?? []).map((run) => run.length + 1)))
+  return `${fence}${lang}\n${value}\n${fence}`
 }
 
 const pretty = (raw: string) => {
@@ -469,7 +572,7 @@ export const htmlToMarkdown = (html: string, options: Options = {}): Result => {
   const { frontmatter = true, jsonLd = true } = options
   const tree = fromHtml(html)
   resolveStreamed(tree)
-  const meta = head(tree)
+  const meta = head(tree, options.url)
   const bodyElement = select('body', tree)
   const body: HastRoot = {
     type: 'root',
@@ -503,7 +606,7 @@ export const htmlToMarkdown = (html: string, options: Options = {}): Result => {
     .replace(/\n{3,}/g, '\n\n')
     .trim()
   if (jsonLd && meta.jsonLd.length)
-    output += `\n\n${meta.jsonLd.map((raw) => `\`\`\`json\n${pretty(raw)}\n\`\`\``).join('\n\n')}`
+    output += `\n\n${meta.jsonLd.map((raw) => fenced('json', pretty(raw))).join('\n\n')}`
 
   const markdown =
     (frontmatter

@@ -17,6 +17,13 @@ test('never outputs values, tokens, scripts, comments, or data attributes', () =
     .map((f) => htmlToMarkdown(readFileSync(new URL(f, dir), 'utf8')).markdown)
     .join('\n')
   for (const secret of [
+    // form-labels: a label or legend wrapping a control never carries its value
+    'sk-LIVE-SECRET-wrapped',
+    'for-label-private-note',
+    'United States',
+    'label-wrapped@example.com',
+    'label-output-value',
+    'legend-output-value',
     'tok_9f8a7b6c',
     'hunter2',
     'jane@example.com',
@@ -49,4 +56,16 @@ test('options: no frontmatter, no JSON-LD, extract none, custom handlers', () =>
     handlers: { blockquote: () => ({ type: 'text', value: 'QUOTE' }) as never },
   })
   expect(custom.markdown).toContain('QUOTE')
+})
+
+test('a label wrapping a control never carries its value, even on a form that opts in to values', () => {
+  const { markdown } = htmlToMarkdown(
+    `<main><form data-affordances-md="values">
+      <label>Key <textarea name="api_key">sk-OPTIN-SECRET</textarea></label>
+      <label>Region <select name="region"><option>United States</option><option selected>Europe</option></select></label>
+    </form></main>`,
+  )
+  expect(markdown).not.toContain('sk-OPTIN-SECRET')
+  expect(markdown).not.toContain('United States')
+  expect(markdown).toContain('- Key (textarea)\n- Region (select)')
 })
