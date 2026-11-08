@@ -27,14 +27,20 @@ export const mdPagePath = (pathname: string) =>
 
 // the rewrites' own match, for a proxy.ts (next runs it before any rewrite): the handler url a markdown request
 // goes to, or undefined when it isn't one. a proxy can't see public/, so a real .md file there matches too
-export const mdRewrite = (request: Request): URL | undefined => {
-  const url = new URL(request.url)
+// the rewrites' own match, once: for a markdown request, the path of the page it's for, else undefined. a literalMd
+// route's .md path is kept whole, so the handler can tell the page readme.md from a twin
+const markdownPage = (request: Request, url: URL) => {
   const asked = isPage(url.pathname) && matches(request, url, rewrites.beforeFiles[1]!)
   const suffixed = suffixRegex.test(url.pathname) && matches(request, url, rewrites.afterFiles[1]!)
-  if (!asked && !suffixed) return
-  // a literalMd route's .md path goes as it is, so the handler can tell the page readme.md from a twin
-  const page = isLiteral(url.pathname) ? url.pathname : mdPagePath(url.pathname)
-  return new URL(handlerPath(page) + url.search, url)
+  if (!asked && !suffixed) return undefined
+  return isLiteral(url.pathname) ? url.pathname : mdPagePath(url.pathname)
+}
+const handlerUrl = (page: string, url: URL) => new URL(handlerPath(page) + url.search, url)
+
+export const mdRewrite = (request: Request): URL | undefined => {
+  const url = new URL(request.url)
+  const page = markdownPage(request, url)
+  return page === undefined ? undefined : handlerUrl(page, url)
 }
 
 export const isMdRequest = (request: Request) => mdRewrite(request) !== undefined
@@ -45,8 +51,12 @@ export const isMdRequest = (request: Request) => mdRewrite(request) !== undefine
 // md() would, rather than adding to it
 export const mdLink = (request: Request): string | undefined => {
   const url = new URL(request.url)
+  return pageLink(request, url, () => markdownPage(request, url) !== undefined)
+}
+// the cheap checks first: a markdown request is a page url too, so the full match runs last
+const pageLink = (request: Request, url: URL, markdown: () => boolean) => {
   if (!isPage(url.pathname) || apiRoute.test(url.pathname)) return
-  if (isMdRequest(request) || !matches(request, url, { missing: notOursOrRsc })) return
+  if (!matches(request, url, { missing: notOursOrRsc }) || markdown()) return
   // resolved, so a path that starts with //host (/.//evil.test/x is one) is never handed out as another site's link
   const twin = new URL(mdPath(url.pathname), url)
   if (twin.origin !== url.origin) return

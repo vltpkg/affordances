@@ -83,13 +83,26 @@ ${files.map(({ route, file }) => `  ${JSON.stringify(route)}: () => import(${JSO
   return out
 }
 
-// a list md() passed through next's env, or none when it didn't run (withMd left out, or a test)
-const strings = (raw: string | undefined): string[] => {
+// a list md() passed through next's env, or none when it didn't run (withMd left out, or a test), keeping only the
+// items guard accepts
+const list = <T>(raw: string | undefined, guard: (item: unknown) => item is T): T[] => {
   try {
-    const list: unknown = JSON.parse(raw ?? '[]')
-    return Array.isArray(list) ? list.filter((item) => typeof item === 'string') : []
+    const items: unknown = JSON.parse(raw ?? '[]')
+    return Array.isArray(items) ? items.filter(guard) : []
   } catch {
     return []
+  }
+}
+const isString = (item: unknown): item is string => typeof item === 'string'
+const strings = (raw: string | undefined) => list(raw, isString)
+
+// a value built once per value of the env next inlined. each caller passes process.env.NAME spelled out, since next
+// inlines that, never process.env[name]
+export const perEnv = <T, A extends unknown[] = []>(build: (...args: A) => T) => {
+  let cache: { key: string | undefined; value: T } | undefined
+  return (key: string | undefined, ...args: A) => {
+    if (!cache || cache.key !== key) cache = { key, value: build(...args) }
+    return cache.value
   }
 }
 
@@ -104,17 +117,12 @@ const param = (name: string) => name.replace(/\W/g, '')
 export const toSource = (route: string) =>
   route
     .split('/')
-    .map((segment) =>
-      segment
-        .replace(/[\\:()*+?{}]/g, '\\$&')
-        .replace(/^\[\[\.\.\.([^\]]+)\]\]$/, (_, name: string) => `:${param(name)}*`)
-        .replace(/^\[\.\.\.([^\]]+)\]$/, (_, name: string) => `:${param(name)}+`)
-        .replace(/^\[([^\]]+)\]$/, (_, name: string) => `:${param(name)}`),
-    )
+    .map((segment) => {
+      const { kind, name } = routeSegment(segment)
+      if (kind === 'static') return segment.replace(/[\\:()*+?{}]/g, '\\$&')
+      return `:${param(name)}${kind === 'any' ? '*' : kind === 'some' ? '+' : ''}`
+    })
     .join('/')
-
-// a source's literal text, its escapes undone: a header value's Link path
-export const unescapeSource = (source: string) => source.replace(/\\(.)/g, '$1')
 
 // md({ literalMd }): routes whose own urls may end in .md, passed to the handlers the same way
 export const LITERAL_ENV = 'AFFORDANCES_MD_LITERAL'
@@ -173,12 +181,24 @@ const lex = (source: string): Token[] => {
   return tokens
 }
 
-type Part = string | { prefix: string; suffix: string; pattern: string; modifier: string }
+type Param = {
+  name: string
+  prefix: string
+  suffix: string
+  pattern: string
+  modifier: string
+  // written with its own (pattern), and inside a {group}: what a source needs to be written back
+  custom: boolean
+  group: boolean
+}
+type Part = string | Param
 
 // path-to-regexp 6's parse, with next's delimiter '/'
 const parse = (source: string): Part[] => {
   const tokens = lex(source)
   const parts: Part[] = []
+  // path-to-regexp numbers the unnamed params, (pattern) and {groups}, from 0
+  let unnamed = 0
   let at = 0
   let path = ''
   const take = (type: Token['type']) =>
@@ -220,10 +240,13 @@ const parse = (source: string): Part[] => {
       if (path) parts.push(path)
       path = ''
       parts.push({
+        name: name ?? String(unnamed++),
         prefix,
         suffix: '',
         pattern: pattern ?? safe(prefix),
         modifier: take('modifier') ?? '',
+        custom: pattern !== undefined,
+        group: false,
       })
       continue
     }
@@ -241,10 +264,14 @@ const parse = (source: string): Part[] => {
       const suffix = text()
       must('close')
       parts.push({
+        // as path-to-regexp numbers them: only a param that captures, so a {group} of plain text takes no number
+        name: named || (own ? String(unnamed++) : ''),
         prefix,
         suffix,
         pattern: named && !own ? safe(prefix) : own,
         modifier: take('modifier') ?? '',
+        custom: Boolean(own),
+        group: true,
       })
       continue
     }
@@ -255,7 +282,7 @@ const parse = (source: string): Part[] => {
 
 // a next source as a regex over a pathname, as next's own matcher builds it (path-to-regexp 6, case-insensitive).
 // throws on a source next would reject too
-export const sourceRegex = (source: string) => {
+export const sourceRegex = (source: string, flags = 'i') => {
   const body = parse(source)
     .map((part) => {
       if (typeof part === 'string') return escape(part)
@@ -273,5 +300,217 @@ export const sourceRegex = (source: string) => {
       return `(?:${prefix}(${pattern})${suffix})${modifier}`
     })
     .join('')
-  return new RegExp(`^${body}$`, 'i')
+  return new RegExp(`^${body}$`, flags)
+}
+
+// a source's params in the order sourceRegex captures them: a {group} without a pattern captures nothing
+export const sourceParams = (source: string) =>
+  parse(source).flatMap((part) => (typeof part === 'string' || !part.pattern ? [] : [part.name]))
+
+// a destination as a function that fills in its params, as next fills a rewrite's: a missing optional one leaves out
+// its prefix. parsed once, since it runs for every twin link
+export const compileDestination = (destination: string) => {
+  const parts = parse(destination)
+  return (params: Record<string, string | undefined>) =>
+    parts
+      .map((part) => {
+        if (typeof part === 'string') return part
+        const value = params[part.name]
+        return value === undefined ? '' : `${part.prefix}${value}${part.suffix}`
+      })
+      .join('')
+}
+
+// a source written back from its parts: its text escaped again, and each param with the pattern it was given
+const escapeText = (text: string) => text.replace(/[\\:()*+?{}]/g, '\\$&')
+const writeSource = (parts: Part[]) =>
+  parts
+    .map((part) => {
+      if (typeof part === 'string') return escapeText(part)
+      const written = `${part.name && !/^\d+$/.test(part.name) ? `:${part.name}` : ''}${part.custom ? `(${part.pattern})` : ''}`
+      return part.group
+        ? `{${escapeText(part.prefix)}${written}${escapeText(part.suffix)}}${part.modifier}`
+        : `${escapeText(part.prefix)}${written}${part.modifier}`
+    })
+    .join('')
+
+// the Link rules a source needs, each a source and its value's template. next fills a header value only with the
+// params a url has, so an absent optional param would stay a literal :name: each optional param gets a rule where
+// it's there (required) and one where it isn't. a repeated param is filled only as :name+, which the template keeps.
+// undefined for a source next can't fill a value from at all: an unnamed param, which next leaves out of a header's
+// params, or more optional params than are worth a rule each
+export const linkSources = (source: string): { source: string; template: string }[] | undefined => {
+  const parts = parse(source)
+  const params = parts.filter((part): part is Param => typeof part !== 'string')
+  if (params.some((part) => part.pattern && /^\d+$/.test(part.name))) return undefined
+  const optional = params.filter((part) => part.modifier === '?' || part.modifier === '*')
+  if (optional.length > 3) return undefined
+  return Array.from({ length: 2 ** optional.length }, (_, mask) => {
+    const chosen = parts.flatMap((part): Part[] => {
+      if (typeof part === 'string') return [part]
+      const at = optional.indexOf(part)
+      if (at < 0) return [part]
+      if (!(mask & (1 << at))) return []
+      // a {group} of plain text is just its text when it's there
+      if (!part.pattern) return [`${part.prefix}${part.suffix}`]
+      return [{ ...part, modifier: part.modifier === '*' ? '+' : '' }]
+    })
+    const template = chosen
+      .map((part) =>
+        typeof part === 'string'
+          ? part
+          : `${part.prefix}:${part.name}${part.modifier}${part.suffix}`,
+      )
+      .join('')
+    return { source: writeSource(chosen) || '/', template: template || '/' }
+  })
+}
+
+// md({ aliases }): public url shapes and the app/ routes they render, passed to the handlers the same way
+export const ALIASES_ENV = 'AFFORDANCES_MD_ALIASES'
+
+// spelled out: next inlines process.env.NAME, never process.env[name]
+export const builtAliases = (): [source: string, destination: string][] =>
+  list(
+    process.env.AFFORDANCES_MD_ALIASES,
+    (pair): pair is [string, string] =>
+      Array.isArray(pair) && pair.length === 2 && pair.every(isString),
+  )
+
+// a segment as how many of the other side's it can stand for, and its text when that's fixed
+type Fit = { min: number; max: number; text?: string }
+const ONE: Fit = { min: 1, max: 1 }
+// a folder name as a route segment: [x] one of any value, [...x] one or more, [[...x]] none or more, else itself
+export const routeSegment = (
+  segment: string,
+): { kind: 'static' | 'one' | 'some' | 'any'; name: string } => {
+  const [, dots, name] = /^\[(\[\.\.\.|\.\.\.)?([^\]]+)\]?\]$/.exec(segment) ?? []
+  if (name === undefined || (dots === '[...') !== segment.endsWith(']]'))
+    return { kind: 'static', name: segment }
+  return { kind: dots === '[...' ? 'any' : dots ? 'some' : 'one', name }
+}
+const routeFits = (route: string) =>
+  route
+    .split('/')
+    .filter(Boolean)
+    .map((segment): Fit => {
+      const { kind, name } = routeSegment(segment)
+      return kind === 'static'
+        ? { ...ONE, text: name }
+        : kind === 'one'
+          ? ONE
+          : { min: kind === 'some' ? 1 : 0, max: Infinity }
+    })
+// a destination's segments from its own parse, so / and a trailing slash read as they do for a route: a param that's
+// a whole segment stands for as many as its modifier says (:x* any, :x+ one or more, :x? none or one), one in a
+// segment with text stands for that one segment, and text alone is itself
+const destinationFits = (destination: string) => {
+  const segments: Part[][] = [[]]
+  for (const part of parse(destination)) {
+    if (typeof part === 'string') {
+      part.split('/').forEach((piece, i) => {
+        if (i) segments.push([])
+        if (piece) segments.at(-1)!.push(piece)
+      })
+      continue
+    }
+    if (part.prefix === '/' || (part.group && part.prefix.startsWith('/'))) segments.push([])
+    segments.at(-1)!.push(part)
+  }
+  return segments
+    .filter((segment) => segment.length)
+    .map((segment): Fit => {
+      const [only] = segment
+      if (segment.length === 1 && typeof only !== 'string') {
+        // a {group} of plain text, there or not
+        if (!only!.pattern)
+          return {
+            min: only!.modifier ? 0 : 1,
+            max: 1,
+            text: (only!.prefix + only!.suffix).replace(/^\//, ''),
+          }
+        const many = only!.modifier === '+' || only!.modifier === '*'
+        return {
+          min: only!.modifier === '?' || only!.modifier === '*' ? 0 : 1,
+          max: many ? Infinity : 1,
+        }
+      }
+      return segment.every((piece) => typeof piece === 'string')
+        ? { ...ONE, text: segment.join('') }
+        : ONE
+    })
+}
+
+// whether some value of a destination's params is a url the route answers. lenient on purpose: /x/:tab can render
+// app/x/versions, so it only rules out a destination no value could fit (a typo, a missing or extra segment). a
+// segment that stands for a run, on either side, takes as many of the other side's as it can
+const fits = (dest: Fit[], route: Fit[]): boolean => {
+  if (!dest.length || !route.length)
+    return [...dest, ...route].every((segment) => segment.min === 0)
+  const [d, ...dRest] = dest as [Fit, ...Fit[]]
+  const [r, ...rRest] = route as [Fit, ...Fit[]]
+  const run = (segment: Fit, rest: Fit[], other: Fit[], next: (n: number) => boolean) => {
+    for (let n = segment.min; n <= Math.min(segment.max, other.length); n += 1)
+      if (next(n)) return true
+    return false
+  }
+  if (r.min !== 1 || r.max !== 1) return run(r, rRest, dest, (n) => fits(dest.slice(n), rRest))
+  if (d.min !== 1 || d.max !== 1) return run(d, dRest, route, (n) => fits(dRest, route.slice(n)))
+  return (d.text === undefined || r.text === undefined || d.text === r.text) && fits(dRest, rRest)
+}
+
+// md({ aliases }) checked when the config loads, so a mistake fails next dev and next build, not a request
+export const checkAliases = (aliases: Record<string, string>, pages: string[]) => {
+  let unchecked = false
+  for (const [source, destination] of Object.entries(aliases)) {
+    const alias = `md({ aliases }): '${source}': '${destination}'`
+    const fail = (why: string) => {
+      throw new TypeError(`[affordances-md] ${alias} ${why}`)
+    }
+    if (!source.startsWith('/'))
+      fail("has a source that isn't a path. Start it with /, as in a rewrite's source.")
+    // a ? that makes a param optional is fine; any other starts a query, which an alias has no use for
+    const optionalMarks = /(:\w+(?:\([^)]*\))?|\})\?(?=\/|$)/g
+    if (!/^\/(?!\/)/.test(destination) || /[?#]/.test(destination.replace(optionalMarks, '$1')))
+      fail(
+        "has a destination that isn't a path on this site. An alias names the app/ route a public url renders, as a path with the source's params: '/package/@:scope/:name': '/package/@:scope%2F:name'.",
+      )
+    try {
+      sourceRegex(source)
+      sourceRegex(destination)
+    } catch (error) {
+      fail(`isn't valid Next rewrite syntax: ${(error as Error).message}`)
+    }
+    const known = new Set(sourceParams(source))
+    const unknown = sourceParams(destination).filter((name) => !known.has(name))
+    if (unknown.length)
+      fail(
+        `uses ${unknown.map((name) => `:${name}`).join(', ')} in its destination, which the source doesn't have. Name each param in the source, the way a rewrite does.`,
+      )
+    // without app/ (a wrong root, or a node without process.getBuiltinModule) there's nothing to check against,
+    // which scanApp has said already: the alias is used as it is
+    if (!pages.length) {
+      unchecked = true
+      continue
+    }
+    const dest = destinationFits(destination)
+    if (!pages.some((route) => fits(dest, routeFits(route)))) {
+      // the pages that share the most leading segments with it, as a pointer to what was meant
+      const shared = (route: string) => {
+        const segments = routeFits(route)
+        let n = 0
+        while (n < dest.length && segments[n] && fits([dest[n]!], [segments[n]!])) n += 1
+        return n
+      }
+      const best = Math.max(0, ...pages.map(shared))
+      const near = pages.filter((route) => best && shared(route) === best).slice(0, 3)
+      fail(
+        `renders no page in app/: no page.tsx answers ${destination}.${near.length ? ` The nearest page${near.length > 1 ? 's are' : ' is'} ${near.map((route) => `app${route === '/' ? '' : route}/page.tsx`).join(', ')}.` : ''} The destination is the url your proxy.ts or rewrites send the source to, with a param where the route has a [segment]: '/package/@:scope/:name': '/package/@:scope%2F:name' for app/package/[pkg]/page.tsx.`,
+      )
+    }
+  }
+  if (unchecked)
+    console.warn(
+      "[affordances-md] md({ aliases }) can't check that each alias renders a page, since it found no pages in app/, so they're used as they are.",
+    )
 }

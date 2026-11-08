@@ -1,28 +1,32 @@
-import { htmlToMarkdown, yaml } from '../convert/index.ts'
+import { readPage, yaml } from '../convert/index.ts'
 import { mdPath } from '../path.ts'
 import { mdPagePath } from './proxy.ts'
 import {
+  ALIASES_ENV,
   builtPages,
+  checkAliases,
   LITERAL_ENV,
   ROUTES_ENV,
   scanApp,
   sourceRegex,
+  linkSources,
   toSource,
-  unescapeSource,
   writeMarkdownRoutes,
 } from './routes.ts'
 import {
   accepts,
+  hasTwin,
+  pageRoute,
   apiRoute,
   handlerPrefix,
   isLiteral,
   LINK,
   MD_PATH,
   notOursOrRsc,
-  pageRegex,
   present,
   RENDER_HEADER,
   rewrites,
+  twinLocation,
   type Rewrite,
   type Rewrites,
 } from './rules.ts'
@@ -82,26 +86,48 @@ const notInternal = (source: string) =>
       `/:${name}((?!(?:api|_next)(?:/|$))${own ?? '[^/]+'})`,
   )
 
-// each page's Link header: /products/[slug] → </products/:slug.md>, filled in by next per request. next can't fill
-// in an empty optional catch-all (/docs/:slug* at /docs), so its parent's url gets a part of its own
+// the Link rules for a source, a page's (/products/:slug) or an alias's (/package/@:scope/:name): one per way its
+// optional params can be there (linkSources), each kept off its own twin and off api routes and next's internals.
+// notTwin makes a repeated last param one patterned param, which a value fills as :name. undefined when next can't
+// fill a value from the source
+const linkRules = (source: string) =>
+  linkSources(source)?.map(({ source: part, template }) => {
+    const guarded = notInternal(notTwin(part))
+    const filled = guarded === notInternal(part) ? template : template.replace(/:(\w+)\+$/, ':$1')
+    return {
+      source: guarded,
+      value: `<${mdPath(filled).replace(/[?#\\]/g, encodeURIComponent)}>; ${LINK}`,
+    }
+  })
+
+// each page's Link header: /products/[slug] → </products/:slug.md>, filled in by next per request
 const alternates = (pages: string[]) =>
   pages
     .filter((route) => !apiRoute.test(route))
-    .map((route) => {
-      const optional = route.match(/^(.*?)\/?\[\[\.\.\.([^\]]+)\]\]$/)
-      const parts = optional ? [optional[1] || '/', `${optional[1]}/[...${optional[2]}]`] : [route]
-      return {
-        source: toSource(route),
-        parts: parts.map(toSource).map((source) => ({
-          source: notInternal(notTwin(source)),
-          value: `<${mdPath(unescapeSource(source.replace(/(?<!\\)\+$/, ''))).replace(/[?#\\]/g, encodeURIComponent)}>; ${LINK}`,
-        })),
-      }
-    })
+    .map((route) => ({ source: toSource(route), parts: linkRules(toSource(route)) ?? [] }))
+
+// each alias's Link header, on its public source: '/package/@:scope/:name' → </package/@:scope/:name.md>, the same
+// whichever alias matches. a source next can't fill a value from gets none, and md() says so
+const aliasAlternates = (aliases: Record<string, string>): Header[] =>
+  Object.keys(aliases).flatMap((source) => {
+    const rules = linkRules(source)
+    if (!rules)
+      console.warn(
+        `[affordances-md] md({ aliases }): '${source}' gets no Link header: Next can't put an unnamed param in a header, and more than three optional params would take a rule for each way they combine. Name each param (:name(pattern)).`,
+      )
+    return (rules ?? []).map(({ source: part, value }) => ({
+      source: part,
+      headers: [{ key: 'Link', value }],
+    }))
+  })
 
 // a rule already setting Link on a page's source (Affordances' rel="affordances") gets ours appended, split into
 // the same parts: next keeps only the last value of a header two rules set, so a separate rule would replace it
-const withAlternates = (user: Header[], pages: string[]): Header[] => {
+const withAlternates = (
+  user: Header[],
+  pages: string[],
+  aliases: Record<string, string>,
+): Header[] => {
   const bySource = new Map(alternates(pages).map(({ source, parts }) => [source, parts]))
   const claimed = new Set<string>()
   // new rules, never the app's own changed in place. every rule setting Link on the source gets it, since the last wins
@@ -119,8 +145,9 @@ const withAlternates = (user: Header[], pages: string[]): Header[] => {
     .filter(([source]) => !claimed.has(source))
     .flatMap(([, parts]) => parts)
     .map(({ source, value }) => ({ source, headers: [{ key: 'Link', value }] }))
-  // first, so a Link the app sets itself on a broader source still wins
-  return [...own, ...merged]
+  // first, so a Link the app sets itself on a broader source still wins; an alias's after a page's, since it's the
+  // public url's own
+  return [...own, ...aliasAlternates(aliases), ...merged]
 }
 const isLink = (header: { key: string }) => header.key.toLowerCase() === 'link'
 
@@ -132,23 +159,30 @@ export type MdOptions = {
   // routes whose pages' own urls may end in .md, as next sources (['/package/:name']): there /x/readme.md is the page
   // readme.md when it exists, and the twin of /x/readme when it 404s. costs that 404 render on each twin request
   literalMd?: string[]
+  // public url shapes your proxy.ts or rewrites map onto app/ routes, in next's rewrite syntax: source → the url the
+  // route answers. { '/package/@:scope/:name/:rest*': '/package/@:scope%2F:name/:rest*' } lets /package/@babel/core
+  // get its Link header, twin links and app/package/[pkg]/markdown.ts. the first that matches wins
+  aliases?: Record<string, string>
 }
 
 // a next config wrapper, like createMDX(): md()(config), or withAffordances(config, { plugins: [md()] })
 export const md =
-  ({ root = process.cwd(), link = true, literalMd = [] }: MdOptions = {}) =>
+  ({ root = process.cwd(), link = true, literalMd = [], aliases = {} }: MdOptions = {}) =>
   <C extends Config>(config: C): C => {
     // read once, when next loads its config; a page or markdown.ts added during next dev shows up after a restart
     const { pages, markdown } = scanApp(root)
     const generated = writeMarkdownRoutes(root, markdown)
     // a source next would reject throws here, not on the first request
     for (const source of literalMd) sourceRegex(source)
+    checkAliases(aliases, pages)
+    const aliased = Object.entries(aliases)
     return {
       ...config,
       env: {
         ...config.env,
         [ROUTES_ENV]: JSON.stringify(pages),
         ...(literalMd.length && { [LITERAL_ENV]: JSON.stringify(literalMd) }),
+        ...(aliased.length && { [ALIASES_ENV]: JSON.stringify(aliased) }),
       },
       rewrites: async () => {
         const user = normalize(await config.rewrites?.())
@@ -172,7 +206,7 @@ export const md =
       },
       headers: async () => {
         const user = (await config.headers?.()) ?? []
-        return link ? withAlternates(user, pages) : user
+        return link ? withAlternates(user, pages, aliases) : user
       },
       // the handler imports @affordances/md/routes; point it at this app's generated one
       ...(generated && {
@@ -199,40 +233,16 @@ export const withMd = <C extends Config>(config: C, options?: MdOptions): C => m
 // for generateMetadata: { alternates: mdAlternate('/blog/post') }
 export const mdAlternate = (path: string) => ({ types: { 'text/markdown': mdPath(path) } })
 
-// a route md() found as a regex over a pathname: /products/[slug], /docs/[...slug], /docs/[[...slug]]
-const segmentRegex = (segment: string) => {
-  if (segment.startsWith('[[...')) return '(?:/.+)?'
-  if (segment.startsWith('[...')) return '/.+'
-  if (segment.startsWith('[')) return '/[^/]+'
-  return segment && `/${segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`
-}
-const routeRegex = (route: string) =>
-  new RegExp(`^${route.split('/').slice(1).map(segmentRegex).join('') || '/'}$`, 'i')
-
 // a same-origin link to one of md()'s pages, as that page's twin with its search and hash. other origins, api
-// routes, next's internals and links already ending in .md stay as they are, by the rewrites' own page rule, whatever
-// routes there are; without md()'s pages, every link does
-// compiled once per value of the env next inlined, not per conversion
-let pageCache: { key: string | undefined; routes: RegExp[] } | undefined
-const pageRoutes = () => {
-  // spelled out: next inlines process.env.NAME, never process.env[name]
-  const key = process.env.AFFORDANCES_MD_ROUTES
-  if (!pageCache || pageCache.key !== key) pageCache = { key, routes: builtPages().map(routeRegex) }
-  return pageCache.routes
-}
+// routes, next's internals and links already ending in .md stay as they are (hasTwin); without md()'s pages, every
+// link does
 const twinLinks = (base: URL) => {
-  const routes = pageRoutes()
-  if (!routes.length) return undefined
+  if (!builtPages().length) return undefined
   return (url: URL) => {
-    const path = url.pathname.replace(/(.)\/$/, '$1')
-    // pageRegex leaves a .md path alone, since it's already a twin, except on a literalMd route, where /x/readme.md
-    // is a page of its own and its twin is /x/readme.md.md
-    const page = path === '/' || pageRegex.test(path) || isLiteral(path)
-    if (url.origin !== base.origin || !page) return
-    if (!routes.some((route) => route.test(path))) return
+    if (url.origin !== base.origin || !hasTwin(url.pathname)) return
     // set on the url itself, so a path that starts with //host (/.//evil.test/x resolves to one) stays a path here
     const twin = new URL(url)
-    twin.pathname = mdPath(path)
+    twin.pathname = mdPath(url.pathname)
     return twin.href
   }
 }
@@ -369,20 +379,31 @@ const passPage = async (request: Request, target: URL, options: MdHandlerOptions
   }
 }
 
-// the redirect next streams into a page that called redirect() after its shell was sent (as of next 16.3 and 16.4's
-// make-get-server-inserted-html): a refresh meta of its own, after 0 seconds for a permanent redirect, 1 for any other.
-// react escapes the url as an attribute
-const STREAMED_REDIRECT =
-  /<meta id="__next-page-redirect" http-equiv="refresh" content="([01]);url=([^"]*)"/
-const ATTRIBUTE = { '&amp;': '&', '&quot;': '"', '&#x27;': "'", '&lt;': '<', '&gt;': '>' }
-const streamedRedirect = (html: string) => {
-  const [, delay, url] = STREAMED_REDIRECT.exec(html) ?? []
-  if (url === undefined) return undefined
-  const location = url.replace(
-    /&(?:amp|quot|#x27|lt|gt);/g,
-    (entity) => ATTRIBUTE[entity as keyof typeof ATTRIBUTE],
-  )
-  return { status: delay === '0' ? 308 : 307, location }
+// a redirect as next gives it, from wherever it came: the page's own 3xx, the refresh meta it streams for a redirect()
+// after the shell (readPage's redirect), or the digest of a redirect() thrown in markdown.ts
+type NextRedirect = { status: number; location: string | null }
+// how a redirect answering a markdown request is cached: private, no-store, or the page's own cache-control
+type RedirectCache = { private: boolean; personal?: boolean; cacheControl?: string }
+
+// every redirect a markdown request gets: to the target's twin when it has one (twinLocation: a page on this site,
+// with its /. guard), otherwise as it is, never followed. it varies on Accept
+const markdownRedirect = (
+  { status, location }: NextRedirect,
+  target: URL,
+  cache: RedirectCache,
+) => {
+  const to = (location && twinLocation(new URL(location, target), target)) ?? location
+  return new Response(null, {
+    status,
+    headers: {
+      ...(to && { location: to }),
+      vary: 'Accept',
+      ...(cache.private
+        ? { 'cache-control': 'private, no-store' }
+        : cache.cacheControl && { 'cache-control': cache.cacheControl }),
+      ...(cache.personal && { [PERSONAL_HEADER]: '1' }),
+    },
+  })
 }
 
 const fail = (status: number, message: string) =>
@@ -423,9 +444,8 @@ const convertPage =
     // only for a request that came in at the page's own url (/x.md, or /x with Accept), the url proxy.ts gated. one
     // made straight to the handler's url (/api/affordances/md/x) skipped a page-scoped gate, so it gets the html render,
     // which goes through the proxy at the page's url
-    const authored = direct
-      ? undefined
-      : await authoredMarkdown(request, target, append, negotiated)
+    const route = direct ? undefined : await markdownRoute(request, target)
+    const authored = route && (await authoredMarkdown(request, target, route, append, negotiated))
     if (authored) return authored
     const headers = new Headers()
     for (const name of FORWARD) {
@@ -465,37 +485,21 @@ const convertPage =
       return slow()
     }
 
-    // a same-origin redirect stays in markdown; one to another origin is passed on untouched, never followed. a
-    // twin path that starts with //host (a return-to of /.//evil.test/x is same-origin) gets /. so a client resolves
-    // it as a path on this site, never as another site. it's cached as the page would be, and varies on Accept
-    const redirected = (status: number, location: string | null) => {
-      const next = location ? new URL(location, target) : undefined
-      const twin = next && mdPath(next.pathname)
-      const to =
-        next?.origin === target.origin
-          ? `${twin!.startsWith('//') ? '/.' : ''}${twin}${next.search}`
-          : location
-      const redirectCache = upstream.headers.get('cache-control') ?? ''
-      const privately =
+    // the page's own redirect, or one it streamed, is cached as the page would be
+    const cacheControl = upstream.headers.get('cache-control') ?? ''
+    const pageCache: RedirectCache = {
+      private:
         negotiated ||
         callerCredentials ||
         serviceCredentials ||
-        /private|no-store/.test(redirectCache) ||
-        upstream.headers.has('set-cookie')
-      return new Response(null, {
-        status,
-        headers: {
-          ...(to && { location: to }),
-          vary: 'Accept',
-          ...(privately
-            ? { 'cache-control': 'private, no-store' }
-            : redirectCache && { 'cache-control': redirectCache }),
-        },
-      })
+        /private|no-store/.test(cacheControl) ||
+        upstream.headers.has('set-cookie'),
+      cacheControl,
     }
     if (upstream.status >= 300 && upstream.status < 400) {
       clearTimeout(timer)
-      return redirected(upstream.status, upstream.headers.get('location'))
+      const location = upstream.headers.get('location')
+      return markdownRedirect({ status: upstream.status, location }, target, pageCache)
     }
 
     // anything else (a file in public/, json) is passed on as it came
@@ -519,15 +523,15 @@ const convertPage =
     // a page whose shell arrived is converted as far as it streamed: boundaries still loading keep their fallback
     const partial = !body.complete
     if (partial && !body.html.trim()) return slow()
-    // a redirect() after the shell went out can't change the status any more, so next streams it into the page
-    // instead: a 200 whose html sends the browser on. it's the same redirect, so it gets the same answer
-    const late = streamedRedirect(body.html)
-    if (late) return redirected(late.status, late.location)
-
-    const result = htmlToMarkdown(body.html, {
+    // the page, read once: what it streamed, and its markdown
+    const read = readPage(body.html, {
       url: target.href,
       link: options.linkTwins === false ? undefined : twinLinks(target),
     })
+    // a redirect() after the shell went out can't change the status any more, so next streams it into the page
+    // instead: a 200 whose html sends the browser on. it's the same redirect, so it gets the same answer
+    if (read.redirect) return markdownRedirect(read.redirect, target, pageCache)
+    const result = read.markdown()
     const page = partial
       ? `${result.markdown}\n> Some of this page was still loading after ${timeout}ms and is missing or shown as its loading state.\n`
       : result.markdown
@@ -535,7 +539,6 @@ const convertPage =
     const markdown = extra ? `${page}\n${extra.trim()}\n` : page
 
     // anything rendered with the caller's credentials, or that the page itself keeps private, stays private
-    const cacheControl = upstream.headers.get('cache-control') ?? ''
     // personal: rendered with someone's credentials (the caller's, or the route's service ones), or answered with a
     // cookie. a credential-free render is the anonymous public view, whatever cache-control next put on it (next
     // sends private, no-store for every dynamic render), so only this marks a page for llms to leave out
@@ -604,96 +607,42 @@ export type MarkdownResult =
 export type Markdown = (args: MarkdownArgs) => MarkdownResult | Promise<MarkdownResult>
 export type MarkdownRoutes = Record<string, () => Promise<{ default: Markdown }>>
 
-// a route's segments ranked as next ranks them: static, then [param], then [...catchAll], then [[...optional]]
-const rank = (segment: string) =>
-  segment.startsWith('[[...') ? 3 : segment.startsWith('[...') ? 2 : segment.startsWith('[') ? 1 : 0
-const byRank = (a: string, b: string) => {
-  const [x, y] = [a.split('/').slice(1), b.split('/').slice(1)]
-  for (let i = 0; i < Math.max(x.length, y.length); i += 1) {
-    const order = rank(x[i] ?? '') - rank(y[i] ?? '')
-    if (order) return order
-  }
-  return y.length - x.length
-}
-// the route a pathname is a page of, and its params; undefined when it's none of them
-// strict, as next's own page routing is: case-sensitive, and segments compared and passed on as requested, never
-// decoded (next gives a page its params encoded too), with no empty segment (//, a trailing /). the rewrites match loosely, so /Dashboard/1.md
-// or /%64ashboard/1.md can reach the handler without a path-scoped proxy.ts matcher seeing it; those never get a
-// markdown.ts, only the html render, whose own request the proxy gates
-// a param as next gives it to the page: still encoded, in next's own encoding (x=1 is x%3D1)
-const asParam = (segment: string) => {
-  try {
-    return encodeURIComponent(decodeURIComponent(segment))
-  } catch {
-    return segment
-  }
-}
-
-const matchRoute = (ranked: string[], pathname: string) => {
-  const parts = pathname === '/' ? [] : pathname.split('/').slice(1)
-  if (parts.some((part) => !part)) return undefined
-  for (const route of ranked) {
-    const segments = route.split('/').slice(1).filter(Boolean)
-    const params: Record<string, string | string[]> = {}
-    const matched = segments.every((segment, i) => {
-      const name = segment.replace(/^\[+(?:\.\.\.)?|\]+$/g, '')
-      if (rank(segment) >= 2) {
-        const rest = parts.slice(i)
-        if (rest.length) params[name] = rest.map(asParam)
-        return rest.length > 0 || rank(segment) === 3
-      }
-      if (rank(segment) === 1) {
-        if (parts[i] === undefined) return false
-        params[name] = asParam(parts[i]!)
-        return true
-      }
-      return parts[i] === segment
-    })
-    const whole = segments.some((segment) => rank(segment) >= 2) || parts.length === segments.length
-    if (matched && whole) return { route, params }
-  }
-  return undefined
-}
-
-// md()'s pages and the markdown.ts routes, in next's order, sorted once per value of the env and the routes
-let rankedCache: { key: string; ranked: string[] } | undefined
-const rankedRoutes = (routes: MarkdownRoutes) => {
-  // spelled out: next inlines process.env.NAME, never process.env[name]
-  const key = `${process.env.AFFORDANCES_MD_ROUTES}\0${Object.keys(routes).join('\0')}`
-  if (!rankedCache || rankedCache.key !== key)
-    rankedCache = {
-      key,
-      ranked: [...new Set([...builtPages(), ...Object.keys(routes)])].toSorted(byRank),
-    }
-  return rankedCache.ranked
-}
-
 const firstHeading = (markdown: string) => /^# (.+)$/m.exec(markdown)?.[1]?.trim()
 
-// what a route's markdown.ts gives, as the handler's response: its markdown with the frontmatter, append and token
-// count a converted page gets, or its own Response. private whenever the request carried credentials, since it read
-// data as that person. undefined when there's no markdown.ts for the page, or it returned nothing
-const authoredMarkdown = async (
-  request: Request,
-  target: URL,
-  append: MdHandlerOptions['append'],
-  negotiated: boolean,
-): Promise<Response | undefined> => {
-  // never next's internals or an api route, whatever a root catch-all would match
-  if (/^\/(?:api|_next)(?:\/|$)/i.test(target.pathname)) return undefined
+// the route's markdown.ts for a page url, and the arguments its exports get; undefined when it has none
+type MarkdownRoute = { route: string; module: { default: Markdown }; args: MarkdownArgs }
+const markdownRoute = async (request: Request, target: URL): Promise<MarkdownRoute | undefined> => {
   const { routes } = await import('@affordances/md/routes')
   if (!routes) return undefined
   // the page next would render for this url, among all of md()'s pages: a static page without a markdown.ts isn't
-  // taken over by a sibling [param] that has one
-  const found = matchRoute(rankedRoutes(routes), target.pathname)
+  // taken over by a sibling [param] that has one. a public url an alias maps onto a route is matched as that route's
+  // url, so its params are what page.tsx gets: /package/@babel/core → { pkg: '%40babel%2Fcore' }
+  const found = pageRoute(target.pathname, { strict: true, routes: Object.keys(routes) })
   if (!found || !(found.route in routes)) return undefined
-  const { default: markdown } = await routes[found.route]!()
-  const result = await markdown({
-    params: found.params,
-    searchParams: new URLSearchParams(target.search),
-    request,
-  })
+  return {
+    route: found.route,
+    module: await routes[found.route]!(),
+    args: {
+      params: found.params,
+      searchParams: new URLSearchParams(target.search),
+      request,
+    },
+  }
+}
+
+// what a route's markdown.ts gives, as the handler's response: its markdown with the frontmatter, append and token
+// count a converted page gets, or its own Response. private whenever the request carried credentials, since it read
+// data as that person. undefined when it has no default export, or that returned nothing
+const authoredMarkdown = async (
+  request: Request,
+  target: URL,
+  { route, module, args }: MarkdownRoute,
+  append: MdHandlerOptions['append'],
+  negotiated: boolean,
+): Promise<Response | undefined> => {
+  const { default: markdown } = module
   const personal = credentialed(request.headers)
+  const result = await markdown(args)
   if (result instanceof Response) {
     const passed = new Response(result.body, {
       status: result.status,
@@ -713,7 +662,7 @@ const authoredMarkdown = async (
   if (result === undefined) {
     if (process.env.NODE_ENV !== 'production')
       console.warn(
-        `[affordances-md] ${found.route}/markdown.ts returned nothing for ${target.pathname}, so its HTML is converted`,
+        `[affordances-md] ${route}/markdown.ts returned nothing for ${target.pathname}, so its HTML is converted`,
       )
     return undefined
   }

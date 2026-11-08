@@ -32,10 +32,13 @@ import {
   rewrites,
   withMd,
 } from '../src/next/index.ts'
+import { aliasPath } from '../src/next/rules.ts'
 import {
+  ALIASES_ENV,
   LITERAL_ENV,
   ROUTES_ENV,
   scanApp,
+  sourceParams,
   sourceRegex,
   writeMarkdownRoutes,
 } from '../src/next/routes.ts'
@@ -1994,4 +1997,252 @@ test('on a literalMd route, a link to a page named x.md is twinned like any page
   expect(text).toContain('[Express](https://shop.test/x/express.md)')
   // off a literal route, a .md link is already a twin
   expect(text).toContain('[Post](https://shop.test/blog/post.md)')
+})
+
+// md({ aliases }): a registry whose proxy.ts merges /package/@scope/name into app/package/[pkg]
+const registry = [
+  'app/package/[pkg]/page.tsx',
+  'app/package/[pkg]/versions/page.tsx',
+  'app/package/[pkg]/version/[version]/page.tsx',
+  'app/x/versions/page.tsx',
+]
+const scoped = {
+  '/package/@:scope/:name/:rest*': '/package/@:scope%2F:name/:rest*',
+}
+const { prepareDestination } =
+  require('next/dist/shared/lib/router/utils/prepare-destination.js') as {
+    prepareDestination: (args: {
+      destination: string
+      params: Record<string, unknown>
+      query: object
+      appendParamsToQuery: boolean
+    }) => { newUrl: string }
+  }
+
+test('md({ aliases }) checks each alias when the config loads, and says which one is wrong and how', () => {
+  const dir = app(registry)
+  const load = (aliases: Record<string, string>) => () => md({ root: dir, aliases })({} as Config)
+  const config = load(scoped)()
+  expect(JSON.parse(config.env![ALIASES_ENV]!)).toEqual(Object.entries(scoped))
+  expect(md({ root: dir })({} as Config).env![ALIASES_ENV]).toBeUndefined()
+  // a destination that can render a page for some value is fine: /x/:tab renders app/x/versions
+  expect(load({ '/y/:tab': '/x/:tab' })).not.toThrow()
+  const cases: [Record<string, string>, string][] = [
+    [
+      { '/package/@:scope/:name': '/packages/@:scope%2F:name' },
+      "md({ aliases }): '/package/@:scope/:name': '/packages/@:scope%2F:name' renders no page in app/",
+    ],
+    [{ '/p/@:scope/:name': '/package/:name/a/b/c' }, 'renders no page in app/'],
+    [{ '/p/:a': '/package/:b' }, "uses :b in its destination, which the source doesn't have"],
+    [{ '/p/:a': 'https://other.test/package/:a' }, "isn't a path on this site"],
+    [{ '/p/:a': '/package/:a?x=1' }, "isn't a path on this site"],
+    [{ '/p/:a': '//other.test/package/:a' }, "isn't a path on this site"],
+    [{ 'p/:a': '/package/:a' }, "has a source that isn't a path"],
+    [{ '/p/(:a': '/package/:a' }, "isn't valid Next rewrite syntax"],
+  ]
+  for (const [aliases, message] of cases) expect(load(aliases)).toThrow(message)
+})
+
+test("an alias fills in its destination as next fills in a rewrite's, and matches as strictly as a page", () => {
+  const aliases = { ...scoped, '/v/:a/:b*': '/x/:a/:b*' }
+  vi.stubEnv(ALIASES_ENV, JSON.stringify(Object.entries(aliases)))
+  for (const path of [
+    '/package/@babel/core',
+    '/package/@babel/core/versions',
+    '/package/@babel/core/version/7.28.0',
+    '/package/@x%3D1/a%20b',
+    '/v/1',
+    '/v/1/2/3',
+  ]) {
+    const [source, destination] = Object.entries(aliases).find(([from]) =>
+      getPathMatch(from)(path),
+    )!
+    const params = getPathMatch(source)(path) as Record<string, unknown>
+    const next = prepareDestination({ destination, params, query: {}, appendParamsToQuery: false })
+    expect({ path, ours: aliasPath(path) }).toEqual({ path, ours: next.newUrl })
+  }
+  expect(aliasPath('/package/@babel/core')).toBe('/package/@babel%2Fcore')
+  // the first alias that matches wins, in the order they're declared
+  vi.stubEnv(
+    ALIASES_ENV,
+    JSON.stringify([
+      ['/package/@:scope/:name/versions', '/package/:name/versions'],
+      ...Object.entries(scoped),
+    ]),
+  )
+  expect(aliasPath('/package/@babel/core/versions')).toBe('/package/core/versions')
+  expect(aliasPath('/package/@babel/core')).toBe('/package/@babel%2Fcore')
+  // next would route these case-insensitively or with an empty segment; a proxy.ts matcher may not see them
+  for (const path of ['/Package/@babel/core', '/package/@babel//core', '/package/express'])
+    expect({ path, ours: aliasPath(path) }).toEqual({ path, ours: undefined })
+})
+
+test("an alias's public url gets its Link header, its own twin doesn't", async () => {
+  const rules = await md({
+    root: app(registry),
+    aliases: { ...scoped, '/package/@:scope/:name/versions': '/package/:name/versions' },
+  })({} as Config).headers!()
+  expect(linkOn(rules, '/package/@babel/core')).toBe(alternate('/package/@babel/core.md'))
+  expect(linkOn(rules, '/package/@babel/core/versions')).toBe(
+    alternate('/package/@babel/core/versions.md'),
+  )
+  expect(linkOn(rules, '/package/@babel/core/version/7.28.0')).toBe(
+    alternate('/package/@babel/core/version/7.28.0.md'),
+  )
+  // its own twin isn't pointed at a .md.md, and a plain page keeps its own
+  expect(linkOn(rules, '/package/@babel/core.md')).toBeUndefined()
+  expect(linkOn(rules, '/package/@babel/core/versions.md')).toBeUndefined()
+  expect(linkOn(rules, '/package/express')).toBe(alternate('/package/express.md'))
+})
+
+test("markdown.ts runs for an alias's public url, with params exactly as page.tsx gets them: still encoded", async () => {
+  vi.stubEnv(ALIASES_ENV, JSON.stringify(Object.entries(scoped)))
+  process.env[ROUTES_ENV] = JSON.stringify(['/package/[pkg]', '/package/[pkg]/versions'])
+  const calls = markdownFiles({ '/package/[pkg]/versions': ({ params }) => `# ${params.pkg}` })
+  const twin = await handler(new Request(`${site}/package/@babel/core/versions.md`))
+  expect(await twin.text()).toContain('# %40babel%2Fcore')
+  await handler(
+    new Request(`${site}/package/@babel/core/versions`, { headers: { accept: 'text/markdown' } }),
+  )
+  await handler(new Request(`${site}/package/express/versions.md`))
+  // next gives page.tsx { pkg: '%40babel%2Fcore' } for /package/@babel/core (next start, 16.3.0 and 16.4.3)
+  expect(calls.map((call) => call.params)).toEqual([
+    { pkg: '%40babel%2Fcore' },
+    { pkg: '%40babel%2Fcore' },
+    { pkg: 'express' },
+  ])
+  // never for a direct hit on the handler, or a url the alias doesn't match strictly: those render the page's html
+  await handler(new Request(`${site}/api/affordances/md/package/@babel/core/versions`))
+  await handler(new Request(`${site}/Package/@babel/core/versions.md`))
+  expect(calls).toHaveLength(3)
+  expect(seen.map((call) => call.url.pathname)).toEqual([
+    '/package/@babel/core/versions',
+    '/Package/@babel/core/versions',
+  ])
+})
+
+test("links to an alias's public urls point at their twins, when the route they map onto is a page", async () => {
+  vi.stubEnv(ALIASES_ENV, JSON.stringify(Object.entries(scoped)))
+  process.env[ROUTES_ENV] = JSON.stringify(['/package/[pkg]', '/package/[pkg]/versions'])
+  upstream = () =>
+    new Response(
+      page(
+        '<h1>Core</h1><p><a href="/package/@babel/core/versions?page=2">Versions</a> <a href="/package/@babel/core">Overview</a> <a href="/package/@babel/core/nope">Nope</a></p>',
+      ),
+      { headers: { 'content-type': 'text/html' } },
+    )
+  const text = await (await get('/package/@babel/core')).text()
+  expect(text).toContain('[Versions](https://shop.test/package/@babel/core/versions.md?page=2)')
+  expect(text).toContain('[Overview](https://shop.test/package/@babel/core.md)')
+  expect(text).toContain('[Nope](https://shop.test/package/@babel/core/nope)')
+})
+
+test('literalMd is declared in public url space, as the rewrites it feeds: an alias leaves it as it is', () => {
+  vi.stubEnv(ALIASES_ENV, JSON.stringify(Object.entries(scoped)))
+  // the route an alias maps onto doesn't make its public urls literal: /package/@scope/readme.md is a twin here
+  vi.stubEnv(LITERAL_ENV, JSON.stringify(['/package/:pkg']))
+  expect(mdRewrite(new Request(`${site}/package/@scope/readme.md`))!.pathname).toBe(
+    '/api/affordances/md/package/@scope/readme',
+  )
+  // the public shape, listed as it is, does
+  vi.stubEnv(LITERAL_ENV, JSON.stringify(['/package/:pkg', '/package/@:scope/:name']))
+  expect(mdRewrite(new Request(`${site}/package/@scope/readme.md`))!.pathname).toBe(
+    '/api/affordances/md/package/@scope/readme.md',
+  )
+  expect(mdRewrite(new Request(`${site}/blog/readme.md`))!.pathname).toBe(
+    '/api/affordances/md/blog/readme',
+  )
+})
+
+// intake's /code-review of 0.3.0: alias and Link-rule shapes next fills differently
+test('a Link rule fills every shape of param next can match: repeated ones mid-source, absent optional ones, patterned ones', async () => {
+  const rules = await md({
+    root: app([
+      'app/docs/[...slug]/page.tsx',
+      'app/package/[name]/page.tsx',
+      'app/a/[b]/[[...c]]/page.tsx',
+    ]),
+    aliases: {
+      '/d/:path+/edit': '/docs/:path+',
+      '/:locale(en|fr)?/pkg/:name': '/package/:name',
+      '/a/:b(x)/:c(y)*': '/a/:b/:c*',
+    },
+  })({} as Config).headers!()
+  // next throws on a repeated param written without its + (a 500 on every matching request): A1
+  expect(linkOn(rules, '/d/a/b/edit')).toBe(alternate('/d/a/b/edit.md'))
+  expect(linkOn(rules, '/d/a/edit')).toBe(alternate('/d/a/edit.md'))
+  // an absent optional param mid-source isn't left as a literal :locale: A2
+  expect(linkOn(rules, '/pkg/x')).toBe(alternate('/pkg/x.md'))
+  expect(linkOn(rules, '/en/pkg/x')).toBe(alternate('/en/pkg/x.md'))
+  // a patterned optional tail splits off at its own param, not the one before: A3
+  expect(linkOn(rules, '/a/x')).toBe(alternate('/a/x.md'))
+  expect(linkOn(rules, '/a/x/y')).toBe(alternate('/a/x/y.md'))
+  // never a literal param in any value
+  for (const rule of rules)
+    for (const { value } of rule.headers)
+      expect({ source: rule.source, value }).not.toEqual({
+        source: rule.source,
+        value: expect.stringMatching(/<[^>]*:\w+[?*]/),
+      })
+})
+
+test('alias shapes that render a page load: the root page, a trailing slash, an optional param; unnamed params count as next counts them', () => {
+  const dir = app(['app/page.tsx', 'app/p/[a]/page.tsx', 'app/p/[a]/[tab]/page.tsx'])
+  // A4: an alias to / or to a path with a trailing slash; A5: an optional param in the destination
+  const loads: Record<string, string>[] = [
+    { '/:locale(en|fr)': '/' },
+    { '/x/:a': '/p/:a/' },
+    { '/q/:name/:tab?': '/p/:name/:tab?' },
+  ]
+  for (const aliases of loads) expect(() => md({ root: dir, aliases })({} as Config)).not.toThrow()
+  // still a path with no query or hash
+  expect(() => md({ root: dir, aliases: { '/q/:a': '/p/:a?x=1' } })({} as Config)).toThrow(
+    "isn't a path on this site",
+  )
+  // A6: path-to-regexp numbers only the params that capture, so a {group} of plain text takes no number
+  expect(sourceParams('/a{/b}?/(.*)')).toEqual(['0'])
+  expect(sourceParams('/a{/b}?/(.*)')).toEqual(
+    Object.keys(getPathMatch('/a{/b}?/(.*)')('/a/b/c') as object).filter((key) =>
+      /^\d+$/.test(key),
+    ),
+  )
+})
+
+test("md() never throws for config-time I/O: app/ it couldn't read", () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  // A7: no app/ to check aliases against (a wrong root, or a node without getBuiltinModule): said, not thrown
+  const empty = app([])
+  expect(() => md({ root: empty, aliases: { '/p/:a': '/package/:a' } })({} as Config)).not.toThrow()
+  expect(warn.mock.calls.map(([message]) => String(message))).toContainEqual(
+    expect.stringContaining("md({ aliases }) can't check that each alias renders a page"),
+  )
+  warn.mockRestore()
+})
+
+test('A9: a redirect for a markdown request goes to a twin only when its target has one, on every path', async () => {
+  process.env[ROUTES_ENV] = JSON.stringify(['/x/[pkg]', '/sign-in'])
+  // a page, an api route (NextAuth's sign-in), a route handler that isn't a page (Auth0's /auth/login), a file
+  const targets = ['/sign-in?next=%2Fx', '/api/auth/signin?next=%2Fx', '/auth/login', '/report.pdf']
+  const expected = [
+    '/sign-in.md?next=%2Fx',
+    '/api/auth/signin?next=%2Fx',
+    '/auth/login',
+    '/report.pdf',
+  ]
+  // the page's own 3xx
+  for (const [i, location] of targets.entries()) {
+    upstream = redirect(location)
+    expect((await get('/x/a')).headers.get('location')).toBe(expected[i])
+  }
+  // a redirect() streamed after the shell
+  for (const [i, location] of targets.entries()) {
+    upstream = streamedRedirect(location.replace('&', '&amp;'))
+    expect((await handler(new Request(`${site}/x/a.md`))).headers.get('location')).toBe(expected[i])
+  }
+  // without md()'s pages every page url still has one, as before; an api route never does
+  delete process.env[ROUTES_ENV]
+  upstream = redirect('/auth/login')
+  expect((await get('/x/a')).headers.get('location')).toBe('/auth/login.md')
+  upstream = redirect('/api/auth/signin')
+  expect((await get('/x/a')).headers.get('location')).toBe('/api/auth/signin')
 })

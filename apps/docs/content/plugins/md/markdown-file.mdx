@@ -42,7 +42,7 @@ What `markdown.ts` returns is `Cache-Control: private, no-store` by default, sin
 
 ## Arguments
 
-- `params`: the route's params as Next gives them to the page, still URL-encoded: `{ pkg: '%40babel%2Fcore' }`, and arrays for catch-alls (`{ slug: ['a', 'b'] }`). An empty optional catch-all is left out. Decode a param yourself where you need its text, and never build a path or an API URL from a decoded one without checking it: `a%2F..%2Fadmin` decodes to `a/../admin`.
+- `params`: the route's params as Next gives them to the page, still URL-encoded: `{ pkg: '%40babel%2Fcore' }`, and arrays for catch-alls (`{ slug: ['a', 'b'] }`). An empty optional catch-all is left out. That holds for a public URL an [alias](/docs/plugins/md/setup#public-urls-your-proxy-maps-onto-routes) maps onto the route: `/package/@babel/core` gives `{ pkg: '%40babel%2Fcore' }`, the same as `page.tsx` gets, so `decodeURIComponent(params.pkg)` is `@babel/core` in both. Decode a param yourself where you need its text, and never build a path or an API URL from a decoded one without checking it: `a%2F..%2Fadmin` decodes to `a/../admin`.
 - `searchParams`: the page URL's query, as `URLSearchParams`.
 - `request`: the visitor's request.
 
@@ -90,5 +90,6 @@ A new `QueryClient` per request keeps one visitor's data out of another's.
 - A `markdown.ts` with no `page` next to it has no URL. It's ignored, with a warning.
 - In `next dev`, adding or removing a `markdown.ts` needs a restart, like adding a page. Edits to one reload as usual.
 - `markdown.ts` answers only at a page's own URL. A request made straight to the handler (`/api/affordances/md/…`) gets the page's HTML render, and so does a URL Next wouldn't route to that page (`/Dashboard/1.md`, `/%64ashboard/1.md`, an empty segment), since the rewrites match more loosely than Next's routing and a proxy matcher may miss it.
+- A public URL an [alias](/docs/plugins/md/setup#public-urls-your-proxy-maps-onto-routes) maps onto a route is matched as the URL it maps onto, so `/package/@babel/core.md` runs `app/package/[pkg]/markdown.ts`.
 - A URL matches routes the way Next matches it, case-sensitively and across all your pages: a static segment before `[param]`, before `[...catchAll]`, before `[[...optional]]`. `markdown.ts` runs only when the page Next would render is the one it sits next to, so a static `/x/new` page isn't answered by `/x/[pkg]/markdown.ts`.
 - On a [`literalMd`](/docs/plugins/md/setup#pages-whose-url-ends-in-md) route, a Markdown request for `/package/readme.md` calls `markdown.ts` with `pkg: 'readme.md'` first, and only a 404 makes `.md` the twin suffix. So for a name that doesn't exist, return `new Response(null, { status: 404 })`, or `undefined` to let the page's own `notFound()` answer; either makes it the twin. A 200 with "not found" text is a bug there: the request for the twin `/package/express.md` would get it instead of `express`'s Markdown.

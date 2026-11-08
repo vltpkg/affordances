@@ -48,7 +48,7 @@ On some routes a page's own URL can end in `.md`: a package registry has a packa
 export default withMd(nextConfig, { literalMd: ['/package/:name'] })
 ```
 
-They're matched the way Next matches a rewrite's `source` (named and unnamed params, patterns, `{}` groups, `?` `*` `+`), and a source Next would reject throws when the config loads.
+They're matched the way Next matches a rewrite's `source` (named and unnamed params, patterns, `{}` groups, `?` `*` `+`), and a source Next would reject throws when the config loads. They're matched against the URL as it was requested, like the rewrites they feed: for a public URL an [alias](#public-urls-your-proxy-maps-onto-routes) maps onto a route, list its public shape (`'/package/@:scope/:name'`), not the route's.
 
 For a URL on those routes that ends in `.md`, the handler first fetches the page at that exact URL:
 
@@ -56,6 +56,34 @@ For a URL on those routes that ends in `.md`, the handler first fetches the page
 - If it 404s, the `.md` is the twin suffix, and the request gets the Markdown of the URL without it. So `/package/readme.md.md` is the Markdown of the page `readme.md`.
 
 The twin of any page is still its URL plus `.md`, so links, `Link` headers and `llms.txt` don't change. The page needs to 404 for a name it doesn't have (`notFound()`), not render a 200 "not found" page. Each twin request on these routes costs that 404 render before the real one; routes not listed make one request, as before.
+
+## Public URLs your proxy maps onto routes
+
+A route whose public URL isn't its folder's needs `md()` told about it once. A registry serves `/package/@babel/core`, and its `proxy.ts` (or a rewrite) sends it to `app/package/[pkg]` as `/package/@babel%2Fcore`. Give `md()` the same mapping as `aliases`, in Next's rewrite syntax: the public source, then the URL it's sent to.
+
+```ts title="next.config.ts"
+import { withMd } from '@affordances/md/next'
+
+export default withMd(nextConfig, {
+  aliases: {
+    '/package/@:scope/:name/:rest*': '/package/@:scope%2F:name/:rest*',
+  },
+})
+```
+
+Then the public URL gets everything a page's own URL does:
+
+- a `Link` header: `/package/@babel/core/versions` points at `/package/@babel/core/versions.md`;
+- twin links: the converted Markdown links `/package/@babel/core/versions` as its `.md`;
+- its route's [`markdown.ts`](/docs/plugins/md/markdown-file), with `params` exactly as `page.tsx` gets them for that URL: `{ pkg: '%40babel%2Fcore' }`, still encoded;
+
+An alias doesn't route anything. Your proxy or rewrite still sends the page there; the alias tells `md()` what it does, so keep the two in step.
+
+- Each alias is checked when the config loads. One whose destination no page in `app/` answers throws, quoting the alias and naming the nearest pages, so a typo fails `next dev` and `next build`, not a request.
+- The first alias that matches a URL wins, in the order you list them, before the URL is matched against `app/` as it is.
+- Name every param in a source (`:id(\d+)`, not `(\d+)`): Next leaves unnamed params out of a header's values, so a source with one gets no `Link` header, and `md()` says so when the config loads.
+- It's matched the way Next routes a page: case-sensitively and with no empty segment. `/Package/@babel/core.md` gets the page's HTML converted, never `markdown.ts`.
+- The handler reads it against the URL that was requested, which is the URL your proxy gated, so nothing a request sends can choose a route. A request made straight to `/api/affordances/md/…` still never runs a `markdown.ts`.
 
 ## Advertise it
 
@@ -109,7 +137,7 @@ Next hides a client navigation's `RSC` header and `_rsc` param from the proxy, s
 
 ### Link from the proxy
 
-`md()` sets the `Link` header by matching your `app/` routes against the URL as it was requested. A route whose public URL isn't its folder's, one your proxy rewrites, gets no header: `/package/@babel/core` has two segments, but `app/package/[pkg]` matches one. `mdLink(request)` returns the `Link` value for the request's public URL, or `undefined` for anything that isn't a page request (API routes, `/_next`, `.md` URLs, Markdown and RSC requests):
+`md()` sets the `Link` header by matching your `app/` routes against the URL as it was requested. A route whose public URL isn't its folder's, one your proxy rewrites, gets no header: `/package/@babel/core` has two segments, but `app/package/[pkg]` matches one. [`aliases`](#public-urls-your-proxy-maps-onto-routes) fix that once for the header, twin links and `markdown.ts`, so a site with them doesn't need `mdLink`. Without them, `mdLink(request)` returns the `Link` value for the request's public URL, or `undefined` for anything that isn't a page request (API routes, `/_next`, `.md` URLs, Markdown and RSC requests):
 
 ```ts title="proxy.ts"
 import { NextResponse, type NextRequest } from 'next/server'
