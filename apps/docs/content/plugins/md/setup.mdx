@@ -110,52 +110,74 @@ That renders `<link rel="alternate" type="text/markdown" href="/blog/post.md">`.
 
 ## With a proxy.ts
 
-Next runs `proxy.ts` (or `middleware.ts`) before any rewrite, so a proxy that treats Markdown requests differently, to skip a locale redirect or an A/B rewrite, needs the same match the rewrites make. Don't copy it: `isMdRequest` and `mdRewrite` are that match, including Next's case-insensitive paths. Import them (and `mdLink`) from `@affordances/md/next/proxy`, which holds only the matching, so your proxy's bundle carries neither the converter nor any `markdown.ts`; `@affordances/md/next` exports the same functions.
-
-**Never skip your auth gate for Markdown requests.** Run it first, then route Markdown:
+Next runs `proxy.ts` (or `middleware.ts`) before any rewrite, so a proxy with gates (sign-in, feature flags, a paywall) has to gate Markdown requests too: `/dashboard.md` and `/dashboard` asked for with `Accept: text/markdown` are requests for the dashboard. `mdProxy(request)` gives every gate the page a request is for, so the shortest proxy is the safe one:
 
 ```ts title="proxy.ts"
-import { NextResponse, type NextRequest } from 'next/server'
-import { isMdRequest } from '@affordances/md/next/proxy'
+import type { NextRequest } from 'next/server'
+import { mdProxy } from '@affordances/md/next/proxy'
 
 export const proxy = (request: NextRequest) => {
-  // your gate, first: a Markdown request is a request for the page
-  if (!request.cookies.has('session')) return NextResponse.redirect(new URL('/login', request.url))
-  // then what's only for Markdown, such as skipping a locale redirect
-  if (isMdRequest(request)) return NextResponse.next()
-  // …the rest of your proxy
+  const md = mdProxy(request)
+  // your gates, first, on md.page: /dashboard.md and /dashboard with Accept are both /dashboard
+  if (md.page.pathname.startsWith('/dashboard') && !request.cookies.has('session'))
+    return md.redirect(new URL('/sign-in', request.url))
+  return md.next()
 }
 ```
 
-The proxy runs once, on the URL that was requested: `/dashboard/1.md`, or `/dashboard/1` with `Accept: text/markdown`. For a page converted from its HTML, the handler's own request for the page goes through the proxy again, but a route with a [`markdown.ts`](/docs/plugins/md/markdown-file) isn't rendered, so that first run is its only gate. With 0.1.0's recipe, which returned early for Markdown requests, remove that skip before adding a `markdown.ts`.
+- `md.page` is a `URL`: the page the request is for, HTML or Markdown alike. `/compare.md` is `/compare`, `/index.md` is `/`, and a [`literalMd`](#pages-whose-url-ends-in-md) page keeps its own `.md`, since the handler tells which it is. It has the request's search. Run every gate on it.
+- `md.markdown` says whether the request is for Markdown.
+- `md.redirect(url, status?)` is `NextResponse.redirect`, except that a Markdown request sent to a page on this site goes to that page's `.md` (`/sign-in.md?…`), so an agent stays in Markdown. Another origin gets a plain redirect, never a `.md`. A Markdown request's redirect is `private, no-store` and varies on `Accept`.
+- `md.next(init?)` lets the request through: a Markdown request to the handler, any other with `NextResponse.next(init)`.
+- `md.link` is the page's `Link` value, for a site that maps URLs onto routes without [`aliases`](#public-urls-your-proxy-maps-onto-routes); see [below](#link-from-the-proxy).
+
+Import it from `@affordances/md/next/proxy`, which holds only the matching, so your proxy's bundle carries neither the converter nor any `markdown.ts`. `@affordances/md/next` exports the same functions.
+
+A proxy that also rewrites (a locale, an A/B test, URLs it maps onto routes) runs its gates, sends Markdown on, then does its own work:
+
+```ts title="proxy.ts"
+import { NextResponse, type NextRequest } from 'next/server'
+import { mdProxy } from '@affordances/md/next/proxy'
+// your own: whether the visitor may see a flagged page, and /package/@scope/name → the URL app/package/[pkg] answers
+import { collapse, flagOn, isFlagged } from './site'
+
+export const proxy = (request: NextRequest) => {
+  const md = mdProxy(request)
+  if (isFlagged(md.page.pathname) && !flagOn(request)) return md.redirect(new URL('/', request.url))
+  if (md.markdown) return md.next()
+  const url = collapse(request.nextUrl)
+  return url ? NextResponse.rewrite(url) : NextResponse.next()
+}
+```
+
+The proxy runs once, on the URL that was requested: `/dashboard/1.md`, or `/dashboard/1` with `Accept: text/markdown`. For a page converted from its HTML, the handler's own request for the page goes through the proxy again, but a route with a [`markdown.ts`](/docs/plugins/md/markdown-file) isn't rendered, so that first run is its only gate. With 0.1.0's recipe, which returned early for Markdown requests before its gates, remove that skip before adding a `markdown.ts`.
 
 Your proxy's matcher has to match a page's `.md` URL as well as the page. `'/dashboard/:path*'` covers `/dashboard/123.md`, but `'/dashboard/:id(\\d+)'` doesn't: the `.md` URL slips past the gate. Add `'/dashboard/:id(\\d+).md'` to the matcher, or run the gate-first recipe above with no `matcher` at all. The handler never runs a `markdown.ts` for a request made straight to its own URL (`/api/affordances/md/…`), which a proxy matcher scoped to your pages wouldn't see; that gets the page's HTML render, gated at the page's URL.
 
-`mdRewrite(request)` returns the handler URL the request would be rewritten to, or `undefined`, for a proxy that rewrites it itself: `NextResponse.rewrite(url)`. A proxy can't see `public/`, so a real `.md` file there matches too.
+`mdProxy` is built on two lower-level functions, which stay: `isMdRequest(request)` is `md.markdown`, and `mdRewrite(request)` returns the handler URL a Markdown request goes to, or `undefined`, for a proxy that rewrites it itself. A proxy can't see `public/`, so a real `.md` file there matches too.
 
 Next hides a client navigation's `RSC` header and `_rsc` param from the proxy, so there `mdRewrite` can't tell one from a page request. Next puts the header back before the handler runs, so the handler passes such a request through: it fetches the page with the request's own headers and returns the page's RSC payload as it came (status, headers, and body), never markdown. With `skipProxyUrlNormalize: true` in `next.config`, the proxy sees them and `mdRewrite` leaves the request alone, like the rewrites do.
 
 ### Link from the proxy
 
-`md()` sets the `Link` header by matching your `app/` routes against the URL as it was requested. A route whose public URL isn't its folder's, one your proxy rewrites, gets no header: `/package/@babel/core` has two segments, but `app/package/[pkg]` matches one. [`aliases`](#public-urls-your-proxy-maps-onto-routes) fix that once for the header, twin links and `markdown.ts`, so a site with them doesn't need `mdLink`. Without them, `mdLink(request)` returns the `Link` value for the request's public URL, or `undefined` for anything that isn't a page request (API routes, `/_next`, `.md` URLs, Markdown and RSC requests):
+`md()` sets the `Link` header by matching your `app/` routes against the URL as it was requested. A route whose public URL isn't its folder's, one your proxy rewrites, gets no header: `/package/@babel/core` has two segments, but `app/package/[pkg]` matches one. [`aliases`](#public-urls-your-proxy-maps-onto-routes) fix that once for the header, twin links and `markdown.ts`, so a site with them doesn't need `mdLink`. Without them, `md.link` (or `mdLink(request)`) is the `Link` value for the request's public URL, or `undefined` for anything that isn't a page request (API routes, `/_next`, `.md` URLs, Markdown and RSC requests):
 
 ```ts title="proxy.ts"
 import { NextResponse, type NextRequest } from 'next/server'
-import { mdLink, mdRewrite } from '@affordances/md/next/proxy'
+import { mdProxy } from '@affordances/md/next/proxy'
 // your own rewrite: /package/@scope/name → the URL app/package/[pkg] answers, or undefined
-import { route } from './route'
+import { collapse } from './site'
 
 export const proxy = (request: NextRequest) => {
-  const markdown = mdRewrite(request)
-  if (markdown) return NextResponse.rewrite(markdown)
+  const md = mdProxy(request)
+  if (md.markdown) return md.next()
 
-  const url = route(request.nextUrl)
+  const url = collapse(request.nextUrl)
   if (!url) return NextResponse.next()
   const response = NextResponse.rewrite(url)
-  const link = mdLink(request)
-  if (link) response.headers.set('Link', link)
+  if (md.link) response.headers.set('Link', md.link)
   return response
 }
 ```
 
-A `Link` the proxy sets replaces the one `md()` sets for the same URL, rather than adding to it, and that includes an Affordances graph's `rel="affordances"` value. Call `mdLink` only for the URLs `md()`'s rules miss, as above, or join the values yourself.
+A `Link` the proxy sets replaces the one `md()` sets for the same URL, rather than adding to it, and that includes an Affordances graph's `rel="affordances"` value. Set `md.link` only for the URLs `md()`'s rules miss, as above, or join the values yourself.

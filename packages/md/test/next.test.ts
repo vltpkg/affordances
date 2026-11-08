@@ -8,6 +8,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -24,6 +25,7 @@ import {
   mdAlternate,
   mdLink,
   mdPagePath,
+  mdProxy,
   PARTIAL_HEADER,
   mdRewrite,
   RENDER_HEADER,
@@ -1484,6 +1486,7 @@ test('@affordances/md/next/proxy is the same proxy side as @affordances/md/next,
     'mdLink',
     'mdPagePath',
     'mdPath',
+    'mdProxy',
     'mdRewrite',
     'rewrites',
   ])
@@ -1508,6 +1511,26 @@ test('@affordances/md/next/proxy is the same proxy side as @affordances/md/next,
   expect(packages.filter((spec) => /^@affordances\/md\/routes$|hast-|mdast-/.test(spec))).toEqual(
     [],
   )
+})
+
+// next.config.mjs loads @affordances/md/next in plain node, not a bundler: an import node's esm can't resolve (next
+// has no exports map, so 'next/server' needs its .js) breaks every app's config, which a vite-run test never sees
+test('the next entries load in plain node, as next.config does', () => {
+  for (const entry of ['../src/next/index.ts', '../src/next/proxy.ts']) {
+    const url = new URL(entry, import.meta.url).href
+    const loaded = execFileSync(
+      process.execPath,
+      [
+        '--experimental-strip-types',
+        '--no-warnings',
+        '--input-type=module',
+        '-e',
+        `const m = await import(${JSON.stringify(url)}); process.stdout.write(typeof m.mdProxy)`,
+      ],
+      { encoding: 'utf8' },
+    )
+    expect({ entry, loaded }).toEqual({ entry, loaded: 'function' })
+  }
 })
 
 test('md() records each markdown.ts next to a page, generates .affordances/md.ts and aliases it', async () => {
@@ -2239,6 +2262,13 @@ test('A9: a redirect for a markdown request goes to a twin only when its target 
     upstream = streamedRedirect(location.replace('&', '&amp;'))
     expect((await handler(new Request(`${site}/x/a.md`))).headers.get('location')).toBe(expected[i])
   }
+  // md.redirect from a proxy
+  for (const [i, location] of targets.entries())
+    expect(
+      mdProxy(new Request(`${site}/x/a.md`))
+        .redirect(location)
+        .headers.get('location'),
+    ).toBe(new URL(expected[i]!, site).href)
   // without md()'s pages every page url still has one, as before; an api route never does
   delete process.env[ROUTES_ENV]
   upstream = redirect('/auth/login')

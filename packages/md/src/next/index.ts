@@ -38,6 +38,8 @@ export {
   mdLink,
   mdPagePath,
   mdPath,
+  mdProxy,
+  type MdProxy,
   mdRewrite,
   RENDER_HEADER,
   rewrites,

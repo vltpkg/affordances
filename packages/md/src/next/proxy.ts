@@ -1,5 +1,8 @@
 // @affordances/md/next/proxy: what a proxy.ts needs, the rewrites' own match and the Link value, without the handler.
 // importing it rather than @affordances/md/next keeps the converter and every markdown.ts out of the proxy's bundle
+// with its .js: next.config loads this entry in plain node, whose esm can't resolve 'next/server' (next has no exports
+// map). bundlers resolve both to the same file
+import { NextResponse } from 'next/server.js'
 import { mdPath } from '../path.ts'
 import {
   apiRoute,
@@ -12,6 +15,7 @@ import {
   notOursOrRsc,
   rewrites,
   suffixRegex,
+  twinLocation,
 } from './rules.ts'
 
 export { MD_PATH, RENDER_HEADER, rewrites, type Has, type Rewrite, type Rewrites } from './rules.ts'
@@ -61,4 +65,48 @@ const pageLink = (request: Request, url: URL, markdown: () => boolean) => {
   const twin = new URL(mdPath(url.pathname), url)
   if (twin.origin !== url.origin) return
   return `<${twin.pathname}>; ${LINK}`
+}
+
+// what a proxy.ts does with a request, markdown or html alike: gate the page it's for, then let it through
+export type MdProxy = {
+  // the page the request is for, whether it asks for html or markdown: /compare.md and /compare with Accept are
+  // /compare, /index.md is /, a literalMd page keeps its own .md. its search is the request's. run every gate on this
+  page: URL
+  // whether the request is for the page's markdown
+  markdown: boolean
+  // NextResponse.redirect, except that a markdown request sent to a page on this site goes to that page's .md, so an
+  // agent stays in markdown. another origin is a plain redirect
+  redirect: (url: string | URL, init?: number | ResponseInit) => NextResponse
+  // let the request through: a markdown request to the markdown handler, any other with NextResponse.next(init)
+  next: (init?: Parameters<typeof NextResponse.next>[0]) => NextResponse
+  // the Link value for a page request, for a site whose proxy maps urls onto routes without md({ aliases }); undefined
+  // for anything else, markdown requests included
+  link: string | undefined
+}
+
+// proxy.ts: const md = mdProxy(request), then every gate on md.page, then md.next()
+export const mdProxy = (request: Request): MdProxy => {
+  const url = new URL(request.url)
+  const path = markdownPage(request, url)
+  const handler = path === undefined ? undefined : handlerUrl(path, url)
+  const page = new URL(url)
+  if (path !== undefined) page.pathname = path
+  return {
+    page,
+    markdown: handler !== undefined,
+    link: handler ? undefined : pageLink(request, url, () => false),
+    redirect: (to, init) => {
+      const target = new URL(to, url)
+      const twin = handler && twinLocation(target, url)
+      const response = NextResponse.redirect(twin ? new URL(twin, url) : target, init)
+      // it answers a request for markdown, and it's a gate's answer, so it depends on who asked: never cached as the
+      // html url's answer, or as anyone else's
+      if (handler) {
+        response.headers.set('vary', 'Accept')
+        response.headers.set('cache-control', 'private, no-store')
+      }
+      return response
+    },
+    next: (init) => (handler ? NextResponse.rewrite(handler, init) : NextResponse.next(init)),
+  }
 }
