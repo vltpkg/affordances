@@ -1,4 +1,4 @@
-import { readPage, yaml } from '../convert/index.ts'
+import { readPage, type SlotNames, yaml } from '../convert/index.ts'
 import { mdPath } from '../path.ts'
 import { mdPagePath } from './proxy.ts'
 import {
@@ -525,7 +525,7 @@ const convertPage =
     // a page whose shell arrived is converted as far as it streamed: boundaries still loading keep their fallback
     const partial = !body.complete
     if (partial && !body.html.trim()) return slow()
-    // the page, read once: what it streamed, and its markdown
+    // the page, read once: what it streamed, the slots it rendered, and its markdown
     const read = readPage(body.html, {
       url: target.href,
       link: options.linkTwins === false ? undefined : twinLinks(target),
@@ -533,11 +533,18 @@ const convertPage =
     // a redirect() after the shell went out can't change the status any more, so next streams it into the page
     // instead: a 200 whose html sends the browser on. it's the same redirect, so it gets the same answer
     if (read.redirect) return markdownRedirect(read.redirect, target, pageCache)
-    const result = read.markdown()
+    // append runs alongside the fills; a fill's notFound() may answer for the page first, so its rejection waits to be
+    // awaited below rather than going unhandled
+    const appended = Promise.resolve(append?.(request))
+    appended.catch(() => {})
+    // the page rendered, so its own redirect(), notFound() and layout checks ran: now the slots it rendered get filled
+    const slots = route?.module.slots && (await fillSlots(read.slots, target, route))
+    if (slots instanceof Response) return slots
+    const result = read.markdown(slots)
     const page = partial
       ? `${result.markdown}\n> Some of this page was still loading after ${timeout}ms and is missing or shown as its loading state.\n`
       : result.markdown
-    const extra = await append?.(request)
+    const extra = await appended
     const markdown = extra ? `${page}\n${extra.trim()}\n` : page
 
     // anything rendered with the caller's credentials, or that the page itself keeps private, stays private
@@ -545,7 +552,9 @@ const convertPage =
     // cookie. a credential-free render is the anonymous public view, whatever cache-control next put on it (next
     // sends private, no-store for every dynamic render), so only this marks a page for llms to leave out
     const personalOnly = credentialed(headers) || upstream.headers.has('set-cookie')
-    const personal = personalOnly || /private|no-store/.test(cacheControl) || negotiated
+    // a fill read data with whatever the request carried, as markdown.ts's default export does: never cached
+    const filled = slots !== undefined && Object.keys(slots).length > 0
+    const personal = personalOnly || filled || /private|no-store/.test(cacheControl) || negotiated
     return respond(markdown, upstream.status, {
       // the handler forwards accept-language, so a page that varies on it varies the markdown too
       vary: /(^|,)\s*accept-language\s*(,|$)/i.test(upstream.headers.get('vary') ?? '')
@@ -656,6 +665,49 @@ export type MarkdownRoutes = Record<
   }>
 >
 
+// markdown.ts's slots for the page as it rendered: only the names it rendered once run, together, each in the
+// visitor's request as the default export does. a next error in any (notFound(), redirect()) answers for the whole
+// page. in development it says what doesn't line up, naming the route's markdown.ts
+const fillSlots = async (
+  { unique, duplicate }: SlotNames,
+  target: URL,
+  { route, module, args }: MarkdownRoute,
+): Promise<Record<string, string> | Response> => {
+  const slots = module.slots!
+  const warn = (message: string) => {
+    if (process.env.NODE_ENV !== 'production')
+      console.warn(`[affordances-md] ${route}/markdown.ts, ${target.pathname}: ${message}`)
+  }
+  for (const name of duplicate)
+    warn(
+      `<AgentSlot name="${name}"> is on the page more than once, so no copy is filled and each converts as usual. Give each slot its own name.`,
+    )
+  for (const name of Object.keys(slots))
+    if (!unique.includes(name) && !duplicate.includes(name))
+      warn(`slots.${name} has no <AgentSlot name="${name}"> on the page, so it didn't run.`)
+  try {
+    const filled = await Promise.all(
+      unique.map(async (name) => {
+        // a name comes from the page's html: only the fills markdown.ts itself has, never one off Object.prototype
+        const fill = Object.hasOwn(slots, name) ? slots[name] : undefined
+        if (!fill)
+          return warn(
+            `<AgentSlot name="${name}"> has no slots.${name}, so its own content is converted.`,
+          )
+        const markdown = await fill(args)
+        if (typeof markdown !== 'string')
+          return warn(`slots.${name} returned nothing, so the slot's own content is converted.`)
+        return [name, markdown] as const
+      }),
+    )
+    return Object.fromEntries(filled.filter((entry) => entry !== undefined))
+  } catch (error) {
+    const thrown = thrownAnswer(error, target, credentialed(args.request.headers))
+    if (thrown) return thrown
+    throw error
+  }
+}
+
 // next's notFound(), forbidden(), unauthorized(), redirect() and permanentRedirect() thrown in a markdown.ts, as
 // the response they'd give the page: 404, 403 or 401, or a redirect, to the target's .md on this site and as it is
 // to another origin. read off the error's digest (as of next 16.3 and 16.4's http-access-fallback and redirect-error);
@@ -724,7 +776,7 @@ const authoredMarkdown = async (
   negotiated: boolean,
 ): Promise<Response | undefined> => {
   const markdown = module.default
-  // a markdown.ts with no default export converts the page
+  // a markdown.ts with only slots converts the page, which fills them
   if (!markdown) return undefined
   const personal = credentialed(request.headers)
   let result: MarkdownResult
@@ -752,7 +804,8 @@ const authoredMarkdown = async (
     return passed
   }
   if (result === undefined) {
-    if (process.env.NODE_ENV !== 'production')
+    // with slots, undefined is how a default export hands the page back to be converted and filled: no mistake to warn of
+    if (process.env.NODE_ENV !== 'production' && !module.slots)
       console.warn(
         `[affordances-md] ${route}/markdown.ts returned nothing for ${target.pathname}, so its HTML is converted`,
       )

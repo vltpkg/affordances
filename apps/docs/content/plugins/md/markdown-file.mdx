@@ -76,6 +76,47 @@ What `markdown.ts` returns is `Cache-Control: private, no-store` by default, sin
 
 `llms.txt`, `llms-full.txt`, and Copy Page go through the same handler, so they use it too.
 
+## Slots
+
+A page that renders on the server except for one part, a README fetched in the browser, say, doesn't need its whole Markdown rewritten. Wrap that part in an [`<AgentSlot name>`](/docs/plugins/md/markers) and fill only it: the rest of the page converts as usual.
+
+```tsx title="app/package/[pkg]/page.tsx"
+<AgentSlot name="readme">
+  <Readme />
+</AgentSlot>
+```
+
+```ts title="app/package/[pkg]/markdown.ts"
+import type { Slots } from '@affordances/md/next'
+import { cookies } from 'next/headers'
+import { api, getPackage } from '@/lib/api'
+
+export const slots = {
+  // public data: anyone who can see the page can see its readme
+  readme: async ({ params }) => (await getPackage(decodeURIComponent(params.pkg))).readme,
+  // someone's own data: the fill checks who's asking, whatever the page rendered
+  billing: async ({ params }) => {
+    const session = (await cookies()).get('session')?.value
+    if (!session) return undefined
+    const plan = await api.billing.get(decodeURIComponent(params.pkg), { session }) // the API checks it's theirs
+    return `**Plan:** ${plan.name}`
+  },
+} satisfies Slots<'/package/[pkg]'>
+```
+
+`satisfies Slots<'/route'>` types each fill's `params` from the route, with no annotation. A fill gets the same arguments as the default export.
+
+- **The default export runs first.** Anything it returns but `undefined` is the whole page, and no slot runs. Without one, or when it returns `undefined`, the page renders and converts, and each slot it rendered is filled.
+- **The page renders first, so its page-level checks come first.** Its `redirect()`, `notFound()` and its layout's checks run before any fill: a page that sends a signed-out visitor to sign in never runs a fill for them. The fills then run together, which costs one more round trip after the render.
+- **A slot's own condition doesn't gate its fill.** `{isOwner && <AgentSlot name="billing">…</AgentSlot>}` keeps the slot off another person's page, but HTML from someone else on that page (a README rendered as raw HTML) can carry a `billing` marker, and then `slots.billing` runs in that person's request. So **each fill authorizes its own data**, as `markdown.ts` does: it reads through fetchers your API checks against the request's cookies or token, never on the assumption that the page chose to render its slot.
+- **Only the slots that reach the Markdown run.** A slot inside `<AgentSkip>`, outside `<AgentMain>`, or hidden from people never runs its fill, so its data stays off the parts of the page you left out. A name the page renders more than once is filled nowhere: each copy converts its own content.
+- **A fill returns Markdown**, which takes the slot's place as blocks of its own (an inline `<AgentSlot>` splits its paragraph), with its links resolved as the page's are. `undefined` leaves the slot's own content, converted as usual.
+- **A fill runs in the visitor's own request**, as the default export does: `cookies()` and `headers()` work, and it reads data only through fetchers your API authorizes. A page with a filled slot is `private, no-store`. Next's `notFound()` or `redirect()` in a fill answers for the whole page.
+- **A request made straight to `/api/affordances/md/…` runs no fill**, as it runs no `markdown.ts`: each slot converts its own content.
+- In development, the handler warns, naming the route's `markdown.ts`, about a fill with no slot on the page, a slot with no fill, a name used twice, and a fill that returned nothing.
+
+A slot is a marker in the page's HTML, so HTML from someone else (a README rendered as raw HTML) could carry one. Strip `<affordances-md>` from untrusted HTML, as for [every marker](/docs/plugins/md/markers). A fill only ever runs in this visitor's own request for this page, so with each fill authorizing its own data, a forged slot can make a fill run or move its output on the page, never show anyone data their own credentials don't reach.
+
 ## With TanStack Query
 
 Call the same fetcher your query uses, so the Markdown and the page read the same data:

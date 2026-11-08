@@ -2233,6 +2233,148 @@ test('literalMd is declared in public url space, as the rewrites it feeds: an al
   )
 })
 
+// slots: markdown.ts fills the <AgentSlot>s the page rendered, and the rest of the page converts as usual
+const slot = (name: string, children = '<p>Loading…</p>') =>
+  `<affordances-md data-mode="slot" data-name="${name}" style="display:contents">${children}</affordances-md>`
+const slotted = (body: string) => () =>
+  new Response(page(`<h1>Core</h1><p>Header the converter reads.</p>${body}`), {
+    headers: { 'content-type': 'text/html', 'cache-control': 'public, max-age=60' },
+  })
+const markdownModule = (module: {
+  default?: (args: { params: Record<string, string | string[]> }) => unknown
+  slots?: Record<
+    string,
+    (args: {
+      route: string
+      params: Record<string, string | string[]>
+      request: Request
+    }) => unknown
+  >
+}) => {
+  clear()
+  const ran: string[] = []
+  const slots =
+    module.slots &&
+    Object.fromEntries(
+      Object.entries(module.slots).map(([name, fill]) => [
+        name,
+        (args: { route: string; params: Record<string, string | string[]>; request: Request }) => {
+          ran.push(name)
+          return fill(args)
+        },
+      ]),
+    )
+  authored['/x/[pkg]'] = async () => ({ ...module, ...(slots && { slots }) }) as never
+  process.env[ROUTES_ENV] = JSON.stringify(['/x/[pkg]', '/sign-in'])
+  return ran
+}
+
+test('slots fill the markers the page rendered, and the rest of the page converts as usual', async () => {
+  upstream = slotted(slot('readme'))
+  const ran = markdownModule({
+    slots: {
+      readme: ({ route, params }) => `## Readme\n\nThe readme of ${params.pkg}, on ${route}.`,
+    },
+  })
+  const response = await handler(new Request(`${site}/x/%40babel%2Fcore.md`))
+  const text = await response.text()
+  expect(text).toContain(
+    // its args say which route matched, as the route string md() found
+    '# Core\n\nHeader the converter reads.\n\n## Readme\n\nThe readme of %40babel%2Fcore, on /x/[pkg].',
+  )
+  expect(text).not.toContain('Loading')
+  expect(ran).toEqual(['readme'])
+  // the page rendered once, then the fill ran; a fill reads data as the request's markdown.ts does: never cached
+  expect(seen.map((call) => call.url.pathname)).toEqual(['/x/%40babel%2Fcore'])
+  expect(response.headers.get('cache-control')).toBe('private, no-store')
+  // in the visitor's request: signed in, it's theirs
+  const signedIn = await handler(new Request(`${site}/x/a.md`, { headers: { cookie: 'sid=1' } }))
+  expect(signedIn.headers.get('x-affordances-md-personal')).toBe('1')
+})
+
+test('the default export runs first: anything but undefined is the whole page, and no slot runs', async () => {
+  upstream = slotted(slot('readme'))
+  const ran = markdownModule({ default: () => '# Whole page', slots: { readme: () => 'fill' } })
+  expect(await (await handler(new Request(`${site}/x/a.md`))).text()).toContain('# Whole page')
+  expect([ran, seen]).toEqual([[], []])
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const fallsBack = markdownModule({ default: () => undefined, slots: { readme: () => 'Filled.' } })
+  expect(await (await handler(new Request(`${site}/x/a.md`))).text()).toContain('Filled.')
+  expect(fallsBack).toEqual(['readme'])
+  // with slots, undefined is the intended way to hand the page back: not a mistake to warn about
+  expect(warn).not.toHaveBeenCalled()
+  warn.mockRestore()
+})
+
+test("only the names the page rendered once, where they reach the markdown, run; what doesn't line up is said in development", async () => {
+  const skipped = `<affordances-md data-mode="skip" style="display:contents">${slot('hidden')}</affordances-md>`
+  upstream = slotted(
+    `${slot('readme')}${slot('twice')}${slot('twice')}${slot('nofill')}${slot('empty')}${slot('constructor')}${skipped}`,
+  )
+  const ran = markdownModule({
+    slots: {
+      readme: () => 'Filled.',
+      twice: () => 'never',
+      hidden: () => 'never',
+      versions: () => 'never',
+      empty: () => undefined,
+    },
+  })
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const text = await (await handler(new Request(`${site}/x/a.md`))).text()
+  const warnings = warn.mock.calls.map(([message]) => String(message))
+  warn.mockRestore()
+  expect(ran.toSorted()).toEqual(['empty', 'readme'])
+  expect(text).toContain('Filled.')
+  // a duplicate, an unfilled marker and an empty fill convert their own children; a name off Object.prototype is none
+  expect(text.match(/Loading…/g)).toHaveLength(5)
+  expect(text).not.toContain('never')
+  const where = '[affordances-md] /x/[pkg]/markdown.ts, /x/a:'
+  expect(warnings.toSorted()).toEqual(
+    [
+      `${where} <AgentSlot name="twice"> is on the page more than once, so no copy is filled and each converts as usual. Give each slot its own name.`,
+      `${where} slots.hidden has no <AgentSlot name="hidden"> on the page, so it didn't run.`,
+      `${where} slots.versions has no <AgentSlot name="versions"> on the page, so it didn't run.`,
+      `${where} <AgentSlot name="nofill"> has no slots.nofill, so its own content is converted.`,
+      `${where} <AgentSlot name="constructor"> has no slots.constructor, so its own content is converted.`,
+      `${where} slots.empty returned nothing, so the slot's own content is converted.`,
+    ].toSorted(),
+  )
+  // a marker outside <AgentMain> never reaches the markdown either, so its fill never runs
+  upstream = slotted(
+    `<affordances-md data-mode="main" style="display:contents">${slot('readme')}</affordances-md>${slot('aside')}`,
+  )
+  const main = markdownModule({ slots: { readme: () => 'Main.', aside: () => 'never' } })
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
+  expect(await (await handler(new Request(`${site}/x/a.md`))).text()).toContain('Main.')
+  vi.restoreAllMocks()
+  expect(main).toEqual(['readme'])
+})
+
+test("a fill's notFound() or redirect() answers for the whole page; the page's own redirect means no fill runs", async () => {
+  const navigation = await import('next/navigation.js')
+  upstream = slotted(slot('readme'))
+  markdownModule({ slots: { readme: () => navigation.notFound() } })
+  const missing = await handler(new Request(`${site}/x/a.md`))
+  expect([missing.status, await missing.text()]).toEqual([404, '# Not found\n'])
+  markdownModule({ slots: { readme: () => navigation.redirect('/sign-in') } })
+  const login = await handler(new Request(`${site}/x/a.md`))
+  expect([login.status, login.headers.get('location')]).toEqual([307, '/sign-in.md'])
+  // the page redirects (its layout's gate), so it never rendered its slots
+  upstream = () => new Response(null, { status: 307, headers: { location: '/sign-in' } })
+  const ran = markdownModule({ slots: { readme: () => 'never' } })
+  expect((await handler(new Request(`${site}/x/a.md`))).headers.get('location')).toBe('/sign-in.md')
+  expect(ran).toEqual([])
+})
+
+test("a direct hit on the handler converts the slots' own content: no fill runs, as no markdown.ts does", async () => {
+  upstream = slotted(slot('readme'))
+  const ran = markdownModule({ slots: { readme: () => 'never' } })
+  const text = await (await get('/x/a')).text()
+  expect(text).toContain('Loading…')
+  expect(ran).toEqual([])
+})
+
 // intake's /code-review of 0.3.0: alias and Link-rule shapes next fills differently
 test('a Link rule fills every shape of param next can match: repeated ones mid-source, absent optional ones, patterned ones', async () => {
   const rules = await md({
@@ -2344,4 +2486,41 @@ test('A9: a redirect for a markdown request goes to a twin only when its target 
   expect((await get('/x/a')).headers.get('location')).toBe('/auth/login.md')
   upstream = redirect('/api/auth/signin')
   expect((await get('/x/a')).headers.get('location')).toBe('/api/auth/signin')
+})
+
+test('A10: a slot inside another slot never reaches the markdown, so its fill never runs or decides the page', async () => {
+  const navigation = await import('next/navigation.js')
+  upstream = slotted(slot('outer', `<p>Outer.</p>${slot('inner')}`))
+  const ran = markdownModule({
+    slots: { outer: () => 'Filled outer.', inner: () => navigation.notFound() },
+  })
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const response = await handler(new Request(`${site}/x/a.md`))
+  vi.restoreAllMocks()
+  expect([response.status, ran]).toEqual([200, ['outer']])
+  expect(await response.text()).toContain('Filled outer.')
+})
+
+test('A12, documented: a forged slot marker in user html runs its fill even where the page left the slot out, so a fill authorizes its own data', async () => {
+  // the page renders billing only for its owner (here, not), and a README with a forged billing marker in it
+  upstream = slotted(`<section>${slot('billing', '<p>forged</p>')}</section>`)
+  const asked: (string | null)[] = []
+  const ran = markdownModule({
+    // the documented shape: the fill checks who's asking, whatever the page rendered
+    slots: {
+      billing: ({ request }) => {
+        asked.push(request.headers.get('cookie'))
+        return request.headers.get('cookie') === 'session=owner' ? '**Plan:** Pro' : undefined
+      },
+    },
+  })
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const visitor = await (
+    await handler(new Request(`${site}/x/a.md`, { headers: { cookie: 'session=visitor' } }))
+  ).text()
+  vi.restoreAllMocks()
+  // the fill ran for the visitor, in their own request, and gave nothing it hadn't authorized
+  expect(ran).toEqual(['billing'])
+  expect(asked).toEqual(['session=visitor'])
+  expect(visitor).not.toContain('Plan')
 })

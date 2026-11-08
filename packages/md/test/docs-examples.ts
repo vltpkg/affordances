@@ -3,7 +3,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { cookies } from 'next/headers'
 import { unauthorized } from 'next/navigation'
-import { type MarkdownArgs, withMd } from '../src/next/index.ts'
+import { type MarkdownArgs, type Slots, withMd } from '../src/next/index.ts'
 import { mdProxy } from '../src/next/proxy.ts'
 
 const nextConfig = {}
@@ -79,3 +79,20 @@ export async function orderMarkdown({ params }: MarkdownArgs<'/orders/[id]'>) {
   const order = await api.orders.get(params.id, { session }) // the API checks it's theirs
   return `# Order ${order.number}\n\n…`
 }
+
+declare const getRegistryPackage: (name: string) => Promise<{ readme: string }>
+
+// markdown-file.mdx, "Slots"
+export const slots = {
+  readme: async ({ params }) => (await getRegistryPackage(decodeURIComponent(params.pkg))).readme,
+} satisfies Slots<'/package/[pkg]'>
+
+// markdown-file.mdx, "Slots": a fill for someone's own data authorizes it itself
+export const authorizedSlots = {
+  billing: async ({ params }) => {
+    const session = (await cookies()).get('session')?.value
+    if (!session) return undefined
+    const plan = await api.billing.get(decodeURIComponent(params.pkg), { session }) // the API checks it's theirs
+    return `**Plan:** ${plan.name}`
+  },
+} satisfies Slots<'/package/[pkg]'>
