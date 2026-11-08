@@ -19,5 +19,24 @@ const { markdown, title, url, tokens } = htmlToMarkdown(html, { url: 'https://ex
 | `frontmatter` | `true`   | Prepend YAML frontmatter from the page's metadata                                                                 |
 | `jsonLd`      | `true`   | Append the page's JSON-LD as fenced JSON                                                                          |
 | `handlers`    | none     | Per-element overrides, as `hast-util-to-mdast` handlers                                                           |
+| `link`        | none     | Another URL for a link once it's absolute, such as its Markdown twin; `undefined` keeps it                        |
+| `slots`       | none     | Markdown for each `<AgentSlot name>`, in place of its children                                                    |
 
 It returns the Markdown, the page's `title`, its canonical `url` (or the one you passed), and `tokens`, an estimate of the Markdown's length in tokens (characters divided by four).
+
+`readPage` reads a page once, for when you fill its [slots](/docs/plugins/md/markers#slots) yourself. It gives:
+
+- `slots`: the slots that reach the Markdown, in page order. `unique` are the names a fill can go to, and `duplicate` are names rendered more than once, which are never filled.
+- `redirect`: the `{ status, location }` of a `redirect()` that Next streamed into the page after its shell went out, or `undefined`.
+- `markdown(fills)`: the page's Markdown with those fills, as `htmlToMarkdown` gives it. It leaves the page as it was, so you can call it again.
+
+```ts
+import { readPage } from '@affordances/md'
+
+const page = readPage(html, { url })
+const slots: Record<string, string> = {}
+for (const name of page.slots.unique) slots[name] = await readme(name)
+const { markdown } = page.markdown(slots)
+```
+
+`htmlToMarkdown(html, { slots })` is `readPage(html, options).markdown(slots)`.

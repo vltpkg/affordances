@@ -1,11 +1,22 @@
 import type { Element, ElementContent, Nodes as HastNodes, Root as HastRoot } from 'hast'
-import type { List, ListItem, Nodes as MdastNodes, PhrasingContent, Root as MdastRoot } from 'mdast'
+import type {
+  Html,
+  List,
+  ListItem,
+  Nodes as MdastNodes,
+  PhrasingContent,
+  Root as MdastRoot,
+} from 'mdast'
 import { fromHtml } from 'hast-util-from-html'
 import { select, selectAll } from 'hast-util-select'
 import { defaultHandlers, toMdast, type Handle } from 'hast-util-to-mdast'
 import { toString } from 'hast-util-to-string'
 import { gfmToMarkdown } from 'mdast-util-gfm'
 import { toMarkdown, type Handle as ToMarkdownHandle } from 'mdast-util-to-markdown'
+import { parse, postprocess, preprocess } from 'micromark'
+import { gfm } from 'micromark-extension-gfm'
+import { decodeString } from 'micromark-util-decode-string'
+import { normalizeIdentifier } from 'micromark-util-normalize-identifier'
 import { visit } from 'unist-util-visit'
 
 export type Handlers = Record<string, Handle>
@@ -21,6 +32,8 @@ export type Options = {
   // another url for a link once it's absolute, e.g. the linked page's markdown twin; undefined keeps it. not called
   // for images or a link to a #fragment of the page itself
   link?: (url: URL) => string | undefined
+  // markdown for each <AgentSlot name>, in place of its children. a name the page renders more than once fills nothing
+  slots?: Record<string, string>
 }
 
 // url: the page's canonical url (or the one given), for a Link header
@@ -211,6 +224,15 @@ const dropped = (el: Element, style = declarations(el)) =>
 
 // drop what never belongs (scripts, controls, comments) and apply skip/text/only markers, in place. code is
 // left as written: a highlighter's tokens are adjacent spans
+// markdown from a marker, emitted verbatim by the span and div handlers. the text child keeps whitespace around it
+// significant (an empty span would let it collapse)
+const markdownOf = (md: string, block: boolean): Element => ({
+  type: 'element',
+  tagName: block ? 'div' : 'span',
+  properties: { dataAffordancesMdText: md },
+  children: [{ type: 'text', value: md }],
+})
+
 const prune = (parent: HastRoot | Element, literal = false) => {
   let byId: Map<string, Element> | undefined
   pruneWith(parent, () => (byId ??= ids(parent)), literal)
@@ -233,16 +255,7 @@ const pruneWith = (
     if (m === 'text') {
       // a span or div, so whitespace around it follows the page's inline/block flow; emitted verbatim below
       const block = child.properties.dataBlock !== undefined && child.properties.dataBlock !== false
-      const md = String(child.properties.dataMd ?? '')
-      // the text child keeps whitespace around it significant (an empty span would let it collapse)
-      return [
-        {
-          type: 'element',
-          tagName: block ? 'div' : 'span',
-          properties: { dataAffordancesMdText: md },
-          children: [{ type: 'text', value: md }],
-        },
-      ]
+      return [markdownOf(String(child.properties.dataMd ?? ''), block)]
     }
     if (m === 'only') {
       const { hidden: _, ...properties } = child.properties
@@ -402,6 +415,38 @@ const extract = (body: HastRoot, how: Options['extract']): HastRoot => {
   }
   strip(body)
   return body
+}
+
+// <AgentSlot name>s where they reach the markdown, after prune and extract, so one inside <AgentSkip>, hidden, or
+// outside <AgentMain> never counts and its fill never runs. only the outermost: a slot's children are the people's
+// version of what its fill says, so a slot inside one is never filled, and its fill never runs either
+const slotMarkers = (parent: HastRoot | Element, found: Element[] = []) => {
+  for (const child of parent.children)
+    if (isElement(child)) {
+      if (mode(child) === 'slot') found.push(child)
+      else slotMarkers(child, found)
+    }
+  return found
+}
+
+// set on a slot a fill can go to: a property no attribute parses to, so a page can't forge it
+const FILLABLE = 'affordancesSlot'
+
+const parsed = (html: string) => {
+  const tree = fromHtml(html)
+  resolveStreamed(tree)
+  return tree
+}
+
+// the part of the page that becomes markdown; prunes the body in place, so read the head first
+const contentOf = (tree: HastRoot, how: Options['extract']) => {
+  const bodyElement = select('body', tree)
+  const body: HastRoot = {
+    type: 'root',
+    children: bodyElement ? bodyElement.children : tree.children,
+  }
+  prune(body)
+  return extract(body, how ?? 'auto')
 }
 
 const CONTROLS = new Set([
@@ -949,18 +994,30 @@ const wrap =
       { type: 'html', value: `</${tag}>` },
     ] as never
 
-// <AgentText md="…">, flattened by prune(): its markdown goes out verbatim. an inline one says it's a span, so it
-// stays in its paragraph or link (<a><AgentText/></a> is a link) instead of splitting it like a block would
+// markdown from a marker (<AgentText md>, a slot's fill): verbatim, flagged so its links are resolved and a block one
+// is lifted out of the paragraph or heading it's in. an inline one also says it's a span, so hast-util-to-mdast keeps
+// it in its paragraph or link (<a><AgentText/></a> is a link) instead of splitting it like a block would
+type Marked = 'inline' | 'block'
+const markerMarkdown = (value: string, as: Marked): Html => ({
+  type: 'html',
+  value,
+  data: { affordancesMd: as, ...(as === 'inline' && { hName: 'span' }) } as never,
+})
+const markedAs = (node: MdastNodes) =>
+  node.type === 'html'
+    ? (node.data as { affordancesMd?: Marked } | undefined)?.affordancesMd
+    : undefined
+
+// <AgentText md="…">, flattened by prune()
 const verbatim =
   (fallback: Handle): Handle =>
   (state, node, parent) =>
     node.properties.dataAffordancesMdText === undefined
       ? fallback(state, node, parent)
-      : ({
-          type: 'html',
-          value: String(node.properties.dataAffordancesMdText),
-          ...(node.tagName === 'span' && { data: { hName: 'span' } }),
-        } as never)
+      : (markerMarkdown(
+          String(node.properties.dataAffordancesMdText),
+          node.tagName === 'span' ? 'inline' : 'block',
+        ) as never)
 
 // <pre data-title="route.ts"> keeps its title as fence meta: ```ts title="route.ts"
 const pre: Handle = (state, node) => {
@@ -984,8 +1041,6 @@ const handlers: Handlers = {
   sub: wrap('sub'),
   span: verbatim(defaultHandlers.span),
   div: verbatim(defaultHandlers.div),
-  // main and only markers are plain wrappers
-  'affordances-md': (state, node) => state.all(node) as never,
   // values and placeholders are the user's, not the page's; task-list checkboxes are read by the li handler
   input: () => undefined,
   select: () => undefined,
@@ -1011,24 +1066,220 @@ const fieldValue: ToMarkdownHandle = (node, _, state, info) => {
   }
 }
 
+// a link's url once it's absolute, then through the link hook; undefined when it can't be resolved
+const resolve = (url: string, base: string, relink: Options['link'], image: boolean) => {
+  try {
+    const absolute = new URL(url, base)
+    return (!image && !url.startsWith('#') && relink?.(absolute)) || absolute.href
+  } catch {
+    return undefined
+  }
+}
+
+// links and images made absolute, and marker markdown's links with them; whether there was marker markdown
 const absolutize = (tree: MdastRoot, base: string | undefined, relink: Options['link']) => {
-  if (!base) return
   // a definition an image refers to (![alt][id], from a custom handler) is an image's url, so it's never relinked
   const images = new Set<string>()
-  visit(tree, 'imageReference', (node) => {
-    images.add(node.identifier)
-  })
+  if (base)
+    visit(tree, 'imageReference', (node) => {
+      images.add(node.identifier)
+    })
+  let marked = false
   visit(tree, (node) => {
-    if (node.type !== 'link' && node.type !== 'image' && node.type !== 'definition') return
+    if (markedAs(node)) {
+      marked = true
+      if (base) (node as Html).value = relinkMarkdown((node as Html).value, base, relink)
+      return
+    }
+    if (!base || (node.type !== 'link' && node.type !== 'image' && node.type !== 'definition'))
+      return
     const image =
       node.type === 'image' || (node.type === 'definition' && images.has(node.identifier))
-    try {
-      const url = new URL(node.url, base)
-      node.url = (!image && !node.url.startsWith('#') && relink?.(url)) || url.href
-    } catch {
-      // leave what can't be resolved as written
-    }
+    // what can't be resolved stays as written
+    node.url = resolve(node.url, base, relink, image) ?? node.url
   })
+  return marked
+}
+
+// a table cell is one line: marker markdown in one keeps its line breaks as <br> and its pipes escaped, so it doesn't
+// end the table or add columns. it's inline there, so it's never lifted out of the cell
+const inCells = (tree: MdastRoot) =>
+  visit(tree, 'tableCell', (cell) =>
+    visit(cell, 'html', (node) => {
+      if (!markedAs(node)) return
+      node.value = node.value
+        .trim()
+        .replace(/(?<!\\)((?:\\\\)*)\|/g, '$1\\|')
+        .replace(/[ \t]*\n\s*/g, '<br>')
+      node.data = { ...node.data, affordancesMd: 'inline' } as never
+    }),
+  )
+
+// a block of marker markdown inside a paragraph or heading (<h1>Package <AgentSlot/></h1>), or inside a link or
+// emphasis in one, is its own block: it's lifted out, between what was on either side of it
+type Phrasing = MdastNodes & { children: MdastNodes[] }
+const hasBlock = (node: MdastNodes): boolean =>
+  markedAs(node) === 'block' || ('children' in node && node.children.some(hasBlock))
+const says = (node: MdastNodes): boolean =>
+  node.type === 'text'
+    ? Boolean(node.value.trim())
+    : !('children' in node) || node.children.some(says)
+// the text at one end of a node, where its whitespace meets a lifted block
+const edge = (node: MdastNodes | undefined, end: boolean): { value: string } | undefined =>
+  node?.type === 'text'
+    ? node
+    : node && 'children' in node
+      ? edge(end ? node.children.at(-1) : node.children[0], end)
+      : undefined
+const lifted = (node: Phrasing): MdastNodes[] => {
+  const out: MdastNodes[] = []
+  let side: Phrasing = { ...node, children: [] }
+  const close = () => {
+    const first = edge(side, false)
+    if (first && out.length) first.value = first.value.trimStart()
+    if (says(side)) out.push(side)
+    side = { ...node, children: [] }
+  }
+  for (const child of node.children)
+    for (const part of 'children' in child && hasBlock(child) ? lifted(child as Phrasing) : [child])
+      if (markedAs(part) === 'block') {
+        const last = edge(side, true)
+        if (last) last.value = last.value.trimEnd()
+        close()
+        out.push(part)
+      } else side.children.push(part)
+  close()
+  return out
+}
+const liftBlocks = (tree: MdastRoot) =>
+  visit(tree, (node, index, parent) => {
+    if ((node.type !== 'paragraph' && node.type !== 'heading') || !parent || index === undefined)
+      return
+    if (!hasBlock(node)) return 'skip'
+    const parts = lifted(node as Phrasing)
+    parent.children.splice(index, 1, ...(parts as never[]))
+    return index + parts.length
+  })
+
+const SYNTAX = { extensions: [gfm()] }
+// a destination as markdown writes it: bare, or in <…> when it has what the bare form would need escaped
+const destination = (url: string) =>
+  /[\s()<>\\]/.test(url) ? `<${url.replace(/[<>\\]/g, '\\$&')}>` : url
+const escaped = (value: string) => value.replace(/[\\[\]*_`<>]/g, '\\$&')
+
+// an autolink's token, and what its text needs in front to be its url
+const AUTOLINKS = new Map([
+  ['autolinkProtocol', ''],
+  ['autolinkEmail', 'mailto:'],
+  ['literalAutolinkHttp', ''],
+  ['literalAutolinkWww', 'http://'],
+  ['literalAutolinkEmail', 'mailto:'],
+])
+
+type Frame = {
+  type: string
+  label?: string
+  reference?: string
+  resource?: boolean
+  url?: string
+  at?: number
+}
+
+// FB-4: markdown a marker carries (<AgentText md>, a slot's fill) gets what page links get: each link, autolink and
+// definition made absolute, then the link hook; an image only absolute, like a page image. only each url's own source
+// changes, so the rest stays as the app wrote it. raw html in it is left alone
+const relinkMarkdown = (markdown: string, base: string, relink: Options['link']) => {
+  // nothing that could be a link: a destination or definition needs ], an autolink <, @, www. or ://
+  if (!/[\]<@]|www\.|:\/\//.test(markdown)) return markdown
+  const events = postprocess(
+    parse(SYNTAX)
+      .document()
+      .write(preprocess()(markdown, undefined, true)),
+  )
+  const source = (token: { start: { offset: number }; end: { offset: number } }) =>
+    markdown.slice(token.start.offset, token.end.offset)
+  // definitions an image reference uses (![alt][id]) are image urls, so they're never relinked
+  const images = new Set<string>()
+  const frames: Frame[] = []
+  for (const [kind, token] of markdown.includes('![') ? events : []) {
+    if (token.type === 'image' || token.type === 'link') {
+      if (kind === 'enter') frames.push({ type: token.type })
+      else {
+        const frame = frames.pop()!
+        if (frame.type === 'image' && !frame.resource)
+          images.add(normalizeIdentifier(frame.reference ?? frame.label ?? '').toLowerCase())
+      }
+    } else if (kind === 'enter' && frames.length) {
+      const frame = frames.at(-1)!
+      if (token.type === 'labelText') frame.label ??= source(token)
+      if (token.type === 'referenceString') frame.reference = source(token)
+      if (token.type === 'resource') frame.resource = true
+    }
+  }
+  const edits: { start: number; end: number; value: string }[] = []
+  // a link's destination, a definition's, or a whole autolink: what's being rewritten, and whether it's an image's
+  const open: Frame[] = []
+  let definition: string | undefined
+  for (const [kind, token] of events) {
+    const { type } = token
+    if (type === 'image' || type === 'link') {
+      if (kind === 'enter') open.push({ type })
+      else open.pop()
+      continue
+    }
+    if (type === 'definitionLabelString' && kind === 'enter') definition = source(token)
+    if (type === 'resourceDestination' || type === 'definitionDestination') {
+      if (kind === 'enter') {
+        open.push({ type, at: token.start.offset })
+        continue
+      }
+      const frame = open.pop()!
+      const image =
+        type === 'definitionDestination'
+          ? images.has(normalizeIdentifier(definition ?? '').toLowerCase())
+          : open.at(-1)?.type === 'image'
+      const url = frame.url
+      const next = url && resolve(url, base, relink, image)
+      if (url && next && next !== url)
+        edits.push({ start: frame.at!, end: token.end.offset, value: destination(next) })
+      continue
+    }
+    if (kind !== 'enter') continue
+    if (type === 'resourceDestinationString' || type === 'definitionDestinationString') {
+      const frame = open.at(-1)
+      if (frame) frame.url = decodeString(source(token))
+      continue
+    }
+    // an autolink is already absolute: it changes only if the link hook gives it another url, and then reads as a
+    // link whose text is what was written. never inside another link, which it would nest in
+    const prefix = AUTOLINKS.get(type)
+    if (prefix === undefined || open.length) continue
+    const written = source(token)
+    let absolute: URL
+    try {
+      absolute = new URL(prefix + written, base)
+    } catch {
+      continue
+    }
+    const next = relink?.(absolute)
+    // <…> takes its brackets with it
+    const bracketed = type === 'autolinkProtocol' || type === 'autolinkEmail' ? 1 : 0
+    if (next && next !== absolute.href)
+      edits.push({
+        start: token.start.offset - bracketed,
+        end: token.end.offset + bracketed,
+        value: `[${escaped(written)}](${destination(next)})`,
+      })
+  }
+  // one pass, so a fill with thousands of links costs its length, not its length per link
+  const parts: string[] = []
+  let at = 0
+  for (const edit of edits.toSorted((a, b) => a.start - b.start)) {
+    parts.push(markdown.slice(at, edit.start), edit.value)
+    at = edit.end
+  }
+  parts.push(markdown.slice(at))
+  return parts.join('')
 }
 
 // frontmatter, the handler's for a markdown.ts page too
@@ -1061,6 +1312,16 @@ const canonicalOf = (href: string | undefined, base: string | undefined) => {
   }
 }
 
+// the redirect next streams into a page that called redirect() after its shell was sent (as of next 16.3 and 16.4's
+// make-get-server-inserted-html): a refresh meta of its own, after 0 seconds for a permanent redirect, 1 for any other.
+// read from the parse, so its url is decoded as a browser would, and one in a comment or a script's text isn't one
+const streamedRedirect = (tree: HastRoot): Redirect | undefined => {
+  const meta = select('meta[id="__next-page-redirect"][http-equiv="refresh"]', tree)
+  const [, delay, location] =
+    /^([01]);url=(.*)$/s.exec(String(meta?.properties.content ?? '')) ?? []
+  return location === undefined ? undefined : { status: delay === '0' ? 308 : 307, location }
+}
+
 const head = (tree: HastRoot, base: string | undefined) => {
   const meta = (selector: string) =>
     String(select(selector, tree)?.properties.content ?? '').trim() || undefined
@@ -1078,6 +1339,7 @@ const head = (tree: HastRoot, base: string | undefined) => {
     jsonLd: selectAll('script[type="application/ld+json"]', tree)
       .map((s) => toString(s).trim())
       .filter(Boolean),
+    redirect: streamedRedirect(tree),
   }
 }
 
@@ -1095,25 +1357,73 @@ const pretty = (raw: string) => {
   }
 }
 
-export const htmlToMarkdown = (html: string, options: Options = {}): Result => {
-  const { frontmatter = true, jsonLd = true } = options
-  const tree = fromHtml(html)
-  resolveStreamed(tree)
+// a page read once: its slots, a redirect streamed into it, and its markdown with whatever fills them. the handler
+// reads the page, runs the fills, then converts, without parsing it twice
+export type Page = {
+  slots: SlotNames
+  redirect?: Redirect
+  markdown: (slots?: Record<string, string>) => Result
+}
+// the <AgentSlot> names that reach the markdown, in page order: the ones a fill can go to, and those the page renders
+// more than once, which are filled nowhere
+export type SlotNames = { unique: string[]; duplicate: string[] }
+export type Redirect = { status: 307 | 308; location: string }
+
+export const readPage = (html: string, options: Options = {}): Page => {
+  const tree = parsed(html)
   const meta = head(tree, options.url)
-  const bodyElement = select('body', tree)
-  const body: HastRoot = {
-    type: 'root',
-    children: bodyElement ? bodyElement.children : tree.children,
+  const content = contentOf(tree, options.extract)
+  // a name rendered twice fills neither copy: one of them may be a forgery in user content, and there's no telling which
+  const markers = slotMarkers(content)
+  const counts = new Map<string, number>()
+  for (const marker of markers) {
+    const name = String(marker.properties.dataName ?? '')
+    if (name) counts.set(name, (counts.get(name) ?? 0) + 1)
   }
-  prune(body)
-  const content = extract(body, options.extract ?? 'auto')
+  for (const marker of markers) {
+    const name = String(marker.properties.dataName ?? '')
+    if (counts.get(name) === 1) marker.properties[FILLABLE] = name
+  }
+  const names = [...counts]
+  return {
+    slots: {
+      unique: names.flatMap(([name, count]) => (count === 1 ? [name] : [])),
+      duplicate: names.flatMap(([name, count]) => (count > 1 ? [name] : [])),
+    },
+    ...(meta.redirect && { redirect: meta.redirect }),
+    // the page itself is left as it is, so it can be converted again with other fills
+    markdown: (slots) => {
+      // markers stay plain wrappers, except a slot with a fill: its children give way to the fill, as a block
+      const marker: Handle = (state, node) => {
+        const name = node.properties[FILLABLE]
+        const md =
+          typeof name === 'string' && slots && Object.hasOwn(slots, name) ? slots[name] : undefined
+        return (typeof md === 'string' ? markerMarkdown(md, 'block') : state.all(node)) as never
+      }
+      const mdast = toMdast(content as HastNodes, {
+        handlers: { ...handlers, 'affordances-md': marker, ...options.handlers },
+      }) as MdastRoot
+      const url = meta.canonical ?? options.url
+      if (absolutize(mdast, options.url ?? meta.canonical, options.link)) {
+        inCells(mdast)
+        liftBlocks(mdast)
+      }
+      return finish(mdast, meta, url, options)
+    },
+  }
+}
 
-  const mdast = toMdast(content as HastNodes, {
-    handlers: { ...handlers, ...options.handlers },
-  }) as MdastRoot
-  const url = meta.canonical ?? options.url
-  absolutize(mdast, options.url ?? meta.canonical, options.link)
+// the page's markdown; slots fills its <AgentSlot>s
+export const htmlToMarkdown = (html: string, options: Options = {}): Result =>
+  readPage(html, options).markdown(options.slots)
 
+const finish = (
+  mdast: MdastRoot,
+  meta: ReturnType<typeof head>,
+  url: string | undefined,
+  options: Options,
+): Result => {
+  const { frontmatter = true, jsonLd = true } = options
   // the page's own h1 is its title; without one, the <title> stands in
   const hasH1 = mdast.children.some((node) => node.type === 'heading' && node.depth === 1)
   if (!hasH1 && meta.title)

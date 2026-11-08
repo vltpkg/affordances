@@ -1,6 +1,6 @@
 ---
 title: Markers
-description: Four components that say what a page's Markdown keeps, drops, and says instead.
+description: Five components that say what a page's Markdown keeps, drops, says instead, and fills in.
 ---
 
 The converter finds a page's content on its own. Markers from `@affordances/md/react` make it exact. They're server components that render an `<affordances-md>` element with `display: contents`, so they don't change layout and ship no JavaScript.
@@ -11,6 +11,7 @@ The converter finds a page's content on its own. Markers from `@affordances/md/r
 | `<AgentSkip>`           | Leaves its children out                                                      |
 | `<AgentOnly>`           | Includes its children, hidden from people                                    |
 | `<AgentText md block?>` | Replaces its children with `md`, verbatim; `block` makes it its own block    |
+| `<AgentSlot name>`      | Replaces its children with the Markdown `markdown.ts` fills `name` with      |
 
 ```tsx title="app/products/[slug]/page.tsx"
 import { AgentMain, AgentSkip, AgentText } from '@affordances/md/react'
@@ -29,5 +30,30 @@ import { AgentMain, AgentSkip, AgentText } from '@affordances/md/react'
 - A `skip` inside a `main` is respected, and a `main` inside another `main` is part of the outer one.
 - `data-affordances-md="skip"` on any element works like `<AgentSkip>`, for components you can't wrap.
 - `<AgentOnly>` must say what the page already shows people, in a form an agent can read. It's not for content people can't see.
+- Links in `md` are treated like the page's links: made absolute and pointed at their Markdown twin (see [Links](/docs/plugins/md/conversion#links)), so `md="[Ann](/~ann)"` works from a client component, which has no origin during SSR. `<a href="/~ann"><AgentText md="Ann" /></a>` keeps its link too, so inside a link, give `md` text only: a link in it would be a link inside a link.
+
+## Slots
+
+A page whose main content loads on the client (a README fetched in the browser) converts with a hole where that content goes. `<AgentSlot>` marks the hole, and the [`slots` export of `markdown.ts`](/docs/plugins/md/markdown-file#slots) fills it, while the rest of the page converts from its HTML as usual:
+
+```tsx title="app/registry/[pkg]/page.tsx"
+import { AgentSlot } from '@affordances/md/react'
+
+;<AgentSlot name="readme">
+  <Readme pkg={pkg} />
+</AgentSlot>
+```
+
+People see the children. In the Markdown, the children are replaced by the fill for `name`, with its links resolved like the page's.
+
+- A fill is its own block, so an `<AgentSlot>` inside a paragraph splits it, as a `block` `<AgentText>` does.
+- In a table cell, which holds one line, a fill's line breaks become `<br>` and its `|` is escaped, so the table stays whole.
+- A slot with no fill, or a fill that returns `undefined`, converts its children as usual. An empty string leaves nothing there.
+- Give each slot a name used once on the page. A name rendered twice is filled nowhere, and its children are converted instead.
+- A slot inside `<AgentSkip>`, hidden from people, or outside `<AgentMain>` never reaches the Markdown, so its fill never runs. One inside `<AgentOnly>` is filled.
+- A filled slot's children are gone, with any markers inside them. A slot inside another slot is never filled, and its fill never runs: put each slot around the part of the page it stands for.
+- A fill in a heading or a link is lifted out of it, between what was on either side, since a heading or link can't hold blocks.
+
+**Strip `<affordances-md>` from untrusted HTML** you render, such as a README or a comment rendered as raw HTML. A forged marker can't read anything, but it can drop content from the Markdown, add agent-only text, or take a slot's name: if the page renders that slot too, the name is a duplicate and neither is filled; if not, this visitor's own fill lands where the forged marker is, even when the page chose not to render that slot for them. So each fill authorizes its own data: see [markdown.ts slots](/docs/plugins/md/markdown-file#slots).
 
 This site wraps each docs article in `<AgentMain>`, and skips the page actions menu, the table of contents, and the previous and next links inside it.

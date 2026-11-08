@@ -1,8 +1,8 @@
 import { createElement as h } from 'react'
 import { renderToString } from 'react-dom/server'
 import { expect, test } from 'vitest'
-import { htmlToMarkdown } from '../src/index.ts'
-import { AgentMain, AgentOnly, AgentSkip, AgentText } from '../src/react/index.ts'
+import { htmlToMarkdown, readPage } from '../src/index.ts'
+import { AgentMain, AgentOnly, AgentSkip, AgentSlot, AgentText } from '../src/react/index.ts'
 
 const page = h(
   'main',
@@ -38,4 +38,23 @@ test('a rendered page converts through its markers', () => {
   })
   // AgentMain wins, so the AgentOnly and block AgentText outside it are left out
   expect(markdown).toBe('# Tee\n\nPrice: $48.00\n')
+})
+
+test('a rendered slot is found and filled', () => {
+  const html = `<html><body><main>${renderToString(
+    h(
+      'div',
+      null,
+      h('h1', null, 'express'),
+      h(AgentSlot, { name: 'readme' }, h('p', null, 'Loading…')),
+    ),
+  )}</main></body></html>`
+  expect(html).toContain(
+    '<affordances-md data-mode="slot" style="display:contents" data-name="readme">',
+  )
+  expect(readPage(html).slots).toEqual({ unique: ['readme'], duplicate: [] })
+  expect(htmlToMarkdown(html, { frontmatter: false, slots: { readme: 'Fast.' } }).markdown).toBe(
+    '# express\n\nFast.\n',
+  )
+  expect(htmlToMarkdown(html, { frontmatter: false }).markdown).toBe('# express\n\nLoading…\n')
 })
