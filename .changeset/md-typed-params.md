@@ -1,0 +1,7 @@
+---
+'@affordances/md': minor
+---
+
+`MarkdownArgs<'/route'>`, `Markdown<'/route'>` and `Slots<'/route'>` type `params` from the route string, as `PageProps` does for `page.tsx`: `[x]` is a `string`, `[...x]` a `string[]`, `[[...x]]` a `string[]` or left out. `params` stays a plain object, still URL-encoded, and without a route the types are 0.2.0's. The arguments also carry `route`, the `app/` route the handler matched (`'/package/[pkg]'`); it's optional in the type, so arguments built by hand, as in a 0.2.0 unit test, still type-check. The generated `.affordances/md.ts` checks each `markdown.ts` against its own route, so a wrong route string fails `tsc`, even one whose params look the same; TypeScript skips `.affordances/` unless `include` names it, so `md()` adds `".affordances/**/*.ts"` to `tsconfig.json`'s `include`, as Next adds `.next/types`: only that array, keeping comments and formatting, and only when the file has its own `include` without it. When it can't edit safely (the file can't be read or parsed, `include` is inherited, or the file is read-only), it warns with the line to add, and never stops the config from loading.
+
+A `markdown.ts` can use Next's own `notFound()`, `forbidden()`, `unauthorized()`, `redirect()` and `permanentRedirect()`: they answer `404`, `403`, `401`, or a `307`/`308`: to the target's `.md` when it's a page on this site, and to the target as it is otherwise (another origin, an API route, a route handler or a file), all `private, no-store`.

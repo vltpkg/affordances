@@ -9,8 +9,10 @@ The handler normally renders a page and converts its HTML. A page whose content 
 import type { MarkdownArgs } from '@affordances/md/next'
 import { getPackage } from '@/lib/api'
 
-export default async function markdown({ params }: MarkdownArgs) {
-  const pkg = await getPackage(String(params.registry), String(params.pkg))
+export default async function markdown({
+  params,
+}: MarkdownArgs<'/registry/[registry]/npm/package/[pkg]'>) {
+  const pkg = await getPackage(params.registry, decodeURIComponent(params.pkg))
   return {
     title: pkg.name,
     description: pkg.description,
@@ -21,6 +23,20 @@ export default async function markdown({ params }: MarkdownArgs) {
 
 `/registry/npm/npm/package/express.md` and `/registry/npm/npm/package/express` asked for with `Accept: text/markdown` now call it, with no render of the page. Pages without a `markdown.ts` are converted from their HTML, as before.
 
+## Typed params
+
+Name the route, as you would for `page.tsx`'s `PageProps`, and `params` is typed from it: `[pkg]` is a `string`, `[...slug]` a `string[]`, and `[[...slug]]` a `string[]` or left out. Without a route, `MarkdownArgs` is as it was in 0.2.0, every param a `string` or `string[]`.
+
+`md()` checks each `markdown.ts` against its own route in the `.affordances/md.ts` it generates, so a route string that names another route, or a param the route doesn't have, fails `tsc`. TypeScript skips a folder whose name starts with a dot unless `include` names it, so `md()` adds the entry to your `tsconfig.json`, as Next adds `.next/types`, and logs a line saying so:
+
+```json title="tsconfig.json"
+{
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", ".affordances/**/*.ts"]
+}
+```
+
+It changes only the `include` array, keeping your comments and formatting, and only when the file has an `include` of its own and the entry isn't there yet. When it can't do that safely (the file doesn't parse, `include` comes from a file it `extends`, or the file is read-only), it leaves the file alone and warns with the line to add. A read-only tree never stops the config from loading.
+
 ## Authorization
 
 **`markdown.ts` doesn't render the page, so checks in its layout or page don't run for it.** A `redirect('/login')` in `layout.tsx`, or a `notFound()` in `page.tsx` for a record the person can't see, never happens on this path. Your `proxy.ts` runs once, on the URL that was requested (`/dashboard/1.md`, not the page's path), and only if its matcher covers that URL, so don't let `markdown.ts` depend on it alone. Gate on [`mdProxy`](/docs/plugins/md/setup#with-a-proxyts)'s `md.page`, which is `/dashboard/1` for both. A matcher that names the page's exact shape (`'/dashboard/:id(\\d+)'`) misses its `.md` URL, `/dashboard/123.md`; [match that too](/docs/plugins/md/setup#with-a-proxyts), or gate with no matcher. A proxy that skips its gate for Markdown requests, as 0.1.0's setup recipe did, leaves nothing in front of `markdown.ts` at all: see [the proxy recipe](/docs/plugins/md/setup#with-a-proxyts).
@@ -30,10 +46,12 @@ So `markdown.ts` must read its data through fetchers that the API itself authori
 ```ts
 import { cookies } from 'next/headers'
 
-export default async function markdown({ params }: MarkdownArgs) {
+import { unauthorized } from 'next/navigation'
+
+export default async function markdown({ params }: MarkdownArgs<'/orders/[id]'>) {
   const session = (await cookies()).get('session')?.value
-  if (!session) return new Response(null, { status: 401 })
-  const order = await api.orders.get(String(params.id), { session }) // the API checks it's theirs
+  if (!session) unauthorized()
+  const order = await api.orders.get(params.id, { session }) // the API checks it's theirs
   return `# Order ${order.number}\n\n…`
 }
 ```
@@ -42,6 +60,7 @@ What `markdown.ts` returns is `Cache-Control: private, no-store` by default, sin
 
 ## Arguments
 
+- `route`: the `app/` route the request matched, as `md()` found it: `'/package/[pkg]'`. With `MarkdownArgs<'/package/[pkg]'>` it's typed as that string, which is what makes a `markdown.ts` typed for another route fail `tsc`, even one whose params look the same. The handler always passes it, to the default export and to each slot. It's optional in the type only so that arguments built by hand, as 0.2.0's were (a test calling your `markdown()` with `{ params, searchParams, request }`), still type-check. In your code it's `'/package/[pkg]' | undefined`, so narrow it (`if (route)`) or write `route ?? '/package/[pkg]'` before using it as a string.
 - `params`: the route's params as Next gives them to the page, still URL-encoded: `{ pkg: '%40babel%2Fcore' }`, and arrays for catch-alls (`{ slug: ['a', 'b'] }`). An empty optional catch-all is left out. That holds for a public URL an [alias](/docs/plugins/md/setup#public-urls-your-proxy-maps-onto-routes) maps onto the route: `/package/@babel/core` gives `{ pkg: '%40babel%2Fcore' }`, the same as `page.tsx` gets, so `decodeURIComponent(params.pkg)` is `@babel/core` in both. Decode a param yourself where you need its text, and never build a path or an API URL from a decoded one without checking it: `a%2F..%2Fadmin` decodes to `a/../admin`.
 - `searchParams`: the page URL's query, as `URLSearchParams`.
 - `request`: the visitor's request.
@@ -51,6 +70,8 @@ What `markdown.ts` returns is `Cache-Control: private, no-store` by default, sin
 - **A string**: the page's Markdown. The handler adds the frontmatter every page gets (`title` from its first `# ` heading, and `url`), runs your `append`, sets `x-affordances-tokens`, and sends it `private, no-store`.
 - **`{ markdown, title?, description? }`**: the same, with the title and description given. `llms.txt` labels pages with them.
 - **A `Response`**: sent as it is, such as a 404, a redirect, or Markdown with your own caching. Without a `Cache-Control` of its own it's `private, no-store`, and it always is when the request carried a cookie or an `authorization` header. `Vary: Accept` is added.
+- **Next's `notFound()`, `forbidden()` or `unauthorized()`**, thrown in it or in anything it calls, such as your layout's own checks: a `404`, `403` or `401`, `private, no-store`. (`forbidden()` and `unauthorized()` need Next's `experimental.authInterrupts`, as they do in a page.)
+- **Next's `redirect()` or `permanentRedirect()`**: a `307` or `308` to the target's `.md` when it's on this site, and to the target as it is on another origin, the same rule as a page's own redirects. `private, no-store`, varying on `Accept`. Any other error goes on to Next as it was.
 - **`undefined`**: the page is converted from its HTML, as if there were no `markdown.ts`. Use it to cover some cases of a route and not others. In development, the handler logs a warning naming the route, so a forgotten `return` doesn't go unnoticed.
 
 `llms.txt`, `llms-full.txt`, and Copy Page go through the same handler, so they use it too.

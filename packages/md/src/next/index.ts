@@ -595,9 +595,32 @@ const literalPage = async (request: Request, page: string, options: MdHandlerOpt
   return passed ?? fail(504, `${page} took longer than ${options.timeout ?? TIMEOUT}ms to render`)
 }
 
-// app/**/markdown.ts, next to page.tsx: the page's markdown from its data, without rendering it
-export type MarkdownArgs = {
-  params: Record<string, string | string[]>
+// a route's params from its folder names, as next gives them to page.tsx: [x] is a string, [...x] a string[], and
+// [[...x]] a string[] or left out. '/blog/[slug]' → { slug: string }; any string → every param a string or string[]
+type SegmentParams<Segment extends string> = Segment extends `[[...${infer Name}]]`
+  ? { [K in Name]?: string[] }
+  : Segment extends `[...${infer Name}]`
+    ? { [K in Name]: string[] }
+    : Segment extends `[${infer Name}]`
+      ? { [K in Name]: string }
+      : Record<never, never>
+// one branch: a leading / is an empty first segment, which has no params
+type PathParams<Path extends string> = Path extends `${infer Segment}/${infer Rest}`
+  ? SegmentParams<Segment> & PathParams<Rest>
+  : SegmentParams<Path>
+export type RouteParams<Route extends string> = string extends Route
+  ? Record<string, string | string[]>
+  : { [K in keyof PathParams<Route>]: PathParams<Route>[K] }
+
+// app/**/markdown.ts, next to page.tsx: the page's markdown from its data, without rendering it. name the route for
+// typed params, as page.tsx's PageProps does: MarkdownArgs<'/blog/[slug]'>
+export type MarkdownArgs<Route extends string = string> = {
+  // the app/ route the request matched, as md() found it ('/package/[pkg]'); the handler always passes it. typed as the
+  // route string, so a markdown.ts typed for another route (a typo, a copy from a sibling) fails tsc in the generated
+  // .affordances/md.ts. optional, so arguments built by hand, as 0.2.0's were, still type-check
+  route?: Route
+  // still url-encoded, exactly as page.tsx gets them: { pkg: '%40babel%2Fcore' }
+  params: RouteParams<Route>
   searchParams: URLSearchParams
   request: Request
 }
@@ -606,13 +629,69 @@ export type MarkdownResult =
   | { markdown: string; title?: string; description?: string }
   | Response
   | undefined
-export type Markdown = (args: MarkdownArgs) => MarkdownResult | Promise<MarkdownResult>
-export type MarkdownRoutes = Record<string, () => Promise<{ default: Markdown }>>
+export type Markdown<Route extends string = string> = (
+  args: MarkdownArgs<Route>,
+) => MarkdownResult | Promise<MarkdownResult>
+// markdown.ts's slots export: each <AgentSlot name> the page renders, filled with markdown. undefined leaves the
+// slot's own content, converted as usual
+export type SlotResult = string | undefined
+export type Slots<Route extends string = string> = Record<
+  string,
+  (args: MarkdownArgs<Route>) => SlotResult | Promise<SlotResult>
+>
+// a markdown.ts, as the generated .affordances/md.ts checks it against its route: called with the route itself, so
+// an export typed for any other route string doesn't fit
+type RouteArgs<Route extends string> = MarkdownArgs<Route> & { route: Route }
+export type MarkdownModule<Route extends string = string> = {
+  default?: (args: RouteArgs<Route>) => MarkdownResult | Promise<MarkdownResult>
+  slots?: Record<string, (args: RouteArgs<Route>) => SlotResult | Promise<SlotResult>>
+}
+// what the generated .affordances/md.ts exports: each route's markdown.ts, loaded when it's first asked for. each
+// entry is checked against its own route there, so this is as loose as any of them
+export type MarkdownRoutes = Record<
+  string,
+  () => Promise<{
+    default?: (args: never) => unknown
+    slots?: Record<string, (args: never) => unknown>
+  }>
+>
+
+// next's notFound(), forbidden(), unauthorized(), redirect() and permanentRedirect() thrown in a markdown.ts, as
+// the response they'd give the page: 404, 403 or 401, or a redirect, to the target's .md on this site and as it is
+// to another origin. read off the error's digest (as of next 16.3 and 16.4's http-access-fallback and redirect-error);
+// undefined for any other error, which goes on as it was. it's this request's answer, so it's never cached
+const HTTP_ERRORS: Record<string, string> = {
+  404: 'Not found',
+  403: 'Forbidden',
+  401: 'Unauthorized',
+}
+// what an error's digest says, or undefined for any other error
+const fromDigest = (error: unknown): { status: number } | NextRedirect | undefined => {
+  const digest =
+    typeof error === 'object' && error !== null && 'digest' in error ? error.digest : undefined
+  if (typeof digest !== 'string') return undefined
+  const parts = digest.split(';')
+  if (parts[0] === 'NEXT_HTTP_ERROR_FALLBACK' && HTTP_ERRORS[parts[1]!])
+    return { status: Number(parts[1]) }
+  // NEXT_REDIRECT;replace;/url;307; (the url may hold a ;)
+  const status = Number(parts.at(-2))
+  if (parts[0] !== 'NEXT_REDIRECT' || ![301, 302, 303, 307, 308].includes(status)) return undefined
+  return { status, location: parts.slice(2, -2).join(';') }
+}
+const thrownAnswer = (error: unknown, target: URL, personal: boolean) => {
+  const thrown = fromDigest(error)
+  if (!thrown) return undefined
+  if ('location' in thrown) return markdownRedirect(thrown, target, { private: true, personal })
+  return respond(`# ${HTTP_ERRORS[thrown.status]}\n`, thrown.status, {
+    'cache-control': 'private, no-store',
+    ...(personal && { [PERSONAL_HEADER]: '1' }),
+  })
+}
 
 const firstHeading = (markdown: string) => /^# (.+)$/m.exec(markdown)?.[1]?.trim()
 
 // the route's markdown.ts for a page url, and the arguments its exports get; undefined when it has none
-type MarkdownRoute = { route: string; module: { default: Markdown }; args: MarkdownArgs }
+type MarkdownRoute = { route: string; module: MarkdownModule; args: RouteArgs<string> }
 const markdownRoute = async (request: Request, target: URL): Promise<MarkdownRoute | undefined> => {
   const { routes } = await import('@affordances/md/routes')
   if (!routes) return undefined
@@ -623,8 +702,10 @@ const markdownRoute = async (request: Request, target: URL): Promise<MarkdownRou
   if (!found || !(found.route in routes)) return undefined
   return {
     route: found.route,
-    module: await routes[found.route]!(),
+    // each entry was checked against its own route in the generated file
+    module: (await routes[found.route]!()) as MarkdownModule,
     args: {
+      route: found.route,
       params: found.params,
       searchParams: new URLSearchParams(target.search),
       request,
@@ -642,9 +723,18 @@ const authoredMarkdown = async (
   append: MdHandlerOptions['append'],
   negotiated: boolean,
 ): Promise<Response | undefined> => {
-  const { default: markdown } = module
+  const markdown = module.default
+  // a markdown.ts with no default export converts the page
+  if (!markdown) return undefined
   const personal = credentialed(request.headers)
-  const result = await markdown(args)
+  let result: MarkdownResult
+  try {
+    result = await markdown(args)
+  } catch (error) {
+    const thrown = thrownAnswer(error, target, personal)
+    if (thrown) return thrown
+    throw error
+  }
   if (result instanceof Response) {
     const passed = new Response(result.body, {
       status: result.status,

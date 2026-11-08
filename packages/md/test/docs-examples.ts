@@ -1,7 +1,9 @@
 // the docs' and README's examples for md()'s server side, type-checked by tsc (this package's tsconfig includes
 // test/), so an example that stops compiling fails `vlt run typecheck`. each is written as its page shows it
 import { NextResponse, type NextRequest } from 'next/server'
-import { withMd } from '../src/next/index.ts'
+import { cookies } from 'next/headers'
+import { unauthorized } from 'next/navigation'
+import { type MarkdownArgs, withMd } from '../src/next/index.ts'
 import { mdProxy } from '../src/next/proxy.ts'
 
 const nextConfig = {}
@@ -46,4 +48,34 @@ export const linked = (request: NextRequest) => {
   const response = NextResponse.rewrite(url)
   if (md.link) response.headers.set('Link', md.link)
   return response
+}
+
+// the app's own fetchers the markdown-file.mdx examples import
+declare const getPackage: (
+  registry: string,
+  name: string,
+) => Promise<{ name: string; description: string; readme: string }>
+declare const api: {
+  orders: { get: (id: string, auth: { session: string }) => Promise<{ number: string }> }
+  billing: { get: (name: string, auth: { session: string }) => Promise<{ name: string }> }
+}
+
+// markdown-file.mdx, the first example
+export async function registryMarkdown({
+  params,
+}: MarkdownArgs<'/registry/[registry]/npm/package/[pkg]'>) {
+  const pkg = await getPackage(params.registry, decodeURIComponent(params.pkg))
+  return {
+    title: pkg.name,
+    description: pkg.description,
+    markdown: `# ${pkg.name}\n\n${pkg.description}\n\n${pkg.readme}`,
+  }
+}
+
+// markdown-file.mdx, "Authorization"
+export async function orderMarkdown({ params }: MarkdownArgs<'/orders/[id]'>) {
+  const session = (await cookies()).get('session')?.value
+  if (!session) unauthorized()
+  const order = await api.orders.get(params.id, { session }) // the API checks it's theirs
+  return `# Order ${order.number}\n\n…`
 }
