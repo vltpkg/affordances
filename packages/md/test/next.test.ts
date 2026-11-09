@@ -1469,7 +1469,7 @@ test('llms leaves out a page its markdown route rendered privately, so the files
   expect(service.headers.get('x-affordances-md-personal')).toBe('1')
   // nor a dynamic page next marks private, no-store, rendered with no credentials at all: it's the public view
   upstream = () =>
-    new Response(page('<h1>Dynamic</h1>'), {
+    new Response(page('<h1>Dynamic</h1>', '<title>Dynamic</title>'), {
       headers: {
         'content-type': 'text/html',
         'cache-control': 'private, no-cache, no-store, max-age=0, must-revalidate',
@@ -2678,4 +2678,217 @@ test("a title is the heading's text: a link keeps its text, and a url shown as i
     new Request(`${site}/llms-full.txt`),
   )
   expect(await full.text()).toBe(`# Methodology (${site}/methodology)\n\nHow.\n`)
+})
+
+// llms's own fetches, answered as the md route would: markdown with its frontmatter, as each path says
+const llmsPages = (answer: (path: string, signal: AbortSignal) => Response | Promise<Response>) => {
+  let inFlight = 0
+  const most = { value: 0 }
+  vi.stubGlobal('fetch', async (url: URL, init: RequestInit) => {
+    const path = new URL(url).pathname
+    if (path === '/.well-known/affordances.json') return new Response('', { status: 404 })
+    inFlight++
+    most.value = Math.max(most.value, inFlight)
+    try {
+      return await answer(path, init.signal!)
+    } finally {
+      inFlight--
+    }
+  })
+  return most
+}
+const mdPage = (title: string, body: string, headers: Record<string, string> = {}) =>
+  new Response(`---\ntitle: ${JSON.stringify(title)}\n---\n\n${body}\n`, {
+    headers: { 'content-type': 'text/markdown; charset=utf-8', ...headers },
+  })
+
+test('llms renders a few pages at a time, 8 by default, each with its own timeout, in order', async () => {
+  const paths = Array.from({ length: 20 }, (_, i) => `/p${i}`)
+  const most = llmsPages(async (path) => {
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    return mdPage(`Page ${path}`, `# Page ${path}\n\nBody.`)
+  })
+  const text = await (
+    await createLlmsFullHandler({ pages: () => paths })(new Request(`${site}/llms-full.txt`))
+  ).text()
+  expect(most.value).toBe(8)
+  expect(text.match(/^# Page \/p\d+/gm)).toEqual(paths.map((path) => `# Page ${path}`))
+  most.value = 0
+  await createLlmsTxtHandler({ concurrency: 2, sections: () => [{ title: 'All', pages: paths }] })(
+    new Request(`${site}/llms.txt`),
+  )
+  expect(most.value).toBe(2)
+  // each page's timeout runs from its own fetch: 20 pages of 5ms each, two at a time, all fit in 30ms apiece
+  const slow = await createLlmsFullHandler({ pages: () => paths, concurrency: 2, timeout: 30 })(
+    new Request(`${site}/llms-full.txt`),
+  )
+  expect(slow.headers.has('x-affordances-md-dropped')).toBe(false)
+  expect(() => createLlmsFullHandler({ concurrency: 0 })).toThrow(
+    '[affordances-md] concurrency is how many pages render at once, a whole number from 1; got 0',
+  )
+  expect(() => createLlmsTxtHandler({ concurrency: 1.5 })).toThrow(/got 1\.5$/)
+})
+
+// one page that renders, and one of each way a page is left out
+const pages = () => ['/fine', '/slow', '/gone', '/file', '/mine', '//evil.test/x']
+
+test('a page llms leaves out is named, with why, in development, and only counted in the file', async () => {
+  llmsPages((path, signal) => {
+    if (path === '/slow')
+      return new Promise((_, reject) =>
+        signal.addEventListener('abort', () => reject(signal.reason)),
+      )
+    if (path === '/gone') return new Response('', { status: 404 })
+    if (path === '/file')
+      return new Response('{}', { headers: { 'content-type': 'application/json' } })
+    if (path === '/mine') return mdPage('Mine', '# Mine', { 'x-affordances-md-personal': '1' })
+    return mdPage('Fine', '# Fine\n\nBody.')
+  })
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const full = await createLlmsFullHandler({ pages, timeout: 20 })(
+    new Request(`${site}/llms-full.txt`),
+  )
+  expect(await full.text()).toBe(`# Fine (${site}/fine)\n\nBody.\n`)
+  expect(full.headers.get('x-affordances-md-dropped')).toBe('5')
+  expect(warn.mock.calls.map(([message]) => message)).toEqual([
+    '[affordances-md] llms-full.txt left out 5 pages: /slow (took longer than 20ms), /gone (answered 404), /file (answered application/json, not markdown), /mine (private: rendered with credentials, or it set a cookie), //evil.test/x (not on this site)',
+  ])
+  // llms.txt still links each, by its path
+  warn.mockClear()
+  const index = await createLlmsTxtHandler({
+    title: 'Shop',
+    timeout: 20,
+    sections: () => [{ title: 'All', pages: pages() }],
+  })(new Request(`${site}/llms.txt`))
+  expect(await index.text()).toContain(`- [/gone](${site}/gone.md)`)
+  expect(index.headers.get('x-affordances-md-dropped')).toBe('5')
+  expect(String(warn.mock.calls[0]?.[0])).toMatch(
+    /^\[affordances-md\] llms\.txt has no title or description for 5 pages: \/slow/,
+  )
+  // in production: no list anywhere, the count only
+  vi.stubEnv('NODE_ENV', 'production')
+  warn.mockClear()
+  const quiet = await createLlmsFullHandler({ pages, timeout: 20 })(
+    new Request(`${site}/llms-full.txt`),
+  )
+  expect([await quiet.text(), quiet.headers.get('x-affordances-md-dropped')]).toEqual([
+    `# Fine (${site}/fine)\n\nBody.\n`,
+    '5',
+  ])
+  expect(warn).not.toHaveBeenCalled()
+  vi.unstubAllEnvs()
+  warn.mockRestore()
+})
+
+test("llms-full puts the url on the page's # heading itself, as written, wherever a ## comes first", async () => {
+  llmsPages(
+    (path) =>
+      ({
+        '/dollar': mdPage("The $'s value", "# The $'s value\n\nBody."),
+        '/money': mdPage('Costs $$5', '# Costs $$5\n\nCheap.'),
+        '/nav': mdPage('Docs', '## Docs navigation\n\n- [a](/a)\n\n# Docs\n\nThe docs.'),
+      })[path]!,
+  )
+  const text = await (
+    await createLlmsFullHandler({ pages: () => ['/dollar', '/money', '/nav'] })(
+      new Request(`${site}/llms-full.txt`),
+    )
+  ).text()
+  expect(text).toBe(
+    [
+      `# The $'s value (${site}/dollar)\n\nBody.`,
+      `# Costs $$5 (${site}/money)\n\nCheap.`,
+      `## Docs navigation\n\n- [a](/a)\n\n# Docs (${site}/nav)\n\nThe docs.\n`,
+    ].join('\n\n'),
+  )
+})
+
+test('llms has a deadline for the whole file: pages not rendered by then are left out and counted', async () => {
+  llmsPages(async (path, signal) => {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, 40)
+      signal.addEventListener('abort', () => {
+        clearTimeout(timer)
+        reject(signal.reason)
+      })
+    })
+    return mdPage(`Page ${path}`, `# Page ${path}\n\nBody.`)
+  })
+  const paths = ['/a', '/b', '/c', '/d', '/e', '/f']
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const full = await createLlmsFullHandler({ pages: () => paths, concurrency: 1, deadline: 100 })(
+    new Request(`${site}/llms-full.txt`),
+  )
+  const text = await full.text()
+  const rendered = paths.filter((path) => text.includes(`# Page ${path} (`))
+  expect(rendered.length).toBeGreaterThan(0)
+  expect(rendered.length).toBeLessThan(paths.length)
+  expect(full.headers.get('x-affordances-md-dropped')).toBe(String(paths.length - rendered.length))
+  expect(String(warn.mock.calls[0]?.[0])).toContain(
+    "(not rendered within the file's 100ms deadline)",
+  )
+  warn.mockRestore()
+  expect(() => createLlmsFullHandler({ deadline: 0 })).toThrow(
+    '[affordances-md] deadline is how long the whole file may take, in milliseconds above 0; got 0',
+  )
+})
+
+test('llms.txt names each page as llms-full.txt heads it: a layout title other pages share gives way to its heading', async () => {
+  llmsPages(
+    (path) =>
+      ({
+        '/a': mdPage('Bench', '# Alpha\n\nA.'),
+        '/b': mdPage('Bench', '# Beta\n\nB.'),
+        '/clean': mdPage('Clean install', '# npm is slowest\n\nBy 2×.'),
+      })[path]!,
+  )
+  const paths = ['/a', '/b', '/clean']
+  const index = await (
+    await createLlmsTxtHandler({ title: 'Shop', sections: () => [{ title: 'All', pages: paths }] })(
+      new Request(`${site}/llms.txt`),
+    )
+  ).text()
+  const full = await (
+    await createLlmsFullHandler({ pages: () => paths })(new Request(`${site}/llms-full.txt`))
+  ).text()
+  expect(index.match(/^- \[[^\]]+\]/gm)).toEqual(['- [Alpha]', '- [Beta]', '- [Clean install]'])
+  expect(full.match(/^# .+(?= \()/gm)).toEqual(['# Alpha', '# Beta', '# Clean install'])
+})
+
+test("llms-full heads each page with its title, unless that's its heading's start or not the page's own", async () => {
+  llmsPages(
+    (path) =>
+      ({
+        // a title that isn't the page's first heading, which is a finding
+        '/clean': mdPage('Clean install · Bench', '# npm is slowest\n\nBy 2×.'),
+        // the usual title: its heading, then the site's name
+        '/cart': mdPage('Cart · Bench', '# Cart\n\nEmpty.'),
+        // a layout's title, on every page: their headings head them
+        '/a': mdPage('Bench', '# Alpha\n\nA.'),
+        '/b': mdPage('Bench', '# Beta\n\nB.'),
+        // no heading of its own
+        '/bare': mdPage('Bare page', 'Just text.'),
+      })[path]!,
+  )
+  const index = { name: 'Bench', routes: [] }
+  const appFetch = globalThis.fetch
+  vi.stubGlobal('fetch', (url: URL, init: RequestInit) =>
+    new URL(url).pathname === '/.well-known/affordances.json'
+      ? Promise.resolve(Response.json(index))
+      : appFetch(url, init),
+  )
+  const text = await (
+    await createLlmsFullHandler({ pages: () => ['/clean', '/cart', '/a', '/b', '/bare'] })(
+      new Request(`${site}/llms-full.txt`),
+    )
+  ).text()
+  expect(text).toBe(
+    [
+      `# Clean install (${site}/clean)\n\n# npm is slowest\n\nBy 2×.`,
+      `# Cart (${site}/cart)\n\nEmpty.`,
+      `# Alpha (${site}/a)\n\nA.`,
+      `# Beta (${site}/b)\n\nB.`,
+      `# Bare page (${site}/bare)\n\nJust text.\n`,
+    ].join('\n\n'),
+  )
 })

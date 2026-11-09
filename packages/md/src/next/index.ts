@@ -3,7 +3,7 @@ import { fromHtml } from 'hast-util-from-html'
 import { toString } from 'hast-util-to-string'
 import { micromark } from 'micromark'
 import { gfm, gfmHtml } from 'micromark-extension-gfm'
-import { readPage, type SlotNames, yaml } from '../convert/index.ts'
+import { readPage, relinkMarkdown, type SlotNames, yaml } from '../convert/index.ts'
 import { mdPath } from '../path.ts'
 import { mdPagePath } from './proxy.ts'
 import {
@@ -975,39 +975,86 @@ const renderPages = async (
   request: Request,
   paths: string[],
   options: LlmsFetchOptions & { headers: Headers },
-) =>
-  Promise.all(
-    paths.map(async (path) => {
-      // a path from the site index, pages() or sections() that starts with //host or names another origin is never
-      // fetched: the headers option (a bearer token, a bypass secret) stays on this site
-      const target = pageUrl(request, options, path)
-      if (!target) return { path, markdown: undefined }
-      try {
-        const headers = new Headers(options.headers)
-        headers.set('accept', 'text/markdown')
-        const response = await fetch(target, {
-          headers,
-          redirect: 'manual',
-          signal: AbortSignal.timeout(options.timeout ?? TIMEOUT),
-        })
-        // a page its markdown route rendered privately (with credentials of the route's own, a private page, a
-        // cookie set in answer) isn't the public view: left out, so the files stay public. negotiated markdown is
-        // private too, but only because of where it was served, so it counts
-        const ok =
-          response.ok &&
-          response.headers.get('content-type')?.startsWith('text/markdown') &&
-          !response.headers.has(PERSONAL_HEADER) &&
-          !response.headers.has('set-cookie')
-        return { path, markdown: ok ? await response.text() : undefined }
-      } catch {
-        return { path, markdown: undefined }
+): Promise<Rendered[]> => {
+  const timeout = options.timeout ?? TIMEOUT
+  // one deadline for the whole file, under a serverless host's limit: a page not rendered by then is left out
+  const deadline = options.deadline ?? DEADLINE
+  const overall = new AbortController()
+  const timer = setTimeout(() => overall.abort(), deadline)
+  const late = `not rendered within the file's ${deadline}ms deadline`
+  const render = async (path: string): Promise<Rendered> => {
+    if (overall.signal.aborted) return { path, dropped: late }
+    // a path from the site index, pages() or sections() that starts with //host or names another origin is never
+    // fetched: the headers option (a bearer token, a bypass secret) stays on this site
+    const target = pageUrl(request, options, path)
+    if (!target) return { path, dropped: 'not on this site' }
+    try {
+      const headers = new Headers(options.headers)
+      headers.set('accept', 'text/markdown')
+      // each page's own timeout, from when its fetch starts, not from when the file was asked for
+      const response = await fetch(target, {
+        headers,
+        redirect: 'manual',
+        signal: AbortSignal.any([AbortSignal.timeout(timeout), overall.signal]),
+      })
+      // a page its markdown route rendered privately (with credentials of the route's own, a private page, a
+      // cookie set in answer) isn't the public view: left out, so the files stay public. negotiated markdown is
+      // private too, but only because of where it was served, so it counts
+      if (!response.ok) return { path, dropped: `answered ${response.status}` }
+      const type = response.headers.get('content-type') ?? 'no content-type'
+      if (!type.startsWith('text/markdown'))
+        return { path, dropped: `answered ${type}, not markdown` }
+      if (response.headers.has(PERSONAL_HEADER) || response.headers.has('set-cookie'))
+        return { path, dropped: 'private: rendered with credentials, or it set a cookie' }
+      return { path, markdown: await response.text() }
+    } catch (error) {
+      if (overall.signal.aborted) return { path, dropped: late }
+      const timedOut = error instanceof Error && error.name === 'TimeoutError'
+      return {
+        path,
+        dropped: timedOut ? `took longer than ${timeout}ms` : `failed: ${String(error)}`,
       }
-    }),
+    }
+  }
+  // a few at a time: each is a full render on the same server, and all at once is a burst that slows each one
+  // past its timeout
+  const rendered: Rendered[] = Array.from({ length: paths.length })
+  let next = 0
+  const worker = async () => {
+    while (next < paths.length) {
+      const i = next++
+      rendered[i] = await render(paths[i]!)
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(options.concurrency ?? CONCURRENCY, paths.length) }, worker),
   )
+  clearTimeout(timer)
+  return rendered
+}
+type Rendered = { path: string; markdown?: string; dropped?: string }
+const CONCURRENCY = 8
+// under netlify's 26s for a synchronous function and vercel's limits; a host that allows more takes a longer one
+const DEADLINE = 25_000
 
-// the converter's frontmatter: title, description and url, as JSON-quoted values
-const frontmatter = (markdown: string) => {
-  const block = markdown.match(/^---\n([\s\S]*?)\n---\n/)?.[1] ?? ''
+// pages llms left out: in development, a warning naming each and why; everywhere, their count in a header, never a
+// list in the file, which is public and could name a private page
+const dropped = (file: string, pages: Rendered[], what: string) => {
+  const left = pages.filter((page) => page.dropped)
+  if (left.length && process.env.NODE_ENV !== 'production')
+    console.warn(
+      `[affordances-md] ${file} ${what} ${left.length} ${left.length === 1 ? 'page' : 'pages'}: ${left.map((page) => `${page.path} (${page.dropped})`).join(', ')}`,
+    )
+  return left.length
+}
+const DROPPED_HEADER = 'x-affordances-md-dropped'
+
+// a page's markdown as the converter writes it: its frontmatter's title and description (JSON-quoted values), and
+// the markdown after it, read once
+type PageText = { title?: string; description?: string; body: string }
+const frontmatter = (markdown: string): PageText => {
+  const match = /^---\n([\s\S]*?)\n---\n\n?/.exec(markdown)
+  const block = match?.[1] ?? ''
   const read = (key: string) => {
     const raw = block.match(new RegExp(`^${key}: (.+)$`, 'm'))?.[1]
     if (!raw) return undefined
@@ -1017,7 +1064,11 @@ const frontmatter = (markdown: string) => {
       return raw
     }
   }
-  return { title: read('title'), description: read('description') }
+  return {
+    title: read('title'),
+    description: read('description'),
+    body: match ? markdown.slice(match[0].length) : markdown,
+  }
 }
 
 const origin = (request: Request, options: MdHandlerOptions) =>
@@ -1030,22 +1081,33 @@ const resolved = async <O extends MdHandlerOptions>(request: Request, options: O
 })
 
 // the public site, unless the headers option rendered it with credentials
-const text = (body: string, headers: Headers) =>
+const text = (body: string, headers: Headers, left: number) =>
   new Response(body, {
     headers: {
       'content-type': 'text/plain; charset=utf-8',
       'cache-control': credentialed(headers)
         ? 'private, no-store'
         : 'public, max-age=0, s-maxage=3600',
+      ...(left && { [DROPPED_HEADER]: String(left) }),
     },
   })
+
+// "Cart · Acme Store" → "Cart", given the site's name
+const short = (name: string | undefined, label: string | undefined) =>
+  name && label ? label.replace(new RegExp(`\\s*[·|–—-]\\s*${literal(name)}$`), '') : label
 
 // which pages to include: yours, given the index's routes without a dynamic segment, or those routes as they are
 export type Pages = (request: Request, routes: string[]) => string[] | Promise<string[]>
 
 // what the llms handlers use for their own requests. how each page renders is its markdown route's (createMdHandler's
 // options there), since each page is fetched from it
-export type LlmsFetchOptions = Pick<MdHandlerOptions, 'origin' | 'headers' | 'timeout'>
+export type LlmsFetchOptions = Pick<MdHandlerOptions, 'origin' | 'headers' | 'timeout'> & {
+  // how many pages render at once, 8 by default: each is a full render on the same server. timeout is each page's own
+  concurrency?: number
+  // how long the whole file may take, 25s by default; pages not rendered by then are left out. raise it with the
+  // route's maxDuration
+  deadline?: number
+}
 
 export type LlmsFullOptions = LlmsFetchOptions & {
   // the paths to include, in order; defaults to every page that needs no params
@@ -1054,29 +1116,75 @@ export type LlmsFullOptions = LlmsFetchOptions & {
 
 // app/llms-full.txt/route.ts: every page's markdown in one file, from the same render and converter as /x.md.
 // rendered without the caller's cookies, so it's the public site; each page is headed `# Title (url)`
-export const createLlmsFullHandler =
-  ({ pages, ...given }: LlmsFullOptions = {}) =>
-  async (request: Request): Promise<Response> => {
+export const createLlmsFullHandler = ({ pages, ...given }: LlmsFullOptions = {}) => {
+  checked(given)
+  return async (request: Request): Promise<Response> => {
     const options = await resolved(request, given)
-    const routes = staticRoutes(await siteIndex(request, options))
+    const index = await siteIndex(request, options)
+    const routes = staticRoutes(index)
     const paths = pages ? await pages(request, routes) : routes
-    const parts = (await renderPages(request, paths, options)).map(({ path, markdown }) =>
-      markdown
-        ? markdown
-            .replace(/^---\n[\s\S]*?\n---\n\n/, '')
-            .replace(
-              /^# .+$/m,
-              (line) =>
-                `# ${firstHeading(line) ?? line.slice(2)} (${new URL(path, request.url).href})`,
-            )
-            .trim()
-        : '',
-    )
-    return text(`${parts.filter(Boolean).join('\n\n')}\n`, options.headers)
+    const rendered = await renderPages(request, paths, options)
+    const texts = rendered.map(({ markdown }) => (markdown ? frontmatter(markdown) : undefined))
+    const shared = sharedTitles(texts)
+    const parts = rendered.map(({ path }, i) => {
+      const page = texts[i]
+      return page ? fullPage(page, new URL(path, request.url).href, index?.name, shared) : ''
+    })
+    const left = dropped('llms-full.txt', rendered, 'left out')
+    return text(`${parts.filter(Boolean).join('\n\n')}\n`, options.headers, left)
   }
+}
+
+// a title more than one page has (a layout's, for every page) isn't a page's name
+const sharedTitles = (pages: (PageText | undefined)[]) => {
+  const titles = pages.flatMap((page) => page?.title ?? [])
+  return new Set(titles.filter((title, i) => titles.indexOf(title) !== i))
+}
+// a page's name in llms.txt and llms-full.txt: its frontmatter title, without the site's name. its own first heading
+// names it instead when that's the title's start ("Cart" for "Cart · Acme", as before), or when the title isn't the
+// page's own (the site's name, or one other pages share)
+const pageName = (
+  title: string | undefined,
+  own: string | undefined,
+  name: string | undefined,
+  shared: Set<string>,
+) => {
+  const label = title && !shared.has(title) ? short(name, title) : undefined
+  const starts =
+    own &&
+    label &&
+    (label === own || (label.startsWith(own) && /^\s*[·|–—:-]/.test(label.slice(own.length))))
+  return (own && (!label || label === name || starts) ? own : label) || own
+}
+// a page in llms-full.txt, headed `# Name (url)`: its own heading, when that names it, isn't repeated; any other stays
+const fullPage = (page: PageText, url: string, name: string | undefined, shared: Set<string>) => {
+  const at = headingLine(page.body)
+  const own = at && firstHeading(at.line)
+  const heading = pageName(page.title, own, name, shared)
+  if (!heading) return page.body.trim()
+  // spliced in where the heading is, never replaced as text: a title or url with $' in it is as written
+  if (at && own === heading)
+    return `${page.body.slice(0, at.start)}# ${heading} (${url})${page.body.slice(at.end)}`.trim()
+  return `# ${heading} (${url})\n\n${page.body.trim()}`
+}
+
+// a concurrency that renders nothing, or one page forever, is a mistake to say when the handler is made
+const checked = (options: LlmsFetchOptions) => {
+  const { concurrency, deadline } = options
+  if (concurrency !== undefined && !(Number.isInteger(concurrency) && concurrency >= 1))
+    throw new TypeError(
+      `[affordances-md] concurrency is how many pages render at once, a whole number from 1; got ${concurrency}`,
+    )
+  if (deadline !== undefined && !(deadline > 0))
+    throw new TypeError(
+      `[affordances-md] deadline is how long the whole file may take, in milliseconds above 0; got ${deadline}`,
+    )
+}
 
 // a page in llms.txt: a path whose title and description come from its own markdown, or given outright
 export type LlmsLink = string | { url: string; title: string; description?: string }
+// a ## section of llms.txt: its links, its intro, or both
+export type LlmsSection = { title: string; intro?: string; pages?: LlmsLink[] }
 
 export type LlmsTxtOptions = LlmsFetchOptions & {
   // the `# ` heading; defaults to the site index's name
@@ -1085,11 +1193,9 @@ export type LlmsTxtOptions = LlmsFetchOptions & {
   summary?: string
   // more markdown before the page lists, e.g. how to use the site
   intro?: string
-  // the page lists, under `## ` headings; defaults to one Pages list of every page that needs no params
-  sections?: (
-    request: Request,
-    routes: string[],
-  ) => { title: string; pages: LlmsLink[] }[] | Promise<{ title: string; pages: LlmsLink[] }[]>
+  // the page lists, under `## ` headings; defaults to one Pages list of every page that needs no params. a section's
+  // intro is markdown under its heading, before its links; one with only an intro is prose
+  sections?: (request: Request, routes: string[]) => LlmsSection[] | Promise<LlmsSection[]>
   // where llms-full.txt is, to link it; false when there isn't one
   full?: string | false
 }
@@ -1097,43 +1203,57 @@ export type LlmsTxtOptions = LlmsFetchOptions & {
 // app/llms.txt/route.ts: the llms.txt index (https://llmstxt.org). Each page links its markdown twin, with its
 // title, and the route's description from the Affordances index (the page's own description otherwise). An
 // Affordances site also says how to read its graphs, so an agent that starts here can act, not just read
-export const createLlmsTxtHandler =
-  ({ title, summary, intro, sections, full = '/llms-full.txt', ...given }: LlmsTxtOptions = {}) =>
-  async (request: Request): Promise<Response> => {
+export const createLlmsTxtHandler = ({
+  title,
+  summary,
+  intro,
+  sections,
+  full = '/llms-full.txt',
+  ...given
+}: LlmsTxtOptions = {}) => {
+  checked(given)
+  return async (request: Request): Promise<Response> => {
     const options = await resolved(request, given)
     const index = await siteIndex(request, options)
     const routes = staticRoutes(index)
-    const lists = sections ? await sections(request, routes) : [{ title: 'Pages', pages: routes }]
+    const lists: LlmsSection[] = sections
+      ? await sections(request, routes)
+      : [{ title: 'Pages', pages: routes }]
     const abs = (path: string) => new URL(path, request.url).href
     const twin = (path: string) => abs(mdPath(path))
     // a route's own description, written for agents in its state.ts
     const described = new Map(index?.routes.map((r) => [r.route, r.description]) ?? [])
 
-    const paths = lists.flatMap((list) => list.pages.filter((link) => typeof link === 'string'))
-    const rendered = new Map<string, { title?: string; description?: string }>(
-      (await renderPages(request, [...new Set(paths)], options)).map(({ path, markdown }) => [
-        path,
-        markdown ? frontmatter(markdown) : {},
-      ]),
+    const paths = lists.flatMap(
+      (list) => list.pages?.filter((link) => typeof link === 'string') ?? [],
     )
+    const pages = await renderPages(request, [...new Set(paths)], options)
+    const texts = pages.map(({ markdown }) => (markdown ? frontmatter(markdown) : undefined))
+    const shared = sharedTitles(texts)
+    const rendered = new Map(pages.map(({ path }, i) => [path, texts[i]]))
     const name = title ?? index?.name
-    // "Cart · Acme Store" → "Cart"
-    const short = (label?: string) =>
-      name && label ? label.replace(new RegExp(`\\s*[·|–—-]\\s*${literal(name)}$`), '') : label
+    // markdown of the app's own, its links resolved against this file's url, as a page's are: an agent reading
+    // llms.txt on its own can follow them, and those to the site's pages go to their twins
+    const relinked = (markdown: string | undefined) =>
+      markdown && relinkMarkdown(markdown, request.url, twinLinks(new URL(request.url)))
     const line = (link: LlmsLink) => {
       if (typeof link !== 'string')
         return `- [${link.title}](${twin(link.url)})${link.description ? `: ${link.description}` : ''}`
-      const meta = rendered.get(link) ?? {}
+      const page = rendered.get(link)
+      const own = page && firstHeading(headingLine(page.body)?.line ?? '')
       // a home page titled just the site name reads better as Home
-      const label = (link === '/' && meta.title === name ? 'Home' : short(meta.title)) || link
-      const description = described.get(link) ?? meta.description
+      const label =
+        (link === '/' && page?.title === name
+          ? 'Home'
+          : pageName(page?.title, own, name, shared)) || link
+      const description = described.get(link) ?? page?.description
       return `- [${label}](${twin(link)})${description ? `: ${description}` : ''}`
     }
 
     const head = [
       `# ${name ?? new URL(request.url).host}`,
       summary && `> ${summary}`,
-      intro,
+      relinked(intro),
       [
         'Every page is also Markdown: add `.md` to its URL, or request it with `Accept: text/markdown`.',
         full && `[llms-full.txt](${abs(full)}) has every page in one file.`,
@@ -1143,11 +1263,19 @@ export const createLlmsTxtHandler =
       index &&
         `This site is Affordances-enabled: request any page with \`Accept: application/vnd.affordances+json\` for its graph (what the page shows, and the actions you can call there, with their inputs). [${SITE_INDEX}](${abs(SITE_INDEX)}) lists every route and its actions.`,
     ]
+    // a section with neither links nor an intro is left out, as an empty list was
     const body = lists
-      .filter((list) => list.pages.length)
-      .map((list) => `## ${list.title}\n\n${list.pages.map(line).join('\n')}`)
-    return text(`${[...head, ...body].filter(Boolean).join('\n\n')}\n`, options.headers)
+      .filter((list) => list.pages?.length || list.intro?.trim())
+      .map((list) =>
+        [`## ${list.title}`, relinked(list.intro?.trim()), list.pages?.map(line).join('\n')]
+          .filter(Boolean)
+          .join('\n\n'),
+      )
+    // a page that rendered no markdown is still linked, by its path, so the index stays whole
+    const left = dropped('llms.txt', pages, 'has no title or description for')
+    return text(`${[...head, ...body].filter(Boolean).join('\n\n')}\n`, options.headers, left)
   }
+}
 
 // a string matched as itself in a RegExp
 const literal = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
