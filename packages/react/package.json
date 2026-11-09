@@ -1,6 +1,6 @@
 {
   "name": "@affordances/react",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Affordances for React: WebMCP tools from the page graph, and <Affordance> markers",
   "license": "MIT",
   "repository": {

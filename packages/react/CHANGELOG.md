@@ -1,5 +1,11 @@
 # @affordances/react
 
+## 0.4.0
+
+### Patch Changes
+
+- @affordances/protocol@0.4.0
+
 ## 0.3.0
 
 ### Patch Changes
