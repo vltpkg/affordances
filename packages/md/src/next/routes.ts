@@ -6,6 +6,14 @@ export const ROUTES_ENV = 'AFFORDANCES_MD_ROUTES'
 
 const PAGE = /^page\.(tsx|ts|jsx|js|mdx|md)$/
 const MARKDOWN = /^markdown\.(tsx|ts|js)$/
+const HANDLER = /^route\.(tsx|ts|jsx|js)$/
+// next's metadata routes, route handlers too though not named route.ts: their url, from the file's name
+const METADATA: [RegExp, (name: string) => string][] = [
+  [/^(sitemap)\.(tsx|ts|jsx|js)$/, () => 'sitemap.xml'],
+  [/^(robots)\.(tsx|ts|jsx|js)$/, () => 'robots.txt'],
+  [/^(manifest)\.(tsx|ts|jsx|js)$/, () => 'manifest.webmanifest'],
+  [/^(opengraph-image|twitter-image|icon|apple-icon)\.(tsx|ts|jsx|js)$/, (name) => name],
+]
 
 // app/ or src/app/ under the project root
 export const findAppDir = (root: string) => {
@@ -54,7 +62,7 @@ const unfitMessage = (file: string, route: string, names: string[]) =>
 // exports a markdown.ts uses is left out with an error, which the generated check repeats so tsc stops on it
 export const scanApp = (
   root: string,
-): { pages: string[]; markdown: MarkdownFile[]; unfit: UnfitFile[] } => {
+): { pages: string[]; markdown: MarkdownFile[]; unfit: UnfitFile[]; handlers: string[] } => {
   const fs = process.getBuiltinModule?.('node:fs')
   const path = process.getBuiltinModule?.('node:path')
   const app = findAppDir(root)
@@ -63,9 +71,11 @@ export const scanApp = (
     console.warn(
       `[affordances-md] ${fs ? `no app/ directory in ${root}; pass md({ root })` : 'reading app/ needs Node 20.16 or later'}, so pages get no Link header and llms.txt lists none by default`,
     )
-    return { pages: [], markdown: [], unfit: [] }
+    return { pages: [], markdown: [], unfit: [], handlers: [] }
   }
   const pages: string[] = []
+  // route handlers outside api/ (/llms.txt, /og/[slug]), which the Accept rewrite leaves alone
+  const handlers: string[] = []
   const markdown: MarkdownFile[] = []
   const unfit: UnfitFile[] = []
   const walk = (dir: string, segments: string[]) => {
@@ -73,6 +83,13 @@ export const scanApp = (
     const route = `/${segments.join('/')}`
     const page = children.some((child) => child.isFile() && PAGE.test(child.name))
     if (page) pages.push(route)
+    else if (children.some((child) => child.isFile() && HANDLER.test(child.name)))
+      handlers.push(route)
+    for (const child of children)
+      for (const [file, url] of METADATA) {
+        const name = child.isFile() && file.exec(child.name)?.[1]
+        if (name) handlers.push(`${route === '/' ? '' : route}/${url(name)}`)
+      }
     const own = children.find((child) => child.isFile() && MARKDOWN.test(child.name))
     const relative = own && path.relative(root, path.join(dir, own.name))
     // a file that can't be read is taken as it is, as before: the import or the generated check says what's wrong
@@ -104,6 +121,7 @@ export const scanApp = (
     pages: pages.toSorted((a, b) => a.localeCompare(b)),
     markdown: markdown.toSorted((a, b) => a.route.localeCompare(b.route)),
     unfit: unfit.toSorted((a, b) => a.route.localeCompare(b.route)),
+    handlers: handlers.toSorted((a, b) => a.localeCompare(b)),
   }
 }
 
@@ -322,6 +340,9 @@ export const perEnv = <T, A extends unknown[] = []>(build: (...args: A) => T) =>
 // the routes md() found. spelled out: next inlines process.env.NAME, never process.env[name]
 export const builtPages = (): string[] => strings(process.env.AFFORDANCES_MD_ROUTES)
 
+// the route handlers md() found outside api/, through next's env as the pages are
+export const HANDLERS_ENV = 'AFFORDANCES_MD_HANDLERS'
+export const builtHandlers = (): string[] => strings(process.env.AFFORDANCES_MD_HANDLERS)
 // path-to-regexp names are word characters: [product-id] → :productid
 const param = (name: string) => name.replace(/\W/g, '')
 

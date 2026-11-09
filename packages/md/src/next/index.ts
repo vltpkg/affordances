@@ -10,6 +10,7 @@ import {
   ALIASES_ENV,
   builtPages,
   checkAliases,
+  HANDLERS_ENV,
   LITERAL_ENV,
   ROUTES_ENV,
   scanApp,
@@ -177,7 +178,7 @@ export const md =
   ({ root = process.cwd(), link = true, literalMd = [], aliases = {} }: MdOptions = {}) =>
   <C extends Config>(config: C): C => {
     // read once, when next loads its config; a page or markdown.ts added during next dev shows up after a restart
-    const { pages, markdown, unfit } = scanApp(root)
+    const { pages, markdown, unfit, handlers } = scanApp(root)
     const generated = writeMarkdownRoutes(root, markdown, unfit)
     // a source next would reject throws here, not on the first request
     for (const source of literalMd) sourceRegex(source)
@@ -188,6 +189,7 @@ export const md =
       env: {
         ...config.env,
         [ROUTES_ENV]: JSON.stringify(pages),
+        ...(handlers.length && { [HANDLERS_ENV]: JSON.stringify(handlers) }),
         ...(literalMd.length && { [LITERAL_ENV]: JSON.stringify(literalMd) }),
         ...(aliased.length && { [ALIASES_ENV]: JSON.stringify(aliased) }),
       },
@@ -245,8 +247,13 @@ export const mdAlternate = (path: string) => ({ types: { 'text/markdown': mdPath
 // link does
 const twinLinks = (base: URL) => {
   if (!builtPages().length) return undefined
+  // a page links the same path many times (a nav, a footer): asked once each
+  const twins = new Map<string, boolean>()
   return (url: URL) => {
-    if (url.origin !== base.origin || !hasTwin(url.pathname)) return
+    if (url.origin !== base.origin) return
+    const twinned = twins.get(url.pathname) ?? hasTwin(url.pathname)
+    twins.set(url.pathname, twinned)
+    if (!twinned) return
     // set on the url itself, so a path that starts with //host (/.//evil.test/x resolves to one) stays a path here
     const twin = new URL(url)
     twin.pathname = mdPath(url.pathname)
@@ -448,6 +455,13 @@ const convertPage =
     // a client navigation reaches here when a proxy.ts rewrote it (next hides its RSC header from the proxy, then
     // puts it back): it wants the page's RSC payload, so it gets that, never markdown
     if (request.headers.get('rsc'))
+      return (
+        (await passPage(request, target, options)) ??
+        fail(504, `${target.pathname} took longer than ${timeout}ms to render`)
+      )
+    // a route handler next routes the url to (/llms.txt, or /og/[slug] where no static page beats it), asked for with
+    // Accept: its own response, as it is, with the caller's own headers, never a render of ours
+    if (pageRoute(target.pathname, { strict: true })?.handler)
       return (
         (await passPage(request, target, options)) ??
         fail(504, `${target.pathname} took longer than ${timeout}ms to render`)

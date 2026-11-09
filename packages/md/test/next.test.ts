@@ -10,6 +10,7 @@ import {
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
+import type { NextConfig } from 'next'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
@@ -34,10 +35,11 @@ import {
   rewrites,
   withMd,
 } from '../src/next/index.ts'
-import { aliasPath } from '../src/next/rules.ts'
+import { aliasPath, hasTwin } from '../src/next/rules.ts'
 import {
   ALIASES_ENV,
   LITERAL_ENV,
+  HANDLERS_ENV,
   ROUTES_ENV,
   scanApp,
   unfitExports,
@@ -2891,4 +2893,139 @@ test("llms-full heads each page with its title, unless that's its heading's star
       `# Bare page (${site}/bare)\n\nJust text.\n`,
     ].join('\n\n'),
   )
+})
+
+// next's whole route pipeline, as next build runs it: each rewrite checked, prefixed with basePath and i18n's locales,
+// and checked again (lib/load-custom-routes.js); it exits the process on one it rejects
+const { default: loadCustomRoutes } = createRequire(import.meta.url)(
+  'next/dist/lib/load-custom-routes.js',
+) as { default: (config: object) => Promise<{ rewrites: { beforeFiles: Rewrite[] } }> }
+const nextLoads = async (config: object) => {
+  const exit = vi.spyOn(process, 'exit').mockImplementation((code) => {
+    throw new Error(`next rejected the routes (exit ${code})`)
+  })
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    return await loadCustomRoutes({ trailingSlash: false, ...config })
+  } finally {
+    exit.mockRestore()
+    error.mockRestore()
+    warn.mockRestore()
+  }
+}
+
+test('md() finds the route handlers in app/ outside api/, next metadata routes among them', () => {
+  const project = app([
+    'app/page.tsx',
+    'app/llms.txt/route.ts',
+    'app/(meta)/og/[slug]/route.tsx',
+    'app/api/cart/route.ts',
+    'app/sitemap.ts',
+    'app/robots.ts',
+    'app/manifest.ts',
+    'app/icon.tsx',
+    'app/blog/[slug]/page.tsx',
+    'app/blog/[slug]/opengraph-image.tsx',
+  ])
+  const found = [
+    '/blog/[slug]/opengraph-image',
+    '/icon',
+    '/llms.txt',
+    '/manifest.webmanifest',
+    '/og/[slug]',
+    '/robots.txt',
+    '/sitemap.xml',
+  ]
+  expect(scanApp(project).handlers).toEqual(found)
+  const config: Config = md({ root: project })({})
+  expect(config.env?.[HANDLERS_ENV]).toBe(JSON.stringify(found))
+  const plain: Config = md({ root: app(['app/page.tsx']) })({})
+  expect(plain.env).not.toHaveProperty(HANDLERS_ENV)
+})
+
+test('no app is too big for its config: the Accept rule is one rule, whatever its route handlers or basePath', async () => {
+  const many = Array.from({ length: 1000 }, (_, i) =>
+    i % 2 ? `/feeds/feed-${i}.xml` : `/og-${i}/[slug]`,
+  )
+  const project = app(['app/page.tsx', ...many.map((route) => `app${route}/route.ts`)])
+  // typed as an app's next.config is
+  for (const extra of [{}, { basePath: '/docs' }] as NextConfig[]) {
+    const config: Config = md({ root: project })(extra)
+    const { beforeFiles } = (await config.rewrites!()) as { beforeFiles: Rewrite[] }
+    expect(beforeFiles).toEqual(rewrites.beforeFiles)
+    const loaded = await nextLoads({ ...config, ...extra })
+    expect(loaded.rewrites.beforeFiles.length).toBeGreaterThan(0)
+  }
+})
+
+// the app's markdown route for a url asked for with Accept, given its pages and route handlers
+const routedWith = (routes: string[], handlers: string[]) => {
+  vi.stubEnv(ROUTES_ENV, JSON.stringify(routes))
+  vi.stubEnv(HANDLERS_ENV, JSON.stringify(handlers))
+}
+
+test("a route handler next routes a url to is passed through as it is, with the caller's own headers", async () => {
+  routedWith(['/', '/[slug]'], ['/llms.txt'])
+  upstream = () =>
+    new Response('# llms', { headers: { 'content-type': 'text/plain', etag: '"1"' } })
+  const response = await createMdHandler({ headers: { authorization: 'Bearer service' } })(
+    new Request(`${site}/llms.txt`, {
+      headers: { accept: 'text/markdown', 'if-none-match': '"0"' },
+    }),
+  )
+  expect([response.status, response.headers.get('content-type'), await response.text()]).toEqual([
+    200,
+    'text/plain',
+    '# llms',
+  ])
+  // fetched as the page itself: the caller's accept and conditional headers, never the service's credentials
+  const [call] = seen
+  expect([
+    call!.headers.get('accept'),
+    call!.headers.get('if-none-match'),
+    call!.headers.get('authorization'),
+  ]).toEqual(['text/markdown', '"0"', null])
+  vi.unstubAllEnvs()
+})
+
+test('a root catch-all route handler leaves every page its markdown and its twin, and /og/about beats /og/[slug]', async () => {
+  routedWith(['/', '/about', '/og/about'], ['/[...slug]', '/og/[slug]'])
+  const accept = (path: string) =>
+    isMdRequest(new Request(`${site}${path}`, { headers: { accept: 'text/markdown' } }))
+  expect(['/about', '/og/about', '/og/x', '/anything/else'].map(accept)).toEqual([
+    true,
+    true,
+    true,
+    true,
+  ])
+  expect(['/about', '/og/about', '/og/x', '/anything/else'].map(hasTwin)).toEqual([
+    true,
+    true,
+    false,
+    false,
+  ])
+  // the static page converts; the handler a url routes to is passed through
+  upstream = (url) =>
+    url.pathname === '/og/about'
+      ? new Response(page('<h1>About og</h1>'), { headers: { 'content-type': 'text/html' } })
+      : new Response('svg', { headers: { 'content-type': 'image/svg+xml' } })
+  const about = await handler(
+    new Request(`${site}/og/about`, { headers: { accept: 'text/markdown' } }),
+  )
+  expect(await about.text()).toContain('# About og')
+  const og = await handler(new Request(`${site}/og/x`, { headers: { accept: 'text/markdown' } }))
+  expect([og.headers.get('content-type'), await og.text()]).toEqual(['image/svg+xml', 'svg'])
+  vi.unstubAllEnvs()
+})
+
+test('a route handler never gets a twin, a page link or an intro link alike, even beside a root dynamic page', () => {
+  routedWith(['/[slug]'], ['/llms-full.txt', '/og/[slug]'])
+  expect(['/about', '/llms-full.txt', '/og/x', '/og'].map(hasTwin)).toEqual([
+    true,
+    false,
+    false,
+    true,
+  ])
+  vi.unstubAllEnvs()
 })
