@@ -38,6 +38,8 @@ test("MarkdownArgs<'/route'> gives params their types from the route, as page.ts
 })
 
 // a real tsc run over an app's markdown.ts and the .affordances/md.ts md() generates for it
+// each runs tsc, a second or more on its own and more under a full run's load: past vitest's 5s default
+const TSC = 30_000
 const tsc = fileURLToPath(new URL('../../../node_modules/typescript/bin/tsc', import.meta.url))
 const src = fileURLToPath(new URL('../src/next/', import.meta.url))
 let root: string
@@ -86,8 +88,10 @@ const check = (markdown: string) => {
   }
 }
 
-test('the generated .affordances/md.ts fails tsc when a markdown.ts is typed for another route', () => {
-  const good = `import type { MarkdownArgs, Slots } from '@affordances/md/next'
+test(
+  'the generated .affordances/md.ts fails tsc when a markdown.ts is typed for another route',
+  () => {
+    const good = `import type { MarkdownArgs, Slots } from '@affordances/md/next'
 
 export default async function markdown({ params }: MarkdownArgs<'/package/[pkg]'>) {
   return \`# \${decodeURIComponent(params.pkg)}\`
@@ -97,71 +101,76 @@ export const slots = {
   readme: async ({ params }) => \`readme of \${params.pkg}\`,
 } satisfies Slots<'/package/[pkg]'>
 `
-  expect(check(good)).toBe('')
-  // the default export, typed for another route
-  expect(
-    check(
+    expect(check(good)).toBe('')
+    // the default export, typed for another route
+    expect(
+      check(
+        good
+          .replace("MarkdownArgs<'/package/[pkg]'>", "MarkdownArgs<'/package/[name]'>")
+          .replace('params.pkg)', 'params.name)'),
+      ),
+    ).toMatch(/^\.affordances\/md\.ts\(\d+,\d+\): error TS2322/m)
+    // the slots, typed for another route
+    expect(
+      check(
+        good
+          .replace("Slots<'/package/[pkg]'>", "Slots<'/package/[name]'>")
+          .replace('readme of ${params.pkg}', 'readme of ${params.name}'),
+      ),
+    ).toMatch(/^\.affordances\/md\.ts\(\d+,\d+\): error TS2322/m)
+    // a route string with the same params but a typo, or fewer params (a copy from a sibling route): the route literal
+    // differs, so it fails too, naming both routes
+    const realRoute =
+      /Type '"\/package\/\[pkg\]"' is not assignable to type '"\/packages\/\[pkg\]"'/
+    for (const typo of [
+      good.replace("MarkdownArgs<'/package/[pkg]'>", "MarkdownArgs<'/packages/[pkg]'>"),
+      good.replace("Slots<'/package/[pkg]'>", "Slots<'/packages/[pkg]'>"),
+    ]) {
+      const out = check(typo)
+      expect(out).toMatch(/^\.affordances\/md\.ts\(\d+,\d+\): error TS2322/m)
+      expect(out).toMatch(realRoute)
+    }
+    const fewer = check(
       good
-        .replace("MarkdownArgs<'/package/[pkg]'>", "MarkdownArgs<'/package/[name]'>")
-        .replace('params.pkg)', 'params.name)'),
-    ),
-  ).toMatch(/^\.affordances\/md\.ts\(\d+,\d+\): error TS2322/m)
-  // the slots, typed for another route
-  expect(
-    check(
-      good
-        .replace("Slots<'/package/[pkg]'>", "Slots<'/package/[name]'>")
-        .replace('readme of ${params.pkg}', 'readme of ${params.name}'),
-    ),
-  ).toMatch(/^\.affordances\/md\.ts\(\d+,\d+\): error TS2322/m)
-  // a route string with the same params but a typo, or fewer params (a copy from a sibling route): the route literal
-  // differs, so it fails too, naming both routes
-  const realRoute = /Type '"\/package\/\[pkg\]"' is not assignable to type '"\/packages\/\[pkg\]"'/
-  for (const typo of [
-    good.replace("MarkdownArgs<'/package/[pkg]'>", "MarkdownArgs<'/packages/[pkg]'>"),
-    good.replace("Slots<'/package/[pkg]'>", "Slots<'/packages/[pkg]'>"),
-  ]) {
-    const out = check(typo)
-    expect(out).toMatch(/^\.affordances\/md\.ts\(\d+,\d+\): error TS2322/m)
-    expect(out).toMatch(realRoute)
-  }
-  const fewer = check(
-    good
-      .replace("Slots<'/package/[pkg]'>", "Slots<'/package'>")
-      .replace('readme of ${params.pkg}', 'readme'),
-  )
-  expect(fewer).toMatch(/^\.affordances\/md\.ts\(\d+,\d+\): error TS2322/m)
-  expect(fewer).toMatch(/Type '"\/package\/\[pkg\]"' is not assignable to type '"\/package"'/)
-  // a param the route doesn't have is an error in markdown.ts itself, where it's written
-  expect(check(good.replace('readme of ${params.pkg}', 'readme of ${params.name}'))).toMatch(
-    /^app\/package\/\[pkg\]\/markdown\.ts\(\d+,\d+\): error TS2339: Property 'name' does not exist/m,
-  )
-})
+        .replace("Slots<'/package/[pkg]'>", "Slots<'/package'>")
+        .replace('readme of ${params.pkg}', 'readme'),
+    )
+    expect(fewer).toMatch(/^\.affordances\/md\.ts\(\d+,\d+\): error TS2322/m)
+    expect(fewer).toMatch(/Type '"\/package\/\[pkg\]"' is not assignable to type '"\/package"'/)
+    // a param the route doesn't have is an error in markdown.ts itself, where it's written
+    expect(check(good.replace('readme of ${params.pkg}', 'readme of ${params.name}'))).toMatch(
+      /^app\/package\/\[pkg\]\/markdown\.ts\(\d+,\d+\): error TS2339: Property 'name' does not exist/m,
+    )
+  },
+  TSC,
+)
 
 // what md() says when it can't add the entry itself
 const told = (why: string) =>
   `[affordances-md] tsconfig.json ${why}, so tsc can't check each markdown.ts against its route. Add ".affordances/**/*.ts" to its "include".`
 
-test("md() adds .affordances/ to tsconfig.json's include, as next adds .next/types, keeping its comments and format", () => {
-  check("export default () => '# x'\n")
-  const tsconfig = join(root, 'tsconfig.json')
-  const log = vi.spyOn(console, 'log').mockImplementation(() => {})
-  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-  const load = (text: string) => {
-    writeFileSync(tsconfig, text)
-    log.mockClear()
-    warn.mockClear()
-    md({ root })({})
-    return {
-      text: readFileSync(tsconfig, 'utf8'),
-      logged: log.mock.calls.map(([message]) => String(message)),
-      warned: warn.mock.calls.map(([message]) => String(message)),
+test(
+  "md() adds .affordances/ to tsconfig.json's include, as next adds .next/types, keeping its comments and format",
+  () => {
+    check("export default () => '# x'\n")
+    const tsconfig = join(root, 'tsconfig.json')
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const load = (text: string) => {
+      writeFileSync(tsconfig, text)
+      log.mockClear()
+      warn.mockClear()
+      md({ root })({})
+      return {
+        text: readFileSync(tsconfig, 'utf8'),
+        logged: log.mock.calls.map(([message]) => String(message)),
+        warned: warn.mock.calls.map(([message]) => String(message)),
+      }
     }
-  }
-  const added = `[affordances-md] Updated tsconfig.json: added ".affordances/**/*.ts" to "include", so tsc checks each markdown.ts against its route, as Next adds ".next/types/**/*.ts". Commit this change, and add .affordances/ to .gitignore.`
+    const added = `[affordances-md] Updated tsconfig.json: added ".affordances/**/*.ts" to "include", so tsc checks each markdown.ts against its route, as Next adds ".next/types/**/*.ts". Commit this change, and add .affordances/ to .gitignore.`
 
-  // a commented file, one entry per line, a comment after the last: only a line is added
-  const commented = `{
+    // a commented file, one entry per line, a comment after the last: only a line is added
+    const commented = `{
   // next's own
   "compilerOptions": { "strict": true, /* keep */ "paths": { "@/*": ["./src/*"] } },
   "include": [
@@ -172,36 +181,38 @@ test("md() adds .affordances/ to tsconfig.json's include, as next adds .next/typ
   "exclude": ["node_modules"]
 }
 `
-  expect(load(commented)).toEqual({
-    text: commented.replace(
-      '    "**/*.tsx" // components\n',
-      '    "**/*.tsx", // components\n    ".affordances/**/*.ts"\n',
-    ),
-    logged: [],
-    warned: [added],
-  })
-  // a trailing comma stays a trailing comma; one line stays one line
-  expect(load('{ "include": [\n  "a.ts",\n] }\n').text).toBe(
-    '{ "include": [\n  "a.ts",\n  ".affordances/**/*.ts",\n] }\n',
-  )
-  expect(load('{"include":["next-env.d.ts","**/*.ts"]}').text).toBe(
-    '{"include":["next-env.d.ts","**/*.ts", ".affordances/**/*.ts"]}',
-  )
-  // already there: no write, nothing said
-  const present = '{ "include": ["**/*.ts", ".affordances/**/*.ts"] }\n'
-  expect(load(present)).toEqual({ text: present, logged: [], warned: [] })
-  // can't be read, or include is inherited: left as it is, with the line to add
-  const broken = '{ "include": ["**/*.ts", }}'
-  expect(load(broken)).toEqual({ text: broken, logged: [], warned: [told("couldn't be read")] })
-  const inherited = '{ "extends": "../../tsconfig.base.json" }\n'
-  expect(load(inherited)).toEqual({
-    text: inherited,
-    logged: [],
-    warned: [told('has no "include" of its own to add .affordances/ to')],
-  })
-  log.mockRestore()
-  warn.mockRestore()
-})
+    expect(load(commented)).toEqual({
+      text: commented.replace(
+        '    "**/*.tsx" // components\n',
+        '    "**/*.tsx", // components\n    ".affordances/**/*.ts"\n',
+      ),
+      logged: [],
+      warned: [added],
+    })
+    // a trailing comma stays a trailing comma; one line stays one line
+    expect(load('{ "include": [\n  "a.ts",\n] }\n').text).toBe(
+      '{ "include": [\n  "a.ts",\n  ".affordances/**/*.ts",\n] }\n',
+    )
+    expect(load('{"include":["next-env.d.ts","**/*.ts"]}').text).toBe(
+      '{"include":["next-env.d.ts","**/*.ts", ".affordances/**/*.ts"]}',
+    )
+    // already there: no write, nothing said
+    const present = '{ "include": ["**/*.ts", ".affordances/**/*.ts"] }\n'
+    expect(load(present)).toEqual({ text: present, logged: [], warned: [] })
+    // can't be read, or include is inherited: left as it is, with the line to add
+    const broken = '{ "include": ["**/*.ts", }}'
+    expect(load(broken)).toEqual({ text: broken, logged: [], warned: [told("couldn't be read")] })
+    const inherited = '{ "extends": "../../tsconfig.base.json" }\n'
+    expect(load(inherited)).toEqual({
+      text: inherited,
+      logged: [],
+      warned: [told('has no "include" of its own to add .affordances/ to')],
+    })
+    log.mockRestore()
+    warn.mockRestore()
+  },
+  TSC,
+)
 
 // a read-only tree (a sandbox, a checkout owned by another user, a read-only image layer): md() still loads. root can
 // write anything, so there the case can't be made
@@ -253,6 +264,7 @@ test.skipIf(process.getuid?.() === 0)(
       log.mockRestore()
     }
   },
+  TSC,
 )
 
 // a markdown.ts, as a 0.2.0 unit test calls it
@@ -269,20 +281,24 @@ test("A18: route is optional in MarkdownArgs, so arguments built by hand, as 0.2
   expect(byHand(args)).toBe('# express')
 })
 
-test("a markdown.ts that isn't one fails tsc with what to do, naming the file, never a TS2322 in md.ts", () => {
-  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-  const message =
-    "app/package/[pkg]/markdown.ts has none of the exports a markdown.ts next to a page uses (default, slots): it exports methodology, steps. So it's left out, and /package/[pkg] converts from its HTML. If it isn't for @affordances/md, move it out of app/ or rename it."
-  const out = check(
-    "export const methodology = { steps: 3 }\nconst steps = ['a']\nexport { steps }\nexport type Step = string\n",
-  )
-  expect(out).not.toMatch(/TS2322/)
-  expect(out.replace(/^\.affordances\/md\.ts\(\d+,\d+\)/, '.affordances/md.ts')).toContain(
-    `.affordances/md.ts: error TS2344: Type '${JSON.stringify(message)}' does not satisfy the constraint 'never'.`,
-  )
-  expect(out.trim().split('\n')).toHaveLength(1)
-  expect(error).toHaveBeenCalledWith(`[affordances-md] ${message}`)
-  // and the handler never imports it
-  expect(readFileSync(join(root, '.affordances/md.ts'), 'utf8')).not.toContain('import(')
-  error.mockRestore()
-})
+test(
+  "a markdown.ts that isn't one fails tsc with what to do, naming the file, never a TS2322 in md.ts",
+  () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const message =
+      "app/package/[pkg]/markdown.ts has none of the exports a markdown.ts next to a page uses (default, slots): it exports methodology, steps. So it's left out, and /package/[pkg] converts from its HTML. If it isn't for @affordances/md, move it out of app/ or rename it."
+    const out = check(
+      "export const methodology = { steps: 3 }\nconst steps = ['a']\nexport { steps }\nexport type Step = string\n",
+    )
+    expect(out).not.toMatch(/TS2322/)
+    expect(out.replace(/^\.affordances\/md\.ts\(\d+,\d+\)/, '.affordances/md.ts')).toContain(
+      `.affordances/md.ts: error TS2344: Type '${JSON.stringify(message)}' does not satisfy the constraint 'never'.`,
+    )
+    expect(out.trim().split('\n')).toHaveLength(1)
+    expect(error).toHaveBeenCalledWith(`[affordances-md] ${message}`)
+    // and the handler never imports it
+    expect(readFileSync(join(root, '.affordances/md.ts'), 'utf8')).not.toContain('import(')
+    error.mockRestore()
+  },
+  TSC,
+)
