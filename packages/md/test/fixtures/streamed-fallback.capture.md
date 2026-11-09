@@ -15,3 +15,10 @@ The error is in the stream as React's errored-boundary instruction, in a script 
 before it, but a real 404 carries that too, and a page's own metadata can set it, so it isn't the signal. The flight data
 holds the same digest (`E{\"digest\":…}`, quotes escaped) and, on every page, the not-found and forbidden templates
 ("This page could not be found."), so it isn't either.
+
+`streamed-not-found-static-next16.3.html` is a page with nothing dynamic, prerendered by `next build` on 16.3.0, whose
+`<Suspense>` child calls `notFound()` while it's built (`/static-notFound`). 16.3.0 sends it as a `200` (16.4.3 sends a
+real `404`). Nothing streams, so there's no `$RX`: React writes the boundary it errored as
+`<!--$!--><template data-dgst="NEXT_HTTP_ERROR_FALLBACK;404"></template>`, and Next puts
+`<meta name="robots" content="noindex"/>` in the `<head>`. `forbidden()` and `unauthorized()` are the same with `;403`
+and `;401`.

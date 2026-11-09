@@ -325,13 +325,14 @@ test('a same-origin redirect stays on the site in markdown, varies on Accept, an
 })
 
 // what next 16.3.0 and 16.4.3 stream for a redirect() after the layout's shell went out: a 200, the shell, the
-// redirect's digest in the flight data, and a refresh meta (a next start capture, trimmed)
+// redirect's digest in the flight data as written (only the meta html-escapes it), and a refresh meta (a next start
+// capture, trimmed)
 const streamedRedirect =
   (url: string, delay = 1, status = 307) =>
   () =>
     new Response(
       `<!DOCTYPE html><html><head><title>Site</title></head><body><header><h1>Site header</h1></header><main><!--$?--><template id="B:0"></template><p>Loading…</p><!--/$--></main>` +
-        `<script>self.__next_f.push([1,"5:E{\\"digest\\":\\"NEXT_REDIRECT;replace;${url};${status};\\"}\\n"])</script>` +
+        `<script>self.__next_f.push([1,"5:E{\\"digest\\":\\"NEXT_REDIRECT;replace;${url.replaceAll('&amp;', '&')};${status};\\"}\\n"])</script>` +
         `<meta id="__next-page-redirect" http-equiv="refresh" content="${delay};url=${url}"/></body></html>`,
       {
         headers: {
@@ -417,6 +418,7 @@ test.each([
   ['streamed-not-found-cache-components.html', 404, 'Not found'],
   ['streamed-forbidden-next16.4.html', 403, 'Forbidden'],
   ['streamed-unauthorized-next16.3.html', 401, 'Unauthorized'],
+  ['streamed-not-found-static-next16.3.html', 404, 'Not found'],
 ])(
   'a notFound(), forbidden() or unauthorized() streamed after the shell (%s) is a %i, not the shell',
   async (file, status, title) => {

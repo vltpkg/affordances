@@ -1,11 +1,14 @@
-import type { Element, ElementContent, Root } from 'hast'
-import { fromHtml } from 'hast-util-from-html'
-import { toString } from 'hast-util-to-string'
-import { micromark } from 'micromark'
 // with its .js, as proxy.ts imports it: next.config loads this entry in plain node
 import { NextRequest } from 'next/server.js'
-import { gfm, gfmHtml } from 'micromark-extension-gfm'
-import { readPage, relinkMarkdown, type SlotNames, yaml } from '../convert/index.ts'
+import {
+  fromDigest,
+  headingOf,
+  type Page,
+  readPage,
+  relinkMarkdown,
+  type SlotNames,
+  yaml,
+} from '../convert/index.ts'
 import { mdPath } from '../path.ts'
 import { CACHE_LIFE_ENV, cacheLifeEnv, customProfiles, publicCacheControl } from './cache.ts'
 import { mdPagePath } from './proxy.ts'
@@ -599,16 +602,14 @@ const convertPage =
       url: target.href,
       link: options.linkTwins === false ? undefined : twinLinks(target),
     })
-    // a redirect() after the shell went out can't change the status any more, so next streams it into the page
-    // instead: a 200 whose html sends the browser on. it's the same redirect, so it gets the same answer
-    if (read.redirect) return markdownRedirect(read.redirect, target, pageCache)
-    // a notFound(), forbidden() or unauthorized() after the shell, the same way: the page is that error, so it gets the
-    // answer a thrown one does, before any slot is filled
     // personal: rendered with someone's credentials (the caller's, or the route's service ones), or answered with a
     // cookie. a credential-free render is the anonymous public view, whatever cache-control next put on it (next
     // sends private, no-store for every dynamic render), so only this marks a page for llms to leave out
     const personalOnly = credentialed(headers) || upstream.headers.has('set-cookie')
-    if (read.fallback) return httpError(read.fallback.status, personalOnly)
+    // a redirect(), notFound(), forbidden() or unauthorized() after the shell went out, which next streams in as a 200,
+    // before any slot is filled
+    const control = streamedAnswer(read, target, pageCache, personalOnly)
+    if (control) return control
     // append runs alongside the fills; a fill's notFound() may answer for the page first, so its rejection waits to be
     // awaited below rather than going unhandled
     const appended = Promise.resolve(append?.(asked))
@@ -816,30 +817,20 @@ const HTTP_ERRORS: Record<string, string> = {
   403: 'Forbidden',
   401: 'Unauthorized',
 }
-// what an error's digest says, or undefined for any other error
-const fromDigest = (error: unknown): { status: number } | NextRedirect | undefined => {
+const thrownAnswer = (error: unknown, target: URL, personal: boolean) => {
   const digest =
     typeof error === 'object' && error !== null && 'digest' in error ? error.digest : undefined
-  if (typeof digest !== 'string') return undefined
-  const parts = digest.split(';')
-  if (parts[0] === 'NEXT_HTTP_ERROR_FALLBACK' && HTTP_ERRORS[parts[1]!])
-    return { status: Number(parts[1]) }
-  // NEXT_REDIRECT;replace;/url;307; (the url may hold a ;)
-  const status = Number(parts.at(-2))
-  if (parts[0] !== 'NEXT_REDIRECT' || ![301, 302, 303, 307, 308].includes(status)) return undefined
-  return { status, location: parts.slice(2, -2).join(';') }
-}
-const thrownAnswer = (error: unknown, target: URL, personal: boolean) => {
-  const thrown = fromDigest(error)
+  const thrown = typeof digest === 'string' ? fromDigest(digest) : undefined
   if (!thrown) return undefined
   if ('location' in thrown) return markdownRedirect(thrown, target, { private: true, personal })
-  return httpError(thrown.status, personal)
+  return fail(thrown.status, HTTP_ERRORS[thrown.status]!, personal)
 }
-const httpError = (status: number, personal: boolean) =>
-  respond(`# ${HTTP_ERRORS[status]}\n`, status, {
-    'cache-control': 'private, no-store',
-    ...(personal && { [PERSONAL_HEADER]: '1' }),
-  })
+// the same, streamed after the shell as a flight error row: readPage's redirect or fallback
+const streamedAnswer = (page: Page, target: URL, cache: RedirectCache, personal: boolean) => {
+  if (page.redirect) return markdownRedirect(page.redirect, target, cache)
+  if (page.fallback) return fail(page.fallback.status, HTTP_ERRORS[page.fallback.status]!, personal)
+  return undefined
+}
 
 // the Cache-Control a route's publicCache gives, or undefined when it has none or it isn't one, which development
 // says once per route: its markdown then stays as it would be without it
@@ -874,76 +865,6 @@ const warnLanguage = (route: string) => {
   console.warn(
     `[affordances-md] ${route}'s page varies on Accept-Language, but ${route}/markdown.ts's publicCache makes its markdown one view for everyone: it's rendered without the visitor's language, so it's the default language. For Markdown in each language, put the locale in the path (/fr/…).`,
   )
-}
-
-// the text of the markdown's first # heading, as a title: links keep their text, and a url shown as itself (an
-// autolink, a bare url) is dropped, with any brackets it leaves empty. `# [Methodology](https://x.test/m)` and
-// `# Methodology (https://x.test/m)` are both Methodology. the rest is the heading's own text, as written: only the
-// brackets right around a dropped url go with it, so `useState()` and `Array<T>` stay as they are
-const firstHeading = (markdown: string) => {
-  const line = headingLine(markdown)?.line
-  if (!line) return undefined
-  // the whole line, as a heading: its text read as a heading's, never as a list (# 1. Introduction) or a rule (# ---)
-  const tree = fromHtml(micromark(line, { extensions: [gfm()], htmlExtensions: [gfmHtml()] }), {
-    fragment: true,
-  })
-  const drop = (node: Root | Element) => {
-    const children = node.children as ElementContent[]
-    for (let i = children.length - 1; i >= 0; i--) {
-      if (!bare(children[i]!)) continue
-      // the brackets that held it, as `Methodology (https://x.test/m)`: an opening one ending the text before, and
-      // its closing one starting the text after
-      const before = children[i - 1]
-      const after = children[i + 1]
-      if (before?.type === 'text' && after?.type === 'text') {
-        const open = /[([<]\s*$/.exec(before.value)?.[0]
-        const close = /^\s*([)\]>])/.exec(after.value)
-        if (open && close && close[1] === { '(': ')', '[': ']', '<': '>' }[open.trim()]) {
-          before.value = before.value.slice(0, -open.length)
-          after.value = after.value.slice(close[0].length)
-        }
-      }
-      children.splice(i, 1)
-    }
-    for (const child of children) if (child.type === 'element') drop(child)
-  }
-  drop(tree)
-  const text = toString(tree).replace(/\s+/g, ' ').trim()
-  return text || undefined
-}
-// a link that shows its own url, as an autolink or a bare url does: www.x.test is http://www.x.test, and a url's
-// percent-encoding is the text it shows
-const bare = (node: ElementContent) =>
-  node.type === 'element' &&
-  node.tagName === 'a' &&
-  shown(toString(node).trim()) === shown(String(node.properties.href ?? ''))
-const shown = (url: string) => {
-  let text = url
-  try {
-    text = decodeURI(url)
-  } catch {}
-  return text.replace(/^(?:mailto:|https?:\/\/)/i, '')
-}
-
-// the markdown's first # heading line, outside fenced code: where it starts and ends, and the line
-const headingLine = (markdown: string) => {
-  let fence: string | undefined
-  let start = 0
-  for (const line of markdown.split('\n')) {
-    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1]
-    if (fence) {
-      if (
-        marker &&
-        marker[0] === fence[0] &&
-        marker.length >= fence.length &&
-        /^ {0,3}[`~]+\s*$/.test(line)
-      )
-        fence = undefined
-    } else if (marker) fence = marker
-    else if (/^ {0,3}#(?:[ \t]|$)/.test(line)) return { start, end: start + line.length, line }
-    start += line.length + 1
-  }
-  return undefined
 }
 
 // the route's markdown.ts for a page url, and the arguments its exports get; undefined when it has none
@@ -1019,7 +940,7 @@ const authoredMarkdown = async (
   }
   const given = typeof result === 'string' ? { markdown: result } : result
   const meta = {
-    title: given.title ?? firstHeading(given.markdown),
+    title: given.title ?? headingOf(given.markdown)?.text,
     description: given.description,
     url: target.href,
   }
@@ -1265,8 +1186,8 @@ const pageName = (
 }
 // a page in llms-full.txt, headed `# Name (url)`: its own heading, when that names it, isn't repeated; any other stays
 const fullPage = (page: PageText, url: string, name: string | undefined, shared: Set<string>) => {
-  const at = headingLine(page.body)
-  const own = at && firstHeading(at.line)
+  const at = headingOf(page.body)
+  const own = at?.text
   const heading = pageName(page.title, own, name, shared)
   if (!heading) return page.body.trim()
   // spliced in where the heading is, never replaced as text: a title or url with $' in it is as written
@@ -1347,7 +1268,7 @@ export const createLlmsTxtHandler = ({
       if (typeof link !== 'string')
         return `- [${link.title}](${twin(link.url)})${link.description ? `: ${link.description}` : ''}`
       const page = rendered.get(link)
-      const own = page && firstHeading(headingLine(page.body)?.line ?? '')
+      const own = page && headingOf(page.body)?.text
       // a home page titled just the site name reads better as Home
       const label =
         (link === '/' && page?.title === name

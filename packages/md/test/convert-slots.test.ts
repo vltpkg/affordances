@@ -255,27 +255,30 @@ test('readPage reads the page once: its slots, a streamed redirect, and markdown
   expect(read.markdown().markdown).toBe('# express\n\nLoading\n')
 })
 
-const meta = (content: string) =>
-  `<html><body><main><p>Loading</p></main><meta id="__next-page-redirect" http-equiv="refresh" content="${content}"/></body></html>`
+// a redirect() next streamed after the page's shell: its digest as a flight error row
+const redirected = (digest: string, extra = '') =>
+  `<html><body><main><p>Loading</p></main>${extra}<script>self.__next_f.push(${JSON.stringify([1, `5:E{"digest":"${digest}"}\n`])})</script></body></html>`
 
-test('readPage reads next’s streamed redirect from the parse', () => {
-  expect(readPage(meta('1;url=/sign-in?next=%2Fa&amp;b=1')).redirect).toEqual({
+test('readPage reads next’s streamed redirect from its flight error row', () => {
+  expect(
+    readPage(redirected('NEXT_REDIRECT;replace;/sign-in?next=%2Fa&b=1;307;')).redirect,
+  ).toEqual({
     status: 307,
     location: '/sign-in?next=%2Fa&b=1',
   })
-  expect(readPage(meta('0;url=/moved')).redirect).toEqual({ status: 308, location: '/moved' })
-  // in any attribute order, and only a real element: not one in a comment or a script's text
+  expect(readPage(redirected('NEXT_REDIRECT;replace;/moved;308;')).redirect).toEqual({
+    status: 308,
+    location: '/moved',
+  })
+  // a url with a ; in it
+  expect(readPage(redirected('NEXT_REDIRECT;push;/a;b;307;')).redirect?.location).toBe('/a;b')
+  // next's refresh meta, which raw html a page renders can carry too, isn't read: only the row is next's
+  const meta = '<meta id="__next-page-redirect" http-equiv="refresh" content="1;url=/x"/>'
   expect(
-    readPage(
-      '<html><body><meta content="1;url=/x" http-equiv="refresh" id="__next-page-redirect"></body></html>',
-    ).redirect,
-  ).toEqual({ status: 307, location: '/x' })
-  for (const html of [
-    '<html><body><!-- <meta id="__next-page-redirect" http-equiv="refresh" content="1;url=/x"> --></body></html>',
-    '<html><body><script>"<meta id=\\"__next-page-redirect\\" http-equiv=\\"refresh\\" content=\\"1;url=/x\\">"</script></body></html>',
-    '<html><body><meta id="__next-page-redirect" http-equiv="refresh" content="5;url=/x"></body></html>',
-  ])
-    expect(readPage(html).redirect).toBeUndefined()
+    readPage(`<html><body><main><p>x</p></main>${meta}</body></html>`).redirect,
+  ).toBeUndefined()
+  // nor a status a page's redirect() never streams
+  expect(readPage(redirected('NEXT_REDIRECT;replace;/x;303;')).redirect).toBeUndefined()
 })
 
 test('A15: a pipe after an escaped backslash stays in its cell', () => {
