@@ -4,8 +4,10 @@ import type {
   List,
   ListItem,
   Nodes as MdastNodes,
+  Paragraph,
   PhrasingContent,
   Root as MdastRoot,
+  TableCell,
 } from 'mdast'
 import { fromHtml } from 'hast-util-from-html'
 import { select, selectAll } from 'hast-util-select'
@@ -154,10 +156,19 @@ const isBlank = (node: ElementContent | undefined) => node?.type === 'text' && !
 // the same run of text (un<em>believ</em>able)
 // (display: flex in a style, or tailwind's flex, inline-grid, md:flex)
 const LAID_OUT = /^([\w-]+:)*(inline-)?(flex|grid)$/
+// whether an element's class or display style is one of these displays
+const displays = (node: Element, style: Declarations, display: RegExp) =>
+  [node.properties.className].flat().some((name) => display.test(String(name ?? ''))) ||
+  style.some(([property, value]) => property === 'display' && display.test(value))
 const laidOut = (node: HastRoot | Element, style: Declarations) =>
-  isElement(node) &&
-  ([node.properties.className].flat().some((name) => LAID_OUT.test(String(name ?? ''))) ||
-    style.some(([property, value]) => property === 'display' && LAID_OUT.test(value)))
+  isElement(node) && displays(node, style, LAID_OUT)
+// an inline element made a box of its own (tailwind's block, flex or grid, or the same display) sits on its own line
+// or in its own box, so it's apart from what's beside it whatever the characters: a cell's <span class="block">yarn
+// (zpm)</span><span class="block">6.0.0</span> reads yarn (zpm) 6.0.0. single characters still stay together, as
+// below: a ticker stacks its digits in boxes, and $ beside 48 is a price
+const BOXED = /^([\w-]+:)*(block|flex|grid)$/
+const boxed = (node: ElementContent | undefined, style: Declarations = []) =>
+  isInline(node) && displays(node, style, BOXED)
 // a run of one-character elements is one word split for styling or animation (H e l l o, an odometer's 1 2 3), so
 // two words are only spaced when both are longer
 const word = (node: ElementContent | undefined) => {
@@ -184,12 +195,14 @@ const spaced = (
   leftWord: string,
   rightWord: string,
   items: boolean,
+  boxes: boolean,
 ) =>
-  (isInline(left) || (items && left.type === 'text')) &&
-  (isInline(right) || (items && right?.type === 'text')) &&
+  (isInline(left) || ((items || boxes) && left.type === 'text')) &&
+  (isInline(right) || ((items || boxes) && right?.type === 'text')) &&
   (isInline(left) || isInline(right)) &&
   ((!!edgeLink(left, true) && !!edgeLink(right, false)) ||
-    (/[\p{L}\p{N}]$/u.test(leftWord) && /^[\p{L}\p{N}]/u.test(rightWord)))
+    (/[\p{L}\p{N}]$/u.test(leftWord) && /^[\p{L}\p{N}]/u.test(rightWord)) ||
+    (boxes && leftWord !== '' && rightWord !== ''))
 
 // headers and summaries whose text is a button's (<th><button>Name</button></th>, a sortable column; <h3><button
 // aria-expanded>Shipping</button></h3>, an accordion): with no text outside the buttons, the buttons' text is theirs
@@ -244,6 +257,8 @@ const pruneWith = (
   literal: boolean,
   style: Declarations = [],
 ) => {
+  // each child's style, parsed once, for its own prune and for the spacing below
+  const styles = new Map<ElementContent, Declarations>()
   parent.children = parent.children.flatMap((child): ElementContent[] => {
     if (child.type === 'comment' || child.type === 'doctype') return []
     if (!isElement(child)) return [child as ElementContent]
@@ -262,6 +277,7 @@ const pruneWith = (
       child.properties = properties
     }
     const childStyle = declarations(child)
+    styles.set(child, childStyle)
     // hidden from people means hidden from agents, unless it was marked for them
     if (dropped(child, childStyle)) return []
     pruneWith(
@@ -293,8 +309,16 @@ const pruneWith = (
   // each child's word once, not once per neighbour
   const items = laidOut(parent, style)
   const childWords = children.map(word)
+  const childBoxes = children.map((child) => boxed(child, styles.get(child)))
   parent.children = children.flatMap((child, i): ElementContent[] =>
-    spaced(child, children[i + 1], childWords[i]!, childWords[i + 1] ?? '', items)
+    spaced(
+      child,
+      children[i + 1],
+      childWords[i]!,
+      childWords[i + 1] ?? '',
+      items,
+      childBoxes[i]! || !!childBoxes[i + 1],
+    )
       ? [child, { type: 'text', value: ' ' }]
       : [child],
   )
@@ -953,6 +977,15 @@ const details: Handle = (state, node) => {
   return [...head, ...state.toFlow(state.all(rest))] as never
 }
 
+const BLOCKS = new Set([
+  'paragraph',
+  'heading',
+  'list',
+  'blockquote',
+  'code',
+  'table',
+  'thematicBreak',
+])
 // **term**: definition, one paragraph per pair (html lets each pair sit in its own <div>)
 const dl: Handle = (state, node) => {
   const out: MdastNodes[] = []
@@ -971,18 +1004,58 @@ const dl: Handle = (state, node) => {
           ...(i ? [{ type: 'text' as const, value: ', ' }] : []),
           { type: 'strong', children: t },
         ])
-      out.push({
-        type: 'paragraph',
-        children: [
-          ...strong,
-          ...(strong.length ? [{ type: 'text' as const, value: ': ' }] : []),
-          ...(state.all(child) as PhrasingContent[]),
-        ],
-      })
+      const lead: PhrasingContent[] = [
+        ...strong,
+        ...(strong.length ? [{ type: 'text' as const, value: ': ' }] : []),
+      ]
+      // a definition with blocks in it (a list, paragraphs) keeps them as blocks: the term leads the text before the
+      // first one, or stands alone before it. one that's a run of text (a form's field line too) is the term's paragraph
+      const first: Paragraph = { type: 'paragraph', children: [...lead] }
+      const flow: MdastNodes[] = [first]
+      // loose text joins the paragraph still open, the term's until a block (a paragraph too) closes it
+      let open: Paragraph | undefined = first
+      for (const part of state.all(child) as MdastNodes[]) {
+        if (part.type === 'paragraph' && open === first && first.children.length === lead.length) {
+          first.children.push(...part.children)
+          open = undefined
+        } else if (BLOCKS.has(part.type)) {
+          flow.push(part)
+          open = undefined
+        } else if (open) open.children.push(part as PhrasingContent)
+        else flow.push((open = { type: 'paragraph', children: [part as PhrasingContent] }))
+      }
+      out.push(...flow.filter((block) => block.type !== 'paragraph' || block.children.length))
       terms = []
     }
   }
   return out as never
+}
+
+// a cell is one line, so blocks laid out in it (<div>s, <p>s, which no css gap spaces) are separated by a space
+// instead of run together: <td><div>1,542</div><div>1,533–1,550</div></td> reads 1,542 1,533–1,550
+// a part of a cell that already ends in a space (a field line's "Qty: ") needs no other
+const endsSpaced = (last: MdastNodes | undefined) => last?.type === 'text' && /\s$/.test(last.value)
+const oneLine: Handle = (state, node) => {
+  const result = defaultHandlers.td(state, node) as TableCell
+  if (!result.children.some((child) => (child as MdastNodes).type === 'paragraph')) return result
+  // runs of inline content, and each paragraph's content, are one part each; other blocks are left as they are
+  const parts: MdastNodes[][] = []
+  let run: MdastNodes[] = []
+  for (const child of result.children as MdastNodes[]) {
+    if (child.type !== 'paragraph') {
+      run.push(child)
+      continue
+    }
+    parts.push(run, child.children)
+    run = []
+  }
+  parts.push(run)
+  const said = parts.filter((part) => part.some(says))
+  result.children = said.flatMap((part, i) => [
+    ...(i && !endsSpaced(said[i - 1]!.at(-1)) ? [{ type: 'text' as const, value: ' ' }] : []),
+    ...part,
+  ]) as PhrasingContent[]
+  return result
 }
 
 const wrap =
@@ -1037,6 +1110,8 @@ const handlers: Handlers = {
   img,
   details,
   dl,
+  td: oneLine,
+  th: oneLine,
   sup: wrap('sup'),
   sub: wrap('sub'),
   span: verbatim(defaultHandlers.span),
