@@ -1,3 +1,8 @@
+import type { Element, ElementContent, Root } from 'hast'
+import { fromHtml } from 'hast-util-from-html'
+import { toString } from 'hast-util-to-string'
+import { micromark } from 'micromark'
+import { gfm, gfmHtml } from 'micromark-extension-gfm'
 import { readPage, type SlotNames, yaml } from '../convert/index.ts'
 import { mdPath } from '../path.ts'
 import { mdPagePath } from './proxy.ts'
@@ -766,7 +771,75 @@ const httpError = (status: number, personal: boolean) =>
     ...(personal && { [PERSONAL_HEADER]: '1' }),
   })
 
-const firstHeading = (markdown: string) => /^# (.+)$/m.exec(markdown)?.[1]?.trim()
+// the text of the markdown's first # heading, as a title: links keep their text, and a url shown as itself (an
+// autolink, a bare url) is dropped, with any brackets it leaves empty. `# [Methodology](https://x.test/m)` and
+// `# Methodology (https://x.test/m)` are both Methodology. the rest is the heading's own text, as written: only the
+// brackets right around a dropped url go with it, so `useState()` and `Array<T>` stay as they are
+const firstHeading = (markdown: string) => {
+  const line = headingLine(markdown)?.line
+  if (!line) return undefined
+  // the whole line, as a heading: its text read as a heading's, never as a list (# 1. Introduction) or a rule (# ---)
+  const tree = fromHtml(micromark(line, { extensions: [gfm()], htmlExtensions: [gfmHtml()] }), {
+    fragment: true,
+  })
+  const drop = (node: Root | Element) => {
+    const children = node.children as ElementContent[]
+    for (let i = children.length - 1; i >= 0; i--) {
+      if (!bare(children[i]!)) continue
+      // the brackets that held it, as `Methodology (https://x.test/m)`: an opening one ending the text before, and
+      // its closing one starting the text after
+      const before = children[i - 1]
+      const after = children[i + 1]
+      if (before?.type === 'text' && after?.type === 'text') {
+        const open = /[([<]\s*$/.exec(before.value)?.[0]
+        const close = /^\s*([)\]>])/.exec(after.value)
+        if (open && close && close[1] === { '(': ')', '[': ']', '<': '>' }[open.trim()]) {
+          before.value = before.value.slice(0, -open.length)
+          after.value = after.value.slice(close[0].length)
+        }
+      }
+      children.splice(i, 1)
+    }
+    for (const child of children) if (child.type === 'element') drop(child)
+  }
+  drop(tree)
+  const text = toString(tree).replace(/\s+/g, ' ').trim()
+  return text || undefined
+}
+// a link that shows its own url, as an autolink or a bare url does: www.x.test is http://www.x.test, and a url's
+// percent-encoding is the text it shows
+const bare = (node: ElementContent) =>
+  node.type === 'element' &&
+  node.tagName === 'a' &&
+  shown(toString(node).trim()) === shown(String(node.properties.href ?? ''))
+const shown = (url: string) => {
+  let text = url
+  try {
+    text = decodeURI(url)
+  } catch {}
+  return text.replace(/^(?:mailto:|https?:\/\/)/i, '')
+}
+
+// the markdown's first # heading line, outside fenced code: where it starts and ends, and the line
+const headingLine = (markdown: string) => {
+  let fence: string | undefined
+  let start = 0
+  for (const line of markdown.split('\n')) {
+    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1]
+    if (fence) {
+      if (
+        marker &&
+        marker[0] === fence[0] &&
+        marker.length >= fence.length &&
+        /^ {0,3}[`~]+\s*$/.test(line)
+      )
+        fence = undefined
+    } else if (marker) fence = marker
+    else if (/^ {0,3}#(?:[ \t]|$)/.test(line)) return { start, end: start + line.length, line }
+    start += line.length + 1
+  }
+  return undefined
+}
 
 // the route's markdown.ts for a page url, and the arguments its exports get; undefined when it has none
 type MarkdownRoute = { route: string; module: MarkdownModule; args: RouteArgs<string> }
@@ -991,7 +1064,11 @@ export const createLlmsFullHandler =
       markdown
         ? markdown
             .replace(/^---\n[\s\S]*?\n---\n\n/, '')
-            .replace(/^# (.+)$/m, `# $1 (${new URL(path, request.url).href})`)
+            .replace(
+              /^# .+$/m,
+              (line) =>
+                `# ${firstHeading(line) ?? line.slice(2)} (${new URL(path, request.url).href})`,
+            )
             .trim()
         : '',
     )

@@ -2632,3 +2632,50 @@ test("a markdown.ts is left out only when its text makes plain it can't fit: any
     Object.fromEntries(fits.map((source) => [source, undefined])),
   )
 })
+
+test("a title is the heading's text: a link keeps its text, and a url shown as itself is dropped", async () => {
+  const titled = async (heading: string) => {
+    markdownFiles({ '/methodology': () => `${heading}\n\nHow we measure.` })
+    const text = await (await handler(new Request(`${site}/methodology.md`))).text()
+    return /^title: (.+)$/m.exec(text)?.[1]
+  }
+  expect(await titled('# [Methodology](https://shop.test/methodology)')).toBe('"Methodology"')
+  expect(await titled('# Methodology (https://shop.test/methodology)')).toBe('"Methodology"')
+  expect(await titled('# Methodology <https://shop.test/methodology>')).toBe('"Methodology"')
+  expect(await titled('# **How** we `measure` [it](/m) ![chart](/c.png)')).toBe(
+    '"How we measure it"',
+  )
+  // the heading's own text exactly, brackets, code and raw html included
+  expect(await titled('# Tom &amp; Jerry <span>live</span>')).toBe(
+    '"Tom & Jerry <span>live</span>"',
+  )
+  expect(await titled('# useState()')).toBe('"useState()"')
+  expect(await titled('# `code()` title')).toBe('"code() title"')
+  expect(await titled('# [Title](https://shop.test/t)')).toBe('"Title"')
+  expect(await titled('# Array<T>')).toBe('"Array<T>"')
+  expect(await titled('# [] empty')).toBe('"[] empty"')
+  expect(await titled('# Map<K, V> (https://shop.test/map)')).toBe('"Map<K, V>"')
+  // its text read as a heading's, never as the list, rule or setext marker it would be on its own
+  expect(await titled('# 1. Introduction')).toBe('"1. Introduction"')
+  expect(await titled('# 2024. A year in review')).toBe('"2024. A year in review"')
+  expect(await titled('# - Draft')).toBe('"- Draft"')
+  expect(await titled('# ---')).toBe('"---"')
+  // a www. autolink and a percent-encoded url are urls shown as themselves too
+  expect(await titled('# Docs (www.example.com)')).toBe('"Docs"')
+  expect(await titled('# Menu <https://shop.test/café>')).toBe('"Menu"')
+  // the first heading outside fenced code
+  expect(await titled('```sh\n# not a heading\n```\n\n# Install')).toBe('"Install"')
+
+  // a link whose text isn't its url keeps it, as any text does
+  expect(await titled('# Read [shop.test](https://shop.test/about)')).toBe('"Read shop.test"')
+  // the page's own markdown is left as it is
+  markdownFiles({ '/methodology': () => '# [Methodology](https://shop.test/methodology)\n\nHow.' })
+  expect(await (await handler(new Request(`${site}/methodology.md`))).text()).toContain(
+    '\n# [Methodology](https://shop.test/methodology)\n',
+  )
+  // llms-full heads the page with the same text
+  const full = await createLlmsFullHandler({ pages: () => ['/methodology'] })(
+    new Request(`${site}/llms-full.txt`),
+  )
+  expect(await full.text()).toBe(`# Methodology (${site}/methodology)\n\nHow.\n`)
+})
