@@ -40,6 +40,7 @@ import {
   LITERAL_ENV,
   ROUTES_ENV,
   scanApp,
+  unfitExports,
   sourceParams,
   sourceRegex,
   writeMarkdownRoutes,
@@ -2582,4 +2583,32 @@ test('A12, documented: a forged slot marker in user html runs its fill even wher
   expect(ran).toEqual(['billing'])
   expect(asked).toEqual(['session=visitor'])
   expect(visitor).not.toContain('Plan')
+})
+
+test("a markdown.ts is left out only when its text makes plain it can't fit: anything that may fit is kept", () => {
+  // plainly none of default and slots: the names it does export, for the error
+  expect(unfitExports('export const methodology = { steps: 3 }\n')).toEqual(['methodology'])
+  expect(
+    unfitExports(
+      'export async function load() {}\nexport class Steps {}\nconst a = 1, b = 2\nexport { a, b as c, type T }\n',
+    ),
+  ).toEqual(['load', 'Steps', 'a', 'c'])
+  // may fit: kept, and the generated check judges it as before
+  const fits = [
+    'export default function markdown() { return "# Hi" }',
+    'const markdown = () => "# Hi"\nexport { markdown as default }',
+    'export { default } from "../shared/markdown.ts"',
+    'export const slots = { readme: () => "## Readme" }',
+    'export * from "../shared/markdown.ts"',
+    'module.exports = { default: () => "# Hi" }',
+    'exports.slots = {}',
+    // nothing exported yet, as a file just made in next dev, is as it was
+    '',
+    'const helper = 1',
+    // a mention anywhere, even a comment, is enough to keep it
+    '// TODO: a default export\nexport const steps = 3',
+  ]
+  expect(Object.fromEntries(fits.map((source) => [source, unfitExports(source)]))).toEqual(
+    Object.fromEntries(fits.map((source) => [source, undefined])),
+  )
 })

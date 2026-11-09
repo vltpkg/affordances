@@ -172,8 +172,8 @@ export const md =
   ({ root = process.cwd(), link = true, literalMd = [], aliases = {} }: MdOptions = {}) =>
   <C extends Config>(config: C): C => {
     // read once, when next loads its config; a page or markdown.ts added during next dev shows up after a restart
-    const { pages, markdown } = scanApp(root)
-    const generated = writeMarkdownRoutes(root, markdown)
+    const { pages, markdown, unfit } = scanApp(root)
+    const generated = writeMarkdownRoutes(root, markdown, unfit)
     // a source next would reject throws here, not on the first request
     for (const source of literalMd) sourceRegex(source)
     checkAliases(aliases, pages)

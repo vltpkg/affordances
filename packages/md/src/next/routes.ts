@@ -18,11 +18,43 @@ export const findAppDir = (root: string) => {
 
 // a route's markdown.ts: the file relative to the project root, without its extension
 export type MarkdownFile = { route: string; file: string }
+// a file named markdown.ts that isn't one: it has none of the exports a markdown.ts uses, so it's left out
+export type UnfitFile = { route: string; file: string; message: string }
+
+// what a markdown.ts next to a page can export for affordances
+const EXPORTS = ['default', 'slots']
+const MENTIONED = new RegExp(`\\b(${EXPORTS.join('|')})\\b|\\bexport\\s*\\*|\\bexports\\b`)
+// the names a markdown.ts exports, when it exports some and reading its text makes plain none is one of EXPORTS:
+// undefined when it may have one (it mentions one anywhere, re-exports everything from another module, or is commonjs)
+// or exports nothing yet (a file just made in next dev). so a file is only ever left out when it can't fit; any other
+// mistake is the generated check's, as before
+export const unfitExports = (source: string): string[] | undefined => {
+  if (MENTIONED.test(source)) return undefined
+  const names = [
+    ...source.matchAll(
+      /\bexport\s+(?:declare\s+)?(?:async\s+)?(?:const|let|var|function\*?|class|enum)\s+([\w$]+)/g,
+    ),
+  ].map((match) => match[1]!)
+  for (const [, list] of source.matchAll(/\bexport\s*\{([^}]*)\}/g))
+    for (const item of list!.split(',')) {
+      const name = item
+        .trim()
+        .split(/\s+as\s+/)
+        .at(-1)
+      if (name && !/^type\s/.test(item.trim())) names.push(name)
+    }
+  return names.length ? [...new Set(names)] : undefined
+}
+const unfitMessage = (file: string, route: string, names: string[]) =>
+  `${file} has none of the exports a markdown.ts next to a page uses (${EXPORTS.join(', ')}): it exports ${names.join(', ')}. So it's left out, and ${route} converts from its HTML. If it isn't for @affordances/md, move it out of app/ or rename it.`
 
 // app/(shop)/products/[slug]/page.tsx → /products/[slug]. skipped: _private folders, @slots (they render into
 // their parent's url), intercepting routes, and api/, which the markdown rewrites never reach. a markdown.ts next to
-// a page is recorded too; one without a page has no url, so it's left out with a warning
-export const scanApp = (root: string): { pages: string[]; markdown: MarkdownFile[] } => {
+// a page is recorded too; one without a page has no url, so it's left out with a warning, and one that has none of the
+// exports a markdown.ts uses is left out with an error, which the generated check repeats so tsc stops on it
+export const scanApp = (
+  root: string,
+): { pages: string[]; markdown: MarkdownFile[]; unfit: UnfitFile[] } => {
   const fs = process.getBuiltinModule?.('node:fs')
   const path = process.getBuiltinModule?.('node:path')
   const app = findAppDir(root)
@@ -31,21 +63,31 @@ export const scanApp = (root: string): { pages: string[]; markdown: MarkdownFile
     console.warn(
       `[affordances-md] ${fs ? `no app/ directory in ${root}; pass md({ root })` : 'reading app/ needs Node 20.16 or later'}, so pages get no Link header and llms.txt lists none by default`,
     )
-    return { pages: [], markdown: [] }
+    return { pages: [], markdown: [], unfit: [] }
   }
   const pages: string[] = []
   const markdown: MarkdownFile[] = []
+  const unfit: UnfitFile[] = []
   const walk = (dir: string, segments: string[]) => {
     const children = fs.readdirSync(dir, { withFileTypes: true })
     const route = `/${segments.join('/')}`
     const page = children.some((child) => child.isFile() && PAGE.test(child.name))
     if (page) pages.push(route)
     const own = children.find((child) => child.isFile() && MARKDOWN.test(child.name))
-    if (own && page)
-      markdown.push({
-        route,
-        file: path.relative(root, path.join(dir, own.name)).replace(/\.[jt]sx?$/, ''),
-      })
+    const relative = own && path.relative(root, path.join(dir, own.name))
+    // a file that can't be read is taken as it is, as before: the import or the generated check says what's wrong
+    let names: string[] | undefined
+    try {
+      names =
+        own && page ? unfitExports(fs.readFileSync(path.join(dir, own.name), 'utf8')) : undefined
+    } catch {
+      names = undefined
+    }
+    if (relative && page && names) {
+      const message = unfitMessage(relative.split(path.sep).join('/'), route, names)
+      console.error(`[affordances-md] ${message}`)
+      unfit.push({ route, file: relative.replace(/\.[jt]sx?$/, ''), message })
+    } else if (relative && page) markdown.push({ route, file: relative.replace(/\.[jt]sx?$/, '') })
     else if (own)
       console.warn(
         `[affordances-md] ${path.relative(root, path.join(dir, own.name))} has no page.tsx next to it, so it's ignored`,
@@ -61,15 +103,20 @@ export const scanApp = (root: string): { pages: string[]; markdown: MarkdownFile
   return {
     pages: pages.toSorted((a, b) => a.localeCompare(b)),
     markdown: markdown.toSorted((a, b) => a.route.localeCompare(b.route)),
+    unfit: unfit.toSorted((a, b) => a.route.localeCompare(b.route)),
   }
 }
 
 // .affordances/md.ts: one lazy import per route's markdown.ts, which @affordances/md/routes is aliased to. written
 // only when it changed, so watchers don't loop. its path, or undefined when there's no markdown.ts
-export const writeMarkdownRoutes = (root: string, files: MarkdownFile[]) => {
+export const writeMarkdownRoutes = (
+  root: string,
+  files: MarkdownFile[],
+  unfit: UnfitFile[] = [],
+) => {
   const fs = process.getBuiltinModule?.('node:fs')
   const path = process.getBuiltinModule?.('node:path')
-  if (!fs || !path || !files.length) return undefined
+  if (!fs || !path || !(files.length || unfit.length)) return undefined
   const out = path.join(root, '.affordances', 'md.ts')
   const code = `// generated by @affordances/md from app/**/markdown.ts; don't edit
 import type { MarkdownModule, MarkdownRoutes } from '@affordances/md/next'
@@ -79,7 +126,15 @@ import type { MarkdownModule, MarkdownRoutes } from '@affordances/md/next'
 export const routes = {
 ${files.map(({ route, file }) => `  ${JSON.stringify(route)}: (): Promise<MarkdownModule<${JSON.stringify(route)}>> =>\n    import(${JSON.stringify(`../${file.split(path.sep).join('/')}`)}),`).join('\n')}
 } satisfies MarkdownRoutes
+${
+  unfit.length
+    ? `
+// a markdown.ts that isn't one for @affordances/md: tsc stops on each line below, with what to do about it in its message
+type NotAMarkdownFile<What extends never> = What
+${unfit.map(({ message }, i) => `export type Unfit${i} = NotAMarkdownFile<${JSON.stringify(message)}>`).join('\n')}
 `
+    : ''
+}`
   // a read-only tree (a sandbox, a checkout owned by another user, a read-only image layer) never stops the config from
   // loading: with the file from an earlier build, that one is used; without one, no markdown.ts runs and pages convert
   try {

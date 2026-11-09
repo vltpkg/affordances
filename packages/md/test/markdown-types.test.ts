@@ -268,3 +268,21 @@ test("A18: route is optional in MarkdownArgs, so arguments built by hand, as 0.2
   // a 0.2.0 unit test calling its markdown.ts directly
   expect(byHand(args)).toBe('# express')
 })
+
+test("a markdown.ts that isn't one fails tsc with what to do, naming the file, never a TS2322 in md.ts", () => {
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const message =
+    "app/package/[pkg]/markdown.ts has none of the exports a markdown.ts next to a page uses (default, slots): it exports methodology, steps. So it's left out, and /package/[pkg] converts from its HTML. If it isn't for @affordances/md, move it out of app/ or rename it."
+  const out = check(
+    "export const methodology = { steps: 3 }\nconst steps = ['a']\nexport { steps }\nexport type Step = string\n",
+  )
+  expect(out).not.toMatch(/TS2322/)
+  expect(out.replace(/^\.affordances\/md\.ts\(\d+,\d+\)/, '.affordances/md.ts')).toContain(
+    `.affordances/md.ts: error TS2344: Type '${JSON.stringify(message)}' does not satisfy the constraint 'never'.`,
+  )
+  expect(out.trim().split('\n')).toHaveLength(1)
+  expect(error).toHaveBeenCalledWith(`[affordances-md] ${message}`)
+  // and the handler never imports it
+  expect(readFileSync(join(root, '.affordances/md.ts'), 'utf8')).not.toContain('import(')
+  error.mockRestore()
+})
