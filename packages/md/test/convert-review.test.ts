@@ -4,7 +4,7 @@ import { htmlToMarkdown } from '../src/index.ts'
 // /code-review and /simplify findings on md-0.3.0: forms, names and label hosts
 const md = (body: string) =>
   htmlToMarkdown(`<html><body><main>${body}</main></body></html>`, {
-    url: 'https://vlt.test/p',
+    url: 'https://example.test/p',
     frontmatter: false,
   }).markdown
 
@@ -71,11 +71,11 @@ test('A16: controls and links named by their content or aria-labelledby', () => 
   // a link with nothing in it, named by aria-labelledby
   expect(
     md('<p><span id="n">Ann</span> <a href="/u/ann" aria-labelledby="n"><span></span></a></p>'),
-  ).toBe('Ann [Ann](https://vlt.test/u/ann)\n')
+  ).toBe('Ann [Ann](https://example.test/u/ann)\n')
   // a link's own content still comes first
   expect(
     md('<p><a href="/u/ann" aria-labelledby="n">ann</a><span id="n" hidden>Ann</span></p>'),
-  ).toBe('[ann](https://vlt.test/u/ann)\n')
+  ).toBe('[ann](https://example.test/u/ann)\n')
   // a combobox's content is its value, never its name, and a name never carries a value
   expect(
     md(

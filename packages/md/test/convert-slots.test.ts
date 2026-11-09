@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { htmlToMarkdown, readPage } from '../src/index.ts'
 
-// <AgentSlot name> (F-1, FB-1) and links in a marker's markdown (FB-4, F-8)
+// <AgentSlot name> and links in a marker's markdown
 const page = (body: string) => `<html><body><main>${body}</main></body></html>`
 const slot = (name: string, children = '') =>
   `<affordances-md data-mode="slot" data-name="${name}" style="display:contents">${children}</affordances-md>`
@@ -9,11 +9,11 @@ const text = (markdown: string, block = false) =>
   `<affordances-md data-mode="text" style="display:contents" data-md="${markdown.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}"${block ? ' data-block=""' : ''}></affordances-md>`
 // the twin hook the handler passes: a same-site page's .md
 const link = (url: URL) =>
-  url.origin === 'https://vlt.test' && !url.pathname.endsWith('.md')
+  url.origin === 'https://example.test' && !url.pathname.endsWith('.md')
     ? `${url.origin}${url.pathname}.md`
     : undefined
 const md = (body: string, slots?: Record<string, string>) =>
-  htmlToMarkdown(page(body), { url: 'https://vlt.test/p', link, frontmatter: false, slots })
+  htmlToMarkdown(page(body), { url: 'https://example.test/p', link, frontmatter: false, slots })
     .markdown
 
 const skip = (children: string) =>
@@ -144,7 +144,7 @@ test('a fake slot in user content can only cancel a fill, or move this visitor�
 
 test('FB-4: links in <AgentText md> are absolute and twinned like page links', () => {
   expect(md(`<p>By <a href="/~ann">${text('Ann')}</a>, ${text('[Bob](/~bob)')}</p>`)).toBe(
-    'By [Ann](https://vlt.test/~ann.md), [Bob](https://vlt.test/~bob.md)\n',
+    'By [Ann](https://example.test/~ann.md), [Bob](https://example.test/~bob.md)\n',
   )
   // reference definitions, titles and fragments; an image, and a definition an image uses, are only made absolute
   expect(
@@ -155,28 +155,32 @@ test('FB-4: links in <AgentText md> are absolute and twinned like page links', (
       ),
     ),
   ).toBe(
-    '[Docs][d] ![logo](https://vlt.test/logo.png) ![pic][i] [top](https://vlt.test/p#top "Top") [t](https://vlt.test/t.md "Title")\n\n[d]: https://vlt.test/docs.md\n[i]: https://vlt.test/i.png\n',
+    '[Docs][d] ![logo](https://example.test/logo.png) ![pic][i] [top](https://example.test/p#top "Top") [t](https://example.test/t.md "Title")\n\n[d]: https://example.test/docs.md\n[i]: https://example.test/i.png\n',
   )
 })
 
 test('FB-4: autolinks to the site point at their twin; others, code and raw html are left as written', () => {
   expect(
-    md(text('<https://vlt.test/a_b> https://vlt.test/lit <https://elsewhere.test/x>', true)),
+    md(
+      text('<https://example.test/a_b> https://example.test/lit <https://elsewhere.test/x>', true),
+    ),
   ).toBe(
-    '[https://vlt.test/a\\_b](https://vlt.test/a_b.md) [https://vlt.test/lit](https://vlt.test/lit.md) <https://elsewhere.test/x>\n',
+    '[https://example.test/a\\_b](https://example.test/a_b.md) [https://example.test/lit](https://example.test/lit.md) <https://elsewhere.test/x>\n',
   )
   expect(
-    md(text('`[c](/code)` <ops@vlt.test> www.elsewhere.test <a href="/raw">raw</a>', true)),
-  ).toBe('`[c](/code)` <ops@vlt.test> www.elsewhere.test <a href="/raw">raw</a>\n')
+    md(text('`[c](/code)` <ops@example.test> www.elsewhere.test <a href="/raw">raw</a>', true)),
+  ).toBe('`[c](/code)` <ops@example.test> www.elsewhere.test <a href="/raw">raw</a>\n')
   // a destination a bare url can't hold goes in <…>
   expect(md(text('[p](/a(b)) [q](</s p>)', true))).toBe(
-    '[p](<https://vlt.test/a(b).md>) [q](https://vlt.test/s%20p.md)\n',
+    '[p](<https://example.test/a(b).md>) [q](https://example.test/s%20p.md)\n',
   )
 })
 
 test('FB-4: a fill’s links get the same treatment, and nothing changes without a base', () => {
-  expect(md(slot('readme'), { readme: 'See [the docs](/docs) and <https://vlt.test/api>.' })).toBe(
-    'See [the docs](https://vlt.test/docs.md) and [https://vlt.test/api](https://vlt.test/api.md).\n',
+  expect(
+    md(slot('readme'), { readme: 'See [the docs](/docs) and <https://example.test/api>.' }),
+  ).toBe(
+    'See [the docs](https://example.test/docs.md) and [https://example.test/api](https://example.test/api.md).\n',
   )
   expect(
     htmlToMarkdown(page(`<p>${text('[Bob](/~bob)')}</p>`), { frontmatter: false, link }).markdown,
@@ -198,13 +202,13 @@ test('a fill with tens of thousands of links converts in linear time', () => {
   // each link rewrites only its own span; applying them one copy at a time took ~12s at this size
   const fill = Array.from(
     { length: 15000 },
-    (_, i) => `- [l](/p/${i}) <https://vlt.test/q${i}>`,
+    (_, i) => `- [l](/p/${i}) <https://example.test/q${i}>`,
   ).join('\n')
   const started = performance.now()
   const markdown = md(slot('readme'), { readme: fill })
   expect(performance.now() - started).toBeLessThan(8000)
   expect(markdown).toContain(
-    '- [l](https://vlt.test/p/14999.md) [https://vlt.test/q14999](https://vlt.test/q14999.md)',
+    '- [l](https://example.test/p/14999.md) [https://example.test/q14999](https://example.test/q14999.md)',
   )
 }, 30000)
 
@@ -230,21 +234,21 @@ test('A11: a block fill is lifted out of a heading, a link or emphasis, not only
   expect(
     md(`<p><a href="/pkg">See ${slot('readme', '…')} more</a></p>`, { readme: '[docs](/docs)' }),
   ).toBe(
-    '[See](https://vlt.test/pkg.md)\n\n[docs](https://vlt.test/docs.md)\n\n[more](https://vlt.test/pkg.md)\n',
+    '[See](https://example.test/pkg.md)\n\n[docs](https://example.test/docs.md)\n\n[more](https://example.test/pkg.md)\n',
   )
   expect(md(`<p><em>A ${slot('x', '…')}</em> b</p>`, { x: '- one' })).toBe('_A_\n\n- one\n\nb\n')
 })
 
 test('readPage reads the page once: its slots, a streamed redirect, and markdown for any fills', () => {
   const read = readPage(page(`<h1>express</h1>${slot('readme', '<p>Loading</p>')}`), {
-    url: 'https://vlt.test/p',
+    url: 'https://example.test/p',
     link,
     frontmatter: false,
   })
   expect(read.slots).toEqual({ unique: ['readme'], duplicate: [] })
   expect(read.redirect).toBeUndefined()
   expect(read.markdown({ readme: 'One [x](/x)' }).markdown).toBe(
-    '# express\n\nOne [x](https://vlt.test/x.md)\n',
+    '# express\n\nOne [x](https://example.test/x.md)\n',
   )
   // the page is left as it was, so it converts again with other fills, or none
   expect(read.markdown({ readme: 'Two' }).markdown).toBe('# express\n\nTwo\n')
