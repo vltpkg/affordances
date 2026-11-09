@@ -1,12 +1,33 @@
 // the docs' and README's examples for md()'s server side, type-checked by tsc (this package's tsconfig includes
 // test/), so an example that stops compiling fails `vlt run typecheck`. each is written as its page shows it
+import type { NextConfig } from 'next'
 import { NextResponse, type NextRequest } from 'next/server'
 import { cookies } from 'next/headers'
 import { unauthorized } from 'next/navigation'
-import { type MarkdownArgs, type Slots, withMd } from '../src/next/index.ts'
+import { cacheLife, cacheTag, revalidateTag } from 'next/cache'
+import {
+  createMdHandler,
+  type Markdown,
+  type MarkdownArgs,
+  type MarkdownModule,
+  md as mdPlugin,
+  type Slots,
+  withMd,
+} from '../src/next/index.ts'
 import { mdProxy } from '../src/next/proxy.ts'
 
 const nextConfig = {}
+
+// setup.mdx and the README: init's one-line route, replaced to set its options
+export const GET = createMdHandler({ maxBytes: 32 * 1024 * 1024, timeout: 20_000 })
+
+// a next.config.ts typed as Next's own template types it, i18n and basePath included: withMd and md() take it as it is
+const typedConfig: NextConfig = {
+  basePath: '/docs',
+  i18n: { locales: ['en', 'fr'], defaultLocale: 'en' },
+}
+export const typedWithMd: NextConfig = withMd(typedConfig)
+export const typedMd: NextConfig = mdPlugin()(typedConfig)
 
 // setup.mdx, "Public URLs your proxy maps onto routes"
 export const aliased = withMd(nextConfig, {
@@ -96,3 +117,29 @@ export const authorizedSlots = {
     return `**Plan:** ${plan.name}`
   },
 } satisfies Slots<'/package/[pkg]'>
+
+// caching.mdx, "Caching public Markdown": one line next to each kind of route
+declare const readme: (pkg: string) => Promise<string>
+declare const pkgMarkdown: (pkg: string) => Promise<string>
+export const slotRoute = {
+  slots: { readme: async ({ params }) => readme(params.pkg) } satisfies Slots<'/package/[pkg]'>,
+  publicCache: 'hours',
+} satisfies MarkdownModule<'/package/[pkg]'>
+export const defaultRoute = {
+  default: (async ({ params }) => pkgMarkdown(params.pkg)) satisfies Markdown<'/package/[pkg]'>,
+  publicCache: { revalidate: 300, expire: 86_400 },
+} satisfies MarkdownModule<'/package/[pkg]'>
+export const convertedRoute = { publicCache: 'days' } satisfies MarkdownModule<'/package/[pkg]'>
+
+// caching.mdx: 'use cache' in a fill, refreshed by revalidateTag
+declare const fetchReadme: (pkg: string) => Promise<string>
+async function cachedReadme(pkg: string) {
+  'use cache'
+  cacheLife('hours')
+  cacheTag(`pkg:${pkg}`)
+  return fetchReadme(pkg)
+}
+export const cachedSlots = {
+  readme: ({ params }) => cachedReadme(params.pkg),
+} satisfies Slots<'/package/[pkg]'>
+export const published = (name: string) => revalidateTag(`pkg:${name}`, 'max')

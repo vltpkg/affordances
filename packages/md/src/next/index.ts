@@ -1,10 +1,22 @@
-import { readPage, type SlotNames, yaml } from '../convert/index.ts'
+// with its .js, as proxy.ts imports it: next.config loads this entry in plain node
+import { NextRequest } from 'next/server.js'
+import {
+  fromDigest,
+  headingOf,
+  type Page,
+  readPage,
+  relinkMarkdown,
+  type SlotNames,
+  yaml,
+} from '../convert/index.ts'
 import { mdPath } from '../path.ts'
+import { CACHE_LIFE_ENV, cacheLifeEnv, customProfiles, publicCacheControl } from './cache.ts'
 import { mdPagePath } from './proxy.ts'
 import {
   ALIASES_ENV,
   builtPages,
   checkAliases,
+  HANDLERS_ENV,
   LITERAL_ENV,
   ROUTES_ENV,
   scanApp,
@@ -58,6 +70,10 @@ export type Config = {
   // typed loosely: its context drags in all of NextConfig, which two copies of next don't agree on
   // oxlint-disable-next-line no-explicit-any
   webpack?: ((config: any, context: any) => any) | null
+  // read for markdown.ts's publicCache, which names a profile or gives the same times
+  cacheLife?: Record<string, { stale?: number; revalidate?: number; expire?: number }>
+  expireTime?: number
+  experimental?: { cacheLife?: unknown }
 }
 
 const normalize = (value: unknown): Rewrites =>
@@ -172,8 +188,17 @@ export const md =
   ({ root = process.cwd(), link = true, literalMd = [], aliases = {} }: MdOptions = {}) =>
   <C extends Config>(config: C): C => {
     // read once, when next loads its config; a page or markdown.ts added during next dev shows up after a restart
-    const { pages, markdown } = scanApp(root)
-    const generated = writeMarkdownRoutes(root, markdown)
+    // the cacheLife profiles a publicCache can name, next's own and next.config's
+    // next.config's cacheLife, where next reads it: experimental.cacheLife, which next 16 still takes, replaces the
+    // top-level one (config.js warnOptionHasBeenMovedOutOfExperimental, 16.3.0 and 16.4.3)
+    const life =
+      config.experimental && 'cacheLife' in config.experimental
+        ? config.experimental.cacheLife
+        : config.cacheLife
+    const profiles = customProfiles(life)
+    const { pages, markdown, problems, handlers } = scanApp(root)
+    const generated = writeMarkdownRoutes(root, markdown, problems, profiles)
+    const cacheLife = cacheLifeEnv(life, config.expireTime)
     // a source next would reject throws here, not on the first request
     for (const source of literalMd) sourceRegex(source)
     checkAliases(aliases, pages)
@@ -183,6 +208,8 @@ export const md =
       env: {
         ...config.env,
         [ROUTES_ENV]: JSON.stringify(pages),
+        ...(handlers.length && { [HANDLERS_ENV]: JSON.stringify(handlers) }),
+        ...(cacheLife && { [CACHE_LIFE_ENV]: cacheLife }),
         ...(literalMd.length && { [LITERAL_ENV]: JSON.stringify(literalMd) }),
         ...(aliased.length && { [ALIASES_ENV]: JSON.stringify(aliased) }),
       },
@@ -240,8 +267,13 @@ export const mdAlternate = (path: string) => ({ types: { 'text/markdown': mdPath
 // link does
 const twinLinks = (base: URL) => {
   if (!builtPages().length) return undefined
+  // a page links the same path many times (a nav, a footer): asked once each
+  const twins = new Map<string, boolean>()
   return (url: URL) => {
-    if (url.origin !== base.origin || !hasTwin(url.pathname)) return
+    if (url.origin !== base.origin) return
+    const twinned = twins.get(url.pathname) ?? hasTwin(url.pathname)
+    twins.set(url.pathname, twinned)
+    if (!twinned) return
     // set on the url itself, so a path that starts with //host (/.//evil.test/x resolves to one) stays a path here
     const twin = new URL(url)
     twin.pathname = mdPath(url.pathname)
@@ -265,6 +297,10 @@ export type MdHandlerOptions = {
 }
 
 const FORWARD = ['cookie', 'authorization', 'accept-language']
+// the request a public view sees, the same for every visitor: none of their headers (language, user agent, country).
+// md's own NextRequest (nextUrl, cookies), since in a built app next's is another copy of the class
+const viewRequest = (request: Request) =>
+  new NextRequest(request.url, { method: request.method, signal: request.signal })
 
 // set on markdown converted from a page that hadn't finished streaming by the timeout
 export const PARTIAL_HEADER = 'x-affordances-md-partial'
@@ -347,6 +383,7 @@ const asIs = async (request: Request, options: MdHandlerOptions) => {
 
 // how long a page may take to render, by default
 const TIMEOUT = 10_000
+const MIB = 1024 * 1024
 
 // the page's headers, for a response of ours that passes it on. fetch has already decoded the body, so its encoding
 // and length no longer describe it, and next's x-middleware-* (set when a proxy.ts rewrote the page) make it throw
@@ -408,8 +445,12 @@ const markdownRedirect = (
   })
 }
 
-const fail = (status: number, message: string) =>
-  respond(`# ${message}\n`, status, { 'cache-control': 'private, no-store' })
+// an answer of the handler's own, never cached; personal when it was made with someone's credentials
+const fail = (status: number, message: string, personal = false) =>
+  respond(`# ${message}\n`, status, {
+    'cache-control': 'private, no-store',
+    ...(personal && { [PERSONAL_HEADER]: '1' }),
+  })
 
 // a path on the site's own origin as a url, or undefined: new URL reads one that starts with //host as another
 // origin, and the caller's credentials (or the headers option) never go there
@@ -423,7 +464,7 @@ const pageUrl = (request: Request, options: MdHandlerOptions, path: string) => {
 const convertPage =
   (options: MdHandlerOptions) =>
   async (request: Request, pagePath: string, direct: boolean): Promise<Response> => {
-    const { timeout = TIMEOUT, maxBytes = 6 * 1024 * 1024, append } = options
+    const { timeout = TIMEOUT, maxBytes = 6 * MIB, append } = options
     if (request.headers.has(RENDER_HEADER)) return fail(508, 'Loop detected')
 
     const url = new URL(request.url)
@@ -442,31 +483,50 @@ const convertPage =
         (await passPage(request, target, options)) ??
         fail(504, `${target.pathname} took longer than ${timeout}ms to render`)
       )
+    // a route handler next routes the url to (/llms.txt, or /og/[slug] where no static page beats it), asked for with
+    // Accept: its own response, as it is, with the caller's own headers, never a render of ours
+    if (pageRoute(target.pathname, { strict: true })?.handler)
+      return (
+        (await passPage(request, target, options)) ??
+        fail(504, `${target.pathname} took longer than ${timeout}ms to render`)
+      )
     // the route's own markdown.ts, when it has one and gives something, instead of rendering the page
     // only for a request that came in at the page's own url (/x.md, or /x with Accept), the url proxy.ts gated. one
     // made straight to the handler's url (/api/affordances/md/x) skipped a page-scoped gate, so it gets the html render,
     // which goes through the proxy at the page's url
     const route = direct ? undefined : await markdownRoute(request, target)
-    const authored = route && (await authoredMarkdown(request, target, route, append, negotiated))
+    // whose request this is: the caller's own credentials, or none, so the headers option's may stand in
+    const callerCredentials = credentialed(request.headers)
+    // a response that may be public is one view for everyone, which a CDN keys on its url alone: all of it (the
+    // headers option, the render, markdown.ts and its fills, append) sees one request, with no visitor's headers. a
+    // credentialed or negotiated request, which stays private, is the visitor's own
+    const shareable = route?.module.publicCache !== undefined && !negotiated && !callerCredentials
+    const view = shareable ? viewRequest(request) : request
+    // the headers option, resolved once: one answer (from an option that mints a token, say) for whether the response
+    // can be public and for the render. a route that opts in is never public while it gives service credentials, even
+    // where they go unused, so the rule is the same whichever way the route answers
+    const early = shareable ? await extraHeaders(view, options.headers) : undefined
+    const oneView = shareable && !credentialed(early!)
+    const asked = oneView ? view : request
+    const routed = route && oneView ? { ...route, args: { ...route.args, request: asked } } : route
+    const authored =
+      routed && (await authoredMarkdown(asked, target, routed, append, negotiated, oneView))
     if (authored) return authored
     const headers = new Headers()
     for (const name of FORWARD) {
-      const value = request.headers.get(name)
+      const value = asked.headers.get(name)
       if (value) headers.set(name, value)
     }
     // the headers option's cookie and authorization (a service account's) apply only to a request that sent neither:
     // a signed-in person's markdown is rendered as them alone, never as more than they could see. all or nothing,
     // since an app checking a bearer first would otherwise render a cookie-signed-in person as the service
-    const anonymous = !credentialed(request.headers)
-    const optionHeaders = await extraHeaders(request, options.headers)
-    for (const [name, value] of optionHeaders)
-      if (anonymous || !CREDENTIALS.includes(name)) headers.set(name, value)
+    const given = early ?? (await extraHeaders(request, options.headers))
+    for (const [name, value] of given)
+      if (!callerCredentials || !CREDENTIALS.includes(name)) headers.set(name, value)
     headers.set('accept', 'text/html')
     headers.set(RENDER_HEADER, '1')
-    // whose response this is: the caller's own credentials, or the service's that stood in, whose refreshed cookie
-    // must never reach the caller
-    const callerCredentials = credentialed(request.headers)
-    const serviceCredentials = anonymous && credentialed(optionHeaders)
+    // the service's credentials that stood in, whose refreshed cookie must never reach the caller
+    const serviceCredentials = !callerCredentials && credentialed(given)
 
     // one deadline for the whole render: the fetch until its headers, then the streamed body
     const controller = new AbortController()
@@ -514,7 +574,19 @@ const convertPage =
       if (callerCredentials || serviceCredentials) passed.set('cache-control', 'private, no-store')
       return new Response(upstream.body, { status: upstream.status, headers: passed })
     }
-    const tooLarge = () => fail(413, 'The page is too large to convert')
+    // a page past maxBytes, which a page that grows (a report, a changelog) can reach long after launch: the answer
+    // and the server's log both say what to change
+    const tooLarge = () => {
+      const limit = maxBytes % MIB ? `${maxBytes} bytes` : `${maxBytes / MIB} MiB`
+      const fix = `To convert it, raise maxBytes in the md route (app/api/affordances/md/[[...path]]/route.ts): \`export const GET = createMdHandler({ maxBytes: ${Math.ceil((2 * maxBytes) / MIB)} * 1024 * 1024 })\`.`
+      console.warn(
+        `[affordances-md] ${target.pathname} is larger than maxBytes (${limit}), so it answers 413. ${fix}`,
+      )
+      return fail(
+        413,
+        `The page is too large to convert\n\nIts HTML is larger than ${limit} (maxBytes). ${fix}`,
+      )
+    }
     if (Number(upstream.headers.get('content-length') ?? 0) > maxBytes) {
       clearTimeout(timer)
       return tooLarge()
@@ -530,15 +602,20 @@ const convertPage =
       url: target.href,
       link: options.linkTwins === false ? undefined : twinLinks(target),
     })
-    // a redirect() after the shell went out can't change the status any more, so next streams it into the page
-    // instead: a 200 whose html sends the browser on. it's the same redirect, so it gets the same answer
-    if (read.redirect) return markdownRedirect(read.redirect, target, pageCache)
+    // personal: rendered with someone's credentials (the caller's, or the route's service ones), or answered with a
+    // cookie. a credential-free render is the anonymous public view, whatever cache-control next put on it (next
+    // sends private, no-store for every dynamic render), so only this marks a page for llms to leave out
+    const personalOnly = credentialed(headers) || upstream.headers.has('set-cookie')
+    // a redirect(), notFound(), forbidden() or unauthorized() after the shell went out, which next streams in as a 200,
+    // before any slot is filled
+    const control = streamedAnswer(read, target, pageCache, personalOnly)
+    if (control) return control
     // append runs alongside the fills; a fill's notFound() may answer for the page first, so its rejection waits to be
     // awaited below rather than going unhandled
-    const appended = Promise.resolve(append?.(request))
+    const appended = Promise.resolve(append?.(asked))
     appended.catch(() => {})
     // the page rendered, so its own redirect(), notFound() and layout checks ran: now the slots it rendered get filled
-    const slots = route?.module.slots && (await fillSlots(read.slots, target, route))
+    const slots = routed?.module.slots && (await fillSlots(read.slots, target, routed))
     if (slots instanceof Response) return slots
     const result = read.markdown(slots)
     const page = partial
@@ -548,24 +625,30 @@ const convertPage =
     const markdown = extra ? `${page}\n${extra.trim()}\n` : page
 
     // anything rendered with the caller's credentials, or that the page itself keeps private, stays private
-    // personal: rendered with someone's credentials (the caller's, or the route's service ones), or answered with a
-    // cookie. a credential-free render is the anonymous public view, whatever cache-control next put on it (next
-    // sends private, no-store for every dynamic render), so only this marks a page for llms to leave out
-    const personalOnly = credentialed(headers) || upstream.headers.has('set-cookie')
     // a fill read data with whatever the request carried, as markdown.ts's default export does: never cached
     const filled = slots !== undefined && Object.keys(slots).length > 0
     const personal = personalOnly || filled || /private|no-store/.test(cacheControl) || negotiated
+    // a route whose markdown.ts says its markdown is public: the anonymous, complete view of its .md url, as a 200,
+    // gets that cache time, whatever next sent (private, no-store for a dynamic render) and whatever the fills read
+    if (shareable && upstream.headers.has('set-cookie') && !credentialed(headers))
+      warnCookie(route!.route, target, upstream.headers)
+    const varies = /(^|,)\s*accept-language\s*(,|$)/i.test(upstream.headers.get('vary') ?? '')
+    if (shareable && varies) warnLanguage(route!.route)
+    const shared =
+      oneView && !personalOnly && !partial && upstream.status === 200
+        ? publicHeader(route!.route, route!.module)
+        : undefined
     return respond(markdown, upstream.status, {
-      // the handler forwards accept-language, so a page that varies on it varies the markdown too
-      vary: /(^|,)\s*accept-language\s*(,|$)/i.test(upstream.headers.get('vary') ?? '')
-        ? 'Accept, Accept-Language'
-        : 'Accept',
+      // a page that varies on the language the render was asked in varies the markdown too
+      vary: varies && headers.has('accept-language') ? 'Accept, Accept-Language' : 'Accept',
       'x-affordances-tokens': String(Math.ceil(markdown.length / 4)),
       ...(result.url && { link: `<${result.url}>; rel="canonical"` }),
       // a partial page is never cached, so the next request gets the whole one
-      ...(personal || partial
-        ? { 'cache-control': 'private, no-store' }
-        : cacheControl && { 'cache-control': cacheControl }),
+      ...(shared
+        ? { 'cache-control': shared }
+        : personal || partial
+          ? { 'cache-control': 'private, no-store' }
+          : cacheControl && { 'cache-control': cacheControl }),
       ...(partial && { [PARTIAL_HEADER]: '1' }),
       ...(personalOnly && { [PERSONAL_HEADER]: '1' }),
     })
@@ -651,10 +734,26 @@ export type Slots<Route extends string = string> = Record<
 // a markdown.ts, as the generated .affordances/md.ts checks it against its route: called with the route itself, so
 // an export typed for any other route string doesn't fit
 type RouteArgs<Route extends string> = MarkdownArgs<Route> & { route: Route }
-export type MarkdownModule<Route extends string = string> = {
+// the generated check passes the app's own cacheLife profiles as Cache, so a custom name is typed and a typo isn't
+export type MarkdownModule<Route extends string = string, Cache = PublicCache> = {
   default?: (args: RouteArgs<Route>) => MarkdownResult | Promise<MarkdownResult>
   slots?: Record<string, (args: RouteArgs<Route>) => SlotResult | Promise<SlotResult>>
+  publicCache?: Cache
 }
+// next's own cacheLife profiles; next.config's cacheLife adds yours
+export type CacheLifeProfile =
+  | 'default'
+  | 'seconds'
+  | 'minutes'
+  | 'hours'
+  | 'days'
+  | 'weeks'
+  | 'max'
+// markdown.ts's publicCache: how long a CDN may keep this route's public markdown, as next's cacheLife() takes it. a
+// profile's name, or seconds: { revalidate: 300, expire: 86_400 }. it applies only to the anonymous view of a .md url
+export type PublicCache<Profile extends string = CacheLifeProfile> =
+  | Profile
+  | { revalidate: number; expire?: number }
 // what the generated .affordances/md.ts exports: each route's markdown.ts, loaded when it's first asked for. each
 // entry is checked against its own route there, so this is as loose as any of them
 export type MarkdownRoutes = Record<
@@ -662,6 +761,7 @@ export type MarkdownRoutes = Record<
   () => Promise<{
     default?: (args: never) => unknown
     slots?: Record<string, (args: never) => unknown>
+    publicCache?: unknown
   }>
 >
 
@@ -717,30 +817,55 @@ const HTTP_ERRORS: Record<string, string> = {
   403: 'Forbidden',
   401: 'Unauthorized',
 }
-// what an error's digest says, or undefined for any other error
-const fromDigest = (error: unknown): { status: number } | NextRedirect | undefined => {
+const thrownAnswer = (error: unknown, target: URL, personal: boolean) => {
   const digest =
     typeof error === 'object' && error !== null && 'digest' in error ? error.digest : undefined
-  if (typeof digest !== 'string') return undefined
-  const parts = digest.split(';')
-  if (parts[0] === 'NEXT_HTTP_ERROR_FALLBACK' && HTTP_ERRORS[parts[1]!])
-    return { status: Number(parts[1]) }
-  // NEXT_REDIRECT;replace;/url;307; (the url may hold a ;)
-  const status = Number(parts.at(-2))
-  if (parts[0] !== 'NEXT_REDIRECT' || ![301, 302, 303, 307, 308].includes(status)) return undefined
-  return { status, location: parts.slice(2, -2).join(';') }
-}
-const thrownAnswer = (error: unknown, target: URL, personal: boolean) => {
-  const thrown = fromDigest(error)
+  const thrown = typeof digest === 'string' ? fromDigest(digest) : undefined
   if (!thrown) return undefined
   if ('location' in thrown) return markdownRedirect(thrown, target, { private: true, personal })
-  return respond(`# ${HTTP_ERRORS[thrown.status]}\n`, thrown.status, {
-    'cache-control': 'private, no-store',
-    ...(personal && { [PERSONAL_HEADER]: '1' }),
-  })
+  return fail(thrown.status, HTTP_ERRORS[thrown.status]!, personal)
+}
+// the same, streamed after the shell as a flight error row: readPage's redirect or fallback
+const streamedAnswer = (page: Page, target: URL, cache: RedirectCache, personal: boolean) => {
+  if (page.redirect) return markdownRedirect(page.redirect, target, cache)
+  if (page.fallback) return fail(page.fallback.status, HTTP_ERRORS[page.fallback.status]!, personal)
+  return undefined
 }
 
-const firstHeading = (markdown: string) => /^# (.+)$/m.exec(markdown)?.[1]?.trim()
+// the Cache-Control a route's publicCache gives, or undefined when it has none or it isn't one, which development
+// says once per route: its markdown then stays as it would be without it
+const told = new Set<string>()
+const publicHeader = (route: string, module: MarkdownModule) => {
+  if (module.publicCache === undefined) return undefined
+  const { header, problem } = publicCacheControl(module.publicCache)
+  if (problem && process.env.NODE_ENV !== 'production' && !told.has(route)) {
+    told.add(route)
+    console.error(
+      `[affordances-md] ${route}/markdown.ts: publicCache ${problem}; until then, it isn't cached.`,
+    )
+  }
+  return header
+}
+// a page that sets a cookie for an anonymous visitor (a session, an auth handshake) is never cached publicly: said in
+// development, since its route asked to be
+const warnCookie = (route: string, target: URL, headers: Headers) => {
+  if (process.env.NODE_ENV === 'production') return
+  const names = headers.getSetCookie().map((cookie) => cookie.split('=')[0]!.trim())
+  console.warn(
+    `[affordances-md] ${target.pathname} set ${names.length === 1 ? 'a cookie' : 'cookies'} (${names.join(', ')}) for an anonymous visitor, so ${route}/markdown.ts's publicCache doesn't apply: its markdown is private, no-store. Don't set ${names.length === 1 ? 'it' : 'them'} on this page for a visitor who isn't signed in.`,
+  )
+}
+
+// an opted-in route whose page varies on the visitor's language: its public markdown is rendered without one, so
+// it's the default language. said once per route, in development
+const toldLanguage = new Set<string>()
+const warnLanguage = (route: string) => {
+  if (process.env.NODE_ENV === 'production' || toldLanguage.has(route)) return
+  toldLanguage.add(route)
+  console.warn(
+    `[affordances-md] ${route}'s page varies on Accept-Language, but ${route}/markdown.ts's publicCache makes its markdown one view for everyone: it's rendered without the visitor's language, so it's the default language. For Markdown in each language, put the locale in the path (/fr/…).`,
+  )
+}
 
 // the route's markdown.ts for a page url, and the arguments its exports get; undefined when it has none
 type MarkdownRoute = { route: string; module: MarkdownModule; args: RouteArgs<string> }
@@ -774,6 +899,8 @@ const authoredMarkdown = async (
   { route, module, args }: MarkdownRoute,
   append: MdHandlerOptions['append'],
   negotiated: boolean,
+  // whether the answer may be public: the route opted in, and the request is the one view
+  oneView: boolean,
 ): Promise<Response | undefined> => {
   const markdown = module.default
   // a markdown.ts with only slots converts the page, which fills them
@@ -813,7 +940,7 @@ const authoredMarkdown = async (
   }
   const given = typeof result === 'string' ? { markdown: result } : result
   const meta = {
-    title: given.title ?? firstHeading(given.markdown),
+    title: given.title ?? headingOf(given.markdown)?.text,
     description: given.description,
     url: target.href,
   }
@@ -824,8 +951,8 @@ const authoredMarkdown = async (
     'x-affordances-tokens': String(Math.ceil(body.length / 4)),
     link: `<${target.href}>; rel="canonical"`,
     // it read data with whatever the request carried, which the handler can't tell a credential from (an x-api-key):
-    // never cached. an author who wants caching returns a Response with its own cache-control
-    'cache-control': 'private, no-store',
+    // never cached, unless its markdown.ts says the route's markdown is public, and then only an anonymous .md
+    'cache-control': (oneView && publicHeader(route, module)) || 'private, no-store',
     ...(personal && { [PERSONAL_HEADER]: '1' }),
   })
 }
@@ -876,39 +1003,86 @@ const renderPages = async (
   request: Request,
   paths: string[],
   options: LlmsFetchOptions & { headers: Headers },
-) =>
-  Promise.all(
-    paths.map(async (path) => {
-      // a path from the site index, pages() or sections() that starts with //host or names another origin is never
-      // fetched: the headers option (a bearer token, a bypass secret) stays on this site
-      const target = pageUrl(request, options, path)
-      if (!target) return { path, markdown: undefined }
-      try {
-        const headers = new Headers(options.headers)
-        headers.set('accept', 'text/markdown')
-        const response = await fetch(target, {
-          headers,
-          redirect: 'manual',
-          signal: AbortSignal.timeout(options.timeout ?? TIMEOUT),
-        })
-        // a page its markdown route rendered privately (with credentials of the route's own, a private page, a
-        // cookie set in answer) isn't the public view: left out, so the files stay public. negotiated markdown is
-        // private too, but only because of where it was served, so it counts
-        const ok =
-          response.ok &&
-          response.headers.get('content-type')?.startsWith('text/markdown') &&
-          !response.headers.has(PERSONAL_HEADER) &&
-          !response.headers.has('set-cookie')
-        return { path, markdown: ok ? await response.text() : undefined }
-      } catch {
-        return { path, markdown: undefined }
+): Promise<Rendered[]> => {
+  const timeout = options.timeout ?? TIMEOUT
+  // one deadline for the whole file, under a serverless host's limit: a page not rendered by then is left out
+  const deadline = options.deadline ?? DEADLINE
+  const overall = new AbortController()
+  const timer = setTimeout(() => overall.abort(), deadline)
+  const late = `not rendered within the file's ${deadline}ms deadline`
+  const render = async (path: string): Promise<Rendered> => {
+    if (overall.signal.aborted) return { path, dropped: late }
+    // a path from the site index, pages() or sections() that starts with //host or names another origin is never
+    // fetched: the headers option (a bearer token, a bypass secret) stays on this site
+    const target = pageUrl(request, options, path)
+    if (!target) return { path, dropped: 'not on this site' }
+    try {
+      const headers = new Headers(options.headers)
+      headers.set('accept', 'text/markdown')
+      // each page's own timeout, from when its fetch starts, not from when the file was asked for
+      const response = await fetch(target, {
+        headers,
+        redirect: 'manual',
+        signal: AbortSignal.any([AbortSignal.timeout(timeout), overall.signal]),
+      })
+      // a page its markdown route rendered privately (with credentials of the route's own, a private page, a
+      // cookie set in answer) isn't the public view: left out, so the files stay public. negotiated markdown is
+      // private too, but only because of where it was served, so it counts
+      if (!response.ok) return { path, dropped: `answered ${response.status}` }
+      const type = response.headers.get('content-type') ?? 'no content-type'
+      if (!type.startsWith('text/markdown'))
+        return { path, dropped: `answered ${type}, not markdown` }
+      if (response.headers.has(PERSONAL_HEADER) || response.headers.has('set-cookie'))
+        return { path, dropped: 'private: rendered with credentials, or it set a cookie' }
+      return { path, markdown: await response.text() }
+    } catch (error) {
+      if (overall.signal.aborted) return { path, dropped: late }
+      const timedOut = error instanceof Error && error.name === 'TimeoutError'
+      return {
+        path,
+        dropped: timedOut ? `took longer than ${timeout}ms` : `failed: ${String(error)}`,
       }
-    }),
+    }
+  }
+  // a few at a time: each is a full render on the same server, and all at once is a burst that slows each one
+  // past its timeout
+  const rendered: Rendered[] = Array.from({ length: paths.length })
+  let next = 0
+  const worker = async () => {
+    while (next < paths.length) {
+      const i = next++
+      rendered[i] = await render(paths[i]!)
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(options.concurrency ?? CONCURRENCY, paths.length) }, worker),
   )
+  clearTimeout(timer)
+  return rendered
+}
+type Rendered = { path: string; markdown?: string; dropped?: string }
+const CONCURRENCY = 8
+// under netlify's 26s for a synchronous function and vercel's limits; a host that allows more takes a longer one
+const DEADLINE = 25_000
 
-// the converter's frontmatter: title, description and url, as JSON-quoted values
-const frontmatter = (markdown: string) => {
-  const block = markdown.match(/^---\n([\s\S]*?)\n---\n/)?.[1] ?? ''
+// pages llms left out: in development, a warning naming each and why; everywhere, their count in a header, never a
+// list in the file, which is public and could name a private page
+const dropped = (file: string, pages: Rendered[], what: string) => {
+  const left = pages.filter((page) => page.dropped)
+  if (left.length && process.env.NODE_ENV !== 'production')
+    console.warn(
+      `[affordances-md] ${file} ${what} ${left.length} ${left.length === 1 ? 'page' : 'pages'}: ${left.map((page) => `${page.path} (${page.dropped})`).join(', ')}`,
+    )
+  return left.length
+}
+const DROPPED_HEADER = 'x-affordances-md-dropped'
+
+// a page's markdown as the converter writes it: its frontmatter's title and description (JSON-quoted values), and
+// the markdown after it, read once
+type PageText = { title?: string; description?: string; body: string }
+const frontmatter = (markdown: string): PageText => {
+  const match = /^---\n([\s\S]*?)\n---\n\n?/.exec(markdown)
+  const block = match?.[1] ?? ''
   const read = (key: string) => {
     const raw = block.match(new RegExp(`^${key}: (.+)$`, 'm'))?.[1]
     if (!raw) return undefined
@@ -918,7 +1092,11 @@ const frontmatter = (markdown: string) => {
       return raw
     }
   }
-  return { title: read('title'), description: read('description') }
+  return {
+    title: read('title'),
+    description: read('description'),
+    body: match ? markdown.slice(match[0].length) : markdown,
+  }
 }
 
 const origin = (request: Request, options: MdHandlerOptions) =>
@@ -931,22 +1109,33 @@ const resolved = async <O extends MdHandlerOptions>(request: Request, options: O
 })
 
 // the public site, unless the headers option rendered it with credentials
-const text = (body: string, headers: Headers) =>
+const text = (body: string, headers: Headers, left: number) =>
   new Response(body, {
     headers: {
       'content-type': 'text/plain; charset=utf-8',
       'cache-control': credentialed(headers)
         ? 'private, no-store'
         : 'public, max-age=0, s-maxage=3600',
+      ...(left && { [DROPPED_HEADER]: String(left) }),
     },
   })
+
+// "Cart · Acme Store" → "Cart", given the site's name
+const short = (name: string | undefined, label: string | undefined) =>
+  name && label ? label.replace(new RegExp(`\\s*[·|–—-]\\s*${literal(name)}$`), '') : label
 
 // which pages to include: yours, given the index's routes without a dynamic segment, or those routes as they are
 export type Pages = (request: Request, routes: string[]) => string[] | Promise<string[]>
 
 // what the llms handlers use for their own requests. how each page renders is its markdown route's (createMdHandler's
 // options there), since each page is fetched from it
-export type LlmsFetchOptions = Pick<MdHandlerOptions, 'origin' | 'headers' | 'timeout'>
+export type LlmsFetchOptions = Pick<MdHandlerOptions, 'origin' | 'headers' | 'timeout'> & {
+  // how many pages render at once, 8 by default: each is a full render on the same server. timeout is each page's own
+  concurrency?: number
+  // how long the whole file may take, 25s by default; pages not rendered by then are left out. raise it with the
+  // route's maxDuration
+  deadline?: number
+}
 
 export type LlmsFullOptions = LlmsFetchOptions & {
   // the paths to include, in order; defaults to every page that needs no params
@@ -955,25 +1144,75 @@ export type LlmsFullOptions = LlmsFetchOptions & {
 
 // app/llms-full.txt/route.ts: every page's markdown in one file, from the same render and converter as /x.md.
 // rendered without the caller's cookies, so it's the public site; each page is headed `# Title (url)`
-export const createLlmsFullHandler =
-  ({ pages, ...given }: LlmsFullOptions = {}) =>
-  async (request: Request): Promise<Response> => {
+export const createLlmsFullHandler = ({ pages, ...given }: LlmsFullOptions = {}) => {
+  checked(given)
+  return async (request: Request): Promise<Response> => {
     const options = await resolved(request, given)
-    const routes = staticRoutes(await siteIndex(request, options))
+    const index = await siteIndex(request, options)
+    const routes = staticRoutes(index)
     const paths = pages ? await pages(request, routes) : routes
-    const parts = (await renderPages(request, paths, options)).map(({ path, markdown }) =>
-      markdown
-        ? markdown
-            .replace(/^---\n[\s\S]*?\n---\n\n/, '')
-            .replace(/^# (.+)$/m, `# $1 (${new URL(path, request.url).href})`)
-            .trim()
-        : '',
-    )
-    return text(`${parts.filter(Boolean).join('\n\n')}\n`, options.headers)
+    const rendered = await renderPages(request, paths, options)
+    const texts = rendered.map(({ markdown }) => (markdown ? frontmatter(markdown) : undefined))
+    const shared = sharedTitles(texts)
+    const parts = rendered.map(({ path }, i) => {
+      const page = texts[i]
+      return page ? fullPage(page, new URL(path, request.url).href, index?.name, shared) : ''
+    })
+    const left = dropped('llms-full.txt', rendered, 'left out')
+    return text(`${parts.filter(Boolean).join('\n\n')}\n`, options.headers, left)
   }
+}
+
+// a title more than one page has (a layout's, for every page) isn't a page's name
+const sharedTitles = (pages: (PageText | undefined)[]) => {
+  const titles = pages.flatMap((page) => page?.title ?? [])
+  return new Set(titles.filter((title, i) => titles.indexOf(title) !== i))
+}
+// a page's name in llms.txt and llms-full.txt: its frontmatter title, without the site's name. its own first heading
+// names it instead when that's the title's start ("Cart" for "Cart · Acme", as before), or when the title isn't the
+// page's own (the site's name, or one other pages share)
+const pageName = (
+  title: string | undefined,
+  own: string | undefined,
+  name: string | undefined,
+  shared: Set<string>,
+) => {
+  const label = title && !shared.has(title) ? short(name, title) : undefined
+  const starts =
+    own &&
+    label &&
+    (label === own || (label.startsWith(own) && /^\s*[·|–—:-]/.test(label.slice(own.length))))
+  return (own && (!label || label === name || starts) ? own : label) || own
+}
+// a page in llms-full.txt, headed `# Name (url)`: its own heading, when that names it, isn't repeated; any other stays
+const fullPage = (page: PageText, url: string, name: string | undefined, shared: Set<string>) => {
+  const at = headingOf(page.body)
+  const own = at?.text
+  const heading = pageName(page.title, own, name, shared)
+  if (!heading) return page.body.trim()
+  // spliced in where the heading is, never replaced as text: a title or url with $' in it is as written
+  if (at && own === heading)
+    return `${page.body.slice(0, at.start)}# ${heading} (${url})${page.body.slice(at.end)}`.trim()
+  return `# ${heading} (${url})\n\n${page.body.trim()}`
+}
+
+// a concurrency that renders nothing, or one page forever, is a mistake to say when the handler is made
+const checked = (options: LlmsFetchOptions) => {
+  const { concurrency, deadline } = options
+  if (concurrency !== undefined && !(Number.isInteger(concurrency) && concurrency >= 1))
+    throw new TypeError(
+      `[affordances-md] concurrency is how many pages render at once, a whole number from 1; got ${concurrency}`,
+    )
+  if (deadline !== undefined && !(deadline > 0))
+    throw new TypeError(
+      `[affordances-md] deadline is how long the whole file may take, in milliseconds above 0; got ${deadline}`,
+    )
+}
 
 // a page in llms.txt: a path whose title and description come from its own markdown, or given outright
 export type LlmsLink = string | { url: string; title: string; description?: string }
+// a ## section of llms.txt: its links, its intro, or both
+export type LlmsSection = { title: string; intro?: string; pages?: LlmsLink[] }
 
 export type LlmsTxtOptions = LlmsFetchOptions & {
   // the `# ` heading; defaults to the site index's name
@@ -982,11 +1221,9 @@ export type LlmsTxtOptions = LlmsFetchOptions & {
   summary?: string
   // more markdown before the page lists, e.g. how to use the site
   intro?: string
-  // the page lists, under `## ` headings; defaults to one Pages list of every page that needs no params
-  sections?: (
-    request: Request,
-    routes: string[],
-  ) => { title: string; pages: LlmsLink[] }[] | Promise<{ title: string; pages: LlmsLink[] }[]>
+  // the page lists, under `## ` headings; defaults to one Pages list of every page that needs no params. a section's
+  // intro is markdown under its heading, before its links; one with only an intro is prose
+  sections?: (request: Request, routes: string[]) => LlmsSection[] | Promise<LlmsSection[]>
   // where llms-full.txt is, to link it; false when there isn't one
   full?: string | false
 }
@@ -994,43 +1231,57 @@ export type LlmsTxtOptions = LlmsFetchOptions & {
 // app/llms.txt/route.ts: the llms.txt index (https://llmstxt.org). Each page links its markdown twin, with its
 // title, and the route's description from the Affordances index (the page's own description otherwise). An
 // Affordances site also says how to read its graphs, so an agent that starts here can act, not just read
-export const createLlmsTxtHandler =
-  ({ title, summary, intro, sections, full = '/llms-full.txt', ...given }: LlmsTxtOptions = {}) =>
-  async (request: Request): Promise<Response> => {
+export const createLlmsTxtHandler = ({
+  title,
+  summary,
+  intro,
+  sections,
+  full = '/llms-full.txt',
+  ...given
+}: LlmsTxtOptions = {}) => {
+  checked(given)
+  return async (request: Request): Promise<Response> => {
     const options = await resolved(request, given)
     const index = await siteIndex(request, options)
     const routes = staticRoutes(index)
-    const lists = sections ? await sections(request, routes) : [{ title: 'Pages', pages: routes }]
+    const lists: LlmsSection[] = sections
+      ? await sections(request, routes)
+      : [{ title: 'Pages', pages: routes }]
     const abs = (path: string) => new URL(path, request.url).href
     const twin = (path: string) => abs(mdPath(path))
     // a route's own description, written for agents in its state.ts
     const described = new Map(index?.routes.map((r) => [r.route, r.description]) ?? [])
 
-    const paths = lists.flatMap((list) => list.pages.filter((link) => typeof link === 'string'))
-    const rendered = new Map<string, { title?: string; description?: string }>(
-      (await renderPages(request, [...new Set(paths)], options)).map(({ path, markdown }) => [
-        path,
-        markdown ? frontmatter(markdown) : {},
-      ]),
+    const paths = lists.flatMap(
+      (list) => list.pages?.filter((link) => typeof link === 'string') ?? [],
     )
+    const pages = await renderPages(request, [...new Set(paths)], options)
+    const texts = pages.map(({ markdown }) => (markdown ? frontmatter(markdown) : undefined))
+    const shared = sharedTitles(texts)
+    const rendered = new Map(pages.map(({ path }, i) => [path, texts[i]]))
     const name = title ?? index?.name
-    // "Cart · Acme Store" → "Cart"
-    const short = (label?: string) =>
-      name && label ? label.replace(new RegExp(`\\s*[·|–—-]\\s*${literal(name)}$`), '') : label
+    // markdown of the app's own, its links resolved against this file's url, as a page's are: an agent reading
+    // llms.txt on its own can follow them, and those to the site's pages go to their twins
+    const relinked = (markdown: string | undefined) =>
+      markdown && relinkMarkdown(markdown, request.url, twinLinks(new URL(request.url)))
     const line = (link: LlmsLink) => {
       if (typeof link !== 'string')
         return `- [${link.title}](${twin(link.url)})${link.description ? `: ${link.description}` : ''}`
-      const meta = rendered.get(link) ?? {}
+      const page = rendered.get(link)
+      const own = page && headingOf(page.body)?.text
       // a home page titled just the site name reads better as Home
-      const label = (link === '/' && meta.title === name ? 'Home' : short(meta.title)) || link
-      const description = described.get(link) ?? meta.description
+      const label =
+        (link === '/' && page?.title === name
+          ? 'Home'
+          : pageName(page?.title, own, name, shared)) || link
+      const description = described.get(link) ?? page?.description
       return `- [${label}](${twin(link)})${description ? `: ${description}` : ''}`
     }
 
     const head = [
       `# ${name ?? new URL(request.url).host}`,
       summary && `> ${summary}`,
-      intro,
+      relinked(intro),
       [
         'Every page is also Markdown: add `.md` to its URL, or request it with `Accept: text/markdown`.',
         full && `[llms-full.txt](${abs(full)}) has every page in one file.`,
@@ -1040,11 +1291,19 @@ export const createLlmsTxtHandler =
       index &&
         `This site is Affordances-enabled: request any page with \`Accept: application/vnd.affordances+json\` for its graph (what the page shows, and the actions you can call there, with their inputs). [${SITE_INDEX}](${abs(SITE_INDEX)}) lists every route and its actions.`,
     ]
+    // a section with neither links nor an intro is left out, as an empty list was
     const body = lists
-      .filter((list) => list.pages.length)
-      .map((list) => `## ${list.title}\n\n${list.pages.map(line).join('\n')}`)
-    return text(`${[...head, ...body].filter(Boolean).join('\n\n')}\n`, options.headers)
+      .filter((list) => list.pages?.length || list.intro?.trim())
+      .map((list) =>
+        [`## ${list.title}`, relinked(list.intro?.trim()), list.pages?.map(line).join('\n')]
+          .filter(Boolean)
+          .join('\n\n'),
+      )
+    // a page that rendered no markdown is still linked, by its path, so the index stays whole
+    const left = dropped('llms.txt', pages, 'has no title or description for')
+    return text(`${[...head, ...body].filter(Boolean).join('\n\n')}\n`, options.headers, left)
   }
+}
 
 // a string matched as itself in a RegExp
 const literal = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

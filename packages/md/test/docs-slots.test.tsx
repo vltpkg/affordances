@@ -18,7 +18,7 @@ const readme = async (name: string) => `${name}: Fast, unopinionated.`
 
 test('the docs examples run as written', async () => {
   const html = `<html><body>${renderToString(<Page pkg="express" />)}</body></html>`
-  const url = 'https://vlt.test/package/express'
+  const url = 'https://example.test/package/express'
   const page = readPage(html, { url, frontmatter: false })
   const slots: Record<string, string> = {}
   for (const name of page.slots.unique) slots[name] = await readme(name)

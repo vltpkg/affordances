@@ -4,8 +4,10 @@ import type {
   List,
   ListItem,
   Nodes as MdastNodes,
+  Paragraph,
   PhrasingContent,
   Root as MdastRoot,
+  TableCell,
 } from 'mdast'
 import { fromHtml } from 'hast-util-from-html'
 import { select, selectAll } from 'hast-util-select'
@@ -154,10 +156,19 @@ const isBlank = (node: ElementContent | undefined) => node?.type === 'text' && !
 // the same run of text (un<em>believ</em>able)
 // (display: flex in a style, or tailwind's flex, inline-grid, md:flex)
 const LAID_OUT = /^([\w-]+:)*(inline-)?(flex|grid)$/
+// whether an element's class or display style is one of these displays
+const displays = (node: Element, style: Declarations, display: RegExp) =>
+  [node.properties.className].flat().some((name) => display.test(String(name ?? ''))) ||
+  style.some(([property, value]) => property === 'display' && display.test(value))
 const laidOut = (node: HastRoot | Element, style: Declarations) =>
-  isElement(node) &&
-  ([node.properties.className].flat().some((name) => LAID_OUT.test(String(name ?? ''))) ||
-    style.some(([property, value]) => property === 'display' && LAID_OUT.test(value)))
+  isElement(node) && displays(node, style, LAID_OUT)
+// an inline element made a box of its own (tailwind's block, flex or grid, or the same display) sits on its own line
+// or in its own box, so it's apart from what's beside it whatever the characters: a cell's <span class="block">yarn
+// (zpm)</span><span class="block">6.0.0</span> reads yarn (zpm) 6.0.0. single characters still stay together, as
+// below: a ticker stacks its digits in boxes, and $ beside 48 is a price
+const BOXED = /^([\w-]+:)*(block|flex|grid)$/
+const boxed = (node: ElementContent | undefined, style: Declarations = []) =>
+  isInline(node) && displays(node, style, BOXED)
 // a run of one-character elements is one word split for styling or animation (H e l l o, an odometer's 1 2 3), so
 // two words are only spaced when both are longer
 const word = (node: ElementContent | undefined) => {
@@ -184,12 +195,14 @@ const spaced = (
   leftWord: string,
   rightWord: string,
   items: boolean,
+  boxes: boolean,
 ) =>
-  (isInline(left) || (items && left.type === 'text')) &&
-  (isInline(right) || (items && right?.type === 'text')) &&
+  (isInline(left) || ((items || boxes) && left.type === 'text')) &&
+  (isInline(right) || ((items || boxes) && right?.type === 'text')) &&
   (isInline(left) || isInline(right)) &&
   ((!!edgeLink(left, true) && !!edgeLink(right, false)) ||
-    (/[\p{L}\p{N}]$/u.test(leftWord) && /^[\p{L}\p{N}]/u.test(rightWord)))
+    (/[\p{L}\p{N}]$/u.test(leftWord) && /^[\p{L}\p{N}]/u.test(rightWord)) ||
+    (boxes && leftWord !== '' && rightWord !== ''))
 
 // headers and summaries whose text is a button's (<th><button>Name</button></th>, a sortable column; <h3><button
 // aria-expanded>Shipping</button></h3>, an accordion): with no text outside the buttons, the buttons' text is theirs
@@ -244,6 +257,8 @@ const pruneWith = (
   literal: boolean,
   style: Declarations = [],
 ) => {
+  // each child's style, parsed once, for its own prune and for the spacing below
+  const styles = new Map<ElementContent, Declarations>()
   parent.children = parent.children.flatMap((child): ElementContent[] => {
     if (child.type === 'comment' || child.type === 'doctype') return []
     if (!isElement(child)) return [child as ElementContent]
@@ -262,6 +277,7 @@ const pruneWith = (
       child.properties = properties
     }
     const childStyle = declarations(child)
+    styles.set(child, childStyle)
     // hidden from people means hidden from agents, unless it was marked for them
     if (dropped(child, childStyle)) return []
     pruneWith(
@@ -293,8 +309,16 @@ const pruneWith = (
   // each child's word once, not once per neighbour
   const items = laidOut(parent, style)
   const childWords = children.map(word)
+  const childBoxes = children.map((child) => boxed(child, styles.get(child)))
   parent.children = children.flatMap((child, i): ElementContent[] =>
-    spaced(child, children[i + 1], childWords[i]!, childWords[i + 1] ?? '', items)
+    spaced(
+      child,
+      children[i + 1],
+      childWords[i]!,
+      childWords[i + 1] ?? '',
+      items,
+      childBoxes[i]! || !!childBoxes[i + 1],
+    )
       ? [child, { type: 'text', value: ' ' }]
       : [child],
   )
@@ -328,9 +352,9 @@ const pruneWith = (
 // $RS("S:2","P:1") puts one where a placeholder is. with an external runtime the same instructions are templates:
 // data-rci, data-rri, data-rsi. ids are hex (B:a comes after B:9) and can carry a prefix, and a segment is a hidden
 // div, or the table, tbody, tr or svg its content needs. $RX, a boundary the server gave up on, keeps its fallback.
-// make the same moves, so streamed content counts
+// make the same moves, so streamed content counts. the page's scripts come from the same walk, before any move
 const resolveStreamed = (tree: HastRoot) => {
-  // one walk: the instructions, every id, and each element's parent
+  // one walk: the instructions, every id, each element's parent, and the scripts
   const scripts: Element[] = []
   const instructions: Element[] = []
   const templates: Element[] = []
@@ -357,30 +381,33 @@ const resolveStreamed = (tree: HastRoot) => {
       boundaries.set(String(dataBid), String(dataSid))
     if (dataRsi != null && dataPid != null) placeholders.set(String(dataPid), String(dataSid))
   }
-  if (!boundaries.size && !placeholders.size) return
-  // in document order, once: a segment's own templates (nested boundaries) move with it, and are reached after it
-  for (const template of templates) {
-    const id = String(template.properties.id)
-    const boundary = boundaries.has(id)
-    const segment = byId.get((boundary ? boundaries : placeholders).get(id) ?? '')
-    const parent = parents.get(template)
-    // a template inside a fallback that was already replaced is gone
-    const start = parent ? parent.children.indexOf(template) : -1
-    if (!segment || !parent || start < 0) continue
-    // a boundary's fallback runs from its template to the boundary's closing <!--/$-->; a placeholder is the
-    // template alone
-    let end = start + 1
-    if (boundary)
-      for (let depth = 0; end < parent.children.length; end++) {
-        const node = parent.children[end]!
-        if (node.type !== 'comment') continue
-        if (node.value.startsWith('$')) depth++
-        else if (node.value === '/$' && depth-- === 0) break
-      }
-    for (const child of segment.children) parents.set(child, parent)
-    parent.children.splice(start, end - start, ...segment.children)
-    segment.children = []
+  const resolve = () => {
+    if (!boundaries.size && !placeholders.size) return
+    // in document order, once: a segment's own templates (nested boundaries) move with it, and are reached after it
+    for (const template of templates) {
+      const id = String(template.properties.id)
+      const boundary = boundaries.has(id)
+      const segment = byId.get((boundary ? boundaries : placeholders).get(id) ?? '')
+      const parent = parents.get(template)
+      // a template inside a fallback that was already replaced is gone
+      const start = parent ? parent.children.indexOf(template) : -1
+      if (!segment || !parent || start < 0) continue
+      // a boundary's fallback runs from its template to the boundary's closing <!--/$-->; a placeholder is the
+      // template alone
+      let end = start + 1
+      if (boundary)
+        for (let depth = 0; end < parent.children.length; end++) {
+          const node = parent.children[end]!
+          if (node.type !== 'comment') continue
+          if (node.value.startsWith('$')) depth++
+          else if (node.value === '/$' && depth-- === 0) break
+        }
+      for (const child of segment.children) parents.set(child, parent)
+      parent.children.splice(start, end - start, ...segment.children)
+      segment.children = []
+    }
   }
+  return { scripts, resolve }
 }
 
 const extract = (body: HastRoot, how: Options['extract']): HastRoot => {
@@ -432,10 +459,116 @@ const slotMarkers = (parent: HastRoot | Element, found: Element[] = []) => {
 // set on a slot a fill can go to: a property no attribute parses to, so a page can't forge it
 const FILLABLE = 'affordancesSlot'
 
-const parsed = (html: string) => {
-  const tree = fromHtml(html)
-  resolveStreamed(tree)
-  return tree
+// next's flight data (self.__next_f pushes: the payload the client hydrates from and, with partialPrefetching, a
+// second render to prefetch from) is most of a big page's bytes and none of what it says. each push is swapped for an
+// empty script before parsing, and the swap is kept only if every one parsed as a script: one inside an attribute, a
+// comment or a textarea isn't a script, so the page is parsed as sent. a push has no < in it (next escapes them), so
+// in a page as next sends it, the script ends where the match does. its open tag is read as the tokenizer reads it,
+// for the shapes next sends (attributes bare or double-quoted): a quoted value runs to its closing quote, > and all,
+// and any other shape doesn't match, so a value can't pass for a push and leave the script's text on the page
+const CALL = String.raw`\s*(?:\(self\.__next_f\s*=\s*self\.__next_f\s*\|\|\s*\[\]\)|self\.__next_f)\.push\(`
+const FLIGHT = new RegExp(
+  String.raw`<script(?:\s+[\w-]+(?:="[^"]*")?)*\s*>${CALL}([^<]*)\)\s*;?\s*<\/script>`,
+  'g',
+)
+// the page and its flight data: each push's argument, in page order. a page parsed as sent reads it from its own
+// script elements instead, since a match there may not have been one
+const PUSH = new RegExp(String.raw`^${CALL}([\s\S]*)\)\s*;?\s*$`)
+const parsed = (html: string): { tree: HastRoot; digests: string[] } => {
+  // a nonce per page, so nothing in it can pass for a swap
+  const nonce = crypto.randomUUID()
+  const flight: string[] = []
+  const lean = html.replace(FLIGHT, (_, push: string) => {
+    flight.push(push)
+    return `<script data-affordances-flight="${nonce}"></script>`
+  })
+  let tree = fromHtml(flight.length ? lean : html)
+  let streamed = resolveStreamed(tree)
+  const swapped = streamed.scripts.filter((s) => s.properties.dataAffordancesFlight === nonce)
+  if (swapped.length !== flight.length) {
+    tree = fromHtml(html)
+    streamed = resolveStreamed(tree)
+    flight.length = 0
+    for (const script of streamed.scripts) {
+      const push = PUSH.exec(toString(script))?.[1]
+      if (push !== undefined) flight.push(push)
+    }
+  }
+  streamed.resolve()
+  // a healthy page's flight data names none of next's control flow, so it's read only when it does, or when a push is
+  // base64 bytes ([3, …]) that could
+  const named = flight.some((push) => push.includes('NEXT_') || /^\s*\[\s*3\s*,/.test(push))
+  return {
+    tree,
+    digests: named ? flightErrors(flight) : [],
+  }
+}
+
+// the digests of the error rows (<id>:E{"digest":…}) in a page's flight data, read as react's client reads the stream:
+// next's [1, text] and [3, base64] pushes are its bytes, in order, and each row is an id, a tag, then either a length
+// and that many bytes (a long string, a typed array) or everything to the next newline. a row's bytes are skipped by
+// their length, so a page's own long text (a readme, which react sends raw in a T row) can't pass for a row
+const LENGTH_TAGS = new Set([...'TAOobUSsLlGgMmV'].map((tag) => tag.charCodeAt(0)))
+const hex = (byte: number) => (byte > 96 ? byte - 87 : byte - 48)
+const flightBytes = (flight: string[]): Uint8Array | undefined => {
+  const parts: Uint8Array[] = []
+  for (const push of flight) {
+    let value: unknown
+    try {
+      value = JSON.parse(push)
+    } catch {
+      return undefined
+    }
+    if (!Array.isArray(value)) return undefined
+    if (value[0] === 1 && typeof value[1] === 'string')
+      parts.push(new TextEncoder().encode(value[1]))
+    else if (value[0] === 3 && typeof value[1] === 'string')
+      parts.push(Uint8Array.from(atob(value[1]), (char) => char.charCodeAt(0)))
+  }
+  const bytes = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0))
+  let at = 0
+  for (const part of parts) {
+    bytes.set(part, at)
+    at += part.length
+  }
+  return bytes
+}
+const flightErrors = (flight: string[]): string[] => {
+  const digests: string[] = []
+  // a push react's client couldn't read either: no rows to trust
+  const bytes = flightBytes(flight)
+  if (!bytes) return digests
+  let i = 0
+  while (i < bytes.length) {
+    // the id, to its colon
+    while (i < bytes.length && bytes[i] !== 58) i += 1
+    i += 1
+    const tag = bytes[i]!
+    if (LENGTH_TAGS.has(tag)) {
+      let length = 0
+      for (i += 1; i < bytes.length && bytes[i] !== 44; i += 1)
+        length = (length << 4) | hex(bytes[i]!)
+      i += 1 + length
+      continue
+    }
+    // a capital letter (and #, r, x) is a tag of its own; anything else starts a model row
+    const tagged = (tag > 64 && tag < 91) || tag === 35 || tag === 114 || tag === 120
+    const start = tagged ? i + 1 : i
+    let end = bytes.indexOf(10, start)
+    if (end === -1) end = bytes.length
+    if (tag === 69) {
+      try {
+        const row = JSON.parse(new TextDecoder().decode(bytes.subarray(start, end))) as {
+          digest?: unknown
+        }
+        if (typeof row.digest === 'string') digests.push(row.digest)
+      } catch {
+        // not an error row react would read either
+      }
+    }
+    i = end + 1
+  }
+  return digests
 }
 
 // the part of the page that becomes markdown; prunes the body in place, so read the head first
@@ -953,6 +1086,15 @@ const details: Handle = (state, node) => {
   return [...head, ...state.toFlow(state.all(rest))] as never
 }
 
+const BLOCKS = new Set([
+  'paragraph',
+  'heading',
+  'list',
+  'blockquote',
+  'code',
+  'table',
+  'thematicBreak',
+])
 // **term**: definition, one paragraph per pair (html lets each pair sit in its own <div>)
 const dl: Handle = (state, node) => {
   const out: MdastNodes[] = []
@@ -971,18 +1113,58 @@ const dl: Handle = (state, node) => {
           ...(i ? [{ type: 'text' as const, value: ', ' }] : []),
           { type: 'strong', children: t },
         ])
-      out.push({
-        type: 'paragraph',
-        children: [
-          ...strong,
-          ...(strong.length ? [{ type: 'text' as const, value: ': ' }] : []),
-          ...(state.all(child) as PhrasingContent[]),
-        ],
-      })
+      const lead: PhrasingContent[] = [
+        ...strong,
+        ...(strong.length ? [{ type: 'text' as const, value: ': ' }] : []),
+      ]
+      // a definition with blocks in it (a list, paragraphs) keeps them as blocks: the term leads the text before the
+      // first one, or stands alone before it. one that's a run of text (a form's field line too) is the term's paragraph
+      const first: Paragraph = { type: 'paragraph', children: [...lead] }
+      const flow: MdastNodes[] = [first]
+      // loose text joins the paragraph still open, the term's until a block (a paragraph too) closes it
+      let open: Paragraph | undefined = first
+      for (const part of state.all(child) as MdastNodes[]) {
+        if (part.type === 'paragraph' && open === first && first.children.length === lead.length) {
+          first.children.push(...part.children)
+          open = undefined
+        } else if (BLOCKS.has(part.type)) {
+          flow.push(part)
+          open = undefined
+        } else if (open) open.children.push(part as PhrasingContent)
+        else flow.push((open = { type: 'paragraph', children: [part as PhrasingContent] }))
+      }
+      out.push(...flow.filter((block) => block.type !== 'paragraph' || block.children.length))
       terms = []
     }
   }
   return out as never
+}
+
+// a cell is one line, so blocks laid out in it (<div>s, <p>s, which no css gap spaces) are separated by a space
+// instead of run together: <td><div>1,542</div><div>1,533–1,550</div></td> reads 1,542 1,533–1,550
+// a part of a cell that already ends in a space (a field line's "Qty: ") needs no other
+const endsSpaced = (last: MdastNodes | undefined) => last?.type === 'text' && /\s$/.test(last.value)
+const oneLine: Handle = (state, node) => {
+  const result = defaultHandlers.td(state, node) as TableCell
+  if (!result.children.some((child) => (child as MdastNodes).type === 'paragraph')) return result
+  // runs of inline content, and each paragraph's content, are one part each; other blocks are left as they are
+  const parts: MdastNodes[][] = []
+  let run: MdastNodes[] = []
+  for (const child of result.children as MdastNodes[]) {
+    if (child.type !== 'paragraph') {
+      run.push(child)
+      continue
+    }
+    parts.push(run, child.children)
+    run = []
+  }
+  parts.push(run)
+  const said = parts.filter((part) => part.some(says))
+  result.children = said.flatMap((part, i) => [
+    ...(i && !endsSpaced(said[i - 1]!.at(-1)) ? [{ type: 'text' as const, value: ' ' }] : []),
+    ...part,
+  ]) as PhrasingContent[]
+  return result
 }
 
 const wrap =
@@ -1037,6 +1219,8 @@ const handlers: Handlers = {
   img,
   details,
   dl,
+  td: oneLine,
+  th: oneLine,
   sup: wrap('sup'),
   sub: wrap('sub'),
   span: verbatim(defaultHandlers.span),
@@ -1187,8 +1371,8 @@ type Frame = {
 
 // FB-4: markdown a marker carries (<AgentText md>, a slot's fill) gets what page links get: each link, autolink and
 // definition made absolute, then the link hook; an image only absolute, like a page image. only each url's own source
-// changes, so the rest stays as the app wrote it. raw html in it is left alone
-const relinkMarkdown = (markdown: string, base: string, relink: Options['link']) => {
+// changes, so the rest stays as the app wrote it. raw html in it is left alone. llms.txt's intros use it too
+export const relinkMarkdown = (markdown: string, base: string, relink: Options['link']) => {
   // nothing that could be a link: a destination or definition needs ], an autolink <, @, www. or ://
   if (!/[\]<@]|www\.|:\/\//.test(markdown)) return markdown
   const events = postprocess(
@@ -1282,6 +1466,71 @@ const relinkMarkdown = (markdown: string, base: string, relink: Options['link'])
   return parts.join('')
 }
 
+// the containers a heading inside isn't the page's (a list item, a quote), and what a heading's text leaves out: a
+// link's destination and an image
+const CONTAINERS = new Set(['blockQuote', 'listOrdered', 'listUnordered'])
+const UNSHOWN = new Set(['resource', 'image', 'autolink', 'literalAutolink'])
+const BRACKETS: Record<string, string> = { '(': ')', '[': ']', '<': '>' }
+// the markdown's first # heading, outside any container and outside code, as markdown parses it: where it starts and
+// ends, and its text as a reader sees it, without a url it shows as itself (an autolink, a bare url) or the brackets
+// right around one. parsed only as far as each line that starts with #, since a page's heading is near its top
+export const headingOf = (markdown: string) => {
+  for (let at = markdown.search(/^ {0,3}#/m); at >= 0;) {
+    const end = markdown.indexOf('\n', at)
+    const prefix = end < 0 ? markdown : markdown.slice(0, end)
+    const events = postprocess(
+      parse(SYNTAX)
+        .document()
+        .write(preprocess()(prefix, undefined, true)),
+    )
+    let depth = 0
+    for (let i = 0; i < events.length; i++) {
+      const [kind, token] = events[i]!
+      if (CONTAINERS.has(token.type)) depth += kind === 'enter' ? 1 : -1
+      if (kind !== 'enter' || token.type !== 'atxHeading' || depth) continue
+      const sequence = events.find(([, t], j) => j > i && t.type === 'atxHeadingSequence')?.[1]
+      if (!sequence || sequence.end.offset - sequence.start.offset !== 1) continue
+      // its text: the data inside, a url shown as itself dropped, with the brackets right around one
+      const pieces: (string | null)[] = []
+      let hidden = 0
+      for (let j = i + 1; j < events.length; j++) {
+        const [k, t] = events[j]!
+        if (t.type === 'atxHeading') break
+        if (UNSHOWN.has(t.type)) {
+          hidden += k === 'enter' ? 1 : -1
+          if (k === 'exit' && !hidden && t.type !== 'resource' && t.type !== 'image')
+            pieces.push(null)
+          continue
+        }
+        if (k !== 'enter' || hidden) continue
+        const written = prefix.slice(t.start.offset, t.end.offset)
+        if (t.type === 'data' || t.type === 'codeTextData' || t.type === 'htmlText')
+          pieces.push(written)
+        else if (t.type === 'characterEscapeValue') pieces.push(written)
+        else if (t.type === 'characterReference') pieces.push(decodeString(written))
+        else if (t.type === 'codeTextPadding' || t.type === 'whitespace') pieces.push(' ')
+      }
+      pieces.forEach((piece, n) => {
+        if (piece !== null) return
+        const before = pieces[n - 1]
+        const after = pieces[n + 1]
+        const open = typeof before === 'string' ? /[([<]\s*$/.exec(before)?.[0] : undefined
+        const close = typeof after === 'string' ? /^\s*([)\]>])/.exec(after) : undefined
+        if (open && close && close[1] === BRACKETS[open.trim()]) {
+          pieces[n - 1] = before!.slice(0, -open.length)
+          pieces[n + 1] = after!.slice(close[0].length)
+        }
+      })
+      const shown = pieces.join('').replace(/\s+/g, ' ').trim()
+      return { start: token.start.offset, end: token.end.offset, text: shown || undefined }
+    }
+    // not a heading there (inside code or a container): the next line that starts with #
+    const next = end < 0 ? -1 : markdown.slice(end + 1).search(/^ {0,3}#/m)
+    at = next < 0 ? -1 : end + 1 + next
+  }
+  return undefined
+}
+
 // frontmatter, the handler's for a markdown.ts page too
 export const yaml = (data: Record<string, string | undefined>) => {
   const lines = Object.entries(data).flatMap(([key, value]) =>
@@ -1312,34 +1561,60 @@ const canonicalOf = (href: string | undefined, base: string | undefined) => {
   }
 }
 
-// the redirect next streams into a page that called redirect() after its shell was sent (as of next 16.3 and 16.4's
-// make-get-server-inserted-html): a refresh meta of its own, after 0 seconds for a permanent redirect, 1 for any other.
-// read from the parse, so its url is decoded as a browser would, and one in a comment or a script's text isn't one
-const streamedRedirect = (tree: HastRoot): Redirect | undefined => {
-  const meta = select('meta[id="__next-page-redirect"][http-equiv="refresh"]', tree)
-  const [, delay, location] =
-    /^([01]);url=(.*)$/s.exec(String(meta?.properties.content ?? '')) ?? []
-  return location === undefined ? undefined : { status: delay === '0' ? 308 : 307, location }
+// what a control-flow digest says (next 16.3 and 16.4's http-access-fallback and redirect-error), thrown in a
+// markdown.ts or written as a flight error row: an http status, a redirect, or undefined for any other digest
+export const fromDigest = (
+  digest: string,
+):
+  | { status: 404 | 403 | 401 }
+  | { status: 301 | 302 | 303 | 307 | 308; location: string }
+  | undefined => {
+  const parts = digest.split(';')
+  if (parts[0] === 'NEXT_HTTP_ERROR_FALLBACK' && /^40[134]$/.test(parts[1] ?? ''))
+    return { status: Number(parts[1]) as 404 | 403 | 401 }
+  // NEXT_REDIRECT;replace;/url;307; (the url may hold a ;)
+  const status = Number(parts.at(-2))
+  if (parts[0] !== 'NEXT_REDIRECT' || ![301, 302, 303, 307, 308].includes(status)) return undefined
+  return { status: status as 301 | 302 | 303 | 307 | 308, location: parts.slice(2, -2).join(';') }
 }
 
+// the head, in one walk of the page: the <head>'s first <title> and canonical, and wherever they are (next streams a
+// dynamic page's metadata into the body) the first meta of each name or property, the root's lang and the json-ld
 const head = (tree: HastRoot, base: string | undefined) => {
-  const meta = (selector: string) =>
-    String(select(selector, tree)?.properties.content ?? '').trim() || undefined
-  // next streams metadata for dynamic pages, so <title> may arrive in the body; an svg's <title> isn't the page's
-  const title = select('head title', tree) ?? firstTitle(tree)
+  let title: Element | undefined
+  let canonical: Element | undefined
+  let root: Element | undefined
+  const metas = new Map<string, Element>()
+  const jsonLd: string[] = []
+  const walk = (parent: HastRoot | Element, inHead: boolean) => {
+    for (const child of parent.children) {
+      if (!isElement(child)) continue
+      const { tagName, properties } = child
+      if (tagName === 'title' && inHead) title ??= child
+      else if (tagName === 'link' && inHead && [properties.rel].flat().join(' ') === 'canonical')
+        canonical ??= child
+      else if (tagName === 'html') root ??= child
+      else if (tagName === 'meta') {
+        for (const key of [`name ${properties.name}`, `property ${properties.property}`])
+          if (!metas.has(key)) metas.set(key, child)
+      } else if (tagName === 'script' && properties.type === 'application/ld+json') {
+        const value = toString(child).trim()
+        if (value) jsonLd.push(value)
+      }
+      walk(child, inHead || tagName === 'head')
+    }
+  }
+  walk(tree, false)
+  const meta = (key: string) => String(metas.get(key)?.properties.content ?? '').trim() || undefined
+  // an svg's <title> isn't the page's
+  title ??= firstTitle(tree)
   return {
-    title: (title && toString(title).trim()) || meta('meta[property="og:title"]'),
-    description: meta('meta[name=description]') ?? meta('meta[property="og:description"]'),
-    canonical: canonicalOf(
-      String(select('head link[rel=canonical]', tree)?.properties.href ?? ''),
-      base,
-    ),
-    image: meta('meta[property="og:image"]'),
-    lang: String(select('html', tree)?.properties.lang ?? '') || undefined,
-    jsonLd: selectAll('script[type="application/ld+json"]', tree)
-      .map((s) => toString(s).trim())
-      .filter(Boolean),
-    redirect: streamedRedirect(tree),
+    title: (title && toString(title).trim()) || meta('property og:title'),
+    description: meta('name description') ?? meta('property og:description'),
+    canonical: canonicalOf(String(canonical?.properties.href ?? ''), base),
+    image: meta('property og:image'),
+    lang: String(root?.properties.lang ?? '') || undefined,
+    jsonLd,
   }
 }
 
@@ -1357,21 +1632,25 @@ const pretty = (raw: string) => {
   }
 }
 
-// a page read once: its slots, a redirect streamed into it, and its markdown with whatever fills them. the handler
-// reads the page, runs the fills, then converts, without parsing it twice
+// a page read once: its slots, a redirect or http error streamed into it, and its markdown with whatever fills them.
+// the handler reads the page, runs the fills, then converts, without parsing it twice
 export type Page = {
   slots: SlotNames
   redirect?: Redirect
+  fallback?: Fallback
   markdown: (slots?: Record<string, string>) => Result
 }
 // the <AgentSlot> names that reach the markdown, in page order: the ones a fill can go to, and those the page renders
 // more than once, which are filled nowhere
 export type SlotNames = { unique: string[]; duplicate: string[] }
 export type Redirect = { status: 307 | 308; location: string }
+export type Fallback = { status: 401 | 403 | 404 }
 
 export const readPage = (html: string, options: Options = {}): Page => {
-  const tree = parsed(html)
+  const { tree, digests } = parsed(html)
   const meta = head(tree, options.url)
+  // a redirect() or notFound() next streamed into the page: the first error row that's one of next's control flow
+  const control = digests.map(fromDigest).find((said) => said !== undefined)
   const content = contentOf(tree, options.extract)
   // a name rendered twice fills neither copy: one of them may be a forgery in user content, and there's no telling which
   const markers = slotMarkers(content)
@@ -1390,17 +1669,29 @@ export const readPage = (html: string, options: Options = {}): Page => {
       unique: names.flatMap(([name, count]) => (count === 1 ? [name] : [])),
       duplicate: names.flatMap(([name, count]) => (count > 1 ? [name] : [])),
     },
-    ...(meta.redirect && { redirect: meta.redirect }),
+    ...(control &&
+      ('location' in control
+        ? (control.status === 307 || control.status === 308) && {
+            redirect: { status: control.status, location: control.location },
+          }
+        : { fallback: control })),
     // the page itself is left as it is, so it can be converted again with other fills
     markdown: (slots) => {
-      // markers stay plain wrappers, except a slot with a fill: its children give way to the fill, as a block
-      const marker: Handle = (state, node) => {
+      const fillOf = (node: Element) => {
         const name = node.properties[FILLABLE]
         const md =
           typeof name === 'string' && slots && Object.hasOwn(slots, name) ? slots[name] : undefined
-        return (typeof md === 'string' ? markerMarkdown(md, 'block') : state.all(node)) as never
+        return typeof md === 'string' ? md : undefined
       }
-      const mdast = toMdast(content as HastNodes, {
+      // markers stay plain wrappers, except a slot with a fill: its children give way to the fill, as a block
+      const marker: Handle = (state, node) => {
+        const md = fillOf(node)
+        return (md === undefined ? state.all(node) : markerMarkdown(md, 'block')) as never
+      }
+      // so a filled slot's children are left out before converting, which copies and walks all of what it's given:
+      // a slot's fallback (a skeleton, last night's table) can be most of a page
+      const filled = new Set(markers.filter((node) => fillOf(node) !== undefined))
+      const mdast = toMdast((filled.size ? emptied(content, filled) : content) as HastNodes, {
         handlers: { ...handlers, 'affordances-md': marker, ...options.handlers },
       }) as MdastRoot
       const url = meta.canonical ?? options.url
@@ -1411,6 +1702,19 @@ export const readPage = (html: string, options: Options = {}): Page => {
       return finish(mdast, meta, url, options)
     },
   }
+}
+
+// a copy of a tree with these elements' children gone, sharing every part that doesn't hold one
+const emptied = <T extends HastRoot | Element>(node: T, empty: Set<Element>): T => {
+  if (isElement(node) && empty.has(node)) return { ...node, children: [] }
+  let changed = false
+  const children = node.children.map((child) => {
+    if (!isElement(child)) return child
+    const copy = emptied(child, empty)
+    if (copy !== child) changed = true
+    return copy
+  })
+  return changed ? { ...node, children } : node
 }
 
 // the page's markdown; slots fills its <AgentSlot>s

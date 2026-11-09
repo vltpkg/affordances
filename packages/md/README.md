@@ -34,6 +34,8 @@ import { md } from '@affordances/md/next'
 export default withAffordances(nextConfig, { plugins: [md()] })
 ```
 
+`init`'s route is one line, `export { GET } from '@affordances/md/next'`, and it's your file. To set options, replace it: `export const GET = createMdHandler({ maxBytes: 32 * 1024 * 1024, timeout: 20_000 })`. `maxBytes` (6 MiB by default) is the largest page HTML it converts; past it, the page answers `413` with the line to change, and the server logs it. `timeout` (10 seconds) is how long a page has to stream.
+
 Every page answers with `Link: </x.md>; rel="alternate"; type="text/markdown"`, so agents can find the markdown (`md({ link: false })` turns it off). For a `<link>` in the HTML too, add `alternates: mdAlternate(path)` to `generateMetadata`.
 
 `llms.txt` (an index of every page's markdown) and `llms-full.txt` (every page in one file) are one line each. They list every page that needs no params, found in `app/` (and, on an Affordances site, the site index's routes); pass `sections` / `pages` to `createLlmsTxtHandler` / `createLlmsFullHandler` to name pages behind dynamic routes:
@@ -91,6 +93,8 @@ A page that renders on the server except for one part fills only that part: `<Ag
 
 It returns a string, `{ markdown, title?, description? }` (the handler adds the frontmatter, runs `append`, and counts tokens), a `Response` (sent as it is), or `undefined` (the page's HTML is converted as usual; development logs a warning). `md()` finds each `markdown.ts` next to a page, writes `.affordances/md.ts`, and aliases `@affordances/md/routes` to it; adding one in `next dev` needs a restart. Name the route for typed `params` (`MarkdownArgs<'/products/[slug]'>`); the generated file checks each `markdown.ts` against its route, and `md()` adds `".affordances/**/*.ts"` to `tsconfig.json`'s `include` so `tsc` sees it (keeping your comments; it warns instead when it can't edit the file safely). Next's `notFound()`, `forbidden()`, `unauthorized()` and `redirect()` work in it: 404, 403, 401, or a redirect to the target's `.md`.
 
+`export const publicCache = 'hours'` (a `cacheLife` profile, or `{ revalidate, expire? }` in seconds) lets a CDN keep a route's `.md` for anonymous visitors, with the `Cache-Control` Next sends for a page cached that long; a signed-in or negotiated request, a partial page or one that sets a cookie stays `private, no-store`. A `markdown.ts` with only `publicCache` opts in a page converted from its HTML.
+
 **It doesn't render the page, so auth checks in a layout or page don't run for it.** Your `proxy.ts` runs once, on the requested URL, so never skip its gate for markdown requests (0.1.0's recipe did; remove that before adding a `markdown.ts`); gate on `mdProxy(request).page`. A request straight to the handler's URL, or at a URL Next wouldn't route to the page, never runs `markdown.ts`. Read data only through fetchers the API authorizes with the request's cookies or token, so it shows only what that person could see. With credentials, the response is always `private, no-store`.
 
 ## Caching and privacy
@@ -98,6 +102,7 @@ It returns a string, `{ markdown, title?, description? }` (the handler adds the 
 Markdown rendered with the caller's cookies or authorization, or from a page that is `private`/`no-store` or sets cookies, is sent as `private, no-store`. Otherwise it mirrors the page's `cache-control`.
 
 - **Redirects:** a same-origin redirect becomes a redirect to the `.md` url, including a `redirect()` that runs after the page started streaming (Next sends that as a 200 that refreshes; the handler answers 307, or 308 when permanent). A cross-origin redirect is passed through, never followed.
+- **Errors:** a `notFound()`, `forbidden()` or `unauthorized()` that runs after the page started streaming (Next sends the shell as a 200, then the error) answers `404`, `403` or `401`, `private, no-store`, never the shell's markdown.
 - **Limits:** a page has 10s to render (`timeout`) and at most 6 MiB of HTML (`maxBytes`). A page still streaming at the timeout is converted as far as it got: unresolved boundaries keep their fallback, a note says so, and the response is `private, no-store` with `x-affordances-md-partial: 1`. One that sends nothing by then is a `504`.
 - **Origin:** set `AFFORDANCES_MD_ORIGIN` when the server can't reach itself at the request's origin. A path that would leave the origin (`//host/…`) answers 400 before anything is fetched.
 - **Headers:** `createMdHandler({ headers })` adds request headers to the page fetch, e.g. `x-vercel-protection-bypass` on a protected preview.

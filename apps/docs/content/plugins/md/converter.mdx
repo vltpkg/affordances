@@ -28,6 +28,7 @@ It returns the Markdown, the page's `title`, its canonical `url` (or the one you
 
 - `slots`: the slots that reach the Markdown, in page order. `unique` are the names a fill can go to, and `duplicate` are names rendered more than once, which are never filled.
 - `redirect`: the `{ status, location }` of a `redirect()` that Next streamed into the page after its shell went out, or `undefined`.
+- `fallback`: the `{ status }` (`404`, `403` or `401`) of a `notFound()`, `forbidden()` or `unauthorized()` that Next streamed into the page after its shell went out, or `undefined`.
 - `markdown(fills)`: the page's Markdown with those fills, as `htmlToMarkdown` gives it. It leaves the page as it was, so you can call it again.
 
 ```ts

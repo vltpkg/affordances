@@ -27,7 +27,7 @@ export default async function markdown({
 
 Name the route, as you would for `page.tsx`'s `PageProps`, and `params` is typed from it: `[pkg]` is a `string`, `[...slug]` a `string[]`, and `[[...slug]]` a `string[]` or left out. Without a route, `MarkdownArgs` is as it was in 0.2.0, every param a `string` or `string[]`.
 
-`md()` checks each `markdown.ts` against its own route in the `.affordances/md.ts` it generates, so a route string that names another route, or a param the route doesn't have, fails `tsc`. TypeScript skips a folder whose name starts with a dot unless `include` names it, so `md()` adds the entry to your `tsconfig.json`, as Next adds `.next/types`, and logs a line saying so:
+`md()` checks each `markdown.ts` against its own route in the `.affordances/md.ts` it generates, so a route string that names another route, or a param the route doesn't have, fails `tsc`. TypeScript skips a folder whose name starts with a dot unless `include` names it, so `md()` adds the entry to your `tsconfig.json`, as Next adds `.next/types`, and warns when it does, since a build changed a file you track (`Updated tsconfig.json: added ".affordances/**/*.ts" to "include"`). Commit the change:
 
 ```json title="tsconfig.json"
 {
@@ -36,6 +36,8 @@ Name the route, as you would for `page.tsx`'s `PageProps`, and `params` is typed
 ```
 
 It changes only the `include` array, keeping your comments and formatting, and only when the file has an `include` of its own and the entry isn't there yet. When it can't do that safely (the file doesn't parse, `include` comes from a file it `extends`, or the file is read-only), it leaves the file alone and warns with the line to add. A read-only tree never stops the config from loading.
+
+A file named `markdown.ts` next to a page that has none of these exports (`default`, `slots`, `publicCache`) isn't one, such as a helper that happens to have the name. `md()` leaves it out, so the page converts from its HTML, and says so when the config loads. `tsc` (and `next build`) stops with the same message, naming the file and what it exports. If it's for something else, move it out of `app/` or rename it. A file that exports any of them is checked against its route as above.
 
 ## Authorization
 
@@ -107,6 +109,7 @@ export const slots = {
 `satisfies Slots<'/route'>` types each fill's `params` from the route, with no annotation. A fill gets the same arguments as the default export.
 
 - **The default export runs first.** Anything it returns but `undefined` is the whole page, and no slot runs. Without one, or when it returns `undefined`, the page renders and converts, and each slot it rendered is filled.
+- **A page that's mostly slots is faster as a default export.** A slot needs the page rendered and its whole HTML read, Next's flight data included (and with `partialPrefetching`, a second render it embeds to prefetch from), before a fill runs. A default export answers without rendering anything, so when the page is mostly figures you'd fill anyway, return its Markdown there, authorizing its data as above.
 - **The page renders first, so its page-level checks come first.** Its `redirect()`, `notFound()` and its layout's checks run before any fill: a page that sends a signed-out visitor to sign in never runs a fill for them. The fills then run together, which costs one more round trip after the render.
 - **A slot's own condition doesn't gate its fill.** `{isOwner && <AgentSlot name="billing">…</AgentSlot>}` keeps the slot off another person's page, but HTML from someone else on that page (a README rendered as raw HTML) can carry a `billing` marker, and then `slots.billing` runs in that person's request. So **each fill authorizes its own data**, as `markdown.ts` does: it reads through fetchers your API checks against the request's cookies or token, never on the assumption that the page chose to render its slot.
 - **Only the slots that reach the Markdown run.** A slot inside `<AgentSkip>`, outside `<AgentMain>`, or hidden from people never runs its fill, so its data stays off the parts of the page you left out. A name the page renders more than once is filled nowhere: each copy converts its own content.
@@ -116,6 +119,10 @@ export const slots = {
 - In development, the handler warns, naming the route's `markdown.ts`, about a fill with no slot on the page, a slot with no fill, a name used twice, and a fill that returned nothing.
 
 A slot is a marker in the page's HTML, so HTML from someone else (a README rendered as raw HTML) could carry one. Strip `<affordances-md>` from untrusted HTML, as for [every marker](/docs/plugins/md/markers). A fill only ever runs in this visitor's own request for this page, so with each fill authorizing its own data, a forged slot can make a fill run or move its output on the page, never show anyone data their own credentials don't reach.
+
+## Caching
+
+What `markdown.ts` returns, and a page with a filled slot, is `private, no-store`. When a route's Markdown is the same for every anonymous visitor, `export const publicCache = 'hours'` (a `cacheLife` profile, or `{ revalidate, expire? }` in seconds) lets a CDN keep its `.md`, for the anonymous view only. A `markdown.ts` with only `publicCache` opts in a page that's converted from its HTML. See [Caching public Markdown](/docs/plugins/md/caching#caching-public-markdown) for when it applies.
 
 ## With TanStack Query
 

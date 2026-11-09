@@ -3,6 +3,7 @@
 import { mdPath } from '../path.ts'
 import {
   builtAliases,
+  builtHandlers,
   builtLiteral,
   builtPages,
   compileDestination,
@@ -35,7 +36,8 @@ export const notOursOrRsc: Has[] = [
 const pagePattern = '(?!api/|_next/)(?!.*\\.md$).+'
 
 export const rewrites = {
-  // Accept: text/markdown at the page's own url (browsers never ask for it, so a pattern match is enough)
+  // Accept: text/markdown at the page's own url (browsers never ask for it, so a pattern match is enough). a route
+  // handler there (/llms.txt) is passed through by the handler as it is
   beforeFiles: [
     { source: '/', has: accepts, missing: notOursOrRsc, destination: MD_PATH },
     {
@@ -155,12 +157,27 @@ const asParam = (segment: string) => {
     return segment
   }
 }
+// a route as next ranks and matches it: its segments, read once, and whether it's a route handler (/llms.txt) rather
+// than a page
+type Ranked = {
+  route: string
+  handler: boolean
+  segments: { segment: string; kind: keyof typeof RANK; name: string }[]
+  whole: boolean
+}
+const compile = (route: string, handler: boolean): Ranked => {
+  const segments = route
+    .split('/')
+    .slice(1)
+    .filter(Boolean)
+    .map((segment) => ({ segment, ...routeSegment(segment) }))
+  // a catch-all takes the rest of the path; otherwise the path has as many segments as the route
+  return { route, handler, segments, whole: segments.some(({ kind }) => RANK[kind] >= 2) }
+}
 // a route's params for a path's segments, or undefined when it isn't that route's
-const routeParams = (route: string, parts: string[], strict: boolean) => {
-  const segments = route.split('/').slice(1).filter(Boolean)
+const routeParams = ({ segments, whole }: Ranked, parts: string[], strict: boolean) => {
   const params: Record<string, string | string[]> = {}
-  const matched = segments.every((segment, i) => {
-    const { kind, name } = routeSegment(segment)
+  const matched = segments.every(({ segment, kind, name }, i) => {
     if (kind === 'some' || kind === 'any') {
       const rest = parts.slice(i)
       if (rest.length) params[name] = rest.map(asParam)
@@ -173,17 +190,24 @@ const routeParams = (route: string, parts: string[], strict: boolean) => {
     }
     return strict ? parts[i] === segment : parts[i]?.toLowerCase() === segment.toLowerCase()
   })
-  const whole = segments.some((segment) => rank(segment) >= 2) || parts.length === segments.length
-  return matched && whole ? params : undefined
+  return matched && (whole || parts.length === segments.length) ? params : undefined
 }
 
-// md()'s pages and the given routes, in next's order, sorted once per value of the env and the routes
-const ranked = perEnv((routes: string[]) =>
-  [...new Set([...builtPages(), ...routes])].toSorted(byRank),
-)
+// md()'s pages and route handlers, and the given routes, in next's order, so a route handler and a page are the same
+// question next answers (/llms.txt before /[...slug], /og/about before /og/[slug]). compiled once per value of the
+// env and the routes
+const ranked = perEnv((routes: string[]) => {
+  const handlers = new Set(builtHandlers())
+  return [...new Set([...builtPages(), ...handlers, ...routes])]
+    .toSorted(byRank)
+    .map((route) => compile(route, handlers.has(route)))
+})
 // spelled out: next inlines process.env.NAME, never process.env[name]
 const rankedRoutes = (routes: string[]) =>
-  ranked(`${process.env.AFFORDANCES_MD_ROUTES}\0${routes.join('\0')}`, routes)
+  ranked(
+    `${process.env.AFFORDANCES_MD_ROUTES}\0${process.env.AFFORDANCES_MD_HANDLERS}\0${routes.join('\0')}`,
+    routes,
+  )
 
 const internal = /^\/(?:api|_next)(?:\/|$)/i
 // the page a pathname is, among md()'s pages (and any routes given), with its params: through the first alias that
@@ -200,9 +224,9 @@ export const pageRoute = (
   if (internal.test(pathname) || internal.test(routed)) return undefined
   if (strict && emptySegment(routed)) return undefined
   const parts = routed === '/' ? [] : routed.split('/').slice(1)
-  for (const route of rankedRoutes(routes)) {
-    const params = routeParams(route, parts, strict)
-    if (params) return { route, params }
+  for (const candidate of rankedRoutes(routes)) {
+    const params = routeParams(candidate, parts, strict)
+    if (params) return { route: candidate.route, params, handler: candidate.handler }
   }
   return undefined
 }
@@ -210,8 +234,11 @@ export const pageRoute = (
 // whether a url on this site has a markdown twin: a page url (not an api route, next's internals or a .md file, except
 // a literalMd page) that is one of md()'s pages or maps onto one through an alias. without md()'s pages (withMd left
 // out, a test) every page url does
+// a route handler that next routes the url to (/llms.txt) is a route of its own, never a page with a twin
 export const hasTwin = (pathname: string) => {
   const path = pathname.replace(/(.)\/$/, '$1')
   if (!(path === '/' || pageRegex.test(path) || isLiteral(path))) return false
-  return !builtPages().length || pageRoute(path, { strict: false }) !== undefined
+  if (!builtPages().length) return true
+  const found = pageRoute(path, { strict: false })
+  return found !== undefined && !found.handler
 }

@@ -1,23 +1,24 @@
 import { expect, test } from 'vitest'
 import { htmlToMarkdown } from '../src/index.ts'
 
-// vlt.io's friction report (affordances-friction.md); vlt-settings.html and vlt-package.html are the pages it's from
+// patterns from component libraries (shadcn, Radix, data tables) and real pages; fixtures/settings-form.html and
+// fixtures/package-page.html are whole pages built from them
 const md = (body: string) =>
   htmlToMarkdown(`<html><body><main>${body}</main></body></html>`, {
-    url: 'https://vlt.test/p',
+    url: 'https://example.test/p',
     frontmatter: false,
   }).markdown
 const text = (markdown: string, children = '') =>
   `<affordances-md data-mode="text" style="display:contents" data-md="${markdown}">${children}</affordances-md>`
 
-test('F-6: an <AgentText> inside a link keeps the link, and two side by side stay on one line', () => {
+test('an <AgentText> inside a link keeps the link, and two side by side stay on one line', () => {
   expect(
     md(
       `<div><a href="/c">${text('Ann', '<span>ann</span>')}</a><a href="/d">${text('Bob')}</a></div>`,
     ),
-  ).toBe('[Ann](https://vlt.test/c) [Bob](https://vlt.test/d)\n')
+  ).toBe('[Ann](https://example.test/c) [Bob](https://example.test/d)\n')
   expect(md(`<p>By <a href="/c">${text('**Ann**')}</a>.</p>`)).toBe(
-    'By [**Ann**](https://vlt.test/c).\n',
+    'By [**Ann**](https://example.test/c).\n',
   )
   // a block one is still its own block
   expect(
@@ -27,27 +28,27 @@ test('F-6: an <AgentText> inside a link keeps the link, and two side by side sta
   ).toBe('a\n\n## B\n')
 })
 
-test('F-7, F-14: links named by aria-label, wrapped links and text in a flex or grid gap are spaced', () => {
+test('links named by aria-label, wrapped links and text in a flex or grid gap are spaced', () => {
   expect(
     md(
       '<div><a href="/a" aria-label="Ann"><span></span></a><a href="/b" aria-label="Bob"><span></span></a></div>',
     ),
-  ).toBe('[Ann](https://vlt.test/a) [Bob](https://vlt.test/b)\n')
+  ).toBe('[Ann](https://example.test/a) [Bob](https://example.test/b)\n')
   expect(
     md(
       '<div class="flex"><span><a href="/c" aria-label="All"><span></span></a></span><span><a href="/c" aria-label="All"><span></span></a></span><span><a href="/c">+2</a></span></div>',
     ),
-  ).toBe('[All](https://vlt.test/c) [+2](https://vlt.test/c)\n')
+  ).toBe('[All](https://example.test/c) [+2](https://example.test/c)\n')
   expect(
     md('<p><span class="inline-flex gap-1.5">and configure<span>vlt</span> to use</span></p>'),
   ).toBe('and configure vlt to use\n')
   expect(md('<p><span style="display:grid">Docs<a href="/d">here</a></span></p>')).toBe(
-    'Docs [here](https://vlt.test/d)\n',
+    'Docs [here](https://example.test/d)\n',
   )
   expect(md('<p class="sm:inline-flex">Run<b>vlt</b></p>')).toBe('Run **vlt**\n')
 })
 
-test('F-7, F-14: words that really are adjacent stay whole', () => {
+test('words that really are adjacent stay whole', () => {
   // not a flex or grid container: text beside an element is one run of text
   expect(md('<p>un<b>believ</b>able</p>')).toBe('un**believ**able\n')
   expect(md('<p>Wi<b>F</b>i and <span class="flex-1">foo<b>bar</b></span></p>')).toBe(
@@ -66,7 +67,7 @@ test('F-7, F-14: words that really are adjacent stay whole', () => {
   expect(md('<p><span class="flex">Hello <b>world</b></span></p>')).toBe('Hello **world**\n')
 })
 
-test('F-9: aria toggles are fields; their state shows only on a values form, and a mirror counts once', () => {
+test('aria toggles are fields; their state shows only on a values form, and a mirror counts once', () => {
   const switches =
     '<label for="p">Private account</label><button type="button" role="switch" aria-checked="true" id="p"><span></span></button>' +
     '<input type="checkbox" aria-hidden="true" tabindex="-1" value="on" checked>' +
@@ -87,7 +88,7 @@ test('F-9: aria toggles are fields; their state shows only on a values form, and
   ).toBe('**Form**\n\n- API key (select)\n- Region (select)\n')
 })
 
-test('F-10: a form is named by its aria-label, aria-labelledby or first heading, and says the rest in place', () => {
+test('a form is named by its aria-label, aria-labelledby or first heading, and says the rest in place', () => {
   expect(
     md('<form aria-label="Billing"><p>Hint</p><input aria-label="Card name"><p>After</p></form>'),
   ).toBe('**Billing**\n\nHint\n\n- Card name\n\nAfter\n')
@@ -109,7 +110,7 @@ const value = (v: string) =>
     `<form data-affordances-md="values"><label for="x">Note</label><input id="x" name="x" value="${v}"></form>`,
   )
 
-test("F-11: a field's value isn't escaped for gfm autolinks, and still is where markdown needs it", () => {
+test("a field's value isn't escaped for gfm autolinks, and still is where markdown needs it", () => {
   expect(value('support@acme.dev')).toBe('**Form**\n\n- Note: support@acme.dev\n')
   expect(value('https://github.com/acme')).toBe('**Form**\n\n- Note: https://github.com/acme\n')
   expect(value('www.acme.dev')).toBe('**Form**\n\n- Note: www.acme.dev\n')
@@ -118,7 +119,7 @@ test("F-11: a field's value isn't escaped for gfm autolinks, and still is where 
   )
 })
 
-test('F-12: a label follows aria-labelledby, its ids in order, skipping one that is missing', () => {
+test('a label follows aria-labelledby, its ids in order, skipping one that is missing', () => {
   expect(
     md(
       '<form data-affordances-md="values"><span id="a">Billing</span><span id="b">email</span>' +
@@ -127,7 +128,7 @@ test('F-12: a label follows aria-labelledby, its ids in order, skipping one that
   ).toBe('**Form**\n\nBilling email\n\n- email Billing: bill@acme.dev\n')
 })
 
-test("F-16: a sortable column's header is its button's text", () => {
+test("a sortable column's header is its button's text", () => {
   expect(
     md(
       '<table><thead><tr><th><button>Name<svg></svg></button></th><th>Tag</th></tr></thead><tbody><tr><td>a</td><td>b</td></tr></tbody></table>',

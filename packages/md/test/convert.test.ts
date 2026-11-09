@@ -255,7 +255,7 @@ test('never outputs values, tokens, scripts, comments, or data attributes', () =
     'UPPER-PW-LEAK',
     'HIDDEN-LEAK',
     '4111111111111111',
-    // vlt-settings: a select whose label says it's a secret
+    // settings-form: a select whose label says it's a secret
     'dk_live_LEAK',
   ])
     expect(all).not.toContain(secret)
