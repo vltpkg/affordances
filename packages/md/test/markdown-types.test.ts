@@ -158,7 +158,7 @@ test("md() adds .affordances/ to tsconfig.json's include, as next adds .next/typ
       warned: warn.mock.calls.map(([message]) => String(message)),
     }
   }
-  const added = `[affordances-md] added ".affordances/**/*.ts" to tsconfig.json's "include", so tsc checks each markdown.ts against its route`
+  const added = `[affordances-md] Updated tsconfig.json: added ".affordances/**/*.ts" to "include", so tsc checks each markdown.ts against its route, as Next adds ".next/types/**/*.ts". Commit this change, and add .affordances/ to .gitignore.`
 
   // a commented file, one entry per line, a comment after the last: only a line is added
   const commented = `{
@@ -177,8 +177,8 @@ test("md() adds .affordances/ to tsconfig.json's include, as next adds .next/typ
       '    "**/*.tsx" // components\n',
       '    "**/*.tsx", // components\n    ".affordances/**/*.ts"\n',
     ),
-    logged: [added],
-    warned: [],
+    logged: [],
+    warned: [added],
   })
   // a trailing comma stays a trailing comma; one line stays one line
   expect(load('{ "include": [\n  "a.ts",\n] }\n').text).toBe(

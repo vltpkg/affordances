@@ -27,7 +27,7 @@ export default async function markdown({
 
 Name the route, as you would for `page.tsx`'s `PageProps`, and `params` is typed from it: `[pkg]` is a `string`, `[...slug]` a `string[]`, and `[[...slug]]` a `string[]` or left out. Without a route, `MarkdownArgs` is as it was in 0.2.0, every param a `string` or `string[]`.
 
-`md()` checks each `markdown.ts` against its own route in the `.affordances/md.ts` it generates, so a route string that names another route, or a param the route doesn't have, fails `tsc`. TypeScript skips a folder whose name starts with a dot unless `include` names it, so `md()` adds the entry to your `tsconfig.json`, as Next adds `.next/types`, and logs a line saying so:
+`md()` checks each `markdown.ts` against its own route in the `.affordances/md.ts` it generates, so a route string that names another route, or a param the route doesn't have, fails `tsc`. TypeScript skips a folder whose name starts with a dot unless `include` names it, so `md()` adds the entry to your `tsconfig.json`, as Next adds `.next/types`, and warns when it does, since a build changed a file you track (`Updated tsconfig.json: added ".affordances/**/*.ts" to "include"`). Commit the change:
 
 ```json title="tsconfig.json"
 {

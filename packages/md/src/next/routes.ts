@@ -290,8 +290,9 @@ const includeGenerated = (tsconfig: string) => {
   } catch (error) {
     return warn(`couldn't be written (${errorCode(error)})`)
   }
-  console.log(
-    `[affordances-md] added "${GENERATED}" to tsconfig.json's "include", so tsc checks each markdown.ts against its route`,
+  // a tracked file changed by a build: said as a warning, the change first, so it stands out in next's output
+  console.warn(
+    `[affordances-md] Updated tsconfig.json: added "${GENERATED}" to "include", so tsc checks each markdown.ts against its route, as Next adds ".next/types/**/*.ts". Commit this change, and add .affordances/ to .gitignore.`,
   )
 }
 
