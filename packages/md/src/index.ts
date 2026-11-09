@@ -1,1 +1,10 @@
-export { htmlToMarkdown, type Handlers, type Options, type Result } from './convert/index.ts'
+export {
+  htmlToMarkdown,
+  readPage,
+  type Handlers,
+  type Options,
+  type Page,
+  type Redirect,
+  type Result,
+  type SlotNames,
+} from './convert/index.ts'

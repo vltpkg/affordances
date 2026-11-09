@@ -1,0 +1,5 @@
+---
+'@affordances/md': minor
+---
+
+`markdown.ts` can export `slots`, which fill the page's `<AgentSlot name>`s instead of replacing the whole page: `export const slots = { readme: async ({ params }) => … } satisfies Slots<'/package/[pkg]'>`. The default export still runs first, and anything but `undefined` is the whole page. Otherwise the page renders (so its redirects, `notFound()` and layout checks run before any fill), then only the slots it rendered once, where they reach the Markdown, run, together and in the visitor's request; the rest converts as usual. A slot's own render condition doesn't gate its fill (user HTML can carry a marker), so each fill authorizes its own data, as `markdown.ts` does. A filled page is `private, no-store`, a fill's `notFound()` or `redirect()` answers for the whole page, and a request straight to the handler runs no fill. In development the handler warns, naming the route's `markdown.ts`, about a fill with no slot, a slot with no fill, a name used twice, and a fill that returned nothing.

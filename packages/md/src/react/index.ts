@@ -30,3 +30,8 @@ export const AgentText = ({
   block?: boolean
   children?: ReactNode
 }) => marker('text', { 'data-md': md, ...(block && { 'data-block': '' }) }, children)
+
+// people see children; the markdown gets what markdown.ts's `slots` export returns for `name` (its own block), or the
+// children when nothing fills it. one name per page: a name rendered twice is filled nowhere
+export const AgentSlot = ({ name, children }: { name: string; children?: ReactNode }) =>
+  marker('slot', { 'data-name': name }, children)

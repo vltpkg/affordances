@@ -8,6 +8,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -24,6 +25,7 @@ import {
   mdAlternate,
   mdLink,
   mdPagePath,
+  mdProxy,
   PARTIAL_HEADER,
   mdRewrite,
   RENDER_HEADER,
@@ -32,10 +34,13 @@ import {
   rewrites,
   withMd,
 } from '../src/next/index.ts'
+import { aliasPath } from '../src/next/rules.ts'
 import {
+  ALIASES_ENV,
   LITERAL_ENV,
   ROUTES_ENV,
   scanApp,
+  sourceParams,
   sourceRegex,
   writeMarkdownRoutes,
 } from '../src/next/routes.ts'
@@ -294,6 +299,81 @@ test('a same-origin redirect stays on the site in markdown, varies on Accept, an
   // another origin is passed on as it came
   upstream = redirect('https://idp.test/authorize')
   expect((await get('/go')).headers.get('location')).toBe('https://idp.test/authorize')
+})
+
+// what next 16.3.0 and 16.4.3 stream for a redirect() after the layout's shell went out: a 200, the shell, the
+// redirect's digest in the flight data, and a refresh meta (a next start capture, trimmed)
+const streamedRedirect =
+  (url: string, delay = 1, status = 307) =>
+  () =>
+    new Response(
+      `<!DOCTYPE html><html><head><title>Site</title></head><body><header><h1>Site header</h1></header><main><!--$?--><template id="B:0"></template><p>Loading…</p><!--/$--></main>` +
+        `<script>self.__next_f.push([1,"5:E{\\"digest\\":\\"NEXT_REDIRECT;replace;${url};${status};\\"}\\n"])</script>` +
+        `<meta id="__next-page-redirect" http-equiv="refresh" content="${delay};url=${url}"/></body></html>`,
+      {
+        headers: {
+          'content-type': 'text/html; charset=utf-8',
+          'cache-control': 'public, max-age=60',
+        },
+      },
+    )
+
+test("a redirect() streamed after the shell is a redirect to the target's .md, not the half page", async () => {
+  upstream = streamedRedirect('/target?from=late&amp;x=1')
+  const late = await handler(new Request(`${site}/r/late.md`))
+  expect([late.status, late.headers.get('location'), await late.text()]).toEqual([
+    307,
+    '/target.md?from=late&x=1',
+    '',
+  ])
+  expect(late.headers.get('vary')).toBe('Accept')
+  // permanentRedirect() refreshes after 0 seconds
+  upstream = streamedRedirect('/', 0, 308)
+  const gone = await handler(new Request(`${site}/gone.md`))
+  expect([gone.status, gone.headers.get('location')]).toEqual([308, '/index.md'])
+  // the same rules as a redirect with its own status: cached as the page is, private when credentialed or negotiated
+  expect(gone.headers.get('cache-control')).toBe('public, max-age=60')
+  upstream = streamedRedirect('/target')
+  const signedIn = await handler(new Request(`${site}/r/late.md`, { headers: { cookie: 'sid=1' } }))
+  expect(signedIn.headers.get('cache-control')).toBe('private, no-store')
+  const negotiated = await handler(
+    new Request(`${site}/r/late`, { headers: { accept: 'text/markdown' } }),
+  )
+  expect([negotiated.status, negotiated.headers.get('cache-control')]).toEqual([
+    307,
+    'private, no-store',
+  ])
+  // a twin path that starts with //host stays a path on this site
+  upstream = streamedRedirect('/.//evil.test/x')
+  const sneaky = (await handler(new Request(`${site}/r/late.md`))).headers.get('location')!
+  expect(new URL(sneaky, site).origin).toBe(site)
+  // another origin is passed on as it came, never made a .md of ours or followed
+  upstream = streamedRedirect('https://evil.test/x')
+  const away = await handler(new Request(`${site}/r/away.md`))
+  expect([away.status, away.headers.get('location')]).toEqual([307, 'https://evil.test/x'])
+  expect(seen.map((call) => call.url.pathname)).toEqual([
+    '/r/late',
+    '/gone',
+    '/r/late',
+    '/r/late',
+    '/r/late',
+    '/r/away',
+  ])
+})
+
+test("a page that only shows next's redirect meta as text, or a refresh meta of its own, is converted", async () => {
+  upstream = () =>
+    new Response(
+      page(
+        '<h1>Docs</h1><pre><code>&lt;meta id="__next-page-redirect" http-equiv="refresh" content="1;url=/x"/&gt;</code></pre>' +
+          '<meta http-equiv="refresh" content="1;url=/elsewhere">',
+      ),
+      { headers: { 'content-type': 'text/html' } },
+    )
+  const response = await get('/docs')
+  expect(response.status).toBe(200)
+  expect(response.headers.has('location')).toBe(false)
+  expect(await response.text()).toContain('# Docs')
 })
 
 test('markdown asked for with Accept at the page url is never cached publicly; the .md url mirrors the page', async () => {
@@ -620,6 +700,35 @@ test("a passthrough sends only the page's own headers, never the headers option'
   const plain = await handler(new Request(`${site}/feed`, { headers: { rsc: '1' } }))
   expect(plain.headers.get('cache-control')).toBe('public, max-age=60')
   expect(plain.headers.getSetCookie()).toEqual(['session=refreshed'])
+})
+
+test("a page a proxy.ts rewrote is passed on without next's x-middleware-* headers, which a route handler can't send", async () => {
+  const proxied = {
+    'x-middleware-rewrite': '/real-pricing',
+    'x-middleware-next': '1',
+    'x-middleware-set-cookie': 'a=1',
+    'x-nextjs-rewritten-path': '/real-pricing',
+  }
+  upstream = () =>
+    new Response('0:["$","div",null,{}]\n', {
+      headers: { 'content-type': 'text/x-component', ...proxied },
+    })
+  // an RSC request that also asks for markdown, as vlt.io's proxy sends one here
+  const rsc = await handler(
+    new Request(`${site}/pricing?_rsc`, { headers: { rsc: '1', accept: 'text/markdown' } }),
+  )
+  // and a file the handler passes through as it came
+  upstream = () =>
+    new Response('{}', { headers: { 'content-type': 'application/json', ...proxied } })
+  const file = await get('/data.json')
+  for (const response of [rsc, file]) {
+    expect(response.status).toBe(200)
+    expect([...response.headers.keys()].filter((name) => name.startsWith('x-middleware-'))).toEqual(
+      [],
+    )
+    expect(response.headers.get('x-nextjs-rewritten-path')).toBe('/real-pricing')
+  }
+  expect(await rsc.text()).toBe('0:["$","div",null,{}]\n')
 })
 
 test("an RSC fetch the proxy sent here gets the page's own RSC payload, unconverted", async () => {
@@ -1088,6 +1197,57 @@ test('markdown.ts routes match as next matches them: static before dynamic, then
   expect(pkg).toEqual([{ route: '/x/[pkg]', params: { pkg: 'express' } }])
 })
 
+test("next's notFound(), forbidden(), unauthorized() and redirect() in a markdown.ts answer as they would for the page", async () => {
+  vi.stubEnv('__NEXT_EXPERIMENTAL_AUTH_INTERRUPTS', 'true')
+  const navigation = await import('next/navigation.js')
+  process.env[ROUTES_ENV] = JSON.stringify(['/x/[pkg]', '/sign-in'])
+  const throws: Record<string, () => never> = {
+    missing: () => navigation.notFound(),
+    hidden: () => navigation.forbidden(),
+    locked: () => navigation.unauthorized(),
+    login: () => navigation.redirect('/sign-in?next=%2Fx;1'),
+    moved: () => navigation.permanentRedirect('/x/new'),
+    away: () => navigation.redirect('https://idp.test/authorize'),
+    sneaky: () => navigation.redirect('/.//evil.test/x'),
+    broken: () => {
+      throw new Error('the API is down')
+    },
+  }
+  markdownFiles({ '/x/[pkg]': ({ params }) => throws[String(params.pkg)]!() })
+  const ask = (pkg: string, headers: Record<string, string> = {}) =>
+    handler(new Request(`${site}/x/${pkg}.md`, { headers }))
+  const answers = await Promise.all(
+    ['missing', 'hidden', 'locked', 'login', 'moved', 'away'].map(async (pkg) => {
+      const response = await ask(pkg)
+      return [
+        pkg,
+        response.status,
+        response.headers.get('location'),
+        response.headers.get('cache-control'),
+        await response.text(),
+      ]
+    }),
+  )
+  expect(answers).toEqual([
+    ['missing', 404, null, 'private, no-store', '# Not found\n'],
+    ['hidden', 403, null, 'private, no-store', '# Forbidden\n'],
+    ['locked', 401, null, 'private, no-store', '# Unauthorized\n'],
+    // the same redirect rule as the page's own redirects: the target's .md on this site, another origin as it is
+    ['login', 307, '/sign-in.md?next=%2Fx;1', 'private, no-store', ''],
+    ['moved', 308, '/x/new.md', 'private, no-store', ''],
+    ['away', 307, 'https://idp.test/authorize', 'private, no-store', ''],
+  ])
+  expect(new URL((await ask('sneaky')).headers.get('location')!, site).origin).toBe(site)
+  expect((await ask('login')).headers.get('vary')).toBe('Accept')
+  expect((await ask('missing', { cookie: 'sid=1' })).headers.get('x-affordances-md-personal')).toBe(
+    '1',
+  )
+  // any other error goes on as it was, for next to answer
+  await expect(ask('broken')).rejects.toThrow('the API is down')
+  // never a render of the page: markdown.ts answered
+  expect(seen).toEqual([])
+})
+
 test("on a literalMd route, markdown.ts's 404 for a name is what makes .md the twin suffix", async () => {
   literally({ '/x/readme.md': 200 })
   const calls = markdownFiles({
@@ -1377,6 +1537,7 @@ test('@affordances/md/next/proxy is the same proxy side as @affordances/md/next,
     'mdLink',
     'mdPagePath',
     'mdPath',
+    'mdProxy',
     'mdRewrite',
     'rewrites',
   ])
@@ -1401,6 +1562,26 @@ test('@affordances/md/next/proxy is the same proxy side as @affordances/md/next,
   expect(packages.filter((spec) => /^@affordances\/md\/routes$|hast-|mdast-/.test(spec))).toEqual(
     [],
   )
+})
+
+// next.config.mjs loads @affordances/md/next in plain node, not a bundler: an import node's esm can't resolve (next
+// has no exports map, so 'next/server' needs its .js) breaks every app's config, which a vite-run test never sees
+test('the next entries load in plain node, as next.config does', () => {
+  for (const entry of ['../src/next/index.ts', '../src/next/proxy.ts']) {
+    const url = new URL(entry, import.meta.url).href
+    const loaded = execFileSync(
+      process.execPath,
+      [
+        '--experimental-strip-types',
+        '--no-warnings',
+        '--input-type=module',
+        '-e',
+        `const m = await import(${JSON.stringify(url)}); process.stdout.write(typeof m.mdProxy)`,
+      ],
+      { encoding: 'utf8' },
+    )
+    expect({ entry, loaded }).toEqual({ entry, loaded: 'function' })
+  }
 })
 
 test('md() records each markdown.ts next to a page, generates .affordances/md.ts and aliases it', async () => {
@@ -1434,12 +1615,17 @@ test('md() records each markdown.ts next to a page, generates .affordances/md.ts
   const generated = join(project, '.affordances', 'md.ts')
   expect(readFileSync(generated, 'utf8'))
     .toBe(`// generated by @affordances/md from app/**/markdown.ts; don't edit
-import type { MarkdownRoutes } from '@affordances/md/next'
+import type { MarkdownModule, MarkdownRoutes } from '@affordances/md/next'
 
+// each markdown.ts is checked against its own route. a type error on a line here means that file's default export or
+// slots name another route (MarkdownArgs<'/…'>, Slots<'/…'>) or return something else: fix it in that file
 export const routes = {
-  "/": () => import("../app/markdown"),
-  "/products/[slug]": () => import("../app/(shop)/products/[slug]/markdown"),
-  "/registry/[registry]/npm/package/[pkg]": () => import("../app/registry/[registry]/npm/package/[pkg]/markdown"),
+  "/": (): Promise<MarkdownModule<"/">> =>
+    import("../app/markdown"),
+  "/products/[slug]": (): Promise<MarkdownModule<"/products/[slug]">> =>
+    import("../app/(shop)/products/[slug]/markdown"),
+  "/registry/[registry]/npm/package/[pkg]": (): Promise<MarkdownModule<"/registry/[registry]/npm/package/[pkg]">> =>
+    import("../app/registry/[registry]/npm/package/[pkg]/markdown"),
 } satisfies MarkdownRoutes
 `)
   // both aliases: withAffordances' manifest and ours, sharing .affordances/
@@ -1890,4 +2076,451 @@ test('on a literalMd route, a link to a page named x.md is twinned like any page
   expect(text).toContain('[Express](https://shop.test/x/express.md)')
   // off a literal route, a .md link is already a twin
   expect(text).toContain('[Post](https://shop.test/blog/post.md)')
+})
+
+// md({ aliases }): a registry whose proxy.ts merges /package/@scope/name into app/package/[pkg]
+const registry = [
+  'app/package/[pkg]/page.tsx',
+  'app/package/[pkg]/versions/page.tsx',
+  'app/package/[pkg]/version/[version]/page.tsx',
+  'app/x/versions/page.tsx',
+]
+const scoped = {
+  '/package/@:scope/:name/:rest*': '/package/@:scope%2F:name/:rest*',
+}
+const { prepareDestination } =
+  require('next/dist/shared/lib/router/utils/prepare-destination.js') as {
+    prepareDestination: (args: {
+      destination: string
+      params: Record<string, unknown>
+      query: object
+      appendParamsToQuery: boolean
+    }) => { newUrl: string }
+  }
+
+test('md({ aliases }) checks each alias when the config loads, and says which one is wrong and how', () => {
+  const dir = app(registry)
+  const load = (aliases: Record<string, string>) => () => md({ root: dir, aliases })({} as Config)
+  const config = load(scoped)()
+  expect(JSON.parse(config.env![ALIASES_ENV]!)).toEqual(Object.entries(scoped))
+  expect(md({ root: dir })({} as Config).env![ALIASES_ENV]).toBeUndefined()
+  // a destination that can render a page for some value is fine: /x/:tab renders app/x/versions
+  expect(load({ '/y/:tab': '/x/:tab' })).not.toThrow()
+  const cases: [Record<string, string>, string][] = [
+    [
+      { '/package/@:scope/:name': '/packages/@:scope%2F:name' },
+      "md({ aliases }): '/package/@:scope/:name': '/packages/@:scope%2F:name' renders no page in app/",
+    ],
+    [{ '/p/@:scope/:name': '/package/:name/a/b/c' }, 'renders no page in app/'],
+    [{ '/p/:a': '/package/:b' }, "uses :b in its destination, which the source doesn't have"],
+    [{ '/p/:a': 'https://other.test/package/:a' }, "isn't a path on this site"],
+    [{ '/p/:a': '/package/:a?x=1' }, "isn't a path on this site"],
+    [{ '/p/:a': '//other.test/package/:a' }, "isn't a path on this site"],
+    [{ 'p/:a': '/package/:a' }, "has a source that isn't a path"],
+    [{ '/p/(:a': '/package/:a' }, "isn't valid Next rewrite syntax"],
+  ]
+  for (const [aliases, message] of cases) expect(load(aliases)).toThrow(message)
+})
+
+test("an alias fills in its destination as next fills in a rewrite's, and matches as strictly as a page", () => {
+  const aliases = { ...scoped, '/v/:a/:b*': '/x/:a/:b*' }
+  vi.stubEnv(ALIASES_ENV, JSON.stringify(Object.entries(aliases)))
+  for (const path of [
+    '/package/@babel/core',
+    '/package/@babel/core/versions',
+    '/package/@babel/core/version/7.28.0',
+    '/package/@x%3D1/a%20b',
+    '/v/1',
+    '/v/1/2/3',
+  ]) {
+    const [source, destination] = Object.entries(aliases).find(([from]) =>
+      getPathMatch(from)(path),
+    )!
+    const params = getPathMatch(source)(path) as Record<string, unknown>
+    const next = prepareDestination({ destination, params, query: {}, appendParamsToQuery: false })
+    expect({ path, ours: aliasPath(path) }).toEqual({ path, ours: next.newUrl })
+  }
+  expect(aliasPath('/package/@babel/core')).toBe('/package/@babel%2Fcore')
+  // the first alias that matches wins, in the order they're declared
+  vi.stubEnv(
+    ALIASES_ENV,
+    JSON.stringify([
+      ['/package/@:scope/:name/versions', '/package/:name/versions'],
+      ...Object.entries(scoped),
+    ]),
+  )
+  expect(aliasPath('/package/@babel/core/versions')).toBe('/package/core/versions')
+  expect(aliasPath('/package/@babel/core')).toBe('/package/@babel%2Fcore')
+  // next would route these case-insensitively or with an empty segment; a proxy.ts matcher may not see them
+  for (const path of ['/Package/@babel/core', '/package/@babel//core', '/package/express'])
+    expect({ path, ours: aliasPath(path) }).toEqual({ path, ours: undefined })
+})
+
+test("an alias's public url gets its Link header, its own twin doesn't", async () => {
+  const rules = await md({
+    root: app(registry),
+    aliases: { ...scoped, '/package/@:scope/:name/versions': '/package/:name/versions' },
+  })({} as Config).headers!()
+  expect(linkOn(rules, '/package/@babel/core')).toBe(alternate('/package/@babel/core.md'))
+  expect(linkOn(rules, '/package/@babel/core/versions')).toBe(
+    alternate('/package/@babel/core/versions.md'),
+  )
+  expect(linkOn(rules, '/package/@babel/core/version/7.28.0')).toBe(
+    alternate('/package/@babel/core/version/7.28.0.md'),
+  )
+  // its own twin isn't pointed at a .md.md, and a plain page keeps its own
+  expect(linkOn(rules, '/package/@babel/core.md')).toBeUndefined()
+  expect(linkOn(rules, '/package/@babel/core/versions.md')).toBeUndefined()
+  expect(linkOn(rules, '/package/express')).toBe(alternate('/package/express.md'))
+})
+
+test("markdown.ts runs for an alias's public url, with params exactly as page.tsx gets them: still encoded", async () => {
+  vi.stubEnv(ALIASES_ENV, JSON.stringify(Object.entries(scoped)))
+  process.env[ROUTES_ENV] = JSON.stringify(['/package/[pkg]', '/package/[pkg]/versions'])
+  const calls = markdownFiles({ '/package/[pkg]/versions': ({ params }) => `# ${params.pkg}` })
+  const twin = await handler(new Request(`${site}/package/@babel/core/versions.md`))
+  expect(await twin.text()).toContain('# %40babel%2Fcore')
+  await handler(
+    new Request(`${site}/package/@babel/core/versions`, { headers: { accept: 'text/markdown' } }),
+  )
+  await handler(new Request(`${site}/package/express/versions.md`))
+  // next gives page.tsx { pkg: '%40babel%2Fcore' } for /package/@babel/core (next start, 16.3.0 and 16.4.3)
+  expect(calls.map((call) => call.params)).toEqual([
+    { pkg: '%40babel%2Fcore' },
+    { pkg: '%40babel%2Fcore' },
+    { pkg: 'express' },
+  ])
+  // never for a direct hit on the handler, or a url the alias doesn't match strictly: those render the page's html
+  await handler(new Request(`${site}/api/affordances/md/package/@babel/core/versions`))
+  await handler(new Request(`${site}/Package/@babel/core/versions.md`))
+  expect(calls).toHaveLength(3)
+  expect(seen.map((call) => call.url.pathname)).toEqual([
+    '/package/@babel/core/versions',
+    '/Package/@babel/core/versions',
+  ])
+})
+
+test("links to an alias's public urls point at their twins, when the route they map onto is a page", async () => {
+  vi.stubEnv(ALIASES_ENV, JSON.stringify(Object.entries(scoped)))
+  process.env[ROUTES_ENV] = JSON.stringify(['/package/[pkg]', '/package/[pkg]/versions'])
+  upstream = () =>
+    new Response(
+      page(
+        '<h1>Core</h1><p><a href="/package/@babel/core/versions?page=2">Versions</a> <a href="/package/@babel/core">Overview</a> <a href="/package/@babel/core/nope">Nope</a></p>',
+      ),
+      { headers: { 'content-type': 'text/html' } },
+    )
+  const text = await (await get('/package/@babel/core')).text()
+  expect(text).toContain('[Versions](https://shop.test/package/@babel/core/versions.md?page=2)')
+  expect(text).toContain('[Overview](https://shop.test/package/@babel/core.md)')
+  expect(text).toContain('[Nope](https://shop.test/package/@babel/core/nope)')
+})
+
+test('literalMd is declared in public url space, as the rewrites it feeds: an alias leaves it as it is', () => {
+  vi.stubEnv(ALIASES_ENV, JSON.stringify(Object.entries(scoped)))
+  // the route an alias maps onto doesn't make its public urls literal: /package/@scope/readme.md is a twin here
+  vi.stubEnv(LITERAL_ENV, JSON.stringify(['/package/:pkg']))
+  expect(mdRewrite(new Request(`${site}/package/@scope/readme.md`))!.pathname).toBe(
+    '/api/affordances/md/package/@scope/readme',
+  )
+  // the public shape, listed as it is, does
+  vi.stubEnv(LITERAL_ENV, JSON.stringify(['/package/:pkg', '/package/@:scope/:name']))
+  expect(mdRewrite(new Request(`${site}/package/@scope/readme.md`))!.pathname).toBe(
+    '/api/affordances/md/package/@scope/readme.md',
+  )
+  expect(mdRewrite(new Request(`${site}/blog/readme.md`))!.pathname).toBe(
+    '/api/affordances/md/blog/readme',
+  )
+})
+
+// slots: markdown.ts fills the <AgentSlot>s the page rendered, and the rest of the page converts as usual
+const slot = (name: string, children = '<p>Loading…</p>') =>
+  `<affordances-md data-mode="slot" data-name="${name}" style="display:contents">${children}</affordances-md>`
+const slotted = (body: string) => () =>
+  new Response(page(`<h1>Core</h1><p>Header the converter reads.</p>${body}`), {
+    headers: { 'content-type': 'text/html', 'cache-control': 'public, max-age=60' },
+  })
+const markdownModule = (module: {
+  default?: (args: { params: Record<string, string | string[]> }) => unknown
+  slots?: Record<
+    string,
+    (args: {
+      route: string
+      params: Record<string, string | string[]>
+      request: Request
+    }) => unknown
+  >
+}) => {
+  clear()
+  const ran: string[] = []
+  const slots =
+    module.slots &&
+    Object.fromEntries(
+      Object.entries(module.slots).map(([name, fill]) => [
+        name,
+        (args: { route: string; params: Record<string, string | string[]>; request: Request }) => {
+          ran.push(name)
+          return fill(args)
+        },
+      ]),
+    )
+  authored['/x/[pkg]'] = async () => ({ ...module, ...(slots && { slots }) }) as never
+  process.env[ROUTES_ENV] = JSON.stringify(['/x/[pkg]', '/sign-in'])
+  return ran
+}
+
+test('slots fill the markers the page rendered, and the rest of the page converts as usual', async () => {
+  upstream = slotted(slot('readme'))
+  const ran = markdownModule({
+    slots: {
+      readme: ({ route, params }) => `## Readme\n\nThe readme of ${params.pkg}, on ${route}.`,
+    },
+  })
+  const response = await handler(new Request(`${site}/x/%40babel%2Fcore.md`))
+  const text = await response.text()
+  expect(text).toContain(
+    // its args say which route matched, as the route string md() found
+    '# Core\n\nHeader the converter reads.\n\n## Readme\n\nThe readme of %40babel%2Fcore, on /x/[pkg].',
+  )
+  expect(text).not.toContain('Loading')
+  expect(ran).toEqual(['readme'])
+  // the page rendered once, then the fill ran; a fill reads data as the request's markdown.ts does: never cached
+  expect(seen.map((call) => call.url.pathname)).toEqual(['/x/%40babel%2Fcore'])
+  expect(response.headers.get('cache-control')).toBe('private, no-store')
+  // in the visitor's request: signed in, it's theirs
+  const signedIn = await handler(new Request(`${site}/x/a.md`, { headers: { cookie: 'sid=1' } }))
+  expect(signedIn.headers.get('x-affordances-md-personal')).toBe('1')
+})
+
+test('the default export runs first: anything but undefined is the whole page, and no slot runs', async () => {
+  upstream = slotted(slot('readme'))
+  const ran = markdownModule({ default: () => '# Whole page', slots: { readme: () => 'fill' } })
+  expect(await (await handler(new Request(`${site}/x/a.md`))).text()).toContain('# Whole page')
+  expect([ran, seen]).toEqual([[], []])
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const fallsBack = markdownModule({ default: () => undefined, slots: { readme: () => 'Filled.' } })
+  expect(await (await handler(new Request(`${site}/x/a.md`))).text()).toContain('Filled.')
+  expect(fallsBack).toEqual(['readme'])
+  // with slots, undefined is the intended way to hand the page back: not a mistake to warn about
+  expect(warn).not.toHaveBeenCalled()
+  warn.mockRestore()
+})
+
+test("only the names the page rendered once, where they reach the markdown, run; what doesn't line up is said in development", async () => {
+  const skipped = `<affordances-md data-mode="skip" style="display:contents">${slot('hidden')}</affordances-md>`
+  upstream = slotted(
+    `${slot('readme')}${slot('twice')}${slot('twice')}${slot('nofill')}${slot('empty')}${slot('constructor')}${skipped}`,
+  )
+  const ran = markdownModule({
+    slots: {
+      readme: () => 'Filled.',
+      twice: () => 'never',
+      hidden: () => 'never',
+      versions: () => 'never',
+      empty: () => undefined,
+    },
+  })
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const text = await (await handler(new Request(`${site}/x/a.md`))).text()
+  const warnings = warn.mock.calls.map(([message]) => String(message))
+  warn.mockRestore()
+  expect(ran.toSorted()).toEqual(['empty', 'readme'])
+  expect(text).toContain('Filled.')
+  // a duplicate, an unfilled marker and an empty fill convert their own children; a name off Object.prototype is none
+  expect(text.match(/Loading…/g)).toHaveLength(5)
+  expect(text).not.toContain('never')
+  const where = '[affordances-md] /x/[pkg]/markdown.ts, /x/a:'
+  expect(warnings.toSorted()).toEqual(
+    [
+      `${where} <AgentSlot name="twice"> is on the page more than once, so no copy is filled and each converts as usual. Give each slot its own name.`,
+      `${where} slots.hidden has no <AgentSlot name="hidden"> on the page, so it didn't run.`,
+      `${where} slots.versions has no <AgentSlot name="versions"> on the page, so it didn't run.`,
+      `${where} <AgentSlot name="nofill"> has no slots.nofill, so its own content is converted.`,
+      `${where} <AgentSlot name="constructor"> has no slots.constructor, so its own content is converted.`,
+      `${where} slots.empty returned nothing, so the slot's own content is converted.`,
+    ].toSorted(),
+  )
+  // a marker outside <AgentMain> never reaches the markdown either, so its fill never runs
+  upstream = slotted(
+    `<affordances-md data-mode="main" style="display:contents">${slot('readme')}</affordances-md>${slot('aside')}`,
+  )
+  const main = markdownModule({ slots: { readme: () => 'Main.', aside: () => 'never' } })
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
+  expect(await (await handler(new Request(`${site}/x/a.md`))).text()).toContain('Main.')
+  vi.restoreAllMocks()
+  expect(main).toEqual(['readme'])
+})
+
+test("a fill's notFound() or redirect() answers for the whole page; the page's own redirect means no fill runs", async () => {
+  const navigation = await import('next/navigation.js')
+  upstream = slotted(slot('readme'))
+  markdownModule({ slots: { readme: () => navigation.notFound() } })
+  const missing = await handler(new Request(`${site}/x/a.md`))
+  expect([missing.status, await missing.text()]).toEqual([404, '# Not found\n'])
+  markdownModule({ slots: { readme: () => navigation.redirect('/sign-in') } })
+  const login = await handler(new Request(`${site}/x/a.md`))
+  expect([login.status, login.headers.get('location')]).toEqual([307, '/sign-in.md'])
+  // the page redirects (its layout's gate), so it never rendered its slots
+  upstream = () => new Response(null, { status: 307, headers: { location: '/sign-in' } })
+  const ran = markdownModule({ slots: { readme: () => 'never' } })
+  expect((await handler(new Request(`${site}/x/a.md`))).headers.get('location')).toBe('/sign-in.md')
+  expect(ran).toEqual([])
+})
+
+test("a direct hit on the handler converts the slots' own content: no fill runs, as no markdown.ts does", async () => {
+  upstream = slotted(slot('readme'))
+  const ran = markdownModule({ slots: { readme: () => 'never' } })
+  const text = await (await get('/x/a')).text()
+  expect(text).toContain('Loading…')
+  expect(ran).toEqual([])
+})
+
+// intake's /code-review of 0.3.0: alias and Link-rule shapes next fills differently
+test('a Link rule fills every shape of param next can match: repeated ones mid-source, absent optional ones, patterned ones', async () => {
+  const rules = await md({
+    root: app([
+      'app/docs/[...slug]/page.tsx',
+      'app/package/[name]/page.tsx',
+      'app/a/[b]/[[...c]]/page.tsx',
+    ]),
+    aliases: {
+      '/d/:path+/edit': '/docs/:path+',
+      '/:locale(en|fr)?/pkg/:name': '/package/:name',
+      '/a/:b(x)/:c(y)*': '/a/:b/:c*',
+    },
+  })({} as Config).headers!()
+  // next throws on a repeated param written without its + (a 500 on every matching request): A1
+  expect(linkOn(rules, '/d/a/b/edit')).toBe(alternate('/d/a/b/edit.md'))
+  expect(linkOn(rules, '/d/a/edit')).toBe(alternate('/d/a/edit.md'))
+  // an absent optional param mid-source isn't left as a literal :locale: A2
+  expect(linkOn(rules, '/pkg/x')).toBe(alternate('/pkg/x.md'))
+  expect(linkOn(rules, '/en/pkg/x')).toBe(alternate('/en/pkg/x.md'))
+  // a patterned optional tail splits off at its own param, not the one before: A3
+  expect(linkOn(rules, '/a/x')).toBe(alternate('/a/x.md'))
+  expect(linkOn(rules, '/a/x/y')).toBe(alternate('/a/x/y.md'))
+  // never a literal param in any value
+  for (const rule of rules)
+    for (const { value } of rule.headers)
+      expect({ source: rule.source, value }).not.toEqual({
+        source: rule.source,
+        value: expect.stringMatching(/<[^>]*:\w+[?*]/),
+      })
+})
+
+test('alias shapes that render a page load: the root page, a trailing slash, an optional param; unnamed params count as next counts them', () => {
+  const dir = app(['app/page.tsx', 'app/p/[a]/page.tsx', 'app/p/[a]/[tab]/page.tsx'])
+  // A4: an alias to / or to a path with a trailing slash; A5: an optional param in the destination
+  const loads: Record<string, string>[] = [
+    { '/:locale(en|fr)': '/' },
+    { '/x/:a': '/p/:a/' },
+    { '/q/:name/:tab?': '/p/:name/:tab?' },
+  ]
+  for (const aliases of loads) expect(() => md({ root: dir, aliases })({} as Config)).not.toThrow()
+  // still a path with no query or hash
+  expect(() => md({ root: dir, aliases: { '/q/:a': '/p/:a?x=1' } })({} as Config)).toThrow(
+    "isn't a path on this site",
+  )
+  // A6: path-to-regexp numbers only the params that capture, so a {group} of plain text takes no number
+  expect(sourceParams('/a{/b}?/(.*)')).toEqual(['0'])
+  expect(sourceParams('/a{/b}?/(.*)')).toEqual(
+    Object.keys(getPathMatch('/a{/b}?/(.*)')('/a/b/c') as object).filter((key) =>
+      /^\d+$/.test(key),
+    ),
+  )
+})
+
+test("md() never throws for config-time I/O: app/ it couldn't read, or a tsconfig.json it couldn't read", () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  // A7: no app/ to check aliases against (a wrong root, or a node without getBuiltinModule): said, not thrown
+  const empty = app([])
+  expect(() => md({ root: empty, aliases: { '/p/:a': '/package/:a' } })({} as Config)).not.toThrow()
+  expect(warn.mock.calls.map(([message]) => String(message))).toContainEqual(
+    expect.stringContaining("md({ aliases }) can't check that each alias renders a page"),
+  )
+  // A8: a tsconfig.json that can't be read at all (a directory where the file should be)
+  const dir = app(['app/x/[pkg]/page.tsx', 'app/x/[pkg]/markdown.ts', 'tsconfig.json/keep'])
+  warn.mockClear()
+  expect(() => md({ root: dir })({} as Config)).not.toThrow()
+  expect(warn.mock.calls.map(([message]) => String(message))).toEqual([
+    `[affordances-md] tsconfig.json couldn't be read, so tsc can't check each markdown.ts against its route. Add ".affordances/**/*.ts" to its "include".`,
+  ])
+  warn.mockRestore()
+})
+
+test('A9: a redirect for a markdown request goes to a twin only when its target has one, on every path', async () => {
+  const navigation = await import('next/navigation.js')
+  process.env[ROUTES_ENV] = JSON.stringify(['/x/[pkg]', '/sign-in'])
+  // a page, an api route (NextAuth's sign-in), a route handler that isn't a page (Auth0's /auth/login), a file
+  const targets = ['/sign-in?next=%2Fx', '/api/auth/signin?next=%2Fx', '/auth/login', '/report.pdf']
+  const expected = [
+    '/sign-in.md?next=%2Fx',
+    '/api/auth/signin?next=%2Fx',
+    '/auth/login',
+    '/report.pdf',
+  ]
+  // the page's own 3xx
+  for (const [i, location] of targets.entries()) {
+    upstream = redirect(location)
+    expect((await get('/x/a')).headers.get('location')).toBe(expected[i])
+  }
+  // a redirect() streamed after the shell
+  for (const [i, location] of targets.entries()) {
+    upstream = streamedRedirect(location.replace('&', '&amp;'))
+    expect((await handler(new Request(`${site}/x/a.md`))).headers.get('location')).toBe(expected[i])
+  }
+  // a redirect() thrown in markdown.ts
+  for (const [i, location] of targets.entries()) {
+    markdownFiles({ '/x/[pkg]': () => navigation.redirect(location) })
+    expect((await handler(new Request(`${site}/x/a.md`))).headers.get('location')).toBe(expected[i])
+  }
+  // md.redirect from a proxy
+  for (const [i, location] of targets.entries())
+    expect(
+      mdProxy(new Request(`${site}/x/a.md`))
+        .redirect(location)
+        .headers.get('location'),
+    ).toBe(new URL(expected[i]!, site).href)
+  // without md()'s pages every page url still has one, as before; an api route never does
+  delete process.env[ROUTES_ENV]
+  upstream = redirect('/auth/login')
+  expect((await get('/x/a')).headers.get('location')).toBe('/auth/login.md')
+  upstream = redirect('/api/auth/signin')
+  expect((await get('/x/a')).headers.get('location')).toBe('/api/auth/signin')
+})
+
+test('A10: a slot inside another slot never reaches the markdown, so its fill never runs or decides the page', async () => {
+  const navigation = await import('next/navigation.js')
+  upstream = slotted(slot('outer', `<p>Outer.</p>${slot('inner')}`))
+  const ran = markdownModule({
+    slots: { outer: () => 'Filled outer.', inner: () => navigation.notFound() },
+  })
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const response = await handler(new Request(`${site}/x/a.md`))
+  vi.restoreAllMocks()
+  expect([response.status, ran]).toEqual([200, ['outer']])
+  expect(await response.text()).toContain('Filled outer.')
+})
+
+test('A12, documented: a forged slot marker in user html runs its fill even where the page left the slot out, so a fill authorizes its own data', async () => {
+  // the page renders billing only for its owner (here, not), and a README with a forged billing marker in it
+  upstream = slotted(`<section>${slot('billing', '<p>forged</p>')}</section>`)
+  const asked: (string | null)[] = []
+  const ran = markdownModule({
+    // the documented shape: the fill checks who's asking, whatever the page rendered
+    slots: {
+      billing: ({ request }) => {
+        asked.push(request.headers.get('cookie'))
+        return request.headers.get('cookie') === 'session=owner' ? '**Plan:** Pro' : undefined
+      },
+    },
+  })
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const visitor = await (
+    await handler(new Request(`${site}/x/a.md`, { headers: { cookie: 'session=visitor' } }))
+  ).text()
+  vi.restoreAllMocks()
+  // the fill ran for the visitor, in their own request, and gave nothing it hadn't authorized
+  expect(ran).toEqual(['billing'])
+  expect(asked).toEqual(['session=visitor'])
+  expect(visitor).not.toContain('Plan')
 })

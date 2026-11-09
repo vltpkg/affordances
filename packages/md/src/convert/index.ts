@@ -1,11 +1,22 @@
 import type { Element, ElementContent, Nodes as HastNodes, Root as HastRoot } from 'hast'
-import type { List, ListItem, Nodes as MdastNodes, PhrasingContent, Root as MdastRoot } from 'mdast'
+import type {
+  Html,
+  List,
+  ListItem,
+  Nodes as MdastNodes,
+  PhrasingContent,
+  Root as MdastRoot,
+} from 'mdast'
 import { fromHtml } from 'hast-util-from-html'
 import { select, selectAll } from 'hast-util-select'
 import { defaultHandlers, toMdast, type Handle } from 'hast-util-to-mdast'
 import { toString } from 'hast-util-to-string'
 import { gfmToMarkdown } from 'mdast-util-gfm'
-import { toMarkdown } from 'mdast-util-to-markdown'
+import { toMarkdown, type Handle as ToMarkdownHandle } from 'mdast-util-to-markdown'
+import { parse, postprocess, preprocess } from 'micromark'
+import { gfm } from 'micromark-extension-gfm'
+import { decodeString } from 'micromark-util-decode-string'
+import { normalizeIdentifier } from 'micromark-util-normalize-identifier'
 import { visit } from 'unist-util-visit'
 
 export type Handlers = Record<string, Handle>
@@ -21,6 +32,8 @@ export type Options = {
   // another url for a link once it's absolute, e.g. the linked page's markdown twin; undefined keeps it. not called
   // for images or a link to a #fragment of the page itself
   link?: (url: URL) => string | undefined
+  // markdown for each <AgentSlot name>, in place of its children. a name the page renders more than once fills nothing
+  slots?: Record<string, string>
 }
 
 // url: the page's canonical url (or the one given), for a Link header
@@ -70,40 +83,46 @@ const cssText = (style: string) =>
     .replace(/\\([0-9a-f]{1,6})[ \t\n\r\f]?|\\([^\n0-9a-f])/gi, (_, hex: string, char: string) =>
       hex ? codePoint(hex) : char,
     )
+// a style attribute's declarations as [property, value], lowercased, without !important
+type Declarations = [property: string, value: string][]
+const declarations = (node: Element): Declarations =>
+  node.properties.style === undefined
+    ? []
+    : cssText(String(node.properties.style))
+        .split(';')
+        .map((declaration) => {
+          const [property = '', value = ''] = declaration
+            .split(':')
+            .map((part) => part.trim().toLowerCase())
+          return [property, value.replace(/\s*!\s*important$/, '')]
+        })
 // display: none, visibility: hidden or content-visibility: hidden in a style attribute, however it's spaced, cased,
 // commented, escaped or marked !important. opacity: 0 isn't hidden: motion libraries render it on the server as the
 // first frame of an entrance animation, so it would drop content people see a moment later
-const styleHidden = (node: Element) =>
-  cssText(String(node.properties.style ?? ''))
-    .split(';')
-    .some((declaration) => {
-      const [property = '', value = ''] = declaration
-        .split(':')
-        .map((part) => part.trim().toLowerCase())
-      const keyword = value.replace(/\s*!\s*important$/, '')
-      return (
-        (property === 'display' && keyword === 'none') ||
-        (property === 'visibility' && (keyword === 'hidden' || keyword === 'collapse')) ||
-        (property === 'content-visibility' && keyword === 'hidden')
-      )
-    })
+const styleHidden = (style: Declarations) =>
+  style.some(
+    ([property, keyword]) =>
+      (property === 'display' && keyword === 'none') ||
+      (property === 'visibility' && (keyword === 'hidden' || keyword === 'collapse')) ||
+      (property === 'content-visibility' && keyword === 'hidden'),
+  )
 
-// what an icon or avatar link (an image without alt) is called: its aria-label, then its title
-const linkLabel = (a: Element) =>
-  String(a.properties.ariaLabel ?? '').trim() || String(a.properties.title ?? '').trim()
+// what an icon or avatar link (an image without alt) is called. a link reads its own content first, so this is only
+// the name it has without any: its aria-labelledby, aria-label or title
+const linkLabel = (a: Element, byId: Ids) =>
+  accessibleName(a, { byId: typeof byId === 'function' ? byId() : byId }, false)
+// the page's ids, or how to find them only once a link needs them
+type Ids = Map<string, Element> | (() => Map<string, Element>)
 
 const described = (node: Element) => selectAll('img[alt]:not([alt=""])', node)
 
-// a link with nothing to read: no text, no described image, no label
-const nameless = (a: Element) => !toString(a).trim() && !described(a).length && !linkLabel(a)
-
 // what a link renders as: its text, else its described images, else its label
-const linkText = (a: Element) =>
+const linkText = (a: Element, byId: Ids) =>
   text(a) ||
   described(a)
     .map((img) => `${img.properties.alt} ${img.properties.src}`)
     .join(' ') ||
-  linkLabel(a)
+  linkLabel(a, byId)
 
 // a skeleton table (placeholder cells waiting on data): no cell has anything to read, or a header with text sits
 // over body rows that are all empty, | | Status | | | over an empty row. the header is the thead's rows, or without
@@ -124,31 +143,107 @@ const skeleton = (table: Element) => {
 
 // inline elements a page lays out side by side with css gaps, <span>express</span><span>5.3.0</span>; with no text
 // between, they get a space. html can't tell a css gap from a split word, so the space goes only where a letter or
-// digit meets another ($48 stays whole); links side by side are always separate
+// digit meets another ($48 stays whole); links side by side are always separate, even inside a wrapper each
+// (<span><a/></span><span><a/></span>, an avatar stack)
 const INLINE = new Set(['a', 'span', 'code', 'strong', 'em', 'b', 'i', 'small', 'time', 'abbr'])
 const isInline = (node: ElementContent | undefined): node is Element =>
   isElement(node) && INLINE.has(node.tagName)
+const isBlank = (node: ElementContent | undefined) => node?.type === 'text' && !node.value.trim()
+// in a flex or grid container every child is its own box, bare text too, so a text node beside an element is
+// laid out apart from it (configure<span>vlt</span> reads configure vlt). outside one, text beside an element is
+// the same run of text (un<em>believ</em>able)
+// (display: flex in a style, or tailwind's flex, inline-grid, md:flex)
+const LAID_OUT = /^([\w-]+:)*(inline-)?(flex|grid)$/
+const laidOut = (node: HastRoot | Element, style: Declarations) =>
+  isElement(node) &&
+  ([node.properties.className].flat().some((name) => LAID_OUT.test(String(name ?? ''))) ||
+    style.some(([property, value]) => property === 'display' && LAID_OUT.test(value)))
 // a run of one-character elements is one word split for styling or animation (H e l l o, an odometer's 1 2 3), so
 // two words are only spaced when both are longer
-const word = (node: Element) => {
-  const text = toString(node).trim()
-  return [...text].length > 1 ? text : ''
+const word = (node: ElementContent | undefined) => {
+  const text = isInline(node) ? toString(node).trim() : node?.type === 'text' ? node.value : ''
+  return [...text.trim()].length > 1 ? text : ''
+}
+// the link an inline element starts or ends with: itself, or the first or last thing in it
+const edgeLink = (node: ElementContent | undefined, end: boolean): Element | undefined => {
+  if (!isInline(node)) return
+  if (node.tagName === 'a') return node
+  const inside = node.children.filter((child) => !isBlank(child))
+  return edgeLink(end ? inside.at(-1) : inside[0], end)
+}
+// the one link an inline element is: itself, or a wrapper with nothing else in it
+const soleLink = (node: ElementContent | undefined): Element | undefined => {
+  if (!isInline(node)) return
+  if (node.tagName === 'a') return node
+  const inside = node.children.filter((child) => !isBlank(child))
+  return inside.length === 1 ? soleLink(inside[0]) : undefined
 }
 const spaced = (
   left: ElementContent,
   right: ElementContent | undefined,
   leftWord: string,
   rightWord: string,
+  items: boolean,
 ) =>
-  isInline(left) &&
-  isInline(right) &&
-  ((left.tagName === 'a' && right.tagName === 'a') ||
+  (isInline(left) || (items && left.type === 'text')) &&
+  (isInline(right) || (items && right?.type === 'text')) &&
+  (isInline(left) || isInline(right)) &&
+  ((!!edgeLink(left, true) && !!edgeLink(right, false)) ||
     (/[\p{L}\p{N}]$/u.test(leftWord) && /^[\p{L}\p{N}]/u.test(rightWord)))
-const isBlank = (node: ElementContent | undefined) => node?.type === 'text' && !node.value.trim()
+
+// headers and summaries whose text is a button's (<th><button>Name</button></th>, a sortable column; <h3><button
+// aria-expanded>Shipping</button></h3>, an accordion): with no text outside the buttons, the buttons' text is theirs
+const LABEL_HOSTS = new Set(['th', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'caption', 'summary', 'dt'])
+
+// what an aria-labelledby can name: the first element with an id, as getElementById finds it, among what prune keeps.
+// one inside something hidden from people (display: none, hidden, aria-hidden, <AgentSkip>, <noscript>) or replaced
+// by an <AgentText> never names anything, so a name can't carry hidden text out
+const ids = (root: HastRoot | Element) => {
+  const byId = new Map<string, Element>()
+  const walk = (parent: HastRoot | Element) => {
+    for (const child of parent.children) {
+      if (!isElement(child) || dropped(child)) continue
+      const id = child.properties.id
+      if (id !== undefined && !byId.has(String(id))) byId.set(String(id), child)
+      if (mode(child) !== 'text') walk(child)
+    }
+  }
+  walk(root)
+  return byId
+}
+// what prune leaves out, with everything in it. an editor (contenteditable, role=textbox) is a field like a textarea:
+// its text is what someone typed, which never leaves the page
+const dropped = (el: Element, style = declarations(el)) =>
+  ALWAYS_DROP.has(el.tagName) ||
+  mode(el) === 'skip' ||
+  editor(el) ||
+  (mode(el) !== 'only' &&
+    ((el.properties.hidden !== undefined && el.properties.hidden !== false) ||
+      String(el.properties.ariaHidden) === 'true' ||
+      styleHidden(style)))
 
 // drop what never belongs (scripts, controls, comments) and apply skip/text/only markers, in place. code is
 // left as written: a highlighter's tokens are adjacent spans
+// markdown from a marker, emitted verbatim by the span and div handlers. the text child keeps whitespace around it
+// significant (an empty span would let it collapse)
+const markdownOf = (md: string, block: boolean): Element => ({
+  type: 'element',
+  tagName: block ? 'div' : 'span',
+  properties: { dataAffordancesMdText: md },
+  children: [{ type: 'text', value: md }],
+})
+
 const prune = (parent: HastRoot | Element, literal = false) => {
+  let byId: Map<string, Element> | undefined
+  pruneWith(parent, () => (byId ??= ids(parent)), literal)
+}
+// with the page's ids, and the parent's style already parsed
+const pruneWith = (
+  parent: HastRoot | Element,
+  byId: () => Map<string, Element>,
+  literal: boolean,
+  style: Declarations = [],
+) => {
   parent.children = parent.children.flatMap((child): ElementContent[] => {
     if (child.type === 'comment' || child.type === 'doctype') return []
     if (!isElement(child)) return [child as ElementContent]
@@ -160,55 +255,62 @@ const prune = (parent: HastRoot | Element, literal = false) => {
     if (m === 'text') {
       // a span or div, so whitespace around it follows the page's inline/block flow; emitted verbatim below
       const block = child.properties.dataBlock !== undefined && child.properties.dataBlock !== false
-      const md = String(child.properties.dataMd ?? '')
-      // the text child keeps whitespace around it significant (an empty span would let it collapse)
-      return [
-        {
-          type: 'element',
-          tagName: block ? 'div' : 'span',
-          properties: { dataAffordancesMdText: md },
-          children: [{ type: 'text', value: md }],
-        },
-      ]
+      return [markdownOf(String(child.properties.dataMd ?? ''), block)]
     }
     if (m === 'only') {
       const { hidden: _, ...properties } = child.properties
       child.properties = properties
-    } else if (
-      (child.properties.hidden !== undefined && child.properties.hidden !== false) ||
-      String(child.properties.ariaHidden) === 'true' ||
-      styleHidden(child)
+    }
+    const childStyle = declarations(child)
+    // hidden from people means hidden from agents, unless it was marked for them
+    if (dropped(child, childStyle)) return []
+    pruneWith(
+      child,
+      byId,
+      literal || child.tagName === 'pre' || child.tagName === 'code',
+      childStyle,
     )
-      // hidden from people means hidden from agents, unless it was marked for them
-      return []
-    prune(child, literal || child.tagName === 'pre' || child.tagName === 'code')
-    // gone before the spacing below, so they leave no gap
-    if (child.tagName === 'a' && nameless(child)) return []
+    // a link with nothing to read (no text, no described image) reads as its label, and has it before the spacing
+    // below, so it's spaced like text; without one it's gone, and leaves no gap
+    // a link's text is its name, so what carries a value in it (a meter, an editor) isn't
+    if (child.tagName === 'a') child.children = without(child, valueBearing).children
+    if (child.tagName === 'a' && !toString(child).trim() && !described(child).length) {
+      const label = linkLabel(child, byId)
+      if (!label) return []
+      child.children = [{ type: 'text', value: label }]
+    }
+    if (
+      LABEL_HOSTS.has(child.tagName) &&
+      !text(without(child, (inner) => inner.tagName === 'button'))
+    )
+      // read as its name, so without what carries a value
+      child.children = unwrap(without(child, valueBearing), 'button').children
     if (child.tagName === 'table' && skeleton(child)) return []
     return [child]
   })
-  if (literal) return
+  if (literal || parent.children.length < 2) return
   const children = parent.children as ElementContent[]
-  // each inline child's word once, not once per neighbour
-  const inlineWords = children.map((child) => (isInline(child) ? word(child) : ''))
+  // each child's word once, not once per neighbour
+  const items = laidOut(parent, style)
+  const childWords = children.map(word)
   parent.children = children.flatMap((child, i): ElementContent[] =>
-    spaced(child, children[i + 1], inlineWords[i]!, inlineWords[i + 1] ?? '')
+    spaced(child, children[i + 1], childWords[i]!, childWords[i + 1] ?? '', items)
       ? [child, { type: 'text', value: ' ' }]
       : [child],
   )
-  // a run of the same link, only whitespace between (six avatars labelled alike), reads as one
+  // a run of the same link, only whitespace between (six avatars labelled alike, each maybe in a wrapper), reads as one
   parent.children = (parent.children as ElementContent[]).reduce<ElementContent[]>(
     (kept, child) => {
-      if (isElement(child) && child.tagName === 'a') {
+      const current = soleLink(child)
+      if (current) {
         let at = kept.length
         while (isBlank(kept[at - 1])) at--
-        const previous = kept[at - 1]
+        const previous = soleLink(kept[at - 1])
         if (
-          isElement(previous) &&
-          previous.tagName === 'a' &&
+          previous &&
           String(previous.properties.href ?? '').trim() ===
-            String(child.properties.href ?? '').trim() &&
-          linkText(previous) === linkText(child)
+            String(current.properties.href ?? '').trim() &&
+          linkText(previous, byId) === linkText(current, byId)
         ) {
           kept.length = at
           return kept
@@ -315,6 +417,38 @@ const extract = (body: HastRoot, how: Options['extract']): HastRoot => {
   return body
 }
 
+// <AgentSlot name>s where they reach the markdown, after prune and extract, so one inside <AgentSkip>, hidden, or
+// outside <AgentMain> never counts and its fill never runs. only the outermost: a slot's children are the people's
+// version of what its fill says, so a slot inside one is never filled, and its fill never runs either
+const slotMarkers = (parent: HastRoot | Element, found: Element[] = []) => {
+  for (const child of parent.children)
+    if (isElement(child)) {
+      if (mode(child) === 'slot') found.push(child)
+      else slotMarkers(child, found)
+    }
+  return found
+}
+
+// set on a slot a fill can go to: a property no attribute parses to, so a page can't forge it
+const FILLABLE = 'affordancesSlot'
+
+const parsed = (html: string) => {
+  const tree = fromHtml(html)
+  resolveStreamed(tree)
+  return tree
+}
+
+// the part of the page that becomes markdown; prunes the body in place, so read the head first
+const contentOf = (tree: HastRoot, how: Options['extract']) => {
+  const bodyElement = select('body', tree)
+  const body: HastRoot = {
+    type: 'root',
+    children: bodyElement ? bodyElement.children : tree.children,
+  }
+  prune(body)
+  return extract(body, how ?? 'auto')
+}
+
 const CONTROLS = new Set([
   'input',
   'select',
@@ -341,14 +475,38 @@ const parents = (root: Element) => {
   return map
 }
 
-const closest = (node: Element, tag: string, up: Map<Element, Element>) => {
-  for (let at = up.get(node); at; at = up.get(at)) if (at.tagName === tag) return at
+// an element's ancestors within the form, nearest first
+const ancestors = (node: Element, up: Map<Element, Element>) => {
+  const found: Element[] = []
+  for (let at = up.get(node); at; at = up.get(at)) found.push(at)
+  return found
 }
+const closest = (node: Element, tag: string, up: Map<Element, Element>) =>
+  ancestors(node, up).find((at) => at.tagName === tag)
+const closestRole = (node: Element, role: string, up: Map<Element, Element>) =>
+  ancestors(node, up).find((at) => String(at.properties.role) === role)
 
 const text = (node: Element | undefined) => (node ? toString(node).replace(/\s+/g, ' ').trim() : '')
 
-// a label's or legend's own words. a control inside one carries a value (a textarea's text, a select's options),
-// which never leaves the page this way
+// an element without the descendants drop picks, or with those of one tag replaced by what's in them
+const without = (el: Element, drop: (child: Element) => boolean): Element => ({
+  ...el,
+  children: el.children.flatMap((child): ElementContent[] =>
+    isElement(child) ? (drop(child) ? [] : [without(child, drop)]) : [child],
+  ),
+})
+const unwrap = (el: Element, tag: string): Element => ({
+  ...el,
+  children: el.children.flatMap((child): ElementContent[] =>
+    isElement(child)
+      ? child.tagName === tag
+        ? unwrap(child, tag).children
+        : [unwrap(child, tag)]
+      : [child],
+  ),
+})
+
+// elements that carry a value (a textarea's text, a select's options), which never leaves the page as a name
 const VALUED = new Set([
   'input',
   'select',
@@ -357,36 +515,100 @@ const VALUED = new Set([
   'textarea',
   'datalist',
   'output',
-  'button',
+  'meter',
+  'progress',
 ])
-const words = (node: Element | undefined): string => {
-  const strip = (el: Element): Element => ({
-    ...el,
-    children: el.children.flatMap((child): ElementContent[] =>
-      isElement(child) ? (VALUED.has(child.tagName) ? [] : [strip(child)]) : [child],
-    ),
-  })
-  return node ? text(strip(node)) : ''
-}
+// a control whose text is a value, not a name: what someone typed or picked (an input, a select's options, a textarea,
+// a contenteditable or role=textbox editor), or what a widget shows (output, meter, progress, a slider)
+const VALUE_ROLES = new Set(['spinbutton', 'slider'])
+const valueBearing = (el: Element) =>
+  VALUED.has(el.tagName) || VALUE_ROLES.has(String(el.properties.role ?? '')) || editor(el)
+const editor = (el: Element) =>
+  ['textbox', 'searchbox'].includes(String(el.properties.role ?? '')) ||
+  (el.properties.contentEditable !== undefined && String(el.properties.contentEditable) !== 'false')
+// a name's words: what the element says, without the controls in it (their text is a value, or another control's
+// label) or what's never content. a value-bearing element says nothing as a name
+const words = (node: Element | undefined): string =>
+  node && !valueBearing(node)
+    ? text(
+        without(
+          node,
+          (child) =>
+            valueBearing(child) || child.tagName === 'button' || ALWAYS_DROP.has(child.tagName),
+        ),
+      )
+    : ''
 
-const labelOf = (field: Element, form: Element, up: Map<Element, Element>) => {
-  const id = field.properties.id
-  const forLabel = id
-    ? selectAll('label', form).find((l) => String(l.properties.htmlFor) === String(id))
-    : undefined
+// the elements an aria-labelledby names, in its order; an id that isn't on the page is skipped
+const idrefs = (node: Element, byId: Map<string, Element>) =>
+  [node.properties.ariaLabelledBy ?? []]
+    .flat()
+    .join(' ')
+    .split(/\s+/)
+    .flatMap((id) => byId.get(id) ?? [])
+
+// what a screen reader calls an element, in its order: what its aria-labelledby names, its native label (a
+// <label for>, the label around it, a fieldset's legend), its aria-label, its own words for a control named by its
+// content (a link, button, switch, checkbox, radio or toggle; never a combobox, whose content is its value), then its
+// title. each is read through words(), so no value is ever a name. labels: a form's <label for>s by id
+type Naming = {
+  byId: Map<string, Element>
+  up?: Map<Element, Element>
+  labels?: () => Map<string, Element>
+}
+const accessibleName = (el: Element | undefined, naming: Naming, content = true): string => {
+  if (!el) return ''
+  const { byId, up, labels } = naming
+  const id = el.properties.id
   return (
-    words(forLabel) ||
-    words(closest(field, 'label', up)) ||
-    // a placeholder is an example of what to type, and a name is the server's: neither is the label
-    String(field.properties.ariaLabel ?? '').trim()
+    idrefs(el, byId).map(words).filter(Boolean).join(' ') ||
+    (id !== undefined && labels ? words(labels().get(String(id))) : '') ||
+    (up ? words(closest(el, 'label', up)) : '') ||
+    (el.tagName === 'fieldset' ? words(select('legend', el) ?? undefined) : '') ||
+    String(el.properties.ariaLabel ?? '').trim() ||
+    (content && namedByContent(el) ? words(el) : '') ||
+    String(el.properties.title ?? '').trim()
   )
 }
+const CONTENT_ROLES = new Set(['link', 'button', 'switch', 'checkbox', 'radio'])
+const namedByContent = (el: Element) =>
+  el.tagName === 'a' ||
+  (el.tagName === 'button' && String(el.properties.role ?? '') !== 'combobox') ||
+  CONTENT_ROLES.has(String(el.properties.role ?? '')) ||
+  el.properties.ariaPressed !== undefined
 
-// an input's type, which html reads in any case (type="Password" is a password), or the field's tag
+// a control made of aria, as shadcn and radix render them: a switch or checkbox is a <button role="switch"
+// aria-checked>, a toggle a <button aria-pressed>, a radio group's items <button role="radio">, and a select's
+// trigger a <button role="combobox"> showing the value. radix's native mirror of each is aria-hidden, so prune
+// dropped it and it's never counted twice
+const ARIA_FIELDS =
+  '[role=switch], [role=checkbox], [role=radio], [role=combobox], button[aria-pressed]'
+const ROLES = new Set(['switch', 'checkbox', 'radio', 'combobox'])
+const roleOf = (field: Element) => {
+  if (['input', 'select', 'textarea'].includes(field.tagName)) return
+  const role = String(field.properties.role ?? '')
+  return ROLES.has(role) ? role : field.properties.ariaPressed !== undefined ? 'toggle' : undefined
+}
+// a choice's state: true, false or mixed, from checked or from aria-checked or aria-pressed
+const stateOf = (field: Element) =>
+  roleOf(field)
+    ? String(field.properties.ariaChecked ?? field.properties.ariaPressed ?? 'false')
+    : String(Boolean(field.properties.checked))
+const unavailable = (field: Element) =>
+  Boolean(field.properties.disabled) || String(field.properties.ariaDisabled) === 'true'
+
+// a field's label is its accessible name. a placeholder is an example of what to type, and a name is the server's:
+// neither is the label
+const labelOf = (field: Element, naming: Naming) => accessibleName(field, naming)
+
+// an input's type, which html reads in any case (type="Password" is a password), an aria control's role (a
+// combobox is a select), or the field's tag
 const typeOf = (field: Element) =>
   field.tagName === 'input'
     ? String(field.properties.type ?? 'text').toLowerCase() || 'text'
-    : field.tagName
+    : roleOf(field) === 'combobox'
+      ? 'select'
+      : (roleOf(field) ?? field.tagName)
 
 // a field that looks like it holds a secret
 // a field's name as words joined by _: cardNumber, card-number and card_number are all card_number, a number is a word
@@ -454,6 +676,12 @@ const secret = (field: Element, label: string) =>
 // a field's current value as the page rendered it: an input's value, a textarea's text, a select's chosen options
 // (the first, when a single select marks none)
 const valueOf = (field: Element) => {
+  // a select's trigger shows its value, or its placeholder (data-placeholder) when nothing is chosen; a toggle's
+  // value is its state
+  if (roleOf(field))
+    return roleOf(field) === 'combobox' && field.properties.dataPlaceholder === undefined
+      ? text(field)
+      : ''
   if (field.tagName === 'textarea') return text(field)
   if (field.tagName === 'select') {
     const options = selectAll('option', field)
@@ -466,83 +694,207 @@ const valueOf = (field: Element) => {
     : String(field.properties.value ?? '').trim()
 }
 
-// a form becomes what it asks for, followed by whatever else it says; values, hidden fields and tokens never
-// leave the page (a choice's selected/unavailable state is the page's, so that stays). a form marked
-// data-affordances-md="values" (a settings page, where the values are the content) also gives each field's value,
-// but never a hidden field's, a password's, or one that looks like a secret
+// a form becomes what it asks for, in its place among whatever else it says (a card's title, hints, errors);
+// values, hidden fields and tokens never leave the page (a choice's selected/unavailable state is the page's, so that
+// stays). a form marked data-affordances-md="values" (a settings page, where the values are the content) also gives
+// each field's value and each toggle's state, but never a hidden field's, a password's, or one that looks like a
+// secret
+type Line = [label: string, value?: string]
 const form: Handle = (state, node) => {
   const values = node.properties.dataAffordancesMd === 'values'
   const up = parents(node)
-  const fields = selectAll('input, select, textarea', node).filter(
+  const byId = state.elementById
+  // the form's <label for>s by id, the first for each, read only once a field needs one
+  let forLabels: Map<string, Element> | undefined
+  const labels = () => {
+    if (!forLabels) {
+      forLabels = new Map()
+      for (const label of selectAll('label', node)) {
+        const id = String(label.properties.htmlFor ?? '')
+        if (id && !forLabels.has(id)) forLabels.set(id, label)
+      }
+    }
+    return forLabels
+  }
+  const naming: Naming = { byId, up, labels }
+  const fields = selectAll(`input, select, textarea, ${ARIA_FIELDS}`, node).filter(
     (field) => !['hidden', 'submit', 'button', 'reset', 'image'].includes(typeOf(field)),
   )
-  // fields in document order; radios and checkboxes sharing a name are one choice, labelled by their fieldset
-  const entries: (string | Element[])[] = []
-  const groups = new Map<string, Element[]>()
+  // fields in document order, each line kept with the field it's for; radios and checkboxes sharing a name are one
+  // choice, labelled by their fieldset, and so are the radio buttons of one radiogroup. a group's line goes with its
+  // first choice, in the order groups first appear
+  const lines = new Map<Element, Line>()
+  const groups = new Map<unknown, Element[]>()
   for (const field of fields) {
     const type = typeOf(field)
     const name = String(field.properties.name ?? '')
-    if ((type === 'radio' || type === 'checkbox') && name) {
-      const group = groups.get(name)
-      if (group) group.push(field)
-      else groups.set(name, entries[entries.push([field]) - 1] as Element[])
+    const group =
+      roleOf(field) === 'radio'
+        ? (closestRole(field, 'radiogroup', up) ?? field)
+        : !roleOf(field) && (type === 'radio' || type === 'checkbox') && name
+          ? `name:${name}`
+          : undefined
+    if (group !== undefined) {
+      const choices = groups.get(group)
+      if (choices) choices.push(field)
+      else groups.set(group, [field])
       continue
     }
-    const label = labelOf(field, node, up)
+    const label = labelOf(field, naming)
     if (!label) continue
     const entry = type === 'text' ? label : `${label} (${type})`
-    const value = values && !secret(field, label) ? valueOf(field) : ''
-    const checked = values && type === 'checkbox' && field.properties.checked
-    entries.push(checked ? `${label} (${type}, selected)` : value ? `${entry}: ${value}` : entry)
+    const on = stateOf(field)
+    if (values && (type === 'switch' || type === 'toggle'))
+      lines.set(field, [entry, on === 'true' ? 'on' : on === 'mixed' ? 'mixed' : 'off'])
+    else if (values && type === 'checkbox' && on !== 'false')
+      lines.set(field, [`${label} (${type}, ${on === 'mixed' ? 'mixed' : 'selected'})`])
+    else {
+      const value = values && !secret(field, label) ? valueOf(field) : ''
+      lines.set(field, value ? [entry, value] : [entry])
+    }
   }
-  const lines = entries.flatMap((entry) => {
-    if (typeof entry === 'string') return [entry]
-    const fieldset = closest(entry[0]!, 'fieldset', up)
-    const legend = fieldset && select('legend', fieldset)
-    // a group with no legend or aria-label lists its options alone
-    const name = words(legend ?? undefined) || String(fieldset?.properties.ariaLabel ?? '').trim()
+  for (const choices of groups.values()) {
+    // a group with no legend or aria name lists its options alone
+    const name =
+      accessibleName(closestRole(choices[0]!, 'radiogroup', up), { byId }) ||
+      accessibleName(closest(choices[0]!, 'fieldset', up), { byId })
     // an option without a label is left out: its value is the server's, and values never leave the page
-    const options = entry.flatMap((choice) => {
-      const label = labelOf(choice, node, up)
+    const options = choices.flatMap((choice) => {
+      const label = labelOf(choice, naming)
       if (!label) return []
       const flags = [
-        choice.properties.checked && 'selected',
-        choice.properties.disabled && 'unavailable',
+        stateOf(choice) === 'true' && 'selected',
+        unavailable(choice) && 'unavailable',
       ].filter(Boolean)
       return [flags.length ? `${label} (${flags.join(', ')})` : label]
     })
-    if (!options.length) return []
-    return [name ? `${name}: ${options.join(', ')}` : options.join(', ')]
+    if (options.length)
+      lines.set(choices[0]!, [name ? `${name}: ${options.join(', ')}` : options.join(', ')])
+  }
+
+  // each line under every element that holds its field, in document order, so the walk below finds an element's
+  // lines without scanning them all
+  const under = new Map<Element, Line[]>()
+  for (const [field, line] of lines)
+    for (const at of [field, ...ancestors(field, up)]) {
+      if (at === node) break
+      const held = under.get(at)
+      if (held) held.push(line)
+      else under.set(at, [line])
+    }
+  const lineHolder = (el: Element) => lines.has(el) || CONTROLS.has(el.tagName)
+  // walk the form in document order: what holds no field is prose, and a field (or the label or control around it)
+  // is its line. a table or definition list keeps its shape, with each field's line where the field is
+  const parts: (ElementContent | Line)[] = []
+  const walk = (el: Element) => {
+    for (const child of el.children) {
+      const held = isElement(child) ? under.get(child) : undefined
+      if (!isElement(child) || !held) parts.push(child)
+      else if (lineHolder(child)) parts.push(...held)
+      else if (SHAPED.has(child.tagName)) parts.push(inPlace(child))
+      else walk(child)
+    }
+  }
+  // a shaped element with its fields (or the labels and controls around them) swapped for their lines, as text
+  const inPlace = (el: Element): Element => ({
+    ...el,
+    children: el.children.flatMap((child): ElementContent[] => {
+      const held = isElement(child) ? under.get(child) : undefined
+      if (!isElement(child) || !held) return [child]
+      if (!lineHolder(child)) return [inPlace(child)]
+      return held.flatMap(([label, value], i): ElementContent[] => [
+        ...(i ? [{ type: 'text' as const, value: ', ' }] : []),
+        { type: 'element', tagName: FIELD_LINE, properties: { label, value }, children: [] },
+      ])
+    }),
   })
+  walk(node)
 
   // everything that isn't a control or a label still says something: hints, stock, errors
-  const prose = (el: Element): Element => ({
-    ...el,
-    children: el.children.flatMap((child): ElementContent[] =>
-      isElement(child) ? (CONTROLS.has(child.tagName) ? [] : [prose(child)]) : [child],
-    ),
-  })
-  const rest = state.toFlow(state.all(prose(node)))
-  if (!lines.length) return rest as never
-  const list: List = {
+  const prose = (children: ElementContent[]) =>
+    state.toFlow(
+      state.all(
+        without({ type: 'element', tagName: 'div', properties: {}, children }, (inner) =>
+          CONTROLS.has(inner.tagName),
+        ),
+      ),
+    )
+  const list = (items: Line[]): List => ({
     type: 'list',
     ordered: false,
     spread: false,
-    children: lines.map((value): ListItem => ({
+    children: items.map((line): ListItem => ({
       type: 'listItem',
       spread: false,
-      children: [{ type: 'paragraph', children: [{ type: 'text', value }] }],
+      children: [{ type: 'paragraph', children: lineText(line) }],
     })),
+  })
+  // consecutive lines are one list, unless prose that says something comes between
+  const out: MdastNodes[] = []
+  let run: ElementContent[] = []
+  let items: Line[] = []
+  for (const part of [...parts, undefined]) {
+    if (part !== undefined && !Array.isArray(part)) {
+      run.push(part)
+      continue
+    }
+    const flow = prose(run)
+    run = []
+    if (flow.length && items.length) {
+      out.push(list(items))
+      items = []
+    }
+    out.push(...flow)
+    if (part) items.push(part)
+    else if (items.length) out.push(list(items))
   }
+  if (!lines.size) return out as never
+
+  // the form's name: its aria-label or aria-labelledby, unless what it names is in the form and says it in place (a
+  // label or legend doesn't: the walk reads those as controls), or a heading before its first field; without either
+  // it's a form
+  const named = idrefs(node, byId).some(
+    (el) =>
+      up.has(el) &&
+      !CONTROLS.has(el.tagName) &&
+      !ancestors(el, up).some((at) => CONTROLS.has(at.tagName)),
+  )
+  const first = parts.findIndex(Array.isArray)
+  const headed = parts
+    .slice(0, first)
+    .some(
+      (part) =>
+        isElement(part) &&
+        (/^h[1-6]$/.test(part.tagName) || select('h1, h2, h3, h4, h5, h6', part) !== undefined),
+    )
+  const title = named ? '' : accessibleName(node, { byId }, false) || (headed ? '' : 'Form')
   return [
-    {
-      type: 'paragraph',
-      children: [{ type: 'strong', children: [{ type: 'text', value: 'Form' }] }],
-    },
-    list,
-    ...rest,
+    ...(title
+      ? [
+          {
+            type: 'paragraph',
+            children: [{ type: 'strong', children: [{ type: 'text', value: title }] }],
+          },
+        ]
+      : []),
+    ...out,
   ] as never
 }
+
+// a field's line as markdown text: its label, and its value, unescaped where markdown doesn't need it
+const lineText = ([label, value]: Line): PhrasingContent[] =>
+  value
+    ? [{ type: 'text', value: `${label}: ` }, { type: 'fieldValue', value } as never]
+    : [{ type: 'text', value: label }]
+// elements whose shape is their content: a form's fields in one are written where they are, not listed after it
+const SHAPED = new Set(['table', 'dl'])
+// a field's line written in place: a tag name no page can have, since html lowercases tag names
+const FIELD_LINE = 'fieldLine'
+const fieldLine: Handle = (_, node) =>
+  lineText([
+    String(node.properties.label),
+    node.properties.value === undefined ? undefined : String(node.properties.value),
+  ]) as never
 
 // a url's scheme as a browser reads it: new URL drops the tabs, newlines and controls that hide java\nscript:.
 // a relative url is the page's own, so it's http(s) whatever the base
@@ -565,7 +917,7 @@ const link: Handle = (state, node, parent) => {
   const title = (node.properties.title as string) ?? null
   if (!children.some((child) => child.type !== 'text' || child.value.trim())) {
     // an icon or avatar link reads as its label; prune dropped those without one
-    const name = linkLabel(node)
+    const name = linkLabel(node, state.elementById)
     if (!name) return
     return { type: 'link', url: href, title, children: [{ type: 'text', value: name }] }
   }
@@ -612,15 +964,18 @@ const dl: Handle = (state, node) => {
     if (!isElement(child)) continue
     if (child.tagName === 'dt') terms.push(state.all(child) as PhrasingContent[])
     else if (child.tagName === 'dd') {
-      const strong = terms.flatMap((t, i): PhrasingContent[] => [
-        ...(i ? [{ type: 'text' as const, value: ', ' }] : []),
-        { type: 'strong', children: t },
-      ])
+      // a term that says nothing (a form's label, which the field's line says) leaves the definition on its own
+      const strong = terms
+        .filter((term) => term.some((part) => part.type !== 'text' || part.value.trim()))
+        .flatMap((t, i): PhrasingContent[] => [
+          ...(i ? [{ type: 'text' as const, value: ', ' }] : []),
+          { type: 'strong', children: t },
+        ])
       out.push({
         type: 'paragraph',
         children: [
           ...strong,
-          { type: 'text', value: ': ' },
+          ...(strong.length ? [{ type: 'text' as const, value: ': ' }] : []),
           ...(state.all(child) as PhrasingContent[]),
         ],
       })
@@ -639,13 +994,30 @@ const wrap =
       { type: 'html', value: `</${tag}>` },
     ] as never
 
-// <AgentText md="…">, flattened by prune(): its markdown goes out verbatim
+// markdown from a marker (<AgentText md>, a slot's fill): verbatim, flagged so its links are resolved and a block one
+// is lifted out of the paragraph or heading it's in. an inline one also says it's a span, so hast-util-to-mdast keeps
+// it in its paragraph or link (<a><AgentText/></a> is a link) instead of splitting it like a block would
+type Marked = 'inline' | 'block'
+const markerMarkdown = (value: string, as: Marked): Html => ({
+  type: 'html',
+  value,
+  data: { affordancesMd: as, ...(as === 'inline' && { hName: 'span' }) } as never,
+})
+const markedAs = (node: MdastNodes) =>
+  node.type === 'html'
+    ? (node.data as { affordancesMd?: Marked } | undefined)?.affordancesMd
+    : undefined
+
+// <AgentText md="…">, flattened by prune()
 const verbatim =
   (fallback: Handle): Handle =>
   (state, node, parent) =>
     node.properties.dataAffordancesMdText === undefined
       ? fallback(state, node, parent)
-      : ({ type: 'html', value: String(node.properties.dataAffordancesMdText) } as never)
+      : (markerMarkdown(
+          String(node.properties.dataAffordancesMdText),
+          node.tagName === 'span' ? 'inline' : 'block',
+        ) as never)
 
 // <pre data-title="route.ts"> keeps its title as fence meta: ```ts title="route.ts"
 const pre: Handle = (state, node) => {
@@ -659,6 +1031,7 @@ const pre: Handle = (state, node) => {
 
 const handlers: Handlers = {
   form,
+  [FIELD_LINE]: fieldLine,
   pre,
   a: link,
   img,
@@ -668,8 +1041,6 @@ const handlers: Handlers = {
   sub: wrap('sub'),
   span: verbatim(defaultHandlers.span),
   div: verbatim(defaultHandlers.div),
-  // main and only markers are plain wrappers
-  'affordances-md': (state, node) => state.all(node) as never,
   // values and placeholders are the user's, not the page's; task-list checkboxes are read by the li handler
   input: () => undefined,
   select: () => undefined,
@@ -677,24 +1048,238 @@ const handlers: Handlers = {
   button: () => undefined,
 }
 
+// a field's value, escaped only where markdown needs it: gfm's autolink escapes (support\@acme.dev,
+// https\://github.com) only keep text from becoming the same link, so a value goes without them
+const GFM = gfmToMarkdown()
+const AUTOLINK = new Set(
+  GFM.extensions?.find((extension) =>
+    extension.unsafe?.some((pattern) => pattern.character === '@'),
+  )?.unsafe,
+)
+const fieldValue: ToMarkdownHandle = (node, _, state, info) => {
+  const unsafe = state.unsafe
+  state.unsafe = unsafe.filter((pattern) => !AUTOLINK.has(pattern))
+  try {
+    return state.safe((node as { value: string }).value, info)
+  } finally {
+    state.unsafe = unsafe
+  }
+}
+
+// a link's url once it's absolute, then through the link hook; undefined when it can't be resolved
+const resolve = (url: string, base: string, relink: Options['link'], image: boolean) => {
+  try {
+    const absolute = new URL(url, base)
+    return (!image && !url.startsWith('#') && relink?.(absolute)) || absolute.href
+  } catch {
+    return undefined
+  }
+}
+
+// links and images made absolute, and marker markdown's links with them; whether there was marker markdown
 const absolutize = (tree: MdastRoot, base: string | undefined, relink: Options['link']) => {
-  if (!base) return
   // a definition an image refers to (![alt][id], from a custom handler) is an image's url, so it's never relinked
   const images = new Set<string>()
-  visit(tree, 'imageReference', (node) => {
-    images.add(node.identifier)
-  })
+  if (base)
+    visit(tree, 'imageReference', (node) => {
+      images.add(node.identifier)
+    })
+  let marked = false
   visit(tree, (node) => {
-    if (node.type !== 'link' && node.type !== 'image' && node.type !== 'definition') return
+    if (markedAs(node)) {
+      marked = true
+      if (base) (node as Html).value = relinkMarkdown((node as Html).value, base, relink)
+      return
+    }
+    if (!base || (node.type !== 'link' && node.type !== 'image' && node.type !== 'definition'))
+      return
     const image =
       node.type === 'image' || (node.type === 'definition' && images.has(node.identifier))
-    try {
-      const url = new URL(node.url, base)
-      node.url = (!image && !node.url.startsWith('#') && relink?.(url)) || url.href
-    } catch {
-      // leave what can't be resolved as written
-    }
+    // what can't be resolved stays as written
+    node.url = resolve(node.url, base, relink, image) ?? node.url
   })
+  return marked
+}
+
+// a table cell is one line: marker markdown in one keeps its line breaks as <br> and its pipes escaped, so it doesn't
+// end the table or add columns. it's inline there, so it's never lifted out of the cell
+const inCells = (tree: MdastRoot) =>
+  visit(tree, 'tableCell', (cell) =>
+    visit(cell, 'html', (node) => {
+      if (!markedAs(node)) return
+      node.value = node.value
+        .trim()
+        .replace(/(?<!\\)((?:\\\\)*)\|/g, '$1\\|')
+        .replace(/[ \t]*\n\s*/g, '<br>')
+      node.data = { ...node.data, affordancesMd: 'inline' } as never
+    }),
+  )
+
+// a block of marker markdown inside a paragraph or heading (<h1>Package <AgentSlot/></h1>), or inside a link or
+// emphasis in one, is its own block: it's lifted out, between what was on either side of it
+type Phrasing = MdastNodes & { children: MdastNodes[] }
+const hasBlock = (node: MdastNodes): boolean =>
+  markedAs(node) === 'block' || ('children' in node && node.children.some(hasBlock))
+const says = (node: MdastNodes): boolean =>
+  node.type === 'text'
+    ? Boolean(node.value.trim())
+    : !('children' in node) || node.children.some(says)
+// the text at one end of a node, where its whitespace meets a lifted block
+const edge = (node: MdastNodes | undefined, end: boolean): { value: string } | undefined =>
+  node?.type === 'text'
+    ? node
+    : node && 'children' in node
+      ? edge(end ? node.children.at(-1) : node.children[0], end)
+      : undefined
+const lifted = (node: Phrasing): MdastNodes[] => {
+  const out: MdastNodes[] = []
+  let side: Phrasing = { ...node, children: [] }
+  const close = () => {
+    const first = edge(side, false)
+    if (first && out.length) first.value = first.value.trimStart()
+    if (says(side)) out.push(side)
+    side = { ...node, children: [] }
+  }
+  for (const child of node.children)
+    for (const part of 'children' in child && hasBlock(child) ? lifted(child as Phrasing) : [child])
+      if (markedAs(part) === 'block') {
+        const last = edge(side, true)
+        if (last) last.value = last.value.trimEnd()
+        close()
+        out.push(part)
+      } else side.children.push(part)
+  close()
+  return out
+}
+const liftBlocks = (tree: MdastRoot) =>
+  visit(tree, (node, index, parent) => {
+    if ((node.type !== 'paragraph' && node.type !== 'heading') || !parent || index === undefined)
+      return
+    if (!hasBlock(node)) return 'skip'
+    const parts = lifted(node as Phrasing)
+    parent.children.splice(index, 1, ...(parts as never[]))
+    return index + parts.length
+  })
+
+const SYNTAX = { extensions: [gfm()] }
+// a destination as markdown writes it: bare, or in <…> when it has what the bare form would need escaped
+const destination = (url: string) =>
+  /[\s()<>\\]/.test(url) ? `<${url.replace(/[<>\\]/g, '\\$&')}>` : url
+const escaped = (value: string) => value.replace(/[\\[\]*_`<>]/g, '\\$&')
+
+// an autolink's token, and what its text needs in front to be its url
+const AUTOLINKS = new Map([
+  ['autolinkProtocol', ''],
+  ['autolinkEmail', 'mailto:'],
+  ['literalAutolinkHttp', ''],
+  ['literalAutolinkWww', 'http://'],
+  ['literalAutolinkEmail', 'mailto:'],
+])
+
+type Frame = {
+  type: string
+  label?: string
+  reference?: string
+  resource?: boolean
+  url?: string
+  at?: number
+}
+
+// FB-4: markdown a marker carries (<AgentText md>, a slot's fill) gets what page links get: each link, autolink and
+// definition made absolute, then the link hook; an image only absolute, like a page image. only each url's own source
+// changes, so the rest stays as the app wrote it. raw html in it is left alone
+const relinkMarkdown = (markdown: string, base: string, relink: Options['link']) => {
+  // nothing that could be a link: a destination or definition needs ], an autolink <, @, www. or ://
+  if (!/[\]<@]|www\.|:\/\//.test(markdown)) return markdown
+  const events = postprocess(
+    parse(SYNTAX)
+      .document()
+      .write(preprocess()(markdown, undefined, true)),
+  )
+  const source = (token: { start: { offset: number }; end: { offset: number } }) =>
+    markdown.slice(token.start.offset, token.end.offset)
+  // definitions an image reference uses (![alt][id]) are image urls, so they're never relinked
+  const images = new Set<string>()
+  const frames: Frame[] = []
+  for (const [kind, token] of markdown.includes('![') ? events : []) {
+    if (token.type === 'image' || token.type === 'link') {
+      if (kind === 'enter') frames.push({ type: token.type })
+      else {
+        const frame = frames.pop()!
+        if (frame.type === 'image' && !frame.resource)
+          images.add(normalizeIdentifier(frame.reference ?? frame.label ?? '').toLowerCase())
+      }
+    } else if (kind === 'enter' && frames.length) {
+      const frame = frames.at(-1)!
+      if (token.type === 'labelText') frame.label ??= source(token)
+      if (token.type === 'referenceString') frame.reference = source(token)
+      if (token.type === 'resource') frame.resource = true
+    }
+  }
+  const edits: { start: number; end: number; value: string }[] = []
+  // a link's destination, a definition's, or a whole autolink: what's being rewritten, and whether it's an image's
+  const open: Frame[] = []
+  let definition: string | undefined
+  for (const [kind, token] of events) {
+    const { type } = token
+    if (type === 'image' || type === 'link') {
+      if (kind === 'enter') open.push({ type })
+      else open.pop()
+      continue
+    }
+    if (type === 'definitionLabelString' && kind === 'enter') definition = source(token)
+    if (type === 'resourceDestination' || type === 'definitionDestination') {
+      if (kind === 'enter') {
+        open.push({ type, at: token.start.offset })
+        continue
+      }
+      const frame = open.pop()!
+      const image =
+        type === 'definitionDestination'
+          ? images.has(normalizeIdentifier(definition ?? '').toLowerCase())
+          : open.at(-1)?.type === 'image'
+      const url = frame.url
+      const next = url && resolve(url, base, relink, image)
+      if (url && next && next !== url)
+        edits.push({ start: frame.at!, end: token.end.offset, value: destination(next) })
+      continue
+    }
+    if (kind !== 'enter') continue
+    if (type === 'resourceDestinationString' || type === 'definitionDestinationString') {
+      const frame = open.at(-1)
+      if (frame) frame.url = decodeString(source(token))
+      continue
+    }
+    // an autolink is already absolute: it changes only if the link hook gives it another url, and then reads as a
+    // link whose text is what was written. never inside another link, which it would nest in
+    const prefix = AUTOLINKS.get(type)
+    if (prefix === undefined || open.length) continue
+    const written = source(token)
+    let absolute: URL
+    try {
+      absolute = new URL(prefix + written, base)
+    } catch {
+      continue
+    }
+    const next = relink?.(absolute)
+    // <…> takes its brackets with it
+    const bracketed = type === 'autolinkProtocol' || type === 'autolinkEmail' ? 1 : 0
+    if (next && next !== absolute.href)
+      edits.push({
+        start: token.start.offset - bracketed,
+        end: token.end.offset + bracketed,
+        value: `[${escaped(written)}](${destination(next)})`,
+      })
+  }
+  // one pass, so a fill with thousands of links costs its length, not its length per link
+  const parts: string[] = []
+  let at = 0
+  for (const edit of edits.toSorted((a, b) => a.start - b.start)) {
+    parts.push(markdown.slice(at, edit.start), edit.value)
+    at = edit.end
+  }
+  parts.push(markdown.slice(at))
+  return parts.join('')
 }
 
 // frontmatter, the handler's for a markdown.ts page too
@@ -727,6 +1312,16 @@ const canonicalOf = (href: string | undefined, base: string | undefined) => {
   }
 }
 
+// the redirect next streams into a page that called redirect() after its shell was sent (as of next 16.3 and 16.4's
+// make-get-server-inserted-html): a refresh meta of its own, after 0 seconds for a permanent redirect, 1 for any other.
+// read from the parse, so its url is decoded as a browser would, and one in a comment or a script's text isn't one
+const streamedRedirect = (tree: HastRoot): Redirect | undefined => {
+  const meta = select('meta[id="__next-page-redirect"][http-equiv="refresh"]', tree)
+  const [, delay, location] =
+    /^([01]);url=(.*)$/s.exec(String(meta?.properties.content ?? '')) ?? []
+  return location === undefined ? undefined : { status: delay === '0' ? 308 : 307, location }
+}
+
 const head = (tree: HastRoot, base: string | undefined) => {
   const meta = (selector: string) =>
     String(select(selector, tree)?.properties.content ?? '').trim() || undefined
@@ -744,6 +1339,7 @@ const head = (tree: HastRoot, base: string | undefined) => {
     jsonLd: selectAll('script[type="application/ld+json"]', tree)
       .map((s) => toString(s).trim())
       .filter(Boolean),
+    redirect: streamedRedirect(tree),
   }
 }
 
@@ -761,25 +1357,73 @@ const pretty = (raw: string) => {
   }
 }
 
-export const htmlToMarkdown = (html: string, options: Options = {}): Result => {
-  const { frontmatter = true, jsonLd = true } = options
-  const tree = fromHtml(html)
-  resolveStreamed(tree)
+// a page read once: its slots, a redirect streamed into it, and its markdown with whatever fills them. the handler
+// reads the page, runs the fills, then converts, without parsing it twice
+export type Page = {
+  slots: SlotNames
+  redirect?: Redirect
+  markdown: (slots?: Record<string, string>) => Result
+}
+// the <AgentSlot> names that reach the markdown, in page order: the ones a fill can go to, and those the page renders
+// more than once, which are filled nowhere
+export type SlotNames = { unique: string[]; duplicate: string[] }
+export type Redirect = { status: 307 | 308; location: string }
+
+export const readPage = (html: string, options: Options = {}): Page => {
+  const tree = parsed(html)
   const meta = head(tree, options.url)
-  const bodyElement = select('body', tree)
-  const body: HastRoot = {
-    type: 'root',
-    children: bodyElement ? bodyElement.children : tree.children,
+  const content = contentOf(tree, options.extract)
+  // a name rendered twice fills neither copy: one of them may be a forgery in user content, and there's no telling which
+  const markers = slotMarkers(content)
+  const counts = new Map<string, number>()
+  for (const marker of markers) {
+    const name = String(marker.properties.dataName ?? '')
+    if (name) counts.set(name, (counts.get(name) ?? 0) + 1)
   }
-  prune(body)
-  const content = extract(body, options.extract ?? 'auto')
+  for (const marker of markers) {
+    const name = String(marker.properties.dataName ?? '')
+    if (counts.get(name) === 1) marker.properties[FILLABLE] = name
+  }
+  const names = [...counts]
+  return {
+    slots: {
+      unique: names.flatMap(([name, count]) => (count === 1 ? [name] : [])),
+      duplicate: names.flatMap(([name, count]) => (count > 1 ? [name] : [])),
+    },
+    ...(meta.redirect && { redirect: meta.redirect }),
+    // the page itself is left as it is, so it can be converted again with other fills
+    markdown: (slots) => {
+      // markers stay plain wrappers, except a slot with a fill: its children give way to the fill, as a block
+      const marker: Handle = (state, node) => {
+        const name = node.properties[FILLABLE]
+        const md =
+          typeof name === 'string' && slots && Object.hasOwn(slots, name) ? slots[name] : undefined
+        return (typeof md === 'string' ? markerMarkdown(md, 'block') : state.all(node)) as never
+      }
+      const mdast = toMdast(content as HastNodes, {
+        handlers: { ...handlers, 'affordances-md': marker, ...options.handlers },
+      }) as MdastRoot
+      const url = meta.canonical ?? options.url
+      if (absolutize(mdast, options.url ?? meta.canonical, options.link)) {
+        inCells(mdast)
+        liftBlocks(mdast)
+      }
+      return finish(mdast, meta, url, options)
+    },
+  }
+}
 
-  const mdast = toMdast(content as HastNodes, {
-    handlers: { ...handlers, ...options.handlers },
-  }) as MdastRoot
-  const url = meta.canonical ?? options.url
-  absolutize(mdast, options.url ?? meta.canonical, options.link)
+// the page's markdown; slots fills its <AgentSlot>s
+export const htmlToMarkdown = (html: string, options: Options = {}): Result =>
+  readPage(html, options).markdown(options.slots)
 
+const finish = (
+  mdast: MdastRoot,
+  meta: ReturnType<typeof head>,
+  url: string | undefined,
+  options: Options,
+): Result => {
+  const { frontmatter = true, jsonLd = true } = options
   // the page's own h1 is its title; without one, the <title> stands in
   const hasH1 = mdast.children.some((node) => node.type === 'heading' && node.depth === 1)
   if (!hasH1 && meta.title)
@@ -790,7 +1434,8 @@ export const htmlToMarkdown = (html: string, options: Options = {}): Result => {
     })
 
   let output = toMarkdown(mdast, {
-    extensions: [gfmToMarkdown()],
+    extensions: [GFM],
+    handlers: { fieldValue } as never,
     bullet: '-',
     emphasis: '_',
     rule: '-',
