@@ -1,5 +1,41 @@
 # @affordances/md
 
+## 0.3.0
+
+### Minor Changes
+
+- 89a26fd: `md({ aliases })` maps public URL shapes your `proxy.ts` or rewrites send to an `app/` route, in Next's rewrite syntax: `{ '/package/@:scope/:name/:rest*': '/package/@:scope%2F:name/:rest*' }`. Those URLs then get their `Link` header, twin links in the Markdown, and their route's `markdown.ts`, with `params` exactly as `page.tsx` gets them (`{ pkg: '%40babel%2Fcore' }`, still encoded). `literalMd` stays in public URL space: list an aliased URL's public shape there. Each alias is checked when the config loads: a destination no page answers throws, quoting the alias and naming the nearest pages. Aliases match as strictly as Next routes a page, against the URL that was requested, and a request made straight to the handler still never runs a `markdown.ts`.
+- b5415c2: `mdProxy(request)` from `@affordances/md/next/proxy` gives a gated `proxy.ts` one object: `md.page`, the page the request is for whether it asks for HTML or Markdown (`/compare.md` is `/compare`), so every gate runs on the same URL; `md.markdown`; `md.redirect(url, status?)`, which sends a Markdown request to the target's `.md` when it's on this site (privately, varying on `Accept`) and any other target as a plain redirect; `md.next(init?)`, which sends a Markdown request to the handler and lets any other through; and `md.link`. The docs' gate-first recipe is now three lines around it. `isMdRequest`, `mdRewrite` and `mdLink` are unchanged.
+- adaef12: `markdown.ts` can export `slots`, which fill the page's `<AgentSlot name>`s instead of replacing the whole page: `export const slots = { readme: async ({ params }) => … } satisfies Slots<'/package/[pkg]'>`. The default export still runs first, and anything but `undefined` is the whole page. Otherwise the page renders (so its redirects, `notFound()` and layout checks run before any fill), then only the slots it rendered once, where they reach the Markdown, run, together and in the visitor's request; the rest converts as usual. A slot's own render condition doesn't gate its fill (user HTML can carry a marker), so each fill authorizes its own data, as `markdown.ts` does. A filled page is `private, no-store`, a fill's `notFound()` or `redirect()` answers for the whole page, and a request straight to the handler runs no fill. In development the handler warns, naming the route's `markdown.ts`, about a fill with no slot, a slot with no fill, a name used twice, and a fill that returned nothing.
+- ba82656: Slots and links in markers:
+
+  - `<AgentSlot name>` marks a part of the page that `markdown.ts` fills, while the rest of the page converts from its HTML. A name rendered twice is filled nowhere.
+  - `readPage(html)` reads a page once: its `slots` lists the page's slots, `markdown(slots)` fills them, and `redirect` is a `redirect()` Next streamed into it. `htmlToMarkdown(html, { slots })` does it in one call.
+  - Links in `<AgentText md>` and in a slot's fill are made absolute and pointed at their Markdown twin, like the page's links.
+
+  Fixed: a block `<AgentText>` inside a paragraph ran into the paragraph's text, which was broken Markdown. It's now its own block between the paragraph's halves.
+
+- 5166b33: `MarkdownArgs<'/route'>`, `Markdown<'/route'>` and `Slots<'/route'>` type `params` from the route string, as `PageProps` does for `page.tsx`: `[x]` is a `string`, `[...x]` a `string[]`, `[[...x]]` a `string[]` or left out. `params` stays a plain object, still URL-encoded, and without a route the types are 0.2.0's. The arguments also carry `route`, the `app/` route the handler matched (`'/package/[pkg]'`); it's optional in the type, so arguments built by hand, as in a 0.2.0 unit test, still type-check. The generated `.affordances/md.ts` checks each `markdown.ts` against its own route, so a wrong route string fails `tsc`, even one whose params look the same; TypeScript skips `.affordances/` unless `include` names it, so `md()` adds `".affordances/**/*.ts"` to `tsconfig.json`'s `include`, as Next adds `.next/types`: only that array, keeping comments and formatting, and only when the file has its own `include` without it. When it can't edit safely (the file can't be read or parsed, `include` is inherited, or the file is read-only), it warns with the line to add, and never stops the config from loading.
+
+  A `markdown.ts` can use Next's own `notFound()`, `forbidden()`, `unauthorized()`, `redirect()` and `permanentRedirect()`: they answer `404`, `403`, `401`, or a `307`/`308`: to the target's `.md` when it's a page on this site, and to the target as it is otherwise (another origin, an API route, a route handler or a file), all `private, no-store`.
+
+### Patch Changes
+
+- 6c275d2: Converter fixes from vlt.io's friction report:
+
+  - An `<AgentText>` inside a link keeps the link.
+  - Links named only by `aria-label`, links in wrappers and text in a flex or grid gap are spaced.
+  - Sortable table headers keep their button's label.
+  - Forms read ARIA switches, checkboxes, radios, toggles and selects, follow `aria-labelledby`, are named by their `aria-label`, `aria-labelledby` or first heading, keep their text in page order, and no longer escape `@` and `:` in values.
+  - A form's tables and definition lists keep their shape, with each field written where it is. A form named by its own `<legend>` or `<label>` keeps that name as its title.
+  - Fields and links are named as a screen reader names them: a switch, checkbox, radio or toggle button by its own words, and a link with nothing in it by its `aria-labelledby`.
+  - A heading, caption, summary or term whose only text is a button (an accordion's header) reads the button's text.
+  - A name never reads what's hidden from people or what carries a value (a textarea, an option, an output, meter or progress, an editor), and an editor (`contenteditable`, `role="textbox"`) is left out like a textarea.
+
+- 150da63: A page that calls `redirect()` after its shell has streamed now gives a 307 (or 308 for `permanentRedirect()`) to the target's `.md`, instead of a 200 with only the shell. The handler reads the redirect Next streams into the page, and applies the same rules as for any other redirect: same-origin targets become their `.md`, another origin is passed on as it came, and a credentialed or negotiated response is `private, no-store`.
+
+  An RSC request that also asks for Markdown, and any page or file the handler passes through, no longer 500s when the app's `proxy.ts` rewrote the page: the handler drops Next's `x-middleware-*` headers, which a route handler can't send.
+
 ## 0.2.0
 
 ### Minor Changes
