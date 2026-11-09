@@ -1397,6 +1397,19 @@ const streamedRedirect = (tree: HastRoot): Redirect | undefined => {
   return location === undefined ? undefined : { status: delay === '0' ? 308 : 307, location }
 }
 
+// the notFound(), forbidden() or unauthorized() a page threw after its shell was sent (or under cacheComponents,
+// before it): next has already answered 200, so the stream says it instead, as react's errored-boundary instruction
+// $RX("B:0","NEXT_HTTP_ERROR_FALLBACK;404") in a script of its own (next 16.3 and 16.4). read from the parse, so one in
+// a comment or the page's text isn't one, nor the flight data's copy, whose quotes are escaped
+const FALLBACK = /\$RX\("[^"]*","NEXT_HTTP_ERROR_FALLBACK;(401|403|404)"/
+const streamedFallback = (tree: HastRoot): Fallback | undefined => {
+  for (const script of selectAll('script', tree)) {
+    const status = FALLBACK.exec(toString(script))?.[1]
+    if (status) return { status: Number(status) as Fallback['status'] }
+  }
+  return undefined
+}
+
 const head = (tree: HastRoot, base: string | undefined) => {
   const meta = (selector: string) =>
     String(select(selector, tree)?.properties.content ?? '').trim() || undefined
@@ -1415,6 +1428,7 @@ const head = (tree: HastRoot, base: string | undefined) => {
       .map((s) => toString(s).trim())
       .filter(Boolean),
     redirect: streamedRedirect(tree),
+    fallback: streamedFallback(tree),
   }
 }
 
@@ -1432,17 +1446,19 @@ const pretty = (raw: string) => {
   }
 }
 
-// a page read once: its slots, a redirect streamed into it, and its markdown with whatever fills them. the handler
-// reads the page, runs the fills, then converts, without parsing it twice
+// a page read once: its slots, a redirect or http error streamed into it, and its markdown with whatever fills them.
+// the handler reads the page, runs the fills, then converts, without parsing it twice
 export type Page = {
   slots: SlotNames
   redirect?: Redirect
+  fallback?: Fallback
   markdown: (slots?: Record<string, string>) => Result
 }
 // the <AgentSlot> names that reach the markdown, in page order: the ones a fill can go to, and those the page renders
 // more than once, which are filled nowhere
 export type SlotNames = { unique: string[]; duplicate: string[] }
 export type Redirect = { status: 307 | 308; location: string }
+export type Fallback = { status: 401 | 403 | 404 }
 
 export const readPage = (html: string, options: Options = {}): Page => {
   const tree = parsed(html)
@@ -1466,6 +1482,7 @@ export const readPage = (html: string, options: Options = {}): Page => {
       duplicate: names.flatMap(([name, count]) => (count > 1 ? [name] : [])),
     },
     ...(meta.redirect && { redirect: meta.redirect }),
+    ...(meta.fallback && { fallback: meta.fallback }),
     // the page itself is left as it is, so it can be converted again with other fills
     markdown: (slots) => {
       // markers stay plain wrappers, except a slot with a fill: its children give way to the fill, as a block

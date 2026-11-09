@@ -376,6 +376,65 @@ test("a page that only shows next's redirect meta as text, or a refresh meta of 
   expect(await response.text()).toContain('# Docs')
 })
 
+// next start captures (fixtures/streamed-fallback.capture.md): a 200, the shell, and the error as react's $RX
+const streamedFallback =
+  (file: string, headers: Record<string, string> = {}) =>
+  () =>
+    new Response(readFileSync(new URL(`./fixtures/${file}`, import.meta.url), 'utf8'), {
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'public, max-age=60',
+        ...headers,
+      },
+    })
+
+test.each([
+  ['streamed-not-found-next16.3.html', 404, 'Not found'],
+  ['streamed-not-found-next16.4.html', 404, 'Not found'],
+  ['streamed-not-found-cache-components.html', 404, 'Not found'],
+  ['streamed-forbidden-next16.4.html', 403, 'Forbidden'],
+  ['streamed-unauthorized-next16.3.html', 401, 'Unauthorized'],
+])(
+  'a notFound(), forbidden() or unauthorized() streamed after the shell (%s) is a %i, not the shell',
+  async (file, status, title) => {
+    upstream = streamedFallback(file)
+    const response = await handler(new Request(`${site}/nope.md`))
+    expect([response.status, await response.text()]).toEqual([status, `# ${title}\n`])
+    expect([response.headers.get('cache-control'), response.headers.get('vary')]).toEqual([
+      'private, no-store',
+      'Accept',
+    ])
+    expect(response.headers.has('x-affordances-md-personal')).toBe(false)
+    // the same as a thrown one: someone's credentials, or a cookie set in answer, mark it personal
+    const signedIn = await handler(new Request(`${site}/nope.md`, { headers: { cookie: 'sid=1' } }))
+    expect([signedIn.status, signedIn.headers.get('x-affordances-md-personal')]).toEqual([
+      status,
+      '1',
+    ])
+    upstream = streamedFallback(file, { 'set-cookie': 'flash=1' })
+    expect(
+      (await handler(new Request(`${site}/nope.md`))).headers.get('x-affordances-md-personal'),
+    ).toBe('1')
+    // asked for with Accept at the page's url, too
+    upstream = streamedFallback(file)
+    const negotiated = await handler(
+      new Request(`${site}/nope`, { headers: { accept: 'text/markdown' } }),
+    )
+    expect([negotiated.status, negotiated.headers.get('cache-control')]).toEqual([
+      status,
+      'private, no-store',
+    ])
+  },
+)
+
+test('a page that streamed a notFound() fills none of its slots', async () => {
+  upstream = streamedFallback('streamed-not-found-next16.4.html')
+  const ran = markdownModule({ slots: { readme: () => '## Readme' } })
+  const response = await handler(new Request(`${site}/x/missing.md`))
+  expect(response.status).toBe(404)
+  expect(ran).toEqual([])
+})
+
 test('markdown asked for with Accept at the page url is never cached publicly; the .md url mirrors the page', async () => {
   upstream = () =>
     new Response(page('<h1>Home</h1>'), {

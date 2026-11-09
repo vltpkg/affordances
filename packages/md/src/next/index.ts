@@ -533,6 +533,13 @@ const convertPage =
     // a redirect() after the shell went out can't change the status any more, so next streams it into the page
     // instead: a 200 whose html sends the browser on. it's the same redirect, so it gets the same answer
     if (read.redirect) return markdownRedirect(read.redirect, target, pageCache)
+    // a notFound(), forbidden() or unauthorized() after the shell, the same way: the page is that error, so it gets the
+    // answer a thrown one does, before any slot is filled
+    if (read.fallback)
+      return httpError(
+        read.fallback.status,
+        credentialed(headers) || upstream.headers.has('set-cookie'),
+      )
     // append runs alongside the fills; a fill's notFound() may answer for the page first, so its rejection waits to be
     // awaited below rather than going unhandled
     const appended = Promise.resolve(append?.(request))
@@ -734,11 +741,13 @@ const thrownAnswer = (error: unknown, target: URL, personal: boolean) => {
   const thrown = fromDigest(error)
   if (!thrown) return undefined
   if ('location' in thrown) return markdownRedirect(thrown, target, { private: true, personal })
-  return respond(`# ${HTTP_ERRORS[thrown.status]}\n`, thrown.status, {
+  return httpError(thrown.status, personal)
+}
+const httpError = (status: number, personal: boolean) =>
+  respond(`# ${HTTP_ERRORS[status]}\n`, status, {
     'cache-control': 'private, no-store',
     ...(personal && { [PERSONAL_HEADER]: '1' }),
   })
-}
 
 const firstHeading = (markdown: string) => /^# (.+)$/m.exec(markdown)?.[1]?.trim()
 
