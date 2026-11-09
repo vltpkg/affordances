@@ -65,17 +65,48 @@ export const GET = createLlmsFullHandler({
 })
 ```
 
+## Prose sections
+
+A section can say something as well as list pages: its `intro` is Markdown under its heading, before its pages, and a section with an `intro` and no `pages` is prose alone. Links in it, and in the top-level `intro`, are made absolute and point at your pages' Markdown twins, as page links are, since an agent reads `llms.txt` away from your site:
+
+```ts title="app/llms.txt/route.ts"
+import { createLlmsTxtHandler } from '@affordances/md/next'
+
+export const GET = createLlmsTxtHandler({
+  summary: 'Studio goods in small runs.',
+  sections: (request, routes) => [
+    {
+      title: 'Ordering',
+      intro: 'Orders ship in two days. See [shipping](/shipping) and [returns](/returns).',
+    },
+    { title: 'Pages', intro: 'Everything in the store.', pages: routes },
+  ],
+})
+```
+
+```md
+## Ordering
+
+Orders ship in two days. See [shipping](https://acme.store/shipping.md) and [returns](https://acme.store/returns.md).
+
+## Pages
+
+Everything in the store.
+
+- [Home](https://acme.store/index.md): Every product, with its price
+```
+
 ## Options
 
 `createLlmsTxtHandler`:
 
-| Option     | Type                                      | Description                                                                                                                                  |
-| ---------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `title`    | `string`                                  | The `#` heading. Defaults to the site index's `name`.                                                                                        |
-| `summary`  | `string`                                  | The `>` summary under it.                                                                                                                    |
-| `intro`    | `string`                                  | More Markdown before the page lists, such as how to use the site.                                                                            |
-| `sections` | `(request, routes) => { title, pages }[]` | The page lists, each under a `##` heading. A page is a path, whose title and description are read from it, or `{ url, title, description }`. |
-| `full`     | `string \| false`                         | Where `llms-full.txt` is, to link it. Defaults to `/llms-full.txt`; `false` leaves the line out.                                             |
+| Option     | Type                                               | Description                                                                                                                                                                        |
+| ---------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `title`    | `string`                                           | The `#` heading. Defaults to the site index's `name`.                                                                                                                              |
+| `summary`  | `string`                                           | The `>` summary under it.                                                                                                                                                          |
+| `intro`    | `string`                                           | More Markdown before the page lists, such as how to use the site. Its links point at their twins.                                                                                  |
+| `sections` | `(request, routes) => { title, intro?, pages? }[]` | The sections, each under a `##` heading: an `intro` in Markdown, then its pages. A page is a path, whose title and description are read from it, or `{ url, title, description }`. |
+| `full`     | `string \| false`                                  | Where `llms-full.txt` is, to link it. Defaults to `/llms-full.txt`; `false` leaves the line out.                                                                                   |
 
 `createLlmsFullHandler` takes `pages: (request, routes) => string[]`, the paths in order, defaulting to the routes. Both also take the [Markdown handler's](/docs/plugins/md/caching#behind-a-proxy) `origin`, `timeout`, and `headers`, for the requests they make. Each page's Markdown is exactly what its Markdown route returns, so the rest (`maxBytes`, `linkTwins`, `append`, and `headers` for the page render itself) is configured on that route's `createMdHandler`. That fetch needs `md()`'s rewrites in `next.config`, or a `proxy.ts` that rewrites with `mdRewrite`.
 
