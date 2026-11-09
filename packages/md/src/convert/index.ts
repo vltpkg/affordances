@@ -1187,8 +1187,8 @@ type Frame = {
 
 // FB-4: markdown a marker carries (<AgentText md>, a slot's fill) gets what page links get: each link, autolink and
 // definition made absolute, then the link hook; an image only absolute, like a page image. only each url's own source
-// changes, so the rest stays as the app wrote it. raw html in it is left alone
-const relinkMarkdown = (markdown: string, base: string, relink: Options['link']) => {
+// changes, so the rest stays as the app wrote it. raw html in it is left alone. llms.txt's intros use it too
+export const relinkMarkdown = (markdown: string, base: string, relink: Options['link']) => {
   // nothing that could be a link: a destination or definition needs ], an autolink <, @, www. or ://
   if (!/[\]<@]|www\.|:\/\//.test(markdown)) return markdown
   const events = postprocess(
