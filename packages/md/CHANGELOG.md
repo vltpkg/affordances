@@ -21,7 +21,7 @@
 
 ### Patch Changes
 
-- 6c275d2: Converter fixes from vlt.io's friction report:
+- 6c275d2: Converter fixes:
 
   - An `<AgentText>` inside a link keeps the link.
   - Links named only by `aria-label`, links in wrappers and text in a flex or grid gap are spaced.
