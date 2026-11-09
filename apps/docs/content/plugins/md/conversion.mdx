@@ -47,7 +47,7 @@ export default async function Page({ params }) {
 }
 ```
 
-The dehydrated state travels in the page's scripts, which are never part of the Markdown.
+The dehydrated state travels in the page's scripts, which are never part of the Markdown. Next's flight data (the `self.__next_f` scripts the client hydrates from, and with `partialPrefetching` a second render to prefetch from) is often most of a big page's bytes, so it's dropped before the page is parsed.
 
 ### Slow boundaries
 

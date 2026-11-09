@@ -456,8 +456,33 @@ const slotMarkers = (parent: HastRoot | Element, found: Element[] = []) => {
 // set on a slot a fill can go to: a property no attribute parses to, so a page can't forge it
 const FILLABLE = 'affordancesSlot'
 
+// next's flight data (self.__next_f pushes: the payload the client hydrates from and, with partialPrefetching, a
+// second render to prefetch from) is most of a big page's bytes and none of what it says. each push is swapped for an
+// empty script before parsing, and the swap is kept only if every one parsed as a script: one inside an attribute, a
+// comment or a textarea isn't a script, so the page is parsed as sent. a push has no < in it (next escapes them), so
+// in a page as next sends it, the script ends where the match does. its open tag is read as the tokenizer reads it,
+// for the shapes next sends (attributes bare or double-quoted): a quoted value runs to its closing quote, > and all,
+// and any other shape doesn't match, so a value can't pass for a push and leave the script's text on the page
+const FLIGHT =
+  /<script(?:\s+[\w-]+(?:="[^"]*")?)*\s*>\s*(?:\(self\.__next_f\s*=\s*self\.__next_f\s*\|\|\s*\[\]\)|self\.__next_f)\.push\([^<]*<\/script>/g
+const swaps = (parent: HastRoot | Element, nonce: string): number =>
+  parent.children.reduce(
+    (sum, child) =>
+      isElement(child)
+        ? sum + (child.properties.dataAffordancesFlight === nonce ? 1 : swaps(child, nonce))
+        : sum,
+    0,
+  )
 const parsed = (html: string) => {
-  const tree = fromHtml(html)
+  // a nonce per page, so nothing in it can pass for a swap
+  const nonce = crypto.randomUUID()
+  let swapped = 0
+  const lean = html.replace(FLIGHT, () => {
+    swapped += 1
+    return `<script data-affordances-flight="${nonce}"></script>`
+  })
+  let tree = fromHtml(swapped ? lean : html)
+  if (swapped && swaps(tree, nonce) !== swapped) tree = fromHtml(html)
   resolveStreamed(tree)
   return tree
 }
@@ -1365,6 +1390,36 @@ export const yaml = (data: Record<string, string | undefined>) => {
   return lines.length ? `---\n${lines.join('\n')}\n---\n\n` : ''
 }
 
+// the selectors the head is read with (tag[attribute=value]…), each parsed once and then checked by property, where
+// hast-util-select's matches() parses its selector again for every element it tries, thousands on a big page. a value
+// matches as css reads it: exactly, a list one (rel, http-equiv) by its items joined with spaces
+const SELECTOR = /^([a-z]+)((?:\[[a-z-]+=(?:"[^"]*"|[^\]"]*)\])*)$/
+const ATTRIBUTE = /\[([a-z-]+)=(?:"([^"]*)"|([^\]"]*))\]/g
+const parsedSelectors = new Map<string, [tag: string, attributes: [string, string][]]>()
+const matches = (selector: string, element: Element) => {
+  let want = parsedSelectors.get(selector)
+  if (!want) {
+    const [, tag, attributes = ''] = SELECTOR.exec(selector) ?? []
+    if (!tag) throw new Error(`not a selector the head is read with: ${selector}`)
+    want = [
+      tag,
+      [...attributes.matchAll(ATTRIBUTE)].map(([, name = '', quoted, bare]) => [
+        name.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase()),
+        quoted ?? bare ?? '',
+      ]),
+    ]
+    parsedSelectors.set(selector, want)
+  }
+  const [tag, attributes] = want
+  return (
+    element.tagName === tag &&
+    attributes.every(([property, value]) => {
+      const has = element.properties[property]
+      return (Array.isArray(has) ? has.join(' ') : has == null ? undefined : String(has)) === value
+    })
+  )
+}
+
 const firstTitle = (node: HastRoot | Element): Element | undefined => {
   for (const child of node.children) {
     if (!isElement(child) || child.tagName === 'svg') continue
@@ -1390,8 +1445,7 @@ const canonicalOf = (href: string | undefined, base: string | undefined) => {
 // the redirect next streams into a page that called redirect() after its shell was sent (as of next 16.3 and 16.4's
 // make-get-server-inserted-html): a refresh meta of its own, after 0 seconds for a permanent redirect, 1 for any other.
 // read from the parse, so its url is decoded as a browser would, and one in a comment or a script's text isn't one
-const streamedRedirect = (tree: HastRoot): Redirect | undefined => {
-  const meta = select('meta[id="__next-page-redirect"][http-equiv="refresh"]', tree)
+const streamedRedirect = (meta: Element | undefined): Redirect | undefined => {
   const [, delay, location] =
     /^([01]);url=(.*)$/s.exec(String(meta?.properties.content ?? '')) ?? []
   return location === undefined ? undefined : { status: delay === '0' ? 308 : 307, location }
@@ -1402,33 +1456,54 @@ const streamedRedirect = (tree: HastRoot): Redirect | undefined => {
 // $RX("B:0","NEXT_HTTP_ERROR_FALLBACK;404") in a script of its own (next 16.3 and 16.4). read from the parse, so one in
 // a comment or the page's text isn't one, nor the flight data's copy, whose quotes are escaped
 const FALLBACK = /\$RX\("[^"]*","NEXT_HTTP_ERROR_FALLBACK;(401|403|404)"/
-const streamedFallback = (tree: HastRoot): Fallback | undefined => {
-  for (const script of selectAll('script', tree)) {
+const streamedFallback = (scripts: Element[]): Fallback | undefined => {
+  for (const script of scripts) {
     const status = FALLBACK.exec(toString(script))?.[1]
     if (status) return { status: Number(status) as Fallback['status'] }
   }
   return undefined
 }
 
+// the elements the head is read from, in page order, each with whether it's in the <head>: one walk, where a select()
+// per field walks a big page once each, the whole page for a field it doesn't have
+const HEAD_TAGS = new Set(['html', 'title', 'meta', 'link', 'script'])
+const headTags = (tree: HastRoot) => {
+  const found: { element: Element; inHead: boolean }[] = []
+  const walk = (parent: HastRoot | Element, inHead: boolean) => {
+    for (const child of parent.children) {
+      if (!isElement(child)) continue
+      if (HEAD_TAGS.has(child.tagName)) found.push({ element: child, inHead })
+      walk(child, inHead || child.tagName === 'head')
+    }
+  }
+  walk(tree, false)
+  return found
+}
+
 const head = (tree: HastRoot, base: string | undefined) => {
+  const tags = headTags(tree)
+  const all = (selector: string, inHead = false) =>
+    tags.flatMap(({ element, inHead: inside }) =>
+      (inside || !inHead) && matches(selector, element) ? [element] : [],
+    )
+  const first = (selector: string, inHead = false) =>
+    tags.find(({ element, inHead: inside }) => (inside || !inHead) && matches(selector, element))
+      ?.element
   const meta = (selector: string) =>
-    String(select(selector, tree)?.properties.content ?? '').trim() || undefined
+    String(first(selector)?.properties.content ?? '').trim() || undefined
   // next streams metadata for dynamic pages, so <title> may arrive in the body; an svg's <title> isn't the page's
-  const title = select('head title', tree) ?? firstTitle(tree)
+  const title = first('title', true) ?? firstTitle(tree)
   return {
     title: (title && toString(title).trim()) || meta('meta[property="og:title"]'),
     description: meta('meta[name=description]') ?? meta('meta[property="og:description"]'),
-    canonical: canonicalOf(
-      String(select('head link[rel=canonical]', tree)?.properties.href ?? ''),
-      base,
-    ),
+    canonical: canonicalOf(String(first('link[rel=canonical]', true)?.properties.href ?? ''), base),
     image: meta('meta[property="og:image"]'),
-    lang: String(select('html', tree)?.properties.lang ?? '') || undefined,
-    jsonLd: selectAll('script[type="application/ld+json"]', tree)
+    lang: String(first('html')?.properties.lang ?? '') || undefined,
+    jsonLd: all('script[type="application/ld+json"]')
       .map((s) => toString(s).trim())
       .filter(Boolean),
-    redirect: streamedRedirect(tree),
-    fallback: streamedFallback(tree),
+    redirect: streamedRedirect(first('meta[id="__next-page-redirect"][http-equiv="refresh"]')),
+    fallback: streamedFallback(all('script')),
   }
 }
 
@@ -1485,14 +1560,21 @@ export const readPage = (html: string, options: Options = {}): Page => {
     ...(meta.fallback && { fallback: meta.fallback }),
     // the page itself is left as it is, so it can be converted again with other fills
     markdown: (slots) => {
-      // markers stay plain wrappers, except a slot with a fill: its children give way to the fill, as a block
-      const marker: Handle = (state, node) => {
+      const fillOf = (node: Element) => {
         const name = node.properties[FILLABLE]
         const md =
           typeof name === 'string' && slots && Object.hasOwn(slots, name) ? slots[name] : undefined
-        return (typeof md === 'string' ? markerMarkdown(md, 'block') : state.all(node)) as never
+        return typeof md === 'string' ? md : undefined
       }
-      const mdast = toMdast(content as HastNodes, {
+      // markers stay plain wrappers, except a slot with a fill: its children give way to the fill, as a block
+      const marker: Handle = (state, node) => {
+        const md = fillOf(node)
+        return (md === undefined ? state.all(node) : markerMarkdown(md, 'block')) as never
+      }
+      // so a filled slot's children are left out before converting, which copies and walks all of what it's given:
+      // a slot's fallback (a skeleton, last night's table) can be most of a page
+      const filled = new Set(markers.filter((node) => fillOf(node) !== undefined))
+      const mdast = toMdast((filled.size ? emptied(content, filled) : content) as HastNodes, {
         handlers: { ...handlers, 'affordances-md': marker, ...options.handlers },
       }) as MdastRoot
       const url = meta.canonical ?? options.url
@@ -1503,6 +1585,19 @@ export const readPage = (html: string, options: Options = {}): Page => {
       return finish(mdast, meta, url, options)
     },
   }
+}
+
+// a copy of a tree with these elements' children gone, sharing every part that doesn't hold one
+const emptied = <T extends HastRoot | Element>(node: T, empty: Set<Element>): T => {
+  if (isElement(node) && empty.has(node)) return { ...node, children: [] }
+  let changed = false
+  const children = node.children.map((child) => {
+    if (!isElement(child)) return child
+    const copy = emptied(child, empty)
+    if (copy !== child) changed = true
+    return copy
+  })
+  return changed ? { ...node, children } : node
 }
 
 // the page's markdown; slots fills its <AgentSlot>s
