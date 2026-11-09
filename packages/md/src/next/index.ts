@@ -347,6 +347,7 @@ const asIs = async (request: Request, options: MdHandlerOptions) => {
 
 // how long a page may take to render, by default
 const TIMEOUT = 10_000
+const MIB = 1024 * 1024
 
 // the page's headers, for a response of ours that passes it on. fetch has already decoded the body, so its encoding
 // and length no longer describe it, and next's x-middleware-* (set when a proxy.ts rewrote the page) make it throw
@@ -408,8 +409,12 @@ const markdownRedirect = (
   })
 }
 
-const fail = (status: number, message: string) =>
-  respond(`# ${message}\n`, status, { 'cache-control': 'private, no-store' })
+// an answer of the handler's own, never cached; personal when it was made with someone's credentials
+const fail = (status: number, message: string, personal = false) =>
+  respond(`# ${message}\n`, status, {
+    'cache-control': 'private, no-store',
+    ...(personal && { [PERSONAL_HEADER]: '1' }),
+  })
 
 // a path on the site's own origin as a url, or undefined: new URL reads one that starts with //host as another
 // origin, and the caller's credentials (or the headers option) never go there
@@ -423,7 +428,7 @@ const pageUrl = (request: Request, options: MdHandlerOptions, path: string) => {
 const convertPage =
   (options: MdHandlerOptions) =>
   async (request: Request, pagePath: string, direct: boolean): Promise<Response> => {
-    const { timeout = TIMEOUT, maxBytes = 6 * 1024 * 1024, append } = options
+    const { timeout = TIMEOUT, maxBytes = 6 * MIB, append } = options
     if (request.headers.has(RENDER_HEADER)) return fail(508, 'Loop detected')
 
     const url = new URL(request.url)
@@ -514,7 +519,19 @@ const convertPage =
       if (callerCredentials || serviceCredentials) passed.set('cache-control', 'private, no-store')
       return new Response(upstream.body, { status: upstream.status, headers: passed })
     }
-    const tooLarge = () => fail(413, 'The page is too large to convert')
+    // a page past maxBytes, which a page that grows (a report, a changelog) can reach long after launch: the answer
+    // and the server's log both say what to change
+    const tooLarge = () => {
+      const limit = maxBytes % MIB ? `${maxBytes} bytes` : `${maxBytes / MIB} MiB`
+      const fix = `To convert it, raise maxBytes in the md route (app/api/affordances/md/[[...path]]/route.ts): \`export const GET = createMdHandler({ maxBytes: ${Math.ceil((2 * maxBytes) / MIB)} * 1024 * 1024 })\`.`
+      console.warn(
+        `[affordances-md] ${target.pathname} is larger than maxBytes (${limit}), so it answers 413. ${fix}`,
+      )
+      return fail(
+        413,
+        `The page is too large to convert\n\nIts HTML is larger than ${limit} (maxBytes). ${fix}`,
+      )
+    }
     if (Number(upstream.headers.get('content-length') ?? 0) > maxBytes) {
       clearTimeout(timer)
       return tooLarge()

@@ -188,7 +188,27 @@ test('loop guard, size limit, timeout', async () => {
   expect((await get('/a', { [RENDER_HEADER]: '1' })).status).toBe(508)
   expect(seen).toHaveLength(0)
   const small = createMdHandler({ maxBytes: 10 })
-  expect((await small(new Request(`${site}/api/affordances/md/a`))).status).toBe(413)
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const tooLarge = await small(new Request(`${site}/api/affordances/md/a`))
+  // what to change, in the answer and the server's log: a page that grows past it is the site's to fix
+  const fix =
+    'To convert it, raise maxBytes in the md route (app/api/affordances/md/[[...path]]/route.ts): `export const GET = createMdHandler({ maxBytes: 1 * 1024 * 1024 })`.'
+  expect([tooLarge.status, await tooLarge.text()]).toEqual([
+    413,
+    `# The page is too large to convert\n\nIts HTML is larger than 10 bytes (maxBytes). ${fix}\n`,
+  ])
+  expect(warn).toHaveBeenCalledWith(
+    `[affordances-md] /a is larger than maxBytes (10 bytes), so it answers 413. ${fix}`,
+  )
+  // the default, 6 MiB, suggests twice it
+  upstream = () =>
+    new Response(page('<h1>Big</h1>'), {
+      headers: { 'content-type': 'text/html', 'content-length': String(7 * 1024 * 1024) },
+    })
+  expect(await (await get('/big')).text()).toContain(
+    'larger than 6 MiB (maxBytes). To convert it, raise maxBytes in the md route (app/api/affordances/md/[[...path]]/route.ts): `export const GET = createMdHandler({ maxBytes: 12 * 1024 * 1024 })`.',
+  )
+  warn.mockRestore()
   vi.stubGlobal(
     'fetch',
     (_url: URL, init: RequestInit) =>

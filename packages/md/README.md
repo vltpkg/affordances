@@ -34,6 +34,8 @@ import { md } from '@affordances/md/next'
 export default withAffordances(nextConfig, { plugins: [md()] })
 ```
 
+`init`'s route is one line, `export { GET } from '@affordances/md/next'`, and it's your file. To set options, replace it: `export const GET = createMdHandler({ maxBytes: 32 * 1024 * 1024, timeout: 20_000 })`. `maxBytes` (6 MiB by default) is the largest page HTML it converts; past it, the page answers `413` with the line to change, and the server logs it. `timeout` (10 seconds) is how long a page has to stream.
+
 Every page answers with `Link: </x.md>; rel="alternate"; type="text/markdown"`, so agents can find the markdown (`md({ link: false })` turns it off). For a `<link>` in the HTML too, add `alternates: mdAlternate(path)` to `generateMetadata`.
 
 `llms.txt` (an index of every page's markdown) and `llms-full.txt` (every page in one file) are one line each. They list every page that needs no params, found in `app/` (and, on an Affordances site, the site index's routes); pass `sections` / `pages` to `createLlmsTxtHandler` / `createLlmsFullHandler` to name pages behind dynamic routes:

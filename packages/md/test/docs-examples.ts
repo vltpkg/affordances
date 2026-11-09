@@ -3,10 +3,13 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { cookies } from 'next/headers'
 import { unauthorized } from 'next/navigation'
-import { type MarkdownArgs, type Slots, withMd } from '../src/next/index.ts'
+import { createMdHandler, type MarkdownArgs, type Slots, withMd } from '../src/next/index.ts'
 import { mdProxy } from '../src/next/proxy.ts'
 
 const nextConfig = {}
+
+// setup.mdx and the README: init's one-line route, replaced to set its options
+export const GET = createMdHandler({ maxBytes: 32 * 1024 * 1024, timeout: 20_000 })
 
 // setup.mdx, "Public URLs your proxy maps onto routes"
 export const aliased = withMd(nextConfig, {
