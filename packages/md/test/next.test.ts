@@ -795,7 +795,7 @@ test("a page a proxy.ts rewrote is passed on without next's x-middleware-* heade
     new Response('0:["$","div",null,{}]\n', {
       headers: { 'content-type': 'text/x-component', ...proxied },
     })
-  // an RSC request that also asks for markdown, as vlt.io's proxy sends one here
+  // an RSC request that also asks for markdown, as a proxy.ts that rewrites with mdRewrite sends one here
   const rsc = await handler(
     new Request(`${site}/pricing?_rsc`, { headers: { rsc: '1', accept: 'text/markdown' } }),
   )
