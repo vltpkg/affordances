@@ -1,5 +1,13 @@
 # @affordances/cli
 
+## 0.1.3
+
+### Patch Changes
+
+- @affordances/mcp@0.4.0
+  - @affordances/next@0.4.0
+  - @affordances/protocol@0.4.0
+
 ## 0.1.2
 
 ### Patch Changes

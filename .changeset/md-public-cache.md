@@ -1,5 +1,0 @@
----
-'@affordances/md': minor
----
-
-`export const publicCache` in `markdown.ts` lets a CDN keep a route's public Markdown: a `cacheLife` profile (Next's own, or one from `next.config`'s `cacheLife`) or `{ revalidate, expire? }` in seconds. The `.md` URL then gets the `Cache-Control` Next sends for a page cached that long (`'hours'` is `s-maxage=3600, stale-while-revalidate=82800`), for slot routes, default exports and pages converted from their HTML. It applies only to an anonymous, complete `200` at the `.md` URL, with no credentials from the request or the `headers` option and no cookie set by the page; anything else is exactly as before. That public view is the same for every visitor: for such a request the page is rendered, and the `markdown.ts`, its fills and `append` run, with none of the visitor's headers (language, user agent, country). A profile name that isn't one, or a field that isn't `revalidate` or `expire`, fails `tsc` against the profiles, custom ones included, and in development the server names the file and the valid values; until it's fixed, the route isn't cached.
