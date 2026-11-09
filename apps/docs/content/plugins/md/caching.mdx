@@ -14,6 +14,68 @@ A response the handler passes on rather than converts (a file in `public/`, JSON
 
 The status code is the page's. A redirect to the same site stays in Markdown (to the target's `.md`), varies on `Accept`, and is cached as the page would be (private when it's credentialed, private, or sets a cookie). One to another origin is passed on as it came, never followed: the agent decides whether to follow it. That includes a `redirect()` a page calls after its shell has streamed, which Next can only send as a `200` that refreshes the browser: the handler answers it with a real `307` (`308` for `permanentRedirect()`). A `notFound()`, `forbidden()` or `unauthorized()` after the shell is the same: Next sends a `200`, and the handler answers `404`, `403` or `401`, `private, no-store`. A page that is still streaming after 10 seconds is converted as far as it got, marked partial and never cached ([slow boundaries](/docs/plugins/md/conversion#slow-boundaries)); one that sends nothing by then answers `504`, and one larger than 6 MiB answers `413`, saying how to raise `maxBytes`.
 
+## Caching public Markdown
+
+Markdown from a `markdown.ts` (a default export or its slots) is `private, no-store`, since it read data with whatever the request carried. So is a page Next renders dynamically, which it always sends as `private, no-store`. When a route's Markdown is public, say so in its `markdown.ts`, and a CDN can keep it:
+
+```ts title="app/package/[pkg]/markdown.ts"
+export const publicCache = 'hours'
+```
+
+`publicCache` is a [`cacheLife`](https://nextjs.org/docs/app/api-reference/functions/cacheLife) profile, Next's own (`'seconds'`, `'minutes'`, `'hours'`, `'days'`, `'weeks'`, `'max'`, `'default'`) or one from your `next.config`'s `cacheLife`, or the same times in seconds: `{ revalidate: 300, expire: 86_400 }`. The `.md` gets the `Cache-Control` Next sends for a page cached with that profile: `'hours'` is `s-maxage=3600, stale-while-revalidate=82800`. It works for every kind of route:
+
+```ts
+// slots: one line next to them
+export const slots = {
+  readme: async ({ params }) => readme(params.pkg),
+} satisfies Slots<'/package/[pkg]'>
+export const publicCache = 'hours'
+
+// a default export
+export default (async ({ params }) => pkgMarkdown(params.pkg)) satisfies Markdown<'/package/[pkg]'>
+export const publicCache = { revalidate: 300, expire: 86_400 }
+
+// a page converted from its HTML: a markdown.ts with only this
+export const publicCache = 'days'
+```
+
+It applies only to the anonymous view of the `.md` URL. The response is public only when all of these hold, and otherwise it's exactly what it would be without `publicCache`:
+
+- the request has no `cookie` and no `authorization`, and the handler's `headers` option adds neither;
+- it's the `.md` URL, not the page's own URL asked for with `Accept: text/markdown`, which stays private since some CDN modes ignore `Vary`;
+- the answer is a `200`, and the page finished streaming before the timeout;
+- the page didn't set a cookie. A page that sets one for an anonymous visitor (a session, an auth handshake) stays private, and in development the server says which cookie.
+
+A `Response` your default export returns keeps its own `Cache-Control`, as before. A name that isn't a profile, or an object with another field (`'hourz'`, `{ revalidat: 300 }`), fails `tsc` (and `next build`), named in the route's `markdown.ts` with Next's closest profile, against Next's profiles and your `next.config`'s. In development the server also says which file and what it can be. Until it's fixed, the route isn't cached.
+
+**Only the anonymous view is ever stored.** Credentials make a response `private, no-store`, so no one is served someone else's Markdown. But a CDN that doesn't key on cookies (Vercel's and Cloudflare's don't) may serve that public view to a signed-in agent. If signed-in agents need their own view of a route, don't opt it in, or skip the CDN cache when the session cookie is present (a Cloudflare Cache Rule, say). `publicCache` doesn't send `Vary: Cookie`: Vercel doesn't cache a response that varies on cookies, and Cloudflare ignores it.
+
+**Only `cookie` and `authorization` count as credentials.** A site that authenticates with a header of its own, such as `x-api-key`, or with a token in the query string (`?token=`, `?api_key=`), must not opt in: a request carrying only that would get, and a CDN could store, the view it unlocks. The same goes for any other request header a default export or fill reads (`user-agent`, `x-forwarded-for`): the stored view would depend on something the cache key doesn't include.
+
+**A public `.md` is one view, the same for every visitor.** A CDN keys it on its URL alone: Cloudflare ignores `Vary`, and Vercel splits its cache on each value. So for a request whose answer can be public (no credentials, the `.md` URL), the handler renders the page with none of the visitor's headers (no language, user agent or country), and your default export, fills and `append` get a `request` of the URL with none of them either; `request.url` and `nextUrl` still carry the host. Next's `headers()` from `next/headers` still sees the visitor's own, so don't read it on an opted-in route. A site in several languages gets one cached view per URL: put the language in the URL (`/fr/…`) to cache each. In development, an opted-in route whose page varies on `Accept-Language` says so. A signed-in or `Accept` request, which stays private, is the visitor's own.
+
+**A cached `.md` stays until its time runs out.** A page that becomes private, or a package that's unpublished, is still served from the CDN until its `expire` (its `revalidate` plus the `stale-while-revalidate` after it). Choose lengths with that in mind, or purge your CDN's copy when it changes. The data behind it can stay fresh on its own: `'use cache'` with `cacheLife` and `cacheTag` works in a default export and in a fill, and `revalidateTag` refreshes it on publish:
+
+```ts title="app/package/[pkg]/markdown.ts"
+import { cacheLife, cacheTag } from 'next/cache'
+
+async function readme(pkg: string) {
+  'use cache'
+  cacheLife('hours')
+  cacheTag(`pkg:${pkg}`)
+  return fetchReadme(pkg)
+}
+
+export const slots = {
+  readme: ({ params }) => readme(params.pkg),
+} satisfies Slots<'/package/[pkg]'>
+export const publicCache = 'hours'
+
+// and where a package is published: revalidateTag(`pkg:${name}`, 'max')
+```
+
+`revalidateTag` refreshes the data, not a CDN's copy of the `.md`, which lasts its own time.
+
 ## Behind a proxy
 
 The handler fetches pages from the request's own origin. When a proxy changes it, set `AFFORDANCES_MD_ORIGIN`, or build the handler with options:

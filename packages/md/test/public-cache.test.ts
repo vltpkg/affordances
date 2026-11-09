@@ -1,0 +1,432 @@
+import { createRequire } from 'node:module'
+import { NextRequest } from 'next/server'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { CACHE_LIFE_ENV, cacheControlFor, PROFILES } from '../src/next/cache.ts'
+import { type Config, createMdHandler, md } from '../src/next/index.ts'
+import { ROUTES_ENV } from '../src/next/routes.ts'
+import { routes as authored } from './markdown-routes.ts'
+
+// next's own getCacheControlHeader (server/lib/cache-control.js), from the copy of next this repo installs
+const { getCacheControlHeader } = createRequire(import.meta.url)(
+  'next/dist/server/lib/cache-control.js',
+) as { getCacheControlHeader: (cache: { revalidate: number | false; expire?: number }) => string }
+
+// next 16.3.0 and 16.4.3 build a cached page's Cache-Control the same way: server/config-shared.js gives the
+// profiles and expireTime (31536000); app-render.js takes revalidate >= INFINITE_CACHE as false and such an expire as
+// undefined; base-server.js gives a page with no expire expireTime; server/lib/cache-control.js writes the header.
+// the table is what that gives for each profile, as a page cached with cacheLife(profile) gets it
+test("publicCache's Cache-Control is what next sends for a page cached with that cacheLife", () => {
+  const table: [string, string][] = [
+    ['default', 's-maxage=900, stale-while-revalidate=31535100'],
+    ['seconds', 's-maxage=1, stale-while-revalidate=59'],
+    ['minutes', 's-maxage=60, stale-while-revalidate=3540'],
+    ['hours', 's-maxage=3600, stale-while-revalidate=82800'],
+    ['days', 's-maxage=86400, stale-while-revalidate=518400'],
+    ['weeks', 's-maxage=604800, stale-while-revalidate=1987200'],
+    ['max', 's-maxage=2592000, stale-while-revalidate=28944000'],
+  ]
+  expect(table.map(([name]) => name)).toEqual(Object.keys(PROFILES))
+  // ours, and next's own function, given the page's cache control as app-render.js and base-server.js make it
+  const next = (name: string) => {
+    const { revalidate, expire } = PROFILES[name]!
+    return getCacheControlHeader({
+      revalidate: revalidate!,
+      expire: expire! >= 0xfffffffe ? 31_536_000 : expire,
+    })
+  }
+  const expected = Object.fromEntries(table)
+  expect(
+    Object.fromEntries(table.map(([name]) => [name, cacheControlFor(PROFILES[name]!, 31_536_000)])),
+  ).toEqual(expected)
+  expect(Object.fromEntries(table.map(([name]) => [name, next(name)]))).toEqual(expected)
+  // seconds of its own, with no expire: expireTime's, as a page with revalidate = 300 gets
+  expect(cacheControlFor({ revalidate: 300 }, 31_536_000)).toBe(
+    's-maxage=300, stale-while-revalidate=31535700',
+  )
+  expect(getCacheControlHeader({ revalidate: 300, expire: 31_536_000 })).toBe(
+    's-maxage=300, stale-while-revalidate=31535700',
+  )
+  // never revalidating (Infinity, as next normalizes it): a year
+  expect(cacheControlFor({ revalidate: 0xfffffffe }, 31_536_000)).toBe('s-maxage=31536000')
+  expect(getCacheControlHeader({ revalidate: false, expire: 31_536_000 })).toBe('s-maxage=31536000')
+  // an expireTime of the app's own, and none (NEXT_PRIVATE_CDN_CONSUMED_SWR_CACHE_CONTROL)
+  expect(cacheControlFor({ revalidate: 60 }, 600)).toBe('s-maxage=60, stale-while-revalidate=540')
+  expect(cacheControlFor({ revalidate: 60 }, undefined)).toBe('s-maxage=60')
+  // revalidate 0 is next's dynamic page
+  expect(cacheControlFor({ revalidate: 0, expire: 60 }, 31_536_000)).toBe(
+    'private, no-cache, no-store, max-age=0, must-revalidate',
+  )
+})
+
+const site = 'https://shop.test'
+const ROUTE = '/x/[pkg]'
+const page = (body: string) =>
+  `<html><head><title>Express</title></head><body><main>${body}</main></body></html>`
+const slot = (name: string) =>
+  `<affordances-md data-mode="slot" data-name="${name}" style="display:contents"><p>Loading…</p></affordances-md>`
+
+// the page's own response, as next sends a dynamic render
+let upstream: (url: URL, init?: RequestInit) => Response
+beforeEach(() => {
+  upstream = () =>
+    new Response(page(`<h1>express</h1>${slot('readme')}`), {
+      headers: {
+        'content-type': 'text/html',
+        'cache-control': 'private, no-cache, no-store, max-age=0, must-revalidate',
+      },
+    })
+  vi.stubGlobal('fetch', async (url: URL, init?: RequestInit) => upstream(new URL(url), init))
+  process.env[ROUTES_ENV] = JSON.stringify([ROUTE])
+})
+afterEach(() => {
+  for (const route of Object.keys(authored)) delete authored[route]
+  vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
+  delete process.env[ROUTES_ENV]
+  delete process.env[CACHE_LIFE_ENV]
+})
+
+// the three kinds of route, each with or without the opt-in
+const kinds = {
+  slot: { slots: { readme: () => '## Readme\n\nFast.' } },
+  default: { default: () => '# express\n\nFast.' },
+  converted: {},
+} as const
+const route = (kind: keyof typeof kinds, publicCache?: unknown) => {
+  authored[ROUTE] = async () =>
+    ({ ...kinds[kind], ...(publicCache !== undefined && { publicCache }) }) as never
+}
+
+test('publicCache makes one cell public: opted in, no credentials, the .md url, complete, no cookie set', async () => {
+  const cells: string[] = []
+  const statuses = new Set<number>()
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  for (const kind of ['slot', 'default', 'converted'] as const)
+    for (const opted of [true, false])
+      for (const credentials of ['none', 'cookie', 'authorization', 'service'] as const)
+        for (const url of ['twin', 'negotiated'] as const)
+          for (const partial of [false, true])
+            for (const setCookie of [false, true]) {
+              // a default export renders nothing, so it has no partial page or cookie of its own
+              if (kind === 'default' && (partial || setCookie)) continue
+              route(kind, opted ? 'hours' : undefined)
+              upstream = () =>
+                new Response(
+                  partial
+                    ? new ReadableStream({
+                        start: (controller) =>
+                          controller.enqueue(
+                            new TextEncoder().encode(page(`<h1>express</h1>${slot('readme')}`)),
+                          ),
+                      })
+                    : page(`<h1>express</h1>${slot('readme')}`),
+                  {
+                    headers: {
+                      'content-type': 'text/html',
+                      'cache-control': 'private, no-cache, no-store, max-age=0, must-revalidate',
+                      ...(setCookie && { 'set-cookie': 'handshake=1; Path=/' }),
+                    },
+                  },
+                )
+              const handler = createMdHandler({
+                timeout: partial ? 30 : 10_000,
+                ...(credentials === 'service' && { headers: { authorization: 'Bearer service' } }),
+              })
+              const headers = {
+                ...(credentials === 'cookie' && { cookie: 'sid=1' }),
+                ...(credentials === 'authorization' && { authorization: 'Bearer person' }),
+                ...(url === 'negotiated' && { accept: 'text/markdown' }),
+              }
+              const response = await handler(
+                new Request(`${site}${url === 'twin' ? '/x/express.md' : '/x/express'}`, {
+                  headers,
+                }),
+              )
+              const cache = response.headers.get('cache-control') ?? ''
+              statuses.add(response.status)
+              if (!/private/.test(cache))
+                cells.push(
+                  `${kind} opted=${opted} ${credentials} ${url} partial=${partial} set-cookie=${setCookie}: ${cache}`,
+                )
+            }
+  warn.mockRestore()
+  expect([...statuses]).toEqual([200])
+  expect(cells).toEqual([
+    'slot opted=true none twin partial=false set-cookie=false: s-maxage=3600, stale-while-revalidate=82800',
+    'default opted=true none twin partial=false set-cookie=false: s-maxage=3600, stale-while-revalidate=82800',
+    'converted opted=true none twin partial=false set-cookie=false: s-maxage=3600, stale-while-revalidate=82800',
+  ])
+})
+
+// a response's headers but its cache-control
+const without = (response: Response) =>
+  [...response.headers].filter(([name]) => name !== 'cache-control')
+
+test('a credentialed request to an opted-in route stays private and personal, as it is today', async () => {
+  route('slot', 'hours')
+  const signedIn = await createMdHandler()(
+    new Request(`${site}/x/express.md`, { headers: { cookie: 'sid=1' } }),
+  )
+  expect([
+    signedIn.headers.get('cache-control'),
+    signedIn.headers.get('x-affordances-md-personal'),
+  ]).toEqual(['private, no-store', '1'])
+  // and an opted-in route answers exactly as before with no publicCache: the same headers, the same body
+  const opted = await createMdHandler()(new Request(`${site}/x/express.md`))
+  route('slot')
+  const plain = await createMdHandler()(new Request(`${site}/x/express.md`))
+  expect(await opted.text()).toBe(await plain.text())
+  expect(without(opted)).toEqual(without(plain))
+})
+
+test('a Response a default export returns keeps its own rule, opted in or not', async () => {
+  authored[ROUTE] = async () =>
+    ({
+      default: () => new Response('# Mine', { headers: { 'cache-control': 'public, max-age=60' } }),
+      publicCache: 'days',
+    }) as never
+  const response = await createMdHandler()(new Request(`${site}/x/express.md`))
+  expect(response.headers.get('cache-control')).toBe('public, max-age=60')
+})
+
+test('a page that sets a cookie for an anonymous visitor stays private on an opted-in route, said in development', async () => {
+  route('converted', 'hours')
+  upstream = () =>
+    new Response(page('<h1>express</h1>'), {
+      headers: { 'content-type': 'text/html', 'set-cookie': '__clerk_handshake=x; Path=/' },
+    })
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const response = await createMdHandler()(new Request(`${site}/x/express.md`))
+  expect(response.headers.get('cache-control')).toBe('private, no-store')
+  expect(warn).toHaveBeenCalledWith(
+    "[affordances-md] /x/express set a cookie (__clerk_handshake) for an anonymous visitor, so /x/[pkg]/markdown.ts's publicCache doesn't apply: its markdown is private, no-store. Don't set it on this page for a visitor who isn't signed in.",
+  )
+  warn.mockClear()
+  vi.stubEnv('NODE_ENV', 'production')
+  await createMdHandler()(new Request(`${site}/x/express.md`))
+  expect(warn).not.toHaveBeenCalled()
+  warn.mockRestore()
+})
+
+// the cache-control a default export's route gets with this publicCache
+const header = async (publicCache: unknown) => {
+  route('default', publicCache)
+  return (await createMdHandler()(new Request(`${site}/x/express.md`))).headers.get('cache-control')
+}
+
+test("a custom cacheLife profile works by name; one that isn't a profile stays private, said once in development", async () => {
+  const config: Config = md({ root: '/nonexistent' })({
+    cacheLife: { packages: { revalidate: 600, expire: 3600 }, forever: { revalidate: Infinity } },
+    expireTime: 7200,
+  })
+  expect(JSON.parse(config.env![CACHE_LIFE_ENV]!)).toEqual({
+    profiles: {
+      packages: { revalidate: 600, expire: 3600 },
+      forever: { revalidate: 0xfffffffe },
+    },
+    expireTime: 7200,
+  })
+  process.env[CACHE_LIFE_ENV] = config.env![CACHE_LIFE_ENV]
+  expect(await header('packages')).toBe('s-maxage=600, stale-while-revalidate=3000')
+  // a profile with no expire, and seconds with none: the app's expireTime
+  expect(await header('forever')).toBe('s-maxage=31536000')
+  expect(await header({ revalidate: 60 })).toBe('s-maxage=60, stale-while-revalidate=7140')
+  // next's own still there
+  expect(await header('hours')).toBe('s-maxage=3600, stale-while-revalidate=82800')
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  expect(await header('hourz')).toBe('private, no-store')
+  expect(await header('hourz')).toBe('private, no-store')
+  expect(error.mock.calls.map(([message]) => message)).toEqual([
+    "[affordances-md] /x/[pkg]/markdown.ts: publicCache 'hourz' isn't a cacheLife profile. It can be one of Next's cacheLife profiles ('default', 'seconds', 'minutes', 'hours', 'days', 'weeks', 'max', 'packages', 'forever') or { revalidate, expire? } in seconds; until then, it isn't cached.",
+  ])
+  error.mockClear()
+  for (const [value, problem] of [
+    [{ revalidat: 300 }, "has revalidat, which isn't revalidate or expire"],
+    [{ expire: 300 }, 'needs revalidate, in seconds'],
+    [{ revalidate: 300, expire: 60 }, 'has an expire shorter than its revalidate'],
+    [300, "isn't a cacheLife profile or { revalidate, expire? }"],
+  ] as const) {
+    route('slot', value)
+    // a route says it once per process, so a fresh route each time
+    const at = `/y${problem.length}/[pkg]`
+    authored[at] = authored[ROUTE]!
+    process.env[ROUTES_ENV] = JSON.stringify([ROUTE, at])
+    const response = await createMdHandler()(
+      new Request(`${site}${at.replace('[pkg]', 'express')}.md`),
+    )
+    expect(response.headers.get('cache-control')).toBe('private, no-store')
+    expect(String(error.mock.calls.at(-1)?.[0])).toContain(`: publicCache ${problem}.`)
+  }
+  error.mockRestore()
+})
+
+// a twin's markdown, asked for with these headers
+const twin = async (headers: Record<string, string>, url = '/x/express.md') =>
+  (await createMdHandler()(new Request(`${site}${url}`, { headers }))).text()
+
+test("an opted-in route's public view is one language: rendered, and its markdown.ts run, without Accept-Language", async () => {
+  // a page that renders in the language it's asked for, and a default export that reads it
+  upstream = (_url, init) =>
+    new Response(
+      page(
+        `<h1>express</h1><p>LANG-${new Headers(init?.headers).get('accept-language') ?? 'none'}</p>`,
+      ),
+      {
+        headers: { 'content-type': 'text/html' },
+      },
+    )
+  route('converted', 'hours')
+  const fr = await twin({ 'accept-language': 'fr' })
+  expect(fr).toContain('LANG-none')
+  expect(await twin({ 'accept-language': 'de' })).toBe(fr)
+  authored[ROUTE] = async () =>
+    ({
+      default: ({ request }: { request: Request }) =>
+        `# express\n\nlang=${request.headers.get('accept-language') ?? 'none'}`,
+      publicCache: 'hours',
+    }) as never
+  expect(await twin({ 'accept-language': 'fr' })).toContain('lang=none')
+  // a view that stays private keeps it: signed in, asked for with Accept, or a route that didn't opt in
+  expect(await twin({ 'accept-language': 'fr', cookie: 'sid=1' })).toContain('lang=fr')
+  expect(await twin({ 'accept-language': 'fr', accept: 'text/markdown' }, '/x/express')).toContain(
+    'lang=fr',
+  )
+  route('converted')
+  expect(await twin({ 'accept-language': 'fr' })).toContain('LANG-fr')
+})
+
+test('an opted-in route whose page varies on Accept-Language says, once in development, that its public markdown is the default language', async () => {
+  upstream = () =>
+    new Response(page('<h1>express</h1>'), {
+      headers: { 'content-type': 'text/html', vary: 'Accept-Language' },
+    })
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  route('converted', 'hours')
+  await twin({ 'accept-language': 'fr' })
+  await twin({ 'accept-language': 'de' })
+  expect(warn.mock.calls.map(([message]) => message)).toEqual([
+    "[affordances-md] /x/[pkg]'s page varies on Accept-Language, but /x/[pkg]/markdown.ts's publicCache makes its markdown one view for everyone: it's rendered without the visitor's language, so it's the default language. For Markdown in each language, put the locale in the path (/fr/…).",
+  ])
+  // not for a route that didn't opt in, nor in production
+  warn.mockClear()
+  route('converted')
+  await twin({})
+  vi.stubEnv('NODE_ENV', 'production')
+  route('slot', 'hours')
+  await twin({})
+  expect(warn).not.toHaveBeenCalled()
+  warn.mockRestore()
+})
+
+test('the one public view is the same request everywhere: no language for append, the headers option or a fill, which still gets a NextRequest', async () => {
+  upstream = () =>
+    new Response(page(`<h1>express</h1>${slot('readme')}`), {
+      headers: { 'content-type': 'text/html', vary: 'Accept-Language' },
+    })
+  const seenBy: Record<string, string | null> = {}
+  let calls = 0
+  const handler = createMdHandler({
+    append: (request) => {
+      seenBy.append = request.headers.get('accept-language')
+      return undefined
+    },
+    headers: (request) => {
+      calls++
+      seenBy.headers = request.headers.get('accept-language')
+      return {}
+    },
+  })
+  authored[ROUTE] = async () =>
+    ({
+      slots: {
+        readme: ({ request }: { request: NextRequest }) => {
+          seenBy.fill = request.headers.get('accept-language')
+          return `## Readme\n\nat ${request.nextUrl.pathname}`
+        },
+      },
+      publicCache: 'hours',
+    }) as never
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const response = await handler(
+    new NextRequest(`${site}/x/express.md`, { headers: { 'accept-language': 'fr' } }),
+  )
+  warn.mockRestore()
+  expect(await response.text()).toContain('at /x/express.md')
+  expect(seenBy).toEqual({ headers: null, fill: null, append: null })
+  // the headers option, once: one answer for whether it's public and for the render
+  expect(calls).toBe(1)
+  // and a public response varies only on Accept, since the language never reached it
+  expect([response.headers.get('cache-control'), response.headers.get('vary')]).toEqual([
+    's-maxage=3600, stale-while-revalidate=82800',
+    'Accept',
+  ])
+  // a private one keeps the language, and says so
+  const signedIn = await handler(
+    new NextRequest(`${site}/x/express.md`, {
+      headers: { 'accept-language': 'fr', cookie: 'sid=1' },
+    }),
+  )
+  expect([signedIn.headers.get('vary'), seenBy.fill]).toEqual(['Accept, Accept-Language', 'fr'])
+})
+
+test('experimental.cacheLife is read too, and replaces the top-level one, as next does', async () => {
+  const both: Config = md({ root: '/nonexistent' })({
+    cacheLife: { packages: { revalidate: 60 } },
+    experimental: { cacheLife: { packages: { revalidate: 600, expire: 3600 } } },
+  })
+  expect(JSON.parse(both.env![CACHE_LIFE_ENV]!).profiles).toEqual({
+    packages: { revalidate: 600, expire: 3600 },
+  })
+  const only: Config = md({ root: '/nonexistent' })({
+    experimental: { cacheLife: { legacy: { revalidate: 120, expire: 240 } } },
+  })
+  process.env[CACHE_LIFE_ENV] = only.env![CACHE_LIFE_ENV]
+  expect(await header('legacy')).toBe('s-maxage=120, stale-while-revalidate=120')
+})
+
+test('a fill on the one public view gets a NextRequest from any request: nextUrl and cookies, as in a built app', async () => {
+  upstream = () =>
+    new Response(page(`<h1>express</h1>${slot('readme')}`), {
+      headers: { 'content-type': 'text/html' },
+    })
+  authored[ROUTE] = async () =>
+    ({
+      slots: {
+        readme: ({ request }: { request: NextRequest }) =>
+          `## Readme\n\nNU-${request.nextUrl?.pathname ?? 'missing'} cookies=${typeof request.cookies?.get}`,
+      },
+      publicCache: 'hours',
+    }) as never
+  // a plain Request, as md sees next's own in a built app, where its NextRequest is another copy of the class
+  const response = await createMdHandler()(
+    new Request(`${site}/x/express.md`, { headers: { 'accept-language': 'fr' } }),
+  )
+  expect(await response.text()).toContain('NU-/x/express.md cookies=function')
+})
+
+test("the one public view carries none of the visitor's headers: no user agent or country reaches a fill", async () => {
+  upstream = () =>
+    new Response(page(`<h1>express</h1>${slot('readme')}`), {
+      headers: { 'content-type': 'text/html' },
+    })
+  authored[ROUTE] = async () =>
+    ({
+      slots: {
+        readme: ({ request }: { request: Request }) =>
+          `## Readme\n\nua=${request.headers.get('user-agent') ?? 'none'} country=${request.headers.get('cf-ipcountry') ?? 'none'}`,
+      },
+      publicCache: 'hours',
+    }) as never
+  const visitor = { 'user-agent': 'agent/1', 'cf-ipcountry': 'FR', 'x-vercel-ip-country': 'FR' }
+  const anonymous = await createMdHandler()(
+    new Request(`${site}/x/express.md`, { headers: visitor }),
+  )
+  expect(await anonymous.text()).toContain('ua=none country=none')
+  expect(anonymous.headers.get('cache-control')).toBe('s-maxage=3600, stale-while-revalidate=82800')
+  // a signed-in request is the visitor's own, and stays private
+  const signedIn = await createMdHandler()(
+    new Request(`${site}/x/express.md`, { headers: { ...visitor, cookie: 'sid=1' } }),
+  )
+  expect(await signedIn.text()).toContain('ua=agent/1 country=FR')
+  expect(signedIn.headers.get('cache-control')).toBe('private, no-store')
+})

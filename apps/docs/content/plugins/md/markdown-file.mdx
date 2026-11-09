@@ -37,7 +37,7 @@ Name the route, as you would for `page.tsx`'s `PageProps`, and `params` is typed
 
 It changes only the `include` array, keeping your comments and formatting, and only when the file has an `include` of its own and the entry isn't there yet. When it can't do that safely (the file doesn't parse, `include` comes from a file it `extends`, or the file is read-only), it leaves the file alone and warns with the line to add. A read-only tree never stops the config from loading.
 
-A file named `markdown.ts` next to a page that has none of these exports (`default`, `slots`) isn't one, such as a helper that happens to have the name. `md()` leaves it out, so the page converts from its HTML, and says so when the config loads. `tsc` (and `next build`) stops with the same message, naming the file and what it exports. If it's for something else, move it out of `app/` or rename it. A file that exports either one is checked against its route as above.
+A file named `markdown.ts` next to a page that has none of these exports (`default`, `slots`, `publicCache`) isn't one, such as a helper that happens to have the name. `md()` leaves it out, so the page converts from its HTML, and says so when the config loads. `tsc` (and `next build`) stops with the same message, naming the file and what it exports. If it's for something else, move it out of `app/` or rename it. A file that exports any of them is checked against its route as above.
 
 ## Authorization
 
@@ -119,6 +119,10 @@ export const slots = {
 - In development, the handler warns, naming the route's `markdown.ts`, about a fill with no slot on the page, a slot with no fill, a name used twice, and a fill that returned nothing.
 
 A slot is a marker in the page's HTML, so HTML from someone else (a README rendered as raw HTML) could carry one. Strip `<affordances-md>` from untrusted HTML, as for [every marker](/docs/plugins/md/markers). A fill only ever runs in this visitor's own request for this page, so with each fill authorizing its own data, a forged slot can make a fill run or move its output on the page, never show anyone data their own credentials don't reach.
+
+## Caching
+
+What `markdown.ts` returns, and a page with a filled slot, is `private, no-store`. When a route's Markdown is the same for every anonymous visitor, `export const publicCache = 'hours'` (a `cacheLife` profile, or `{ revalidate, expire? }` in seconds) lets a CDN keep its `.md`, for the anonymous view only. A `markdown.ts` with only `publicCache` opts in a page that's converted from its HTML. See [Caching public Markdown](/docs/plugins/md/caching#caching-public-markdown) for when it applies.
 
 ## With TanStack Query
 

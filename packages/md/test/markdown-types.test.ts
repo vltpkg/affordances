@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -46,7 +54,7 @@ let root: string
 afterEach(() => {
   if (root) rmSync(root, { recursive: true, force: true })
 })
-const check = (markdown: string) => {
+const check = (markdown: string, config: Config = {}) => {
   root = mkdtempSync(join(tmpdir(), 'md-types-'))
   const files = {
     'app/package/[pkg]/page.tsx': 'export default function Page() { return null }\n',
@@ -76,7 +84,7 @@ const check = (markdown: string) => {
     mkdirSync(dirname(join(root, file)), { recursive: true })
     writeFileSync(join(root, file), text)
   }
-  md({ root })({})
+  md({ root })(config)
   try {
     execFileSync(process.execPath, [tsc, '-p', root, '--pretty', 'false'], {
       encoding: 'utf8',
@@ -286,7 +294,7 @@ test(
   () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     const message =
-      "app/package/[pkg]/markdown.ts has none of the exports a markdown.ts next to a page uses (default, slots): it exports methodology, steps. So it's left out, and /package/[pkg] converts from its HTML. If it isn't for @affordances/md, move it out of app/ or rename it."
+      "app/package/[pkg]/markdown.ts has none of the exports a markdown.ts next to a page uses (default, slots, publicCache): it exports methodology, steps. So it's left out, and /package/[pkg] converts from its HTML. If it isn't for @affordances/md, move it out of app/ or rename it."
     const out = check(
       "export const methodology = { steps: 3 }\nconst steps = ['a']\nexport { steps }\nexport type Step = string\n",
     )
@@ -298,6 +306,87 @@ test(
     expect(error).toHaveBeenCalledWith(`[affordances-md] ${message}`)
     // and the handler never imports it
     expect(readFileSync(join(root, '.affordances/md.ts'), 'utf8')).not.toContain('import(')
+    error.mockRestore()
+  },
+  TSC,
+)
+
+test(
+  "publicCache is typed against next's profiles and next.config's own, and tsc names a typo where it's written",
+  () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const config: Config = { cacheLife: { packages: { revalidate: 600, expire: 3600 } } }
+    const slots = "export const slots = { readme: async () => '## Readme' }\n"
+    expect(check(`${slots}export const publicCache = 'hours'\n`)).toBe('')
+    expect(check(`${slots}export const publicCache = { revalidate: 300, expire: 86_400 }\n`)).toBe(
+      '',
+    )
+    // a publicCache alone is a markdown.ts: a converted route that opts in
+    expect(check("export const publicCache = 'days'\n")).toBe('')
+    // a custom profile, from next.config's cacheLife: typed, through the generated union
+    expect(check(`${slots}export const publicCache = 'packages'\n`, config)).toBe('')
+    expect(readFileSync(join(root, '.affordances/md.ts'), 'utf8')).toContain(
+      'type Profile = CacheLifeProfile | "packages"',
+    )
+    // a typo, as a name or a field, is tsc's: it's checked against the same union, and named where it's written
+    for (const [cache, said] of [
+      ["'hourz'", `Did you mean '"hours"'?`],
+      [
+        '{ revalidat: 300 }',
+        "Type '{ revalidat: number; }' is not assignable to type 'PublicCache<Profile> | undefined'.",
+      ],
+    ] as const) {
+      const out = check(`${slots}export const publicCache = ${cache}\n`, config)
+      expect(out).toMatch(/^\.affordances\/md\.ts\(\d+,\d+\): error TS2322/m)
+      expect(out).toMatch(/app\/package\/\[pkg\]\/markdown/)
+      expect(out).toContain(`Types of property 'publicCache' are incompatible.`)
+      expect(out).toContain(said)
+    }
+    // md() no longer reads the value from the source: a comment holding an old value is a comment, and a re-export works
+    expect(
+      check(
+        `${slots}// export const publicCache = 'hourz'\nexport const publicCache = 'hours'\n`,
+        config,
+      ),
+    ).toBe('')
+    writeFileSync(
+      join(root, 'app/package/[pkg]/cache.ts'),
+      "export const publicCache = 'packages'\n",
+    )
+    writeFileSync(
+      join(root, 'app/package/[pkg]/markdown.ts'),
+      `${slots}export { publicCache } from './cache.ts'\n`,
+    )
+    md({ root })(config)
+    expect(error).not.toHaveBeenCalled()
+    error.mockRestore()
+  },
+  TSC,
+)
+
+test(
+  "after a markdown.ts that isn't one is moved, as its error says, tsc passes again",
+  () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(check('export const methodology = { steps: 3 }\n')).toMatch(/TS2344/)
+    // moved out of app/, as the error said: md() runs again, and its file from the last build no longer holds the error
+    renameSync(join(root, 'app/package/[pkg]/markdown.ts'), join(root, 'methodology.ts'))
+    md({ root })({})
+    const run = () => {
+      try {
+        execFileSync(process.execPath, [tsc, '-p', root, '--pretty', 'false'], {
+          encoding: 'utf8',
+          cwd: root,
+        })
+        return ''
+      } catch (failed) {
+        return String((failed as { stdout: string }).stdout)
+      }
+    }
+    expect(run()).toBe('')
+    expect(readFileSync(join(root, '.affordances/md.ts'), 'utf8')).toContain(
+      'export const routes = {}',
+    )
     error.mockRestore()
   },
   TSC,

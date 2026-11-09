@@ -2,9 +2,12 @@ import type { Element, ElementContent, Root } from 'hast'
 import { fromHtml } from 'hast-util-from-html'
 import { toString } from 'hast-util-to-string'
 import { micromark } from 'micromark'
+// with its .js, as proxy.ts imports it: next.config loads this entry in plain node
+import { NextRequest } from 'next/server.js'
 import { gfm, gfmHtml } from 'micromark-extension-gfm'
 import { readPage, relinkMarkdown, type SlotNames, yaml } from '../convert/index.ts'
 import { mdPath } from '../path.ts'
+import { CACHE_LIFE_ENV, cacheLifeEnv, customProfiles, publicCacheControl } from './cache.ts'
 import { mdPagePath } from './proxy.ts'
 import {
   ALIASES_ENV,
@@ -64,6 +67,10 @@ export type Config = {
   // typed loosely: its context drags in all of NextConfig, which two copies of next don't agree on
   // oxlint-disable-next-line no-explicit-any
   webpack?: ((config: any, context: any) => any) | null
+  // read for markdown.ts's publicCache, which names a profile or gives the same times
+  cacheLife?: Record<string, { stale?: number; revalidate?: number; expire?: number }>
+  expireTime?: number
+  experimental?: { cacheLife?: unknown }
 }
 
 const normalize = (value: unknown): Rewrites =>
@@ -178,8 +185,17 @@ export const md =
   ({ root = process.cwd(), link = true, literalMd = [], aliases = {} }: MdOptions = {}) =>
   <C extends Config>(config: C): C => {
     // read once, when next loads its config; a page or markdown.ts added during next dev shows up after a restart
-    const { pages, markdown, unfit, handlers } = scanApp(root)
-    const generated = writeMarkdownRoutes(root, markdown, unfit)
+    // the cacheLife profiles a publicCache can name, next's own and next.config's
+    // next.config's cacheLife, where next reads it: experimental.cacheLife, which next 16 still takes, replaces the
+    // top-level one (config.js warnOptionHasBeenMovedOutOfExperimental, 16.3.0 and 16.4.3)
+    const life =
+      config.experimental && 'cacheLife' in config.experimental
+        ? config.experimental.cacheLife
+        : config.cacheLife
+    const profiles = customProfiles(life)
+    const { pages, markdown, problems, handlers } = scanApp(root)
+    const generated = writeMarkdownRoutes(root, markdown, problems, profiles)
+    const cacheLife = cacheLifeEnv(life, config.expireTime)
     // a source next would reject throws here, not on the first request
     for (const source of literalMd) sourceRegex(source)
     checkAliases(aliases, pages)
@@ -190,6 +206,7 @@ export const md =
         ...config.env,
         [ROUTES_ENV]: JSON.stringify(pages),
         ...(handlers.length && { [HANDLERS_ENV]: JSON.stringify(handlers) }),
+        ...(cacheLife && { [CACHE_LIFE_ENV]: cacheLife }),
         ...(literalMd.length && { [LITERAL_ENV]: JSON.stringify(literalMd) }),
         ...(aliased.length && { [ALIASES_ENV]: JSON.stringify(aliased) }),
       },
@@ -277,6 +294,10 @@ export type MdHandlerOptions = {
 }
 
 const FORWARD = ['cookie', 'authorization', 'accept-language']
+// the request a public view sees, the same for every visitor: none of their headers (language, user agent, country).
+// md's own NextRequest (nextUrl, cookies), since in a built app next's is another copy of the class
+const viewRequest = (request: Request) =>
+  new NextRequest(request.url, { method: request.method, signal: request.signal })
 
 // set on markdown converted from a page that hadn't finished streaming by the timeout
 export const PARTIAL_HEADER = 'x-affordances-md-partial'
@@ -471,26 +492,38 @@ const convertPage =
     // made straight to the handler's url (/api/affordances/md/x) skipped a page-scoped gate, so it gets the html render,
     // which goes through the proxy at the page's url
     const route = direct ? undefined : await markdownRoute(request, target)
-    const authored = route && (await authoredMarkdown(request, target, route, append, negotiated))
+    // whose request this is: the caller's own credentials, or none, so the headers option's may stand in
+    const callerCredentials = credentialed(request.headers)
+    // a response that may be public is one view for everyone, which a CDN keys on its url alone: all of it (the
+    // headers option, the render, markdown.ts and its fills, append) sees one request, with no visitor's headers. a
+    // credentialed or negotiated request, which stays private, is the visitor's own
+    const shareable = route?.module.publicCache !== undefined && !negotiated && !callerCredentials
+    const view = shareable ? viewRequest(request) : request
+    // the headers option, resolved once: one answer (from an option that mints a token, say) for whether the response
+    // can be public and for the render. a route that opts in is never public while it gives service credentials, even
+    // where they go unused, so the rule is the same whichever way the route answers
+    const early = shareable ? await extraHeaders(view, options.headers) : undefined
+    const oneView = shareable && !credentialed(early!)
+    const asked = oneView ? view : request
+    const routed = route && oneView ? { ...route, args: { ...route.args, request: asked } } : route
+    const authored =
+      routed && (await authoredMarkdown(asked, target, routed, append, negotiated, oneView))
     if (authored) return authored
     const headers = new Headers()
     for (const name of FORWARD) {
-      const value = request.headers.get(name)
+      const value = asked.headers.get(name)
       if (value) headers.set(name, value)
     }
     // the headers option's cookie and authorization (a service account's) apply only to a request that sent neither:
     // a signed-in person's markdown is rendered as them alone, never as more than they could see. all or nothing,
     // since an app checking a bearer first would otherwise render a cookie-signed-in person as the service
-    const anonymous = !credentialed(request.headers)
-    const optionHeaders = await extraHeaders(request, options.headers)
-    for (const [name, value] of optionHeaders)
-      if (anonymous || !CREDENTIALS.includes(name)) headers.set(name, value)
+    const given = early ?? (await extraHeaders(request, options.headers))
+    for (const [name, value] of given)
+      if (!callerCredentials || !CREDENTIALS.includes(name)) headers.set(name, value)
     headers.set('accept', 'text/html')
     headers.set(RENDER_HEADER, '1')
-    // whose response this is: the caller's own credentials, or the service's that stood in, whose refreshed cookie
-    // must never reach the caller
-    const callerCredentials = credentialed(request.headers)
-    const serviceCredentials = anonymous && credentialed(optionHeaders)
+    // the service's credentials that stood in, whose refreshed cookie must never reach the caller
+    const serviceCredentials = !callerCredentials && credentialed(given)
 
     // one deadline for the whole render: the fetch until its headers, then the streamed body
     const controller = new AbortController()
@@ -571,17 +604,17 @@ const convertPage =
     if (read.redirect) return markdownRedirect(read.redirect, target, pageCache)
     // a notFound(), forbidden() or unauthorized() after the shell, the same way: the page is that error, so it gets the
     // answer a thrown one does, before any slot is filled
-    if (read.fallback)
-      return httpError(
-        read.fallback.status,
-        credentialed(headers) || upstream.headers.has('set-cookie'),
-      )
+    // personal: rendered with someone's credentials (the caller's, or the route's service ones), or answered with a
+    // cookie. a credential-free render is the anonymous public view, whatever cache-control next put on it (next
+    // sends private, no-store for every dynamic render), so only this marks a page for llms to leave out
+    const personalOnly = credentialed(headers) || upstream.headers.has('set-cookie')
+    if (read.fallback) return httpError(read.fallback.status, personalOnly)
     // append runs alongside the fills; a fill's notFound() may answer for the page first, so its rejection waits to be
     // awaited below rather than going unhandled
-    const appended = Promise.resolve(append?.(request))
+    const appended = Promise.resolve(append?.(asked))
     appended.catch(() => {})
     // the page rendered, so its own redirect(), notFound() and layout checks ran: now the slots it rendered get filled
-    const slots = route?.module.slots && (await fillSlots(read.slots, target, route))
+    const slots = routed?.module.slots && (await fillSlots(read.slots, target, routed))
     if (slots instanceof Response) return slots
     const result = read.markdown(slots)
     const page = partial
@@ -591,24 +624,30 @@ const convertPage =
     const markdown = extra ? `${page}\n${extra.trim()}\n` : page
 
     // anything rendered with the caller's credentials, or that the page itself keeps private, stays private
-    // personal: rendered with someone's credentials (the caller's, or the route's service ones), or answered with a
-    // cookie. a credential-free render is the anonymous public view, whatever cache-control next put on it (next
-    // sends private, no-store for every dynamic render), so only this marks a page for llms to leave out
-    const personalOnly = credentialed(headers) || upstream.headers.has('set-cookie')
     // a fill read data with whatever the request carried, as markdown.ts's default export does: never cached
     const filled = slots !== undefined && Object.keys(slots).length > 0
     const personal = personalOnly || filled || /private|no-store/.test(cacheControl) || negotiated
+    // a route whose markdown.ts says its markdown is public: the anonymous, complete view of its .md url, as a 200,
+    // gets that cache time, whatever next sent (private, no-store for a dynamic render) and whatever the fills read
+    if (shareable && upstream.headers.has('set-cookie') && !credentialed(headers))
+      warnCookie(route!.route, target, upstream.headers)
+    const varies = /(^|,)\s*accept-language\s*(,|$)/i.test(upstream.headers.get('vary') ?? '')
+    if (shareable && varies) warnLanguage(route!.route)
+    const shared =
+      oneView && !personalOnly && !partial && upstream.status === 200
+        ? publicHeader(route!.route, route!.module)
+        : undefined
     return respond(markdown, upstream.status, {
-      // the handler forwards accept-language, so a page that varies on it varies the markdown too
-      vary: /(^|,)\s*accept-language\s*(,|$)/i.test(upstream.headers.get('vary') ?? '')
-        ? 'Accept, Accept-Language'
-        : 'Accept',
+      // a page that varies on the language the render was asked in varies the markdown too
+      vary: varies && headers.has('accept-language') ? 'Accept, Accept-Language' : 'Accept',
       'x-affordances-tokens': String(Math.ceil(markdown.length / 4)),
       ...(result.url && { link: `<${result.url}>; rel="canonical"` }),
       // a partial page is never cached, so the next request gets the whole one
-      ...(personal || partial
-        ? { 'cache-control': 'private, no-store' }
-        : cacheControl && { 'cache-control': cacheControl }),
+      ...(shared
+        ? { 'cache-control': shared }
+        : personal || partial
+          ? { 'cache-control': 'private, no-store' }
+          : cacheControl && { 'cache-control': cacheControl }),
       ...(partial && { [PARTIAL_HEADER]: '1' }),
       ...(personalOnly && { [PERSONAL_HEADER]: '1' }),
     })
@@ -694,10 +733,26 @@ export type Slots<Route extends string = string> = Record<
 // a markdown.ts, as the generated .affordances/md.ts checks it against its route: called with the route itself, so
 // an export typed for any other route string doesn't fit
 type RouteArgs<Route extends string> = MarkdownArgs<Route> & { route: Route }
-export type MarkdownModule<Route extends string = string> = {
+// the generated check passes the app's own cacheLife profiles as Cache, so a custom name is typed and a typo isn't
+export type MarkdownModule<Route extends string = string, Cache = PublicCache> = {
   default?: (args: RouteArgs<Route>) => MarkdownResult | Promise<MarkdownResult>
   slots?: Record<string, (args: RouteArgs<Route>) => SlotResult | Promise<SlotResult>>
+  publicCache?: Cache
 }
+// next's own cacheLife profiles; next.config's cacheLife adds yours
+export type CacheLifeProfile =
+  | 'default'
+  | 'seconds'
+  | 'minutes'
+  | 'hours'
+  | 'days'
+  | 'weeks'
+  | 'max'
+// markdown.ts's publicCache: how long a CDN may keep this route's public markdown, as next's cacheLife() takes it. a
+// profile's name, or seconds: { revalidate: 300, expire: 86_400 }. it applies only to the anonymous view of a .md url
+export type PublicCache<Profile extends string = CacheLifeProfile> =
+  | Profile
+  | { revalidate: number; expire?: number }
 // what the generated .affordances/md.ts exports: each route's markdown.ts, loaded when it's first asked for. each
 // entry is checked against its own route there, so this is as loose as any of them
 export type MarkdownRoutes = Record<
@@ -705,6 +760,7 @@ export type MarkdownRoutes = Record<
   () => Promise<{
     default?: (args: never) => unknown
     slots?: Record<string, (args: never) => unknown>
+    publicCache?: unknown
   }>
 >
 
@@ -784,6 +840,41 @@ const httpError = (status: number, personal: boolean) =>
     'cache-control': 'private, no-store',
     ...(personal && { [PERSONAL_HEADER]: '1' }),
   })
+
+// the Cache-Control a route's publicCache gives, or undefined when it has none or it isn't one, which development
+// says once per route: its markdown then stays as it would be without it
+const told = new Set<string>()
+const publicHeader = (route: string, module: MarkdownModule) => {
+  if (module.publicCache === undefined) return undefined
+  const { header, problem } = publicCacheControl(module.publicCache)
+  if (problem && process.env.NODE_ENV !== 'production' && !told.has(route)) {
+    told.add(route)
+    console.error(
+      `[affordances-md] ${route}/markdown.ts: publicCache ${problem}; until then, it isn't cached.`,
+    )
+  }
+  return header
+}
+// a page that sets a cookie for an anonymous visitor (a session, an auth handshake) is never cached publicly: said in
+// development, since its route asked to be
+const warnCookie = (route: string, target: URL, headers: Headers) => {
+  if (process.env.NODE_ENV === 'production') return
+  const names = headers.getSetCookie().map((cookie) => cookie.split('=')[0]!.trim())
+  console.warn(
+    `[affordances-md] ${target.pathname} set ${names.length === 1 ? 'a cookie' : 'cookies'} (${names.join(', ')}) for an anonymous visitor, so ${route}/markdown.ts's publicCache doesn't apply: its markdown is private, no-store. Don't set ${names.length === 1 ? 'it' : 'them'} on this page for a visitor who isn't signed in.`,
+  )
+}
+
+// an opted-in route whose page varies on the visitor's language: its public markdown is rendered without one, so
+// it's the default language. said once per route, in development
+const toldLanguage = new Set<string>()
+const warnLanguage = (route: string) => {
+  if (process.env.NODE_ENV === 'production' || toldLanguage.has(route)) return
+  toldLanguage.add(route)
+  console.warn(
+    `[affordances-md] ${route}'s page varies on Accept-Language, but ${route}/markdown.ts's publicCache makes its markdown one view for everyone: it's rendered without the visitor's language, so it's the default language. For Markdown in each language, put the locale in the path (/fr/…).`,
+  )
+}
 
 // the text of the markdown's first # heading, as a title: links keep their text, and a url shown as itself (an
 // autolink, a bare url) is dropped, with any brackets it leaves empty. `# [Methodology](https://x.test/m)` and
@@ -887,6 +978,8 @@ const authoredMarkdown = async (
   { route, module, args }: MarkdownRoute,
   append: MdHandlerOptions['append'],
   negotiated: boolean,
+  // whether the answer may be public: the route opted in, and the request is the one view
+  oneView: boolean,
 ): Promise<Response | undefined> => {
   const markdown = module.default
   // a markdown.ts with only slots converts the page, which fills them
@@ -937,8 +1030,8 @@ const authoredMarkdown = async (
     'x-affordances-tokens': String(Math.ceil(body.length / 4)),
     link: `<${target.href}>; rel="canonical"`,
     // it read data with whatever the request carried, which the handler can't tell a credential from (an x-api-key):
-    // never cached. an author who wants caching returns a Response with its own cache-control
-    'cache-control': 'private, no-store',
+    // never cached, unless its markdown.ts says the route's markdown is public, and then only an anonymous .md
+    'cache-control': (oneView && publicHeader(route, module)) || 'private, no-store',
     ...(personal && { [PERSONAL_HEADER]: '1' }),
   })
 }

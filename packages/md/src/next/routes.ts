@@ -26,11 +26,12 @@ export const findAppDir = (root: string) => {
 
 // a route's markdown.ts: the file relative to the project root, without its extension
 export type MarkdownFile = { route: string; file: string }
-// a file named markdown.ts that isn't one: it has none of the exports a markdown.ts uses, so it's left out
-export type UnfitFile = { route: string; file: string; message: string }
+// what md() reports about a markdown.ts, and the generated check repeats so tsc stops on it: a file that isn't one,
+// left out
+export type Problem = { route: string; message: string }
 
 // what a markdown.ts next to a page can export for affordances
-const EXPORTS = ['default', 'slots']
+const EXPORTS = ['default', 'slots', 'publicCache']
 const MENTIONED = new RegExp(`\\b(${EXPORTS.join('|')})\\b|\\bexport\\s*\\*|\\bexports\\b`)
 // the names a markdown.ts exports, when it exports some and reading its text makes plain none is one of EXPORTS:
 // undefined when it may have one (it mentions one anywhere, re-exports everything from another module, or is commonjs)
@@ -62,7 +63,7 @@ const unfitMessage = (file: string, route: string, names: string[]) =>
 // exports a markdown.ts uses is left out with an error, which the generated check repeats so tsc stops on it
 export const scanApp = (
   root: string,
-): { pages: string[]; markdown: MarkdownFile[]; unfit: UnfitFile[]; handlers: string[] } => {
+): { pages: string[]; markdown: MarkdownFile[]; problems: Problem[]; handlers: string[] } => {
   const fs = process.getBuiltinModule?.('node:fs')
   const path = process.getBuiltinModule?.('node:path')
   const app = findAppDir(root)
@@ -71,13 +72,13 @@ export const scanApp = (
     console.warn(
       `[affordances-md] ${fs ? `no app/ directory in ${root}; pass md({ root })` : 'reading app/ needs Node 20.16 or later'}, so pages get no Link header and llms.txt lists none by default`,
     )
-    return { pages: [], markdown: [], unfit: [], handlers: [] }
+    return { pages: [], markdown: [], problems: [], handlers: [] }
   }
   const pages: string[] = []
   // route handlers outside api/ (/llms.txt, /og/[slug]), which the Accept rewrite leaves alone
   const handlers: string[] = []
   const markdown: MarkdownFile[] = []
-  const unfit: UnfitFile[] = []
+  const problems: Problem[] = []
   const walk = (dir: string, segments: string[]) => {
     const children = fs.readdirSync(dir, { withFileTypes: true })
     const route = `/${segments.join('/')}`
@@ -91,24 +92,26 @@ export const scanApp = (
         if (name) handlers.push(`${route === '/' ? '' : route}/${url(name)}`)
       }
     const own = children.find((child) => child.isFile() && MARKDOWN.test(child.name))
-    const relative = own && path.relative(root, path.join(dir, own.name))
-    // a file that can't be read is taken as it is, as before: the import or the generated check says what's wrong
-    let names: string[] | undefined
-    try {
-      names =
-        own && page ? unfitExports(fs.readFileSync(path.join(dir, own.name), 'utf8')) : undefined
-    } catch {
-      names = undefined
+    if (own) {
+      const file = path.join(dir, own.name)
+      const relative = path.relative(root, file)
+      if (!page)
+        console.warn(`[affordances-md] ${relative} has no page.tsx next to it, so it's ignored`)
+      else {
+        // a file that can't be read is taken as it is, as before: the import or the generated check says what's wrong
+        let names: string[] | undefined
+        try {
+          names = unfitExports(fs.readFileSync(file, 'utf8'))
+        } catch {
+          names = undefined
+        }
+        if (names) {
+          const message = unfitMessage(relative.split(path.sep).join('/'), route, names)
+          console.error(`[affordances-md] ${message}`)
+          problems.push({ route, message })
+        } else markdown.push({ route, file: relative.replace(/\.[jt]sx?$/, '') })
+      }
     }
-    if (relative && page && names) {
-      const message = unfitMessage(relative.split(path.sep).join('/'), route, names)
-      console.error(`[affordances-md] ${message}`)
-      unfit.push({ route, file: relative.replace(/\.[jt]sx?$/, ''), message })
-    } else if (relative && page) markdown.push({ route, file: relative.replace(/\.[jt]sx?$/, '') })
-    else if (own)
-      console.warn(
-        `[affordances-md] ${path.relative(root, path.join(dir, own.name))} has no page.tsx next to it, so it's ignored`,
-      )
     for (const child of children) {
       const name = child.name
       if (!child.isDirectory() || /^[_@]|^\(\.|^node_modules$/.test(name)) continue
@@ -120,7 +123,7 @@ export const scanApp = (
   return {
     pages: pages.toSorted((a, b) => a.localeCompare(b)),
     markdown: markdown.toSorted((a, b) => a.route.localeCompare(b.route)),
-    unfit: unfit.toSorted((a, b) => a.route.localeCompare(b.route)),
+    problems: problems.toSorted((a, b) => a.route.localeCompare(b.route)),
     handlers: handlers.toSorted((a, b) => a.localeCompare(b)),
   }
 }
@@ -130,26 +133,43 @@ export const scanApp = (
 export const writeMarkdownRoutes = (
   root: string,
   files: MarkdownFile[],
-  unfit: UnfitFile[] = [],
+  problems: Problem[] = [],
+  // next.config's cacheLife profiles beyond next's own, which a publicCache may name too
+  profiles: string[] = [],
 ) => {
   const fs = process.getBuiltinModule?.('node:fs')
   const path = process.getBuiltinModule?.('node:path')
-  if (!fs || !path || !(files.length || unfit.length)) return undefined
+  if (!fs || !path) return undefined
   const out = path.join(root, '.affordances', 'md.ts')
+  // nothing left (the last markdown.ts removed, or the one md() reported moved as it said): a file from an earlier
+  // build would keep its routes and its errors, so it's rewritten empty. no alias, so no markdown.ts runs
+  if (!(files.length || problems.length)) {
+    try {
+      if (fs.existsSync(out) && fs.readFileSync(out, 'utf8') !== EMPTY) fs.writeFileSync(out, EMPTY)
+    } catch (error) {
+      console.warn(
+        `[affordances-md] couldn't empty .affordances/md.ts (${errorCode(error)}), which still checks the markdown.ts files of an earlier build. Delete it, or make .affordances/ writable.`,
+      )
+    }
+    return undefined
+  }
   const code = `// generated by @affordances/md from app/**/markdown.ts; don't edit
-import type { MarkdownModule, MarkdownRoutes } from '@affordances/md/next'
+import type { CacheLifeProfile, MarkdownModule, MarkdownRoutes, PublicCache } from '@affordances/md/next'
+
+// the cacheLife profiles a publicCache can name: next's own and next.config's
+type Profile = ${['CacheLifeProfile', ...profiles.map((name) => JSON.stringify(name))].join(' | ')}
 
 // each markdown.ts is checked against its own route. a type error on a line here means that file's default export or
 // slots name another route (MarkdownArgs<'/…'>, Slots<'/…'>) or return something else: fix it in that file
 export const routes = {
-${files.map(({ route, file }) => `  ${JSON.stringify(route)}: (): Promise<MarkdownModule<${JSON.stringify(route)}>> =>\n    import(${JSON.stringify(`../${file.split(path.sep).join('/')}`)}),`).join('\n')}
+${files.map((entry) => `  ${JSON.stringify(entry.route)}: (): Promise<MarkdownModule<${JSON.stringify(entry.route)}, PublicCache<Profile>>> =>\n    import(${JSON.stringify(`../${entry.file.split(path.sep).join('/')}`)}),`).join('\n')}
 } satisfies MarkdownRoutes
 ${
-  unfit.length
+  problems.length
     ? `
-// a markdown.ts that isn't one for @affordances/md: tsc stops on each line below, with what to do about it in its message
-type NotAMarkdownFile<What extends never> = What
-${unfit.map(({ message }, i) => `export type Unfit${i} = NotAMarkdownFile<${JSON.stringify(message)}>`).join('\n')}
+// what md() reported about a markdown.ts: tsc stops on each line below, with what to do about it in its message
+type Fix<What extends never> = What
+${problems.map(({ message }, i) => `export type Problem${i} = Fix<${JSON.stringify(message)}>`).join('\n')}
 `
     : ''
 }`
@@ -168,6 +188,11 @@ ${unfit.map(({ message }, i) => `export type Unfit${i} = NotAMarkdownFile<${JSON
   includeGenerated(path.join(root, 'tsconfig.json'))
   return out
 }
+
+// .affordances/md.ts with no markdown.ts left to check
+const EMPTY = `// generated by @affordances/md from app/**/markdown.ts; don't edit
+export const routes = {}
+`
 
 // an fs error's code (EACCES, EROFS), for a warning
 const errorCode = (error: unknown) =>
