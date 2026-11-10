@@ -37,7 +37,7 @@ Name the route, as you would for `page.tsx`'s `PageProps`, and `params` is typed
 
 It changes only the `include` array, keeping your comments and formatting, and only when the file has an `include` of its own and the entry isn't there yet. When it can't do that safely (the file doesn't parse, `include` comes from a file it `extends`, or the file is read-only), it leaves the file alone and warns with the line to add. A read-only tree never stops the config from loading.
 
-A file named `markdown.ts` next to a page that has none of these exports (`default`, `slots`, `publicCache`) isn't one, such as a helper that happens to have the name. `md()` leaves it out, so the page converts from its HTML, and says so when the config loads. `tsc` (and `next build`) stops with the same message, naming the file and what it exports. If it's for something else, move it out of `app/` or rename it. A file that exports any of them is checked against its route as above.
+A file named `markdown.ts` next to a page that has none of these exports (`default`, `slots`, `publicCache`, `notFoundMarkdown`) isn't one, such as a helper that happens to have the name. `md()` leaves it out, so the page converts from its HTML, and says so when the config loads. `tsc` (and `next build`) stops with the same message, naming the file and what it exports. If it's for something else, move it out of `app/` or rename it. A file that exports any of them is checked against its route as above.
 
 ## Authorization
 
@@ -77,6 +77,24 @@ What `markdown.ts` returns is `Cache-Control: private, no-store` by default, sin
 - **`undefined`**: the page is converted from its HTML, as if there were no `markdown.ts`. Use it to cover some cases of a route and not others. In development, the handler logs a warning naming the route, so a forgotten `return` doesn't go unnoticed.
 
 `llms.txt`, `llms-full.txt`, and Copy Page go through the same handler, so they use it too.
+
+## Not found
+
+When the route's page calls `notFound()`, its Markdown is the page's `not-found.tsx`, converted. Called after the page started streaming, it's a fixed `# Not found`, since Next sends that boundary to be rendered in the browser. `notFoundMarkdown` gives the route's own 404 instead, the same either way:
+
+```ts title="app/package/[pkg]/markdown.ts"
+import type { NotFoundMarkdown } from '@affordances/md/next'
+
+export const notFoundMarkdown: NotFoundMarkdown<'/package/[pkg]'> = ({ params }) =>
+  `# No package ${decodeURIComponent(params.pkg)}\n\nSearch the [registry](/search) for it.`
+```
+
+- **It runs whenever the route's page answered `404` through `notFound()`**, in the page, its layout, the default export or a fill, before or after the shell. The page decides, so no routing is copied into `markdown.ts`.
+- **It gets the default export's arguments**, `params` included, so an unknown `pkg` can say which one.
+- **It returns** a string, `{ markdown, title?, description? }`, or `undefined` for the page's own 404 as above. The answer is always `404`, `private, no-store`.
+- **It's named so it never clashes** with `notFound` from `next/navigation`, which a default export calls in the same file.
+- **A request straight to `/api/affordances/md/…` never runs it**, as it runs no `markdown.ts`. A URL no route matches has no `markdown.ts` either: it's the app's `not-found.tsx`, converted.
+- `forbidden()` and `unauthorized()` keep their fixed `# Forbidden` and `# Unauthorized`.
 
 ## Slots
 

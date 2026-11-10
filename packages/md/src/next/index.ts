@@ -490,6 +490,30 @@ const toTwin = (url: URL) => {
   })
 }
 
+// a page's own 404 (a notFound() in it, streamed or not, or in its markdown.ts or a fill) in its markdown.ts's
+// notFoundMarkdown, when it has one and gives something: always 404, never cached. a Response the default export
+// returned itself is its own answer
+const notFoundPage = async (response: Response, { module, args }: MarkdownRoute, target: URL) => {
+  if (response.status !== 404 || !module.notFoundMarkdown || authoredResponses.has(response))
+    return response
+  const result = await module.notFoundMarkdown(args)
+  if (result === undefined) return response
+  const given = typeof result === 'string' ? { markdown: result } : result
+  const meta = {
+    title: given.title ?? headingOf(given.markdown)?.text,
+    description: given.description,
+    url: target.href,
+  }
+  const body = `${yaml(meta)}${given.markdown.trim()}\n`
+  return respond(body, 404, {
+    'x-affordances-tokens': String(Math.ceil(body.length / 4)),
+    'cache-control': 'private, no-store',
+    ...(response.headers.has(PERSONAL_HEADER) && { [PERSONAL_HEADER]: '1' }),
+  })
+}
+// the Responses a default export returned itself, which no other answer replaces
+const authoredResponses = new WeakSet<Response>()
+
 // an answer of the handler's own, never cached; personal when it was made with someone's credentials
 const fail = (status: number, message: string, personal = false) =>
   respond(`# ${message}\n`, status, {
@@ -509,7 +533,7 @@ const pageUrl = (request: Request, options: MdHandlerOptions, path: string) => {
 // why markdown on a route opted into publicCache stayed private, for x-affordances-md-uncached
 export type Uncached = 'credentials' | 'set-cookie' | 'status' | 'partial' | 'error' | 'invalid'
 export const UNCACHED_HEADER = 'x-affordances-md-uncached'
-type Seen = { opted?: boolean; why?: Uncached }
+type Seen = { opted?: boolean; why?: Uncached; routed?: MarkdownRoute; target?: URL }
 
 // a response on an opted-in route that isn't public says why, in production too, where a gate setting a cookie for a
 // signed-out visitor is otherwise silent: the first reason the render met, or what the answer itself shows
@@ -533,7 +557,10 @@ const convertPage = (options: MdHandlerOptions) => {
   const render = renderPage(options)
   return async (request: Request, pagePath: string, direct: boolean): Promise<Response> => {
     const seen: Seen = {}
-    const response = await render(request, pagePath, direct, seen)
+    const rendered = await render(request, pagePath, direct, seen)
+    const response = seen.routed
+      ? await notFoundPage(rendered, seen.routed, seen.target!)
+      : rendered
     return seen.opted ? sayUncached(response, seen.why) : response
   }
 }
@@ -594,6 +621,8 @@ const renderPage =
       seen.why = 'invalid'
     const asked = oneView ? view : request
     const routed = route && oneView ? { ...route, args: { ...route.args, request: asked } } : route
+    seen.routed = routed
+    seen.target = target
     const authored =
       routed && (await authoredMarkdown(asked, target, routed, append, negotiated, oneView))
     if (authored) return authored
@@ -836,7 +865,17 @@ export type MarkdownModule<Route extends string = string, Cache = PublicCache> =
   default?: (args: RouteArgs<Route>) => MarkdownResult | Promise<MarkdownResult>
   slots?: Record<string, (args: RouteArgs<Route>) => SlotResult | Promise<SlotResult>>
   publicCache?: Cache
+  notFoundMarkdown?: (args: RouteArgs<Route>) => NotFoundResult | Promise<NotFoundResult>
 }
+// markdown.ts's notFoundMarkdown: the markdown of the route's 404, when its page called notFound(). undefined keeps the
+// page's own: its not-found.tsx converted, or a fixed body when next streamed the 404 after the shell
+export type NotFoundResult =
+  | string
+  | { markdown: string; title?: string; description?: string }
+  | undefined
+export type NotFoundMarkdown<Route extends string = string> = (
+  args: MarkdownArgs<Route>,
+) => NotFoundResult | Promise<NotFoundResult>
 // next's own cacheLife profiles; next.config's cacheLife adds yours
 export type CacheLifeProfile =
   | 'default'
@@ -859,6 +898,7 @@ export type MarkdownRoutes = Record<
     default?: (args: never) => unknown
     slots?: Record<string, (args: never) => unknown>
     publicCache?: unknown
+    notFoundMarkdown?: (args: never) => unknown
   }>
 >
 
@@ -1041,6 +1081,7 @@ const authoredMarkdown = async (
     const vary = passed.headers.get('vary')
     if (!vary) passed.headers.set('vary', 'Accept')
     else if (!/(^|,)\s*accept\s*(,|$)/i.test(vary)) passed.headers.set('vary', `${vary}, Accept`)
+    authoredResponses.add(passed)
     return passed
   }
   if (result === undefined) {

@@ -45,12 +45,20 @@ const PUBLIC = 's-maxage=3600, stale-while-revalidate=82800'
 const PRIVATE = 'private, no-store'
 const plain: Check[] = [
   { path: '/ok.md', status: 200, expect: { 'cache-control': PUBLIC }, body: '# Fine' },
-  // negotiated markdown is never public
+  // an anonymous Accept request on a publicCache route is sent to its twin, never stored
   {
     path: '/ok',
     headers: { accept: 'text/markdown' },
+    status: 307,
+    expect: { location: '/ok.md', 'cache-control': PRIVATE },
+  },
+  // with credentials it's the person's own markdown, at the page's url, never public
+  {
+    path: '/ok',
+    headers: { accept: 'text/markdown', cookie: 'sid=1' },
     status: 200,
     expect: { 'cache-control': PRIVATE },
+    body: '# Fine',
   },
   // a boundary that caught an error: its status, never public, though its route opted in
   {
@@ -61,6 +69,13 @@ const plain: Check[] = [
   // streamed after the shell, which next sends as a 200
   { path: '/gone.md', status: 404, expect: { 'cache-control': PRIVATE }, not: '# Item' },
   { path: '/moved.md', status: 307, expect: { location: '/ok.md', 'cache-control': PRIVATE } },
+  // the route's own notFoundMarkdown, for the same streamed notFound()
+  {
+    path: '/missing.md',
+    status: 404,
+    expect: { 'cache-control': PRIVATE },
+    body: '# Nothing here',
+  },
   // prerendered, with notFound() in a boundary
   { path: '/static-gone.md', status: 404, expect: { 'cache-control': PRIVATE } },
   // next start builds request.url from its own host, never the Host a caller sends, so the page is fetched from the
@@ -121,6 +136,8 @@ const cacheComponents: Check[] = [
   },
   { path: '/static.md', status: 200, cachedLike: '/static', body: '# Static' },
   { path: '/slotted.md', status: 200, expect: { 'cache-control': PRIVATE }, body: 'Filled.' },
+  // a url no route matches: next's own not-found page, converted
+  { path: '/nope.md', status: 404, body: 'This page could not be found.' },
 ]
 
 // each app, the page next start is asked for until it answers, and its checks
@@ -223,7 +240,9 @@ const problems = async (base: string, check: Check) => {
   const wrong: string[] = []
   if (response.status !== check.status) wrong.push(`status ${response.status}, not ${check.status}`)
   for (const [name, value] of Object.entries(check.expect ?? {})) {
-    const got = response.headers.get(name)
+    const raw = response.headers.get(name)
+    // a location is the same whether it's absolute or relative to the server
+    const got = name === 'location' && raw ? raw.replace(base, '') : raw
     if (got !== value) wrong.push(`${name}: ${got}, not ${value}`)
   }
   if (check.body && !body.includes(check.body)) wrong.push(`no ${JSON.stringify(check.body)}`)

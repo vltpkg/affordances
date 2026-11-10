@@ -75,6 +75,9 @@ const check = (markdown: string, config: Config = {}) => {
         paths: {
           '@affordances/md/next': [join(src, 'index.ts')],
           '@affordances/md/routes': [join(src, 'markdown-routes.ts')],
+          'next/navigation': [
+            fileURLToPath(new URL('../node_modules/next/navigation.d.ts', import.meta.url)),
+          ],
         },
       },
       include: ['**/*.ts', '.affordances/**/*.ts'],
@@ -149,6 +152,31 @@ export const slots = {
     expect(check(good.replace('readme of ${params.pkg}', 'readme of ${params.name}'))).toMatch(
       /^app\/package\/\[pkg\]\/markdown\.ts\(\d+,\d+\): error TS2339: Property 'name' does not exist/m,
     )
+  },
+  TSC,
+)
+
+test(
+  "notFoundMarkdown next to Next's own notFound: both are typed by the route, and neither clashes",
+  () => {
+    const both = `import type { MarkdownArgs, NotFoundMarkdown } from '@affordances/md/next'
+import { notFound } from 'next/navigation'
+
+export default async function markdown({ params }: MarkdownArgs<'/package/[pkg]'>) {
+  if (params.pkg === 'secret') notFound()
+  return undefined
+}
+
+export const notFoundMarkdown: NotFoundMarkdown<'/package/[pkg]'> = ({ params }) =>
+  \`# No package \${decodeURIComponent(params.pkg)}\`
+`
+    expect(check(both)).toBe('')
+    // typed for another route, it fails in the generated check, as the default export does
+    expect(
+      check(
+        both.replace("NotFoundMarkdown<'/package/[pkg]'>", "NotFoundMarkdown<'/packages/[pkg]'>"),
+      ),
+    ).toMatch(/^\.affordances\/md\.ts\(\d+,\d+\): error TS2322/m)
   },
   TSC,
 )
@@ -294,7 +322,7 @@ test(
   () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     const message =
-      "app/package/[pkg]/markdown.ts has none of the exports a markdown.ts next to a page uses (default, slots, publicCache): it exports methodology, steps. So it's left out, and /package/[pkg] converts from its HTML. If it isn't for @affordances/md, move it out of app/ or rename it."
+      "app/package/[pkg]/markdown.ts has none of the exports a markdown.ts next to a page uses (default, slots, publicCache, notFoundMarkdown): it exports methodology, steps. So it's left out, and /package/[pkg] converts from its HTML. If it isn't for @affordances/md, move it out of app/ or rename it."
     const out = check(
       "export const methodology = { steps: 3 }\nconst steps = ['a']\nexport { steps }\nexport type Step = string\n",
     )

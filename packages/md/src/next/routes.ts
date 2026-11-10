@@ -31,7 +31,7 @@ export type MarkdownFile = { route: string; file: string }
 export type Problem = { route: string; message: string }
 
 // what a markdown.ts next to a page can export for affordances
-const EXPORTS = ['default', 'slots', 'publicCache']
+const EXPORTS = ['default', 'slots', 'publicCache', 'notFoundMarkdown']
 const MENTIONED = new RegExp(`\\b(${EXPORTS.join('|')})\\b|\\bexport\\s*\\*|\\bexports\\b`)
 // the names a markdown.ts exports, when it exports some and reading its text makes plain none is one of EXPORTS:
 // undefined when it may have one (it mentions one anywhere, re-exports everything from another module, or is commonjs)

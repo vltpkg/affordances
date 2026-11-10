@@ -642,3 +642,91 @@ test('an anonymous Accept request on an opted-in route goes to its twin, never s
     'private, no-store',
   ])
 })
+
+// a page that called notFound(): before its shell went out (next's 404, its not-found.tsx), or after (a 200 with the
+// error row)
+const notFound = {
+  unstreamed: () =>
+    new Response(page('<h1>404</h1><p>This page could not be found.</p>'), {
+      status: 404,
+      headers: { 'content-type': 'text/html' },
+    }),
+  streamed: () =>
+    new Response(
+      page('<h1>express</h1><p>Loading…</p>') +
+        flight('5:E{"digest":"NEXT_HTTP_ERROR_FALLBACK;404"}\n'),
+      { headers: { 'content-type': 'text/html' } },
+    ),
+}
+
+test("notFoundMarkdown is the route's 404 whenever its page called notFound(), streamed or not, never cached", async () => {
+  const asked: Record<string, string | string[]>[] = []
+  authored[ROUTE] = async () =>
+    ({
+      notFoundMarkdown: ({ params }: { params: Record<string, string> }) => {
+        asked.push(params)
+        return `# No package ${decodeURIComponent(params.pkg!)}\n\nSearch the [registry](/search).`
+      },
+      publicCache: 'hours',
+    }) as never
+  const bodies: string[] = []
+  for (const kind of ['unstreamed', 'streamed'] as const) {
+    upstream = notFound[kind]
+    const response = await createMdHandler()(new Request(`${site}/x/%40acme%2Fnope.md`))
+    expect([kind, response.status, response.headers.get('cache-control')]).toEqual([
+      kind,
+      404,
+      'private, no-store',
+    ])
+    bodies.push(await response.text())
+  }
+  // the same body either way, with the unknown param it was asked for
+  expect(bodies[0]).toBe(bodies[1])
+  expect(bodies[0]).toBe(
+    `---\ntitle: "No package @acme/nope"\nurl: "${site}/x/%40acme%2Fnope"\n---\n\n# No package @acme/nope\n\nSearch the [registry](/search).\n`,
+  )
+  expect(asked).toEqual([{ pkg: '%40acme%2Fnope' }, { pkg: '%40acme%2Fnope' }])
+  // a 404 the default export or a fill throws runs it too
+  authored[ROUTE] = async () =>
+    ({
+      default: () => {
+        throw Object.assign(new Error('NEXT_HTTP_ERROR_FALLBACK;404'), {
+          digest: 'NEXT_HTTP_ERROR_FALLBACK;404',
+        })
+      },
+      notFoundMarkdown: () => '# Gone',
+    }) as never
+  const thrown = await createMdHandler()(new Request(`${site}/x/express.md`))
+  expect([thrown.status, (await thrown.text()).trim().split('\n').at(-1)]).toEqual([404, '# Gone'])
+})
+
+test("notFoundMarkdown returning undefined keeps the page's own 404, and a direct hit or a 200 never runs it", async () => {
+  let runs = 0
+  authored[ROUTE] = async () =>
+    ({
+      notFoundMarkdown: () => {
+        runs++
+        return undefined
+      },
+    }) as never
+  // the converted not-found.tsx, and the fixed body for a streamed one, as before
+  upstream = notFound.unstreamed
+  const unstreamed = await createMdHandler()(new Request(`${site}/x/nope.md`))
+  expect([unstreamed.status, await unstreamed.text()]).toEqual([
+    404,
+    expect.stringContaining('This page could not be found.'),
+  ])
+  upstream = notFound.streamed
+  const streamed = await createMdHandler()(new Request(`${site}/x/nope.md`))
+  expect([streamed.status, await streamed.text()]).toEqual([404, '# Not found\n'])
+  expect(runs).toBe(2)
+  // straight to the handler's url, which a page-scoped gate never saw: no markdown.ts, so no notFoundMarkdown
+  upstream = notFound.unstreamed
+  const direct = await createMdHandler()(new Request(`${site}/api/affordances/md/x/nope`))
+  expect(direct.status).toBe(404)
+  // a page that answered: nothing to say
+  upstream = () =>
+    new Response(page('<h1>express</h1>'), { headers: { 'content-type': 'text/html' } })
+  expect((await createMdHandler()(new Request(`${site}/x/express.md`))).status).toBe(200)
+  expect(runs).toBe(2)
+})
