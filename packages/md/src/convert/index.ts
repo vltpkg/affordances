@@ -190,13 +190,14 @@ const word = (node: ElementContent | undefined) => {
   const text = isInline(node) ? toString(node).trim() : node?.type === 'text' ? node.value : ''
   return [...text.trim()].length > 1 ? text : ''
 }
-// a block with nothing to read: no text, no described image
+// what has nothing to read: no text, no described image
+const nothingToRead = (node: Element) => !toString(node).trim() && !described(node).length
+// a block with nothing to read
 const emptyBlock = (node: Element) =>
   !INLINE.has(node.tagName) &&
   node.tagName !== 'img' &&
   node.tagName !== 'br' &&
-  !toString(node).trim() &&
-  !described(node).length
+  nothingToRead(node)
 // the link an inline element starts or ends with: itself, or the first or last thing in it
 const edgeLink = (node: ElementContent | undefined, end: boolean): Element | undefined => {
   if (!isInline(node)) return
@@ -351,7 +352,7 @@ const pruneWith = (
     // side would lose the space between them
     if (child.tagName === 'a')
       child.children = without(child, (inner) => valueBearing(inner) || emptyBlock(inner)).children
-    if (child.tagName === 'a' && !toString(child).trim() && !described(child).length) {
+    if (child.tagName === 'a' && nothingToRead(child)) {
       const label = linkLabel(child, byId)
       if (!label) return []
       child.children = [{ type: 'text', value: label }]
