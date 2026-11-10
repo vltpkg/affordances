@@ -449,17 +449,34 @@ export const withGenerated = (text: string): { text: string } | { why: string } 
   }
   return { text: edited }
 }
-// said once per tsconfig.json per process, never on each rebuild of next dev
-const includeTold = new Set<string>()
+// a warning said once per what it's about (a route and the thing wrong with it) per process, never on every request a
+// page gets or each rebuild of next dev: in development only, unless production says it too, or only production does
+const told = new Set<string>()
+export const once = (
+  about: string,
+  message: string,
+  {
+    production = false,
+    level = 'warn',
+  }: { production?: boolean | 'only'; level?: 'warn' | 'error' } = {},
+) => {
+  const inProduction = process.env.NODE_ENV === 'production'
+  if ((inProduction ? !production : production === 'only') || told.has(about)) return
+  told.add(about)
+  console[level](message)
+}
+
+// said once per tsconfig.json per process, in production too
 const sayInclude = (tsconfig: string) => {
   const fs = process.getBuiltinModule?.('node:fs')
-  if (includeTold.has(tsconfig) || !fs?.existsSync(tsconfig)) return
+  if (!fs?.existsSync(tsconfig)) return
   try {
     if (includesGenerated(fs.readFileSync(tsconfig, 'utf8'))) return
   } catch {}
-  includeTold.add(tsconfig)
-  console.warn(
+  once(
+    `include ${tsconfig}`,
     `[affordances-md] To have tsc check each markdown.ts against its route, add "${GENERATED}" to "include" in tsconfig.json, or run \`affordances-md init\`, which adds it. md() doesn't edit tsconfig.json.`,
+    { production: true },
   )
 }
 

@@ -25,6 +25,7 @@ import {
   PUBLIC_ENV,
   publicPattern,
   LITERAL_ENV,
+  once,
   ROUTES_ENV,
   scanApp,
   scanPublic,
@@ -733,7 +734,7 @@ const renderPage =
       once(
         `maxBytes ${target.pathname}`,
         `[affordances-md] ${target.pathname} is larger than ${named}, so it answers 413. ${fix}`,
-        true,
+        { production: true },
       )
       return fail(
         413,
@@ -761,12 +762,11 @@ const renderPage =
       if (!(error instanceof FlightDataError)) throw error
       // flight data the stripper can't account for (a push it didn't take out, one it can't read, a placeholder that
       // isn't a script): what the page says can't be told, so none of it goes out. in production too, once
-      if (!toldFlight) {
-        toldFlight = true
-        console.error(
-          `[affordances-md] ${target.pathname}'s Flight data couldn't be read (${error.reason}), so it answers 502, private, no-store. If it's a page of Next's own, update @affordances/md or report it.`,
-        )
-      }
+      once(
+        'flight',
+        `[affordances-md] ${target.pathname}'s Flight data couldn't be read (${error.reason}), so it answers 502, private, no-store. If it's a page of Next's own, update @affordances/md or report it.`,
+        { production: true, level: 'error' },
+      )
       return fail(
         502,
         "The page couldn't be read to convert it",
@@ -1071,46 +1071,33 @@ const streamedAnswer = (page: Page, target: URL, cache: Caching, personal: boole
   return undefined
 }
 
-// whether a page's unreadable flight data has been said, once per process
-let toldFlight = false
-
 // the kind of a digest of next's (NEXT_…) that fromDigest can't read, from a next newer than this md, or undefined.
 // only its kind, since the rest can hold a url. said once per process, in production too, since that's where a new
 // next first runs
-let unknownTold = false
 const unknownDigest = (digests: string[]) => {
   const unknown = digests.find((digest) => digest.startsWith('NEXT_') && !fromDigest(digest))
   if (!unknown) return undefined
   const kind = unknown.split(';')[0]!
-  if (!unknownTold)
-    console.error(
-      `[affordances-md] a page streamed a Next.js digest @affordances/md doesn't know (${kind}), so its markdown answers 502, private, no-store. Update @affordances/md, or report it if you're on the latest.`,
-    )
-  unknownTold = true
+  once(
+    'digest',
+    `[affordances-md] a page streamed a Next.js digest @affordances/md doesn't know (${kind}), so its markdown answers 502, private, no-store. Update @affordances/md, or report it if you're on the latest.`,
+    { production: true, level: 'error' },
+  )
   return kind
 }
 
 // the Cache-Control a route's publicCache gives, or undefined when it has none or it isn't one, which development
 // says once per route: its markdown then stays as it would be without it
-const told = new Set<string>()
 const publicHeader = (route: string, module: MarkdownModule) => {
   if (module.publicCache === undefined) return undefined
   const { header, problem } = publicCacheControl(module.publicCache)
-  if (problem && process.env.NODE_ENV !== 'production' && !told.has(route)) {
-    told.add(route)
-    console.error(
+  if (problem)
+    once(
+      `publicCache ${route}`,
       `[affordances-md] ${route}/markdown.ts: publicCache ${problem}; until then, it isn't cached.`,
+      { level: 'error' },
     )
-  }
   return header
-}
-// a warning said once per what it's about (a route and the thing wrong with it) per process, never on every request a
-// page gets in next dev; in development only, unless production says it too
-const toldOnce = new Set<string>()
-const once = (about: string, message: string, inProduction = false) => {
-  if ((!inProduction && process.env.NODE_ENV === 'production') || toldOnce.has(about)) return
-  toldOnce.add(about)
-  console.warn(message)
 }
 
 // a page that sets a cookie for an anonymous visitor (a session, an auth handshake) is never cached publicly: said in
@@ -1125,14 +1112,11 @@ const warnCookie = (route: string, target: URL, headers: Headers) => {
 
 // an opted-in route whose page varies on the visitor's language: its public markdown is rendered without one, so
 // it's the default language. said once per route, in development
-const toldLanguage = new Set<string>()
-const warnLanguage = (route: string) => {
-  if (process.env.NODE_ENV === 'production' || toldLanguage.has(route)) return
-  toldLanguage.add(route)
-  console.warn(
+const warnLanguage = (route: string) =>
+  once(
+    `language ${route}`,
     `[affordances-md] ${route}'s page varies on Accept-Language, but ${route}/markdown.ts's publicCache makes its markdown one view for everyone: it's rendered without the visitor's language, so it's the default language. For Markdown in each language, put the locale in the path (/fr/…).`,
   )
-}
 
 // the route's markdown.ts for a page url, and the arguments its exports get; undefined when it has none
 type MarkdownRoute = { route: string; module: MarkdownModule; args: RouteArgs<string> }
@@ -1615,19 +1599,16 @@ export const createLlmsFullHandler = ({ pages, append, ...given }: LlmsFullOptio
       const named = entries.flatMap(({ rendered }) =>
         rendered.failed ? [`${rendered.path} (${rendered.failed})`] : [],
       )
-      if (process.env.NODE_ENV === 'production' && !toldIncomplete) {
-        toldIncomplete = true
-        console.warn(
-          `[affordances-md] llms-full.txt answered 503: ${named.join(', ')}. It's never cached until every page renders: raise the deadline and the route's maxDuration, or cache the pages' twins.`,
-        )
-      }
+      once(
+        'llms-full 503',
+        `[affordances-md] llms-full.txt answered 503: ${named.join(', ')}. It's never cached until every page renders: raise the deadline and the route's maxDuration, or cache the pages' twins.`,
+        { production: 'only' },
+      )
       return incomplete('llms-full.txt', failed)
     }
     return text(`${[...parts, tail.extra].filter(Boolean).join('\n\n')}\n`, options, 0, caller)
   }
 }
-// whether an llms-full.txt 503 has been said in production, once per process
-let toldIncomplete = false
 
 // a title more than one page has (a layout's, for every page) isn't a page's name
 const sharedTitles = (pages: (PageText | undefined)[]) => {
