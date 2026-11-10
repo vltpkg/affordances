@@ -1,6 +1,6 @@
 {
   "name": "@affordances/next",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Affordances for Next.js: withAffordances, codegen, and the route handler",
   "license": "MIT",
   "repository": {

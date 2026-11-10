@@ -1,5 +1,63 @@
 # @affordances/md
 
+## 0.5.0
+
+### Minor Changes
+
+- d9ab54e: Converter fixes for component-library HTML:
+
+  - Links side by side are spaced even when one holds an empty block, as an avatar stack's fallback `<div>` does: `[Ann](…) [Bo](…)`.
+  - A form without an `aria-label` or `aria-labelledby` gets no `**Form**` heading. What it already says, such as a card's title, stays in place.
+  - On a `data-affordances-md="values"` form, a checkbox, switch, toggle or lone radio button gives its state as `on`, `off` or `mixed`, unchecked included: `- Keep logs (checkbox): off`. A checkbox used to read `(checkbox, selected)`, and nothing when unchecked.
+  - Text isn't escaped where Markdown would only make it a link to itself: `tj@acme.dev`, `www.acme.dev` and `https://acme.dev` read as they are in paragraphs and table cells, as form values already did. Headings keep the escapes.
+  - A code block keeps its language from `data-language` on its `<code>` or `<pre>`, or a `language-*` class on its `<pre>`, and its title from a `<figcaption>` before it in its `<figure>` or a `data-title` on what holds it, as rehype-pretty-code, Expressive Code and fumadocs render them.
+
+- c110634: `createLlmsFullHandler`'s `pages` takes `{ url, title?, markdown }` as well as paths: `markdown` is a string or a function of the request, and the page is never rendered or fetched, so a site with a data layer skips the HTML round trip. Its links are made absolute and point at their twins, as a rendered page's are. Both run alongside the page renders, and a `markdown` function or an `append` that throws makes the file a `503`. `append` adds Markdown at the end of the file, with `createMdHandler`'s signature.
+
+  Both llms files are the public site, whoever asks: `pages`, `sections`, a page's `markdown`, `append` and the `headers` option get a request with none of the visitor's headers, and a request that sends a `cookie` or `authorization` gets its copy `private, no-store`. Before, the caller's own request reached them and the file was still cached publicly.
+
+- 62f3150: `createLlmsTxtHandler` takes `note`: Markdown that replaces what the plugin says after the summary (that every page is Markdown, where `llms-full.txt` is, and on an Affordances site how to read its graphs), or `false` for none. The site's `intro` now comes after that note, not before it, so `llms.txt` reads title, summary, note, intro, sections. The default line on `llms-full.txt` is now "For the full text in one file, see llms-full.txt", which stays true when `pages` leaves some out. A section takes `sections` of its own, rendered under `###` down to `######`; one nested deeper throws, naming it.
+- 827e34c: `llms-full.txt` is never cached missing a page. A page that failed to render (a timeout, the `deadline`, a `5xx`, `408` or `429`, a fetch error, or a page still loading after its `timeout`) makes it a `503` with `Cache-Control: no-store` and `Retry-After`, so the next request renders it again. `llms.txt` still links such a page by its path and stays cacheable. `x-affordances-md-dropped` now counts failed pages only. A page left out by design (a redirect, another `4xx`, a response that isn't Markdown, a private render) leaves the file cacheable, and in development a private one is logged as an error.
+
+  `createLlmsTxtHandler` and `createLlmsFullHandler` take `publicCache`, with `markdown.ts`'s values (a `cacheLife` profile or `{ revalidate, expire? }`) or `false`. The default is still an hour.
+
+- 756cba1: `maxBytes` counts the HTML the converter keeps, not Next's Flight data. The handler takes each Flight push out of the page as it streams, reading it for its error rows, so a big `partialPrefetching` page (most of whose bytes are Flight data) is never held whole and converts with the default. The default is now 16 MiB of kept HTML (was 6 MiB of the whole page), and the whole response can be up to 8 times `maxBytes`; past either limit the page answers `413`, naming which.
+- 07af5ad: On a route with `publicCache`, an anonymous request for the page's own URL with `Accept: text/markdown` gets a `307` to its `.md` twin, `private, no-store`, `Vary: Accept`, with a line naming the twin. Nothing is rendered, and the twin is what a CDN keeps, so agents that negotiate hit the cache too. Credentialed requests and routes without `publicCache` are unchanged, and the redirect's `Location` is relative, so it's right behind any proxy. `llms.txt` and `llms-full.txt` now read each page at its twin (at its own URL with `Accept` on a `literalMd` route), so they follow no redirect.
+- f496f95: `@affordances/md` supports every Next 16 (`next: >=16`), and it's tested on a version matrix from 16.0.0 to the current canary. Where md reads something Next doesn't document, a Next that changes it gets private markdown or an error, never a public or wrong page:
+
+  - A page whose Flight data has any error row (a boundary that caught an error, an `error.tsx`) keeps its status and is `private, no-store` with `x-affordances-md-uncached: error`, even on a route with `publicCache` or a page Next itself cached. `llms.txt` and `llms-full.txt` leave it out, as a private page, and stay cacheable.
+  - A Next digest md can't read answers `502`, `private, no-store`, logged once per process. So a Next release that changes its digests shows up as 502s, never as wrong pages.
+  - A page the handler couldn't reach at all (a refused connection, an unreachable origin) answers `502`, not `504`, which stays for a page that took too long. The body names only the page's path, never the origin, which can be an internal host; development adds the cause, in the body and the log.
+
+- eb25387: `md()` no longer edits `tsconfig.json` when the config loads. When `.affordances/**/*.ts` isn't in its `include`, `md()` says the line to add, once per process. `affordances-md init` adds it, keeping the file's comments and formatting. `markdown.ts` works either way; the include is what lets `tsc` and `next build` check each one against its route. Development warnings that fired on every request (a cookie set on an opted-in page, a default export that returned nothing, a slot without a fill) are now said once per route per process. The `maxBytes` warning is said once per page.
+- 89846d1: `markdown.ts` can export `notFoundMarkdown`, the route's 404 in Markdown. It runs whenever the route's page answered `404` through `notFound()`, before or after the shell streamed, so an agent gets the same body either way, with the default export's arguments. It returns a string, `{ markdown, title?, description? }`, or `undefined` for the page's own `not-found.tsx` as before. The answer is always `404`, `private, no-store`, and a request straight to the handler's URL never runs it. Typed as `NotFoundMarkdown<'/route'>`.
+- ff68ad5: `mdProxy` gains three verbs and `@affordances/md/next/proxy` gains a function:
+
+  - `md.request`: the page as a `NextRequest`, with the request's method, headers and cookies, for a gate that takes a request.
+  - `md.rewrite(destination, init?)`: `NextResponse.rewrite`'s signature. A Markdown request gets the destination page's Markdown with `init.status`, `private, no-store`, varying on `Accept`; anything else gets Next's own rewrite.
+  - `md.adopt(response)`: makes a third-party middleware's answer right for a Markdown request. Its redirect to a page on this site goes to that page's `.md`, its rewrite gives that page's Markdown with its status, and its `next()` goes on to the handler, with the cookies it set. Another origin, and any request that isn't for Markdown, get the response as it came.
+  - `mdAliasPath(pathname)`: the app route URL a public URL renders through `md({ aliases })`, as the handler resolves it.
+
+  The gate's own request headers (the ones it sets with `request.headers`, such as who the visitor is) reach the page's `markdown.ts`, fills and `append` in place of the client's, and a rewrite keeps its destination's query. A rewrite's page and status reach the handler on a request header carrying a token from `md()`, new on each build and kept in no file, which the route takes off the request before your code sees it. A header without it answers `500`, never the page unguarded, and a proxy without the token answers `500` rather than rewriting unverified.
+
+- 2955f4e: `data-affordances-md="show"` keeps a panel people open on the page, such as a tab panel or an accordion's content, even when it's `hidden`. Each tab panel is headed by its tab's label, and its tab list is left out. Put it on Radix's, shadcn's or fumadocs' panel next to `forceMount`: `<TabsContent forceMount data-affordances-md="show">`. Without the marker, a hidden panel is still dropped like anything else people can't see.
+- 7fd7e48: Markdown that stays private says why in `x-affordances-md-uncached`, on any route and in production too: `credentials`, `set-cookie`, `status`, `partial`, `error`, `gate`, `negotiated`, `invalid` or `private`. Markdown is `private, no-store` unless the route's `publicCache` or the page's own `Cache-Control` makes it public, so a page that sends none is private. A gate that sets a cookie for a signed-out visitor was visible only in development before.
+
+### Patch Changes
+
+- 188efc3: The converter finds the content root, empty tables and code-block titles in one walk each instead of re-walking the page per candidate, so big pages convert faster. Output is unchanged.
+- 936ec3e: A page that renders its meta description under its `<h1>` says it once: the block right after the `#` heading is left out when its text is exactly the frontmatter's `description`. Without frontmatter it stays.
+- 34fdf0e: Security: the llms handlers' site-index request never follows a redirect, so the `headers` option (a protection bypass, a token) never reaches the host it points to. A redirect there means no index.
+- dacec5d: In `llms.txt` and `llms-full.txt`, a page's first heading names it only when its title goes on past a separator and a space: a page titled `Sign-in · Acme` whose heading is `Sign` keeps its title, rather than being named `Sign`.
+- 6e78bdf: Security: `llms.txt` and `llms-full.txt` write a page's own title and description as plain text: one line, with the brackets and angle brackets that link and autolink syntax react to escaped. A title such as `evil](https://evil.test/phish) [x`, or a description with blank lines and a `## heading`, can no longer add a link or a section to the public files. Frontmatter is read line by line, so a `U+2028` in a value can't pass for a key of its own.
+- cc29405: Without the Affordances graph (`withMd` on its own), `llms.txt` and `llms-full.txt` no longer ask for `/.well-known/affordances.json`: only an app `withAffordances` wraps has one, whichever wrapper runs first.
+- 2c8fba5: Files in `public/` never get a Markdown twin. Under a root catch-all page, a link to `/openapi.json` stays as it is instead of pointing at `/openapi.json.md`, and no `public/` file gets a `Link` to a twin: a path has a `Link` exactly when it has a twin. A page named like a `public/` folder (`/docs/intro` beside `public/docs/`, or `/docs/v1.2` beside its images) keeps both. md() records `public/`'s files when the config loads, symlinked folders included, with a folder of thousands of files as one entry that keeps their extensions, so the list it passes to the handlers stays small.
+- 98dbf95: Documented: the default export and every fill of one twin get the same `request` object, so a `WeakMap` keyed by it shares their data, and it's tested. `caching.mdx` notes that Next sets an app page's own `Vary`, replacing one from `next.config`, `proxy.ts` or `md()`.
+- d6676bc: The frontmatter `title` is the page's `#` heading when the `<title>` is that heading in the site's template, such as `Authentication — Acme Docs` for `<h1>Authentication</h1>`, with the heading on either side of a `·`, `|`, `–`, `—` or `-`. Any other `<title>` stays as written.
+- 11b45ca: A twin asks for its page uncompressed (`accept-encoding: identity`): it's a fetch from the server to itself, where gzipping the HTML only to unzip it again cost more than the bytes saved.
+- 41ca3a7: `RouteArgs`, `PathParams` and `SegmentParams`, which `MarkdownModule` and `RouteParams` are built from, are exported, so the API reference names every type the public signatures use.
+- ba9d42d: On a `data-affordances-md="values"` form, a field named `authorization`, `cookie`, `sid` or `signature`, or whose value is a bearer token (`Bearer …`) or a JWT, gives only its label, as other secret-looking fields do.
+
 ## 0.4.0
 
 ### Minor Changes

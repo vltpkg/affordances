@@ -1,5 +1,14 @@
 # @affordances/cli
 
+## 0.1.4
+
+### Patch Changes
+
+- Updated dependencies [c7c61b0]
+  - @affordances/next@0.5.0
+  - @affordances/mcp@0.5.0
+  - @affordances/protocol@0.5.0
+
 ## 0.1.3
 
 ### Patch Changes

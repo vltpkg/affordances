@@ -1,6 +1,6 @@
 {
   "name": "@affordances/lint",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Affordances lint rules for ESLint and oxlint: require-affordance, static-action-name",
   "license": "MIT",
   "repository": {
