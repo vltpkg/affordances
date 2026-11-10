@@ -35,7 +35,7 @@ import {
   type Rewrites,
   rewrites,
   withMd,
-  SITE_INDEX_ENV,
+  type LlmsSection,
 } from '../src/next/index.ts'
 import { aliasPath, hasTwin } from '../src/next/rules.ts'
 import {
@@ -2082,6 +2082,9 @@ const affordancesSite = (url: URL) =>
         { headers: { 'content-type': 'text/html' } },
       )
 
+// the env name md() sets when there's no Affordances graph: md's own, never public api
+const SITE_INDEX_ENV = 'AFFORDANCES_MD_SITE_INDEX'
+
 test('without the Affordances graph, the llms handlers never ask for a site index', async () => {
   const project = app(['app/page.tsx', 'app/a/page.tsx'])
   const plain: Config = md({ root: project })({})
@@ -2115,10 +2118,108 @@ test('llms.txt lists each page twin with its title and the route description, an
     [
       '# Acme Store',
       '> A demo store.',
-      `Every page is also Markdown: add \`.md\` to its URL, or request it with \`Accept: text/markdown\`. [llms-full.txt](${site}/llms-full.txt) has every page in one file.`,
+      `Every page is also Markdown: add \`.md\` to its URL, or request it with \`Accept: text/markdown\`. For the full text in one file, see [llms-full.txt](${site}/llms-full.txt).`,
       `This site is Affordances-enabled: request any page with \`Accept: application/vnd.affordances+json\` for its graph (what the page shows, and the actions you can call there, with their inputs). [/.well-known/affordances.json](${site}/.well-known/affordances.json) lists every route and its actions.`,
       `## Pages\n\n- [Home](${site}/index.md): Every product, with its price\n- [Cart](${site}/cart.md): What is in the cart`,
     ].join('\n\n') + '\n',
+  )
+})
+
+test("llms.txt's note replaces the plugin's sentences, or false drops them, and comes before the intro", async () => {
+  upstream = affordancesSite
+  vi.stubEnv(ROUTES_ENV, JSON.stringify(['/', '/cart']))
+  const head = async (options: Parameters<typeof createLlmsTxtHandler>[0]) =>
+    (
+      await (
+        await createLlmsTxtHandler({
+          summary: 'A demo store.',
+          intro: 'Start at [the cart](/cart).',
+          sections: () => [],
+          ...options,
+        })(new Request(`${site}/llms.txt`))
+      ).text()
+    )
+      .trim()
+      .split('\n\n')
+  // by default: title, summary, the plugin's sentences, then the site's intro
+  const plain = await head({})
+  expect(plain[0]).toBe('# Acme Store')
+  expect(plain[1]).toBe('> A demo store.')
+  expect(plain[2]).toMatch(/^Every page is also Markdown/)
+  expect(plain[3]).toMatch(/^This site is Affordances-enabled/)
+  expect(plain[4]).toBe(`Start at [the cart](${site}/cart.md).`)
+  // a note of the site's own, its links resolved and twinned like the intro's
+  expect(await head({ note: 'Add `.md` to any [page](/cart) for its Markdown.' })).toEqual([
+    '# Acme Store',
+    '> A demo store.',
+    `Add \`.md\` to any [page](${site}/cart.md) for its Markdown.`,
+    `Start at [the cart](${site}/cart.md).`,
+  ])
+  expect(await head({ note: false })).toEqual([
+    '# Acme Store',
+    '> A demo store.',
+    `Start at [the cart](${site}/cart.md).`,
+  ])
+  vi.unstubAllEnvs()
+})
+
+test("llms.txt sections nest down to ######, a section's own intro and links first, and an empty one at any depth left out", async () => {
+  upstream = (url) =>
+    new Response(page(`<h1>${url.pathname}</h1>`, `<title>${url.pathname}</title>`), {
+      headers: { 'content-type': 'text/html' },
+    })
+  const deep = (depth: number): LlmsSection =>
+    depth
+      ? { title: `Level ${depth}`, pages: [`/l${depth}`], sections: [deep(depth - 1)] }
+      : { title: 'Empty' }
+  const body = await (
+    await createLlmsTxtHandler({
+      title: 'Docs',
+      full: false,
+      note: false,
+      sections: () => [
+        {
+          title: 'Guides',
+          intro: 'How to.',
+          pages: ['/guides'],
+          sections: [
+            { title: 'Install', pages: ['/install'] },
+            { title: 'Nothing', sections: [{ title: 'Still nothing' }] },
+            {
+              title: 'Configure',
+              pages: ['/config'],
+              sections: [{ title: 'Registries', pages: ['/config/registries'] }],
+            },
+          ],
+        },
+      ],
+    })(new Request(`${site}/llms.txt`))
+  ).text()
+  expect(body).toBe(
+    [
+      '# Docs',
+      '## Guides',
+      'How to.',
+      `- [/guides](${site}/guides.md)`,
+      '### Install',
+      `- [/install](${site}/install.md)`,
+      '### Configure',
+      `- [/config](${site}/config.md)`,
+      '#### Registries',
+      `- [/config/registries](${site}/config/registries.md)\n`,
+    ].join('\n\n'),
+  )
+  // five levels under ## is ######; one more is a mistake, said with the section's name
+  const ok = await createLlmsTxtHandler({ note: false, sections: () => [deep(5)] })(
+    new Request(`${site}/llms.txt`),
+  )
+  expect(await ok.text()).toContain('###### Level 1')
+  await expect(
+    createLlmsTxtHandler({ note: false, sections: () => [deep(6)] })(
+      new Request(`${site}/llms.txt`),
+    ),
+  ).rejects.toThrow(
+    `[affordances-md] llms.txt's section "Level 1" is nested deeper than ######, Markdown's last heading level`,
   )
 })
 

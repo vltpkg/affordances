@@ -1082,7 +1082,7 @@ const SITE_INDEX = '/.well-known/affordances.json'
 type SiteIndex = { name?: string; routes: { route: string; description?: string }[] }
 
 // 'none' when md() found no Affordances graph on the app, so there's no index to fetch
-export const SITE_INDEX_ENV = 'AFFORDANCES_MD_SITE_INDEX'
+const SITE_INDEX_ENV = 'AFFORDANCES_MD_SITE_INDEX'
 const siteIndex = async (
   request: Request,
   options: MdHandlerOptions,
@@ -1484,14 +1484,23 @@ const checked = (options: LlmsFetchOptions) => {
 // a page in llms.txt: a path whose title and description come from its own markdown, or given outright
 export type LlmsLink = string | { url: string; title: string; description?: string }
 // a ## section of llms.txt: its links, its intro, or both
-export type LlmsSection = { title: string; intro?: string; pages?: LlmsLink[] }
+// a section of llms.txt, under `## `: its intro, its links, then sections of its own, under `### ` and down to `###### `
+export type LlmsSection = {
+  title: string
+  intro?: string
+  pages?: LlmsLink[]
+  sections?: LlmsSection[]
+}
 
 export type LlmsTxtOptions = LlmsFetchOptions & {
   // the `# ` heading; defaults to the site index's name
   title?: string
   // the `> ` summary under it
   summary?: string
-  // more markdown before the page lists, e.g. how to use the site
+  // what the plugin says after the summary: that every page is markdown, where llms-full.txt is, and on an Affordances
+  // site how to read its graphs. markdown of your own instead, or false for none
+  note?: string | false
+  // more markdown before the page lists, after the note, e.g. how to use the site
   intro?: string
   // the page lists, under `## ` headings; defaults to one Pages list of every page that needs no params. a section's
   // intro is markdown under its heading, before its links; one with only an intro is prose
@@ -1506,6 +1515,7 @@ export type LlmsTxtOptions = LlmsFetchOptions & {
 export const createLlmsTxtHandler = ({
   title,
   summary,
+  note,
   intro,
   sections,
   full = '/llms-full.txt',
@@ -1527,7 +1537,9 @@ export const createLlmsTxtHandler = ({
     // a route's own description, written for agents in its state.ts
     const described = new Map(index?.routes.map((r) => [r.route, r.description]) ?? [])
 
-    const paths = lists.flatMap(
+    const all = (list: LlmsSection[]): LlmsSection[] =>
+      list.flatMap((section) => [section, ...all(section.sections ?? [])])
+    const paths = all(lists).flatMap(
       (list) => list.pages?.filter((link) => typeof link === 'string') ?? [],
     )
     const pages = await renderPages(request, [...new Set(paths)], options)
@@ -1553,27 +1565,41 @@ export const createLlmsTxtHandler = ({
       return `- [${label}](${twin(link)})${description ? `: ${description}` : ''}`
     }
 
-    const head = [
-      `# ${name ?? new URL(request.url).host}`,
-      summary && `> ${summary}`,
-      relinked(intro),
+    // the plugin's own sentences, unless the note replaces them
+    const said = [
       [
         'Every page is also Markdown: add `.md` to its URL, or request it with `Accept: text/markdown`.',
-        full && `[llms-full.txt](${abs(full)}) has every page in one file.`,
+        full && `For the full text in one file, see [llms-full.txt](${abs(full)}).`,
       ]
         .filter(Boolean)
         .join(' '),
       index &&
         `This site is Affordances-enabled: request any page with \`Accept: application/vnd.affordances+json\` for its graph (what the page shows, and the actions you can call there, with their inputs). [${SITE_INDEX}](${abs(SITE_INDEX)}) lists every route and its actions.`,
     ]
-    // a section with neither links nor an intro is left out, as an empty list was
-    const body = lists
-      .filter((list) => list.pages?.length || list.intro?.trim())
-      .map((list) =>
-        [`## ${list.title}`, relinked(list.intro?.trim()), list.pages?.map(line).join('\n')]
-          .filter(Boolean)
-          .join('\n\n'),
-      )
+    const head = [
+      `# ${name ?? new URL(request.url).host}`,
+      summary && `> ${summary}`,
+      ...(note === false ? [] : note === undefined ? said : [relinked(note.trim())]),
+      relinked(intro),
+    ]
+    // a section with nothing in it, at any depth, is left out, as an empty list was
+    const filled = (list: LlmsSection): boolean =>
+      Boolean(list.pages?.length || list.intro?.trim() || list.sections?.some(filled))
+    const section = (list: LlmsSection, depth: number): string => {
+      if (depth > 6)
+        throw new TypeError(
+          `[affordances-md] llms.txt's section "${list.title}" is nested deeper than ######, Markdown's last heading level`,
+        )
+      return [
+        `${'#'.repeat(depth)} ${list.title}`,
+        relinked(list.intro?.trim()),
+        list.pages?.map(line).join('\n'),
+        ...(list.sections ?? []).filter(filled).map((inner) => section(inner, depth + 1)),
+      ]
+        .filter(Boolean)
+        .join('\n\n')
+    }
+    const body = lists.filter(filled).map((list) => section(list, 2))
     // a page that failed to render is still linked, by its path, so every link is there and right, and the file
     // stays cacheable; its header counts them
     const failed = dropped('llms.txt', pages)
