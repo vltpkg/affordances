@@ -17,7 +17,21 @@ The status code is the page's. A redirect to the same site stays in Markdown (to
 
 ## Caching public Markdown
 
-Markdown from a `markdown.ts` (a default export or its slots) is `private, no-store`, since it read data with whatever the request carried. So is a page Next renders dynamically, which it always sends as `private, no-store`. When a route's Markdown is public, say so in its `markdown.ts`, and a CDN can keep it:
+**A twin is cached like its page: give the page a `cacheLife` and its `.md` follows.** An anonymous request for the `.md` keeps the page's own `Cache-Control`, so a page with `'use cache'` and `cacheLife('days')` sends `s-maxage=86400, stale-while-revalidate=518400` on both, and a static page sends Next's `s-maxage=31536000` on both, with no `markdown.ts`:
+
+```tsx title="app/guide/[slug]/page.tsx"
+import { cacheLife } from 'next/cache'
+
+export default async function Page({ params }: PageProps<'/guide/[slug]'>) {
+  'use cache'
+  cacheLife('days')
+  return <Guide slug={(await params).slug} />
+}
+```
+
+That holds as long as the twin is the page's anonymous view: no cookie or `authorization`, the `.md` URL rather than the page's own with `Accept`, no filled slot, and nothing that made it private (a cookie set in answer, an error boundary, a partial render).
+
+Markdown from a `markdown.ts` (a default export or its slots) is `private, no-store`, since it read data with whatever the request carried. So is a page Next renders dynamically, which it always sends as `private, no-store`. For those, say the Markdown is public in the route's `markdown.ts`, and a CDN can keep it:
 
 ```ts title="app/package/[pkg]/markdown.ts"
 export const publicCache = 'hours'
