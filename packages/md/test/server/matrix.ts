@@ -188,6 +188,26 @@ const cacheComponents: Check[] = [
     status: 200,
     expect: { 'cache-control': 's-maxage=604800, stale-while-revalidate=604800' },
   },
+  // a page's own notFoundMarkdown() in a hole of the prerendered shell, so it streams in the resumed render: its status
+  // and its body, never the shell as a 200, never public. a known id is its page
+  { path: '/items/1.md', status: 200, body: 'Item 1: Lamp' },
+  {
+    path: '/items/9.md',
+    status: 404,
+    expect: { 'cache-control': PRIVATE },
+    body: '# No item 9',
+    not: 'Loading',
+  },
+  // the same with no markdown.js: the app's own not-found
+  { path: '/things/1.md', status: 200, body: 'Thing 1: Chair' },
+  // streamed after the shell, so the fixed body the docs give
+  {
+    path: '/things/9.md',
+    status: 404,
+    expect: { 'cache-control': PRIVATE },
+    body: '# Not found',
+    not: 'Loading',
+  },
   // a url no route matches: next's own not-found page, converted
   { path: '/nope.md', status: 404, body: 'This page could not be found.' },
 ]
