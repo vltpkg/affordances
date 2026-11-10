@@ -229,6 +229,9 @@ test(
       why: 'has no "include" of its own to add .affordances/ to',
     })
     expect(includesGenerated('{ "include": ["**/*.ts", ".affordances/**/*.ts"] }')).toBe(true)
+    // one read: a file that has it is kept, and one that doesn't parse doesn't have it
+    expect(withGenerated('{ "include": [".affordances/**/*.ts"] }')).toEqual({ kept: true })
+    expect(includesGenerated('{ "include": [".affordances/**/*.ts", }}')).toBe(false)
   },
   TSC,
 )

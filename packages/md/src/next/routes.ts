@@ -362,7 +362,14 @@ const stringEnd = (text: string, i: number) => {
   if (j >= text.length) throw new SyntaxError('Unterminated string')
   return j + 1
 }
-const parseJsonc = (text: string): unknown => JSON.parse(plainJson(text))
+// tsconfig.json's own fields, or undefined for a file that doesn't parse
+const parseJsonc = (text: string) => {
+  try {
+    return JSON.parse(plainJson(text)) as { include?: unknown } | undefined
+  } catch {
+    return undefined
+  }
+}
 
 // the top-level "include" array in tsconfig.json's own text: where its last entry ends, whether a comma follows it,
 // and where the array closes. undefined when the file has none of its own
@@ -404,22 +411,20 @@ const includeArray = (text: string) => {
 // of each markdown.ts against its route only runs once include names .affordances/. md() never edits tsconfig.json: it
 // says the line, once per process. \`affordances-md init\` adds it, changing only the include array and keeping the
 // file's comments and formatting
-export const includesGenerated = (text: string) => {
-  const config = parseJsonc(text) as { include?: unknown }
-  return (
-    Array.isArray(config.include) &&
-    config.include.some((entry) => typeof entry === 'string' && entry.startsWith('.affordances/'))
-  )
-}
-// tsconfig.json with .affordances/ added to its include, or why that can't be done safely (the file doesn't parse,
-// include is inherited through extends or missing, or the edit wouldn't read back as just that entry added)
-export const withGenerated = (text: string): { text: string } | { why: string } => {
-  let before: { include?: unknown }
-  try {
-    before = parseJsonc(text) as { include?: unknown }
-  } catch {
-    return { why: "couldn't be read" }
-  }
+const hasGenerated = (include: unknown) =>
+  Array.isArray(include) &&
+  include.some((entry) => typeof entry === 'string' && entry.startsWith('.affordances/'))
+// false for a file that doesn't parse
+export const includesGenerated = (text: string) => hasGenerated(parseJsonc(text)?.include)
+// tsconfig.json with .affordances/ added to its include, kept when it's there already, or why that can't be done safely
+// (the file doesn't parse, include is inherited through extends or missing, or the edit wouldn't read back as just
+// that entry added)
+export const withGenerated = (
+  text: string,
+): { text: string } | { kept: true } | { why: string } => {
+  const before = parseJsonc(text)
+  if (!before) return { why: "couldn't be read" }
+  if (hasGenerated(before.include)) return { kept: true }
   if (!Array.isArray(before.include))
     return { why: 'has no "include" of its own to add .affordances/ to' }
   const array = includeArray(text)
@@ -439,14 +444,9 @@ export const withGenerated = (text: string): { text: string } | { why: string } 
     const comma = array.comma ? '' : ','
     edited = `${text.slice(0, array.last)}${comma}${after}\n${indent}${entry}${array.comma ? ',' : ''}${text.slice(end)}`
   }
-  try {
-    const after = parseJsonc(edited) as { include: unknown[] }
-    const expected = { ...before, include: [...before.include, GENERATED] }
-    if (JSON.stringify(after) !== JSON.stringify(expected))
-      return { why: 'has an "include" that can\'t be edited safely' }
-  } catch {
+  const expected = { ...before, include: [...before.include, GENERATED] }
+  if (JSON.stringify(parseJsonc(edited)) !== JSON.stringify(expected))
     return { why: 'has an "include" that can\'t be edited safely' }
-  }
   return { text: edited }
 }
 // a warning said once per what it's about (a route and the thing wrong with it) per process, never on every request a
@@ -470,9 +470,12 @@ export const once = (
 const sayInclude = (tsconfig: string) => {
   const fs = process.getBuiltinModule?.('node:fs')
   if (!fs?.existsSync(tsconfig)) return
+  // one md() can't read is said as one without the line, as is one that doesn't parse
+  let text = ''
   try {
-    if (includesGenerated(fs.readFileSync(tsconfig, 'utf8'))) return
+    text = fs.readFileSync(tsconfig, 'utf8')
   } catch {}
+  if (includesGenerated(text)) return
   once(
     `include ${tsconfig}`,
     `[affordances-md] To have tsc check each markdown.ts against its route, add "${GENERATED}" to "include" in tsconfig.json, or run \`affordances-md init\`, which adds it. md() doesn't edit tsconfig.json.`,
