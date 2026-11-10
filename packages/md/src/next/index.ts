@@ -1396,14 +1396,24 @@ const DROPPED_HEADER = 'x-affordances-md-dropped'
 // how long a client waits before asking again for a file that couldn't render every page
 const RETRY_AFTER = 30
 
+// a page's own words written into an llms file as plain text: one line, whitespace collapsed (U+2028 and U+2029 too),
+// and what link, autolink and html syntax reacts to escaped, so a title can't add a link or a heading of its own
+const plain = (text: string) =>
+  text
+    .replace(/[\s\u2028\u2029]+/g, ' ')
+    .trim()
+    .replace(/[\\[\]<>]/g, '\\$&')
+
 // a page's markdown as the converter writes it: its frontmatter's title and description (JSON-quoted values), and
 // the markdown after it, read once
 type PageText = { title?: string; description?: string; body: string }
 const frontmatter = (markdown: string): PageText => {
   const match = /^---\n([\s\S]*?)\n---\n\n?/.exec(markdown)
-  const block = match?.[1] ?? ''
+  // its lines, split on \n alone: a value with a U+2028 in it (JSON keeps it raw) is one line, so it can never pass
+  // for a key of its own
+  const lines = (match?.[1] ?? '').split('\n')
   const read = (key: string) => {
-    const raw = block.match(new RegExp(`^${key}: (.+)$`, 'm'))?.[1]
+    const raw = lines.find((line) => line.startsWith(`${key}: `))?.slice(key.length + 2)
     if (!raw) return undefined
     try {
       return String(JSON.parse(raw))
@@ -1624,8 +1634,8 @@ const fullPage = (page: PageText, url: string, name: string | undefined, shared:
   if (!heading) return page.body.trim()
   // spliced in where the heading is, never replaced as text: a title or url with $' in it is as written
   if (at && own === heading)
-    return `${page.body.slice(0, at.start)}# ${heading} (${url})${page.body.slice(at.end)}`.trim()
-  return `# ${heading} (${url})\n\n${page.body.trim()}`
+    return `${page.body.slice(0, at.start)}# ${plain(heading)} (${url})${page.body.slice(at.end)}`.trim()
+  return `# ${plain(heading)} (${url})\n\n${page.body.trim()}`
 }
 
 // a concurrency that renders nothing, one page forever, or a cache time that isn't one, is a mistake to say when the
@@ -1728,7 +1738,7 @@ export const createLlmsTxtHandler = ({
           ? 'Home'
           : pageName(page?.title, own, name, shared)) || link
       const description = described.get(link) ?? page?.description
-      return `- [${label}](${twin(link)})${description ? `: ${description}` : ''}`
+      return `- [${plain(label)}](${twin(link)})${description ? `: ${plain(description)}` : ''}`
     }
 
     // the plugin's own sentences, unless the note replaces them
