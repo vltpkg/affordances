@@ -1005,17 +1005,17 @@ const renderPages = async (
   options: LlmsFetchOptions & { headers: Headers },
 ): Promise<Rendered[]> => {
   const timeout = options.timeout ?? TIMEOUT
-  // one deadline for the whole file, under a serverless host's limit: a page not rendered by then is left out
+  // one deadline for the whole file, under a serverless host's limit: a page not rendered by then failed
   const deadline = options.deadline ?? DEADLINE
   const overall = new AbortController()
   const timer = setTimeout(() => overall.abort(), deadline)
   const late = `not rendered within the file's ${deadline}ms deadline`
   const render = async (path: string): Promise<Rendered> => {
-    if (overall.signal.aborted) return { path, dropped: late }
+    if (overall.signal.aborted) return { path, failed: late }
     // a path from the site index, pages() or sections() that starts with //host or names another origin is never
     // fetched: the headers option (a bearer token, a bypass secret) stays on this site
     const target = pageUrl(request, options, path)
-    if (!target) return { path, dropped: 'not on this site' }
+    if (!target) return { path, left: 'not on this site' }
     try {
       const headers = new Headers(options.headers)
       headers.set('accept', 'text/markdown')
@@ -1025,22 +1025,30 @@ const renderPages = async (
         redirect: 'manual',
         signal: AbortSignal.any([AbortSignal.timeout(timeout), overall.signal]),
       })
+      // a server error, or one that asks to be retried, may answer next time: the page failed. any other status (a
+      // redirect, a 404, a gate's 401) is the page's answer, and it isn't a page of the public site
+      const { status } = response
+      if (status >= 500 || status === 408 || status === 429)
+        return { path, failed: `answered ${status}` }
+      if (!response.ok) return { path, left: `answered ${status}` }
+      const type = response.headers.get('content-type') ?? 'no content-type'
+      if (!type.startsWith('text/markdown')) return { path, left: `answered ${type}, not markdown` }
       // a page its markdown route rendered privately (with credentials of the route's own, a private page, a
       // cookie set in answer) isn't the public view: left out, so the files stay public. negotiated markdown is
       // private too, but only because of where it was served, so it counts
-      if (!response.ok) return { path, dropped: `answered ${response.status}` }
-      const type = response.headers.get('content-type') ?? 'no content-type'
-      if (!type.startsWith('text/markdown'))
-        return { path, dropped: `answered ${type}, not markdown` }
       if (response.headers.has(PERSONAL_HEADER) || response.headers.has('set-cookie'))
-        return { path, dropped: 'private: rendered with credentials, or it set a cookie' }
-      return { path, markdown: await response.text() }
+        return { path, left: 'rendered with credentials, or it set a cookie', private: true }
+      const markdown = await response.text()
+      // converted as far as it streamed: its title still names it, but it isn't the whole page
+      if (response.headers.has(PARTIAL_HEADER))
+        return { path, markdown, failed: `still loading after ${timeout}ms` }
+      return { path, markdown }
     } catch (error) {
-      if (overall.signal.aborted) return { path, dropped: late }
+      if (overall.signal.aborted) return { path, failed: late }
       const timedOut = error instanceof Error && error.name === 'TimeoutError'
       return {
         path,
-        dropped: timedOut ? `took longer than ${timeout}ms` : `failed: ${String(error)}`,
+        failed: timedOut ? `took longer than ${timeout}ms` : `failed: ${String(error)}`,
       }
     }
   }
@@ -1060,22 +1068,40 @@ const renderPages = async (
   clearTimeout(timer)
   return rendered
 }
-type Rendered = { path: string; markdown?: string; dropped?: string }
+// a page llms rendered, one that failed (and may render next time), or one left out because it isn't a page of the
+// public site, each with why
+type Rendered = {
+  path: string
+  markdown?: string
+  failed?: string
+  left?: string
+  private?: boolean
+}
 const CONCURRENCY = 8
 // under netlify's 26s for a synchronous function and vercel's limits; a host that allows more takes a longer one
 const DEADLINE = 25_000
 
-// pages llms left out: in development, a warning naming each and why; everywhere, their count in a header, never a
-// list in the file, which is public and could name a private page
-const dropped = (file: string, pages: Rendered[], what: string) => {
-  const left = pages.filter((page) => page.dropped)
-  if (left.length && process.env.NODE_ENV !== 'production')
-    console.warn(
-      `[affordances-md] ${file} ${what} ${left.length} ${left.length === 1 ? 'page' : 'pages'}: ${left.map((page) => `${page.path} (${page.dropped})`).join(', ')}`,
-    )
-  return left.length
+// in development, each page llms couldn't render or left out, and why: an error for a private one, which an app
+// usually means to be public. the count of those that failed, which the file's header carries everywhere, never a
+// list, since the file is public and could name a private page
+const dropped = (file: string, pages: Rendered[], failing: string) => {
+  const failed = pages.filter((page) => page.failed)
+  if (process.env.NODE_ENV !== 'production') {
+    const list = (some: Rendered[], why: 'failed' | 'left') =>
+      `${some.length} ${some.length === 1 ? 'page' : 'pages'}: ${some.map((page) => `${page.path} (${page[why]})`).join(', ')}`
+    if (failed.length) console.warn(`[affordances-md] ${file} ${failing} ${list(failed, 'failed')}`)
+    const left = pages.filter((page) => page.left && !page.private)
+    if (left.length) console.warn(`[affordances-md] ${file} left out ${list(left, 'left')}`)
+    for (const { path, left: why } of pages.filter((page) => page.private))
+      console.error(
+        `[affordances-md] ${file} left out ${path}: its markdown is private, since it was ${why}. The llms files are public, so a page is in them only when it renders without credentials and sets no cookie, the view publicCache in its markdown.ts makes public.`,
+      )
+  }
+  return failed.length
 }
 const DROPPED_HEADER = 'x-affordances-md-dropped'
+// how long a client waits before asking again for a file that couldn't render every page
+const RETRY_AFTER = 30
 
 // a page's markdown as the converter writes it: its frontmatter's title and description (JSON-quoted values), and
 // the markdown after it, read once
@@ -1108,17 +1134,44 @@ const resolved = async <O extends MdHandlerOptions>(request: Request, options: O
   headers: await extraHeaders(request, options.headers),
 })
 
-// the public site, unless the headers option rendered it with credentials
-const text = (body: string, headers: Headers, left: number) =>
+// the public site, cached for publicCache's time, unless the headers option rendered it with credentials
+const text = (
+  body: string,
+  options: { headers: Headers; publicCache?: LlmsCache },
+  failed: number,
+) =>
   new Response(body, {
     headers: {
       'content-type': 'text/plain; charset=utf-8',
-      'cache-control': credentialed(headers)
-        ? 'private, no-store'
-        : 'public, max-age=0, s-maxage=3600',
-      ...(left && { [DROPPED_HEADER]: String(left) }),
+      'cache-control':
+        (!credentialed(options.headers) && llmsCache(options.publicCache)) || 'private, no-store',
+      ...(failed && { [DROPPED_HEADER]: String(failed) }),
     },
   })
+// an hour unless publicCache says otherwise, false for never. checked when the handler is made (checked), so a value
+// here is one; revalidate 0, a page that's never cached, gives none
+const llmsCache = (value: LlmsCache | undefined) =>
+  value === undefined
+    ? 'public, max-age=0, s-maxage=3600'
+    : value === false
+      ? undefined
+      : publicCacheControl(value).header
+
+// a file missing pages that failed to render, which no cache keeps: the next request renders them again. the count
+// only, as in the header
+const incomplete = (file: string, failed: number) =>
+  new Response(
+    `${file} is incomplete: ${failed} ${failed === 1 ? 'page' : 'pages'} couldn't be rendered. Retry in ${RETRY_AFTER} seconds.\n`,
+    {
+      status: 503,
+      headers: {
+        'content-type': 'text/plain; charset=utf-8',
+        'cache-control': 'no-store',
+        'retry-after': String(RETRY_AFTER),
+        [DROPPED_HEADER]: String(failed),
+      },
+    },
+  )
 
 // "Cart · Acme Store" → "Cart", given the site's name
 const short = (name: string | undefined, label: string | undefined) =>
@@ -1132,10 +1185,16 @@ export type Pages = (request: Request, routes: string[]) => string[] | Promise<s
 export type LlmsFetchOptions = Pick<MdHandlerOptions, 'origin' | 'headers' | 'timeout'> & {
   // how many pages render at once, 8 by default: each is a full render on the same server. timeout is each page's own
   concurrency?: number
-  // how long the whole file may take, 25s by default; pages not rendered by then are left out. raise it with the
-  // route's maxDuration
+  // how long the whole file may take, 25s by default; a page not rendered by then failed, so llms-full.txt answers
+  // 503. raise it with the route's maxDuration
   deadline?: number
+  // how long a CDN may keep the file: a cacheLife profile, or { revalidate, expire? } in seconds, as markdown.ts's
+  // publicCache takes; an hour by default, false for never. a file rendered with credentials, or missing a page that
+  // failed, is never kept
+  publicCache?: LlmsCache
 }
+// a profile of next's own, or one next.config's cacheLife adds
+export type LlmsCache = PublicCache<CacheLifeProfile | (string & {})> | false
 
 export type LlmsFullOptions = LlmsFetchOptions & {
   // the paths to include, in order; defaults to every page that needs no params
@@ -1158,8 +1217,10 @@ export const createLlmsFullHandler = ({ pages, ...given }: LlmsFullOptions = {})
       const page = texts[i]
       return page ? fullPage(page, new URL(path, request.url).href, index?.name, shared) : ''
     })
-    const left = dropped('llms-full.txt', rendered, 'left out')
-    return text(`${parts.filter(Boolean).join('\n\n')}\n`, options.headers, left)
+    // a page that failed is missing, so the file isn't whole: never sent as if it were
+    const failed = dropped('llms-full.txt', rendered, "couldn't render")
+    if (failed) return incomplete('llms-full.txt', failed)
+    return text(`${parts.filter(Boolean).join('\n\n')}\n`, options, 0)
   }
 }
 
@@ -1196,9 +1257,15 @@ const fullPage = (page: PageText, url: string, name: string | undefined, shared:
   return `# ${heading} (${url})\n\n${page.body.trim()}`
 }
 
-// a concurrency that renders nothing, or one page forever, is a mistake to say when the handler is made
+// a concurrency that renders nothing, one page forever, or a cache time that isn't one, is a mistake to say when the
+// handler is made
 const checked = (options: LlmsFetchOptions) => {
-  const { concurrency, deadline } = options
+  const { concurrency, deadline, publicCache } = options
+  const problem =
+    publicCache === undefined || publicCache === false
+      ? undefined
+      : publicCacheControl(publicCache).problem
+  if (problem) throw new TypeError(`[affordances-md] publicCache ${problem}, or false`)
   if (concurrency !== undefined && !(Number.isInteger(concurrency) && concurrency >= 1))
     throw new TypeError(
       `[affordances-md] concurrency is how many pages render at once, a whole number from 1; got ${concurrency}`,
@@ -1299,9 +1366,10 @@ export const createLlmsTxtHandler = ({
           .filter(Boolean)
           .join('\n\n'),
       )
-    // a page that rendered no markdown is still linked, by its path, so the index stays whole
-    const left = dropped('llms.txt', pages, 'has no title or description for')
-    return text(`${[...head, ...body].filter(Boolean).join('\n\n')}\n`, options.headers, left)
+    // a page that failed to render is still linked, by its path, so every link is there and right, and the file
+    // stays cacheable; its header counts them
+    const failed = dropped('llms.txt', pages, 'has no title or description for')
+    return text(`${[...head, ...body].filter(Boolean).join('\n\n')}\n`, options, failed)
   }
 }
 

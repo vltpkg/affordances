@@ -2736,54 +2736,179 @@ test('llms renders a few pages at a time, 8 by default, each with its own timeou
   expect(() => createLlmsTxtHandler({ concurrency: 1.5 })).toThrow(/got 1\.5$/)
 })
 
-// one page that renders, and one of each way a page is left out
-const pages = () => ['/fine', '/slow', '/gone', '/file', '/mine', '//evil.test/x']
+// one page that renders, and one of each way a page is left out by design
+const pages = () => ['/fine', '/gone', '/moved', '/file', '/mine', '//evil.test/x']
+const leftOut = (path: string) =>
+  path === '/gone'
+    ? new Response('', { status: 404 })
+    : path === '/moved'
+      ? new Response(null, { status: 307, headers: { location: '/fine' } })
+      : path === '/file'
+        ? new Response('{}', { headers: { 'content-type': 'application/json' } })
+        : path === '/mine'
+          ? mdPage('Mine', '# Mine', { 'x-affordances-md-personal': '1' })
+          : mdPage('Fine', '# Fine\n\nBody.')
 
-test('a page llms leaves out is named, with why, in development, and only counted in the file', async () => {
-  llmsPages((path, signal) => {
-    if (path === '/slow')
-      return new Promise((_, reject) =>
-        signal.addEventListener('abort', () => reject(signal.reason)),
-      )
-    if (path === '/gone') return new Response('', { status: 404 })
-    if (path === '/file')
-      return new Response('{}', { headers: { 'content-type': 'application/json' } })
-    if (path === '/mine') return mdPage('Mine', '# Mine', { 'x-affordances-md-personal': '1' })
-    return mdPage('Fine', '# Fine\n\nBody.')
-  })
+test('a page llms leaves out by design is named, with why, in development, and the file stays public', async () => {
+  llmsPages(leftOut)
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-  const full = await createLlmsFullHandler({ pages, timeout: 20 })(
-    new Request(`${site}/llms-full.txt`),
-  )
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const full = await createLlmsFullHandler({ pages })(new Request(`${site}/llms-full.txt`))
+  expect(full.status).toBe(200)
   expect(await full.text()).toBe(`# Fine (${site}/fine)\n\nBody.\n`)
-  expect(full.headers.get('x-affordances-md-dropped')).toBe('5')
+  expect(full.headers.get('cache-control')).toBe('public, max-age=0, s-maxage=3600')
+  expect(full.headers.has('x-affordances-md-dropped')).toBe(false)
   expect(warn.mock.calls.map(([message]) => message)).toEqual([
-    '[affordances-md] llms-full.txt left out 5 pages: /slow (took longer than 20ms), /gone (answered 404), /file (answered application/json, not markdown), /mine (private: rendered with credentials, or it set a cookie), //evil.test/x (not on this site)',
+    '[affordances-md] llms-full.txt left out 4 pages: /gone (answered 404), /moved (answered 307), /file (answered application/json, not markdown), //evil.test/x (not on this site)',
+  ])
+  // a private page is usually one meant to be public: an error that says what keeps it out
+  expect(error.mock.calls.map(([message]) => message)).toEqual([
+    '[affordances-md] llms-full.txt left out /mine: its markdown is private, since it was rendered with credentials, or it set a cookie. The llms files are public, so a page is in them only when it renders without credentials and sets no cookie, the view publicCache in its markdown.ts makes public.',
   ])
   // llms.txt still links each, by its path
   warn.mockClear()
   const index = await createLlmsTxtHandler({
     title: 'Shop',
-    timeout: 20,
     sections: () => [{ title: 'All', pages: pages() }],
   })(new Request(`${site}/llms.txt`))
   expect(await index.text()).toContain(`- [/gone](${site}/gone.md)`)
+  expect(index.headers.get('cache-control')).toBe('public, max-age=0, s-maxage=3600')
+  expect(index.headers.has('x-affordances-md-dropped')).toBe(false)
+  expect(String(warn.mock.calls[0]?.[0])).toMatch(
+    /^\[affordances-md\] llms\.txt left out 4 pages: \/gone/,
+  )
+  // in production: nothing logged
+  vi.stubEnv('NODE_ENV', 'production')
+  warn.mockClear()
+  error.mockClear()
+  const quiet = await createLlmsFullHandler({ pages })(new Request(`${site}/llms-full.txt`))
+  expect([quiet.status, await quiet.text()]).toEqual([200, `# Fine (${site}/fine)\n\nBody.\n`])
+  expect([...warn.mock.calls, ...error.mock.calls]).toEqual([])
+  vi.unstubAllEnvs()
+  warn.mockRestore()
+  error.mockRestore()
+})
+
+// each way a page fails, and may render next time
+const failing: Record<string, (signal: AbortSignal) => Response | Promise<Response>> = {
+  '/slow': (signal) =>
+    new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason))),
+  '/broken': () => new Response('', { status: 500 }),
+  '/busy': () => new Response('', { status: 429 }),
+  '/partial': () => mdPage('Partial', '# Partial\n\nHalf.', { 'x-affordances-md-partial': '1' }),
+  '/refused': () => Promise.reject(new TypeError('fetch failed')),
+}
+
+test('llms-full with a page that failed is a 503 no cache keeps, with the count only', async () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  for (const [path, answer] of Object.entries(failing)) {
+    llmsPages((at, signal) => (at === path ? answer(signal) : mdPage('Fine', '# Fine\n\nBody.')))
+    const full = await createLlmsFullHandler({ pages: () => ['/fine', path], timeout: 20 })(
+      new Request(`${site}/llms-full.txt`),
+    )
+    expect([path, full.status, await full.text()]).toEqual([
+      path,
+      503,
+      "llms-full.txt is incomplete: 1 page couldn't be rendered. Retry in 30 seconds.\n",
+    ])
+    expect(Object.fromEntries(full.headers)).toMatchObject({
+      'cache-control': 'no-store',
+      'retry-after': '30',
+      'x-affordances-md-dropped': '1',
+    })
+  }
+  expect(warn.mock.calls.map(([message]) => message)).toEqual([
+    "[affordances-md] llms-full.txt couldn't render 1 page: /slow (took longer than 20ms)",
+    "[affordances-md] llms-full.txt couldn't render 1 page: /broken (answered 500)",
+    "[affordances-md] llms-full.txt couldn't render 1 page: /busy (answered 429)",
+    "[affordances-md] llms-full.txt couldn't render 1 page: /partial (still loading after 20ms)",
+    "[affordances-md] llms-full.txt couldn't render 1 page: /refused (failed: TypeError: fetch failed)",
+  ])
+  // with a page left out by design as well, only the failed one counts
+  llmsPages((at, signal) => (at === '/slow' ? failing['/slow']!(signal) : leftOut(at)))
+  const both = await createLlmsFullHandler({ pages: () => ['/slow', ...pages()], timeout: 20 })(
+    new Request(`${site}/llms-full.txt`),
+  )
+  expect([both.status, both.headers.get('x-affordances-md-dropped')]).toEqual([503, '1'])
+  // never private either way: credentials make no difference to a file that isn't whole
+  const signedIn = await createLlmsFullHandler({
+    pages: () => ['/slow'],
+    timeout: 20,
+    headers: { authorization: 'Bearer svc' },
+  })(new Request(`${site}/llms-full.txt`))
+  expect([signedIn.status, signedIn.headers.get('cache-control')]).toEqual([503, 'no-store'])
+  warn.mockRestore()
+})
+
+const cache = async (llms: (request: Request) => Promise<Response>) =>
+  (await llms(new Request(`${site}/llms-full.txt`))).headers.get('cache-control')
+const fine = () => ['/fine']
+
+test('publicCache on the llms handlers sets how long a CDN keeps the file, never a file that failed or has credentials', async () => {
+  llmsPages((at, signal) => (at === '/slow' ? failing['/slow']!(signal) : mdPage('Fine', '# Fine')))
+  expect(await cache(createLlmsFullHandler({ pages: fine }))).toBe(
+    'public, max-age=0, s-maxage=3600',
+  )
+  expect(await cache(createLlmsFullHandler({ pages: fine, publicCache: 'hours' }))).toBe(
+    's-maxage=3600, stale-while-revalidate=82800',
+  )
+  expect(
+    await cache(
+      createLlmsTxtHandler({ full: false, publicCache: { revalidate: 600, expire: 86_400 } }),
+    ),
+  ).toBe('s-maxage=600, stale-while-revalidate=85800')
+  expect(await cache(createLlmsTxtHandler({ publicCache: false }))).toBe('private, no-store')
+  // revalidate 0 is never cached, as for a page
+  expect(await cache(createLlmsTxtHandler({ publicCache: { revalidate: 0 } }))).toBe(
+    'private, no-store',
+  )
+  // never kept: a file missing a page that failed, or one rendered with credentials
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  expect(
+    await cache(
+      createLlmsFullHandler({ pages: () => ['/slow'], timeout: 20, publicCache: 'days' }),
+    ),
+  ).toBe('no-store')
+  warn.mockRestore()
+  expect(
+    await cache(
+      createLlmsFullHandler({ pages: fine, publicCache: 'days', headers: { cookie: 'sid=svc' } }),
+    ),
+  ).toBe('private, no-store')
+  // a value that isn't one is a mistake to say when the handler is made
+  expect(() => createLlmsFullHandler({ publicCache: 'hourly' })).toThrow(
+    "[affordances-md] publicCache 'hourly' isn't a cacheLife profile. It can be one of Next's cacheLife profiles ('default', 'seconds', 'minutes', 'hours', 'days', 'weeks', 'max') or { revalidate, expire? } in seconds, or false",
+  )
+  // @ts-expect-error: a revalidate in seconds
+  expect(() => createLlmsTxtHandler({ publicCache: { revalidate: '1h' } })).toThrow(
+    /^\[affordances-md\] publicCache needs revalidate, in seconds\./,
+  )
+})
+
+test('llms.txt with a page that failed links it by its path, stays cacheable, and counts it', async () => {
+  const paths = ['/fine', ...Object.keys(failing)]
+  llmsPages((at, signal) => failing[at]?.(signal) ?? mdPage('Fine', '# Fine\n\nBody.'))
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const index = await createLlmsTxtHandler({
+    title: 'Shop',
+    timeout: 20,
+    sections: () => [{ title: 'All', pages: paths }],
+  })(new Request(`${site}/llms.txt`))
+  expect(index.status).toBe(200)
+  // a partial page's title still names it
+  expect((await index.text()).match(/^- .+$/gm)).toEqual([
+    `- [Fine](${site}/fine.md)`,
+    `- [/slow](${site}/slow.md)`,
+    `- [/broken](${site}/broken.md)`,
+    `- [/busy](${site}/busy.md)`,
+    `- [Partial](${site}/partial.md)`,
+    `- [/refused](${site}/refused.md)`,
+  ])
+  expect(index.headers.get('cache-control')).toBe('public, max-age=0, s-maxage=3600')
   expect(index.headers.get('x-affordances-md-dropped')).toBe('5')
   expect(String(warn.mock.calls[0]?.[0])).toMatch(
     /^\[affordances-md\] llms\.txt has no title or description for 5 pages: \/slow/,
   )
-  // in production: no list anywhere, the count only
-  vi.stubEnv('NODE_ENV', 'production')
-  warn.mockClear()
-  const quiet = await createLlmsFullHandler({ pages, timeout: 20 })(
-    new Request(`${site}/llms-full.txt`),
-  )
-  expect([await quiet.text(), quiet.headers.get('x-affordances-md-dropped')]).toEqual([
-    `# Fine (${site}/fine)\n\nBody.\n`,
-    '5',
-  ])
-  expect(warn).not.toHaveBeenCalled()
-  vi.unstubAllEnvs()
   warn.mockRestore()
 })
 
@@ -2810,7 +2935,7 @@ test("llms-full puts the url on the page's # heading itself, as written, whereve
   )
 })
 
-test('llms has a deadline for the whole file: pages not rendered by then are left out and counted', async () => {
+test('llms has a deadline for the whole file: a page not rendered by then failed', async () => {
   llmsPages(async (path, signal) => {
     await new Promise((resolve, reject) => {
       const timer = setTimeout(resolve, 40)
@@ -2823,17 +2948,26 @@ test('llms has a deadline for the whole file: pages not rendered by then are lef
   })
   const paths = ['/a', '/b', '/c', '/d', '/e', '/f']
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-  const full = await createLlmsFullHandler({ pages: () => paths, concurrency: 1, deadline: 100 })(
-    new Request(`${site}/llms-full.txt`),
-  )
-  const text = await full.text()
-  const rendered = paths.filter((path) => text.includes(`# Page ${path} (`))
+  const index = await createLlmsTxtHandler({
+    concurrency: 1,
+    deadline: 100,
+    sections: () => [{ title: 'All', pages: paths }],
+  })(new Request(`${site}/llms.txt`))
+  const text = await index.text()
+  const rendered = paths.filter((path) => text.includes(`[Page ${path}]`))
   expect(rendered.length).toBeGreaterThan(0)
   expect(rendered.length).toBeLessThan(paths.length)
-  expect(full.headers.get('x-affordances-md-dropped')).toBe(String(paths.length - rendered.length))
+  const failed = String(paths.length - rendered.length)
+  expect(index.headers.get('x-affordances-md-dropped')).toBe(failed)
   expect(String(warn.mock.calls[0]?.[0])).toContain(
     "(not rendered within the file's 100ms deadline)",
   )
+  const full = await createLlmsFullHandler({ pages: () => paths, concurrency: 1, deadline: 100 })(
+    new Request(`${site}/llms-full.txt`),
+  )
+  // its own run, timed on its own: a 503 counting what it couldn't render, whatever that came to
+  expect(full.status).toBe(503)
+  expect(Number(full.headers.get('x-affordances-md-dropped'))).toBeGreaterThan(0)
   warn.mockRestore()
   expect(() => createLlmsFullHandler({ deadline: 0 })).toThrow(
     '[affordances-md] deadline is how long the whole file may take, in milliseconds above 0; got 0',

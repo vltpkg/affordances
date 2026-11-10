@@ -116,14 +116,28 @@ A page given as a path is rendered the way `/page.md` is, to read its title and 
 
 - Each page is fetched at its own URL with `Accept: text/markdown`, through your rewrites and `proxy.ts` like any anonymous agent's request, so it matches what an agent reads one page at a time, a [`markdown.ts`](/docs/plugins/md/markdown-file) included. A page your proxy turns away (a redirect to log in) is left out.
 - That request carries none of the caller's cookies, and each page renders in a request of its own: both files are the public site, even for a `markdown.ts` that reads `cookies()`.
-- Both files are cached publicly (`s-maxage=3600`), so `pages` and `sections`, which get the request, must not tailor the list to the person asking.
+- Both files are cached publicly, so `pages` and `sections`, which get the request, must not tailor the list to the person asking.
 - They're the public view, so a page that only renders privately is left out of `llms-full.txt`, and `llms.txt` lists it by its path, with no title or description from that render. That's a page whose Markdown route rendered it with credentials (the route's own `headers` option, say), one that sets a cookie, or a `markdown.ts` `Response` marked private. A page Next sends as `private, no-store` only because it's dynamic is still in: rendered without credentials, it's the public view. If your Markdown route's `headers` option carries a service `cookie` or `authorization`, every page these files fetch renders with it, so `llms-full.txt` comes out with no pages; use a header that isn't a credential (such as `x-vercel-protection-bypass`) for that route instead.
 - A `Set-Cookie` your `proxy.ts` adds to the response comes after the handler, which can't see it, and would go out on that publicly cached file. Don't refresh session cookies on `/llms.txt` and `/llms-full.txt` in your proxy (skip those paths in its matcher).
 - In `llms-full.txt`, frontmatter is stripped, and each page is headed `# Title (url)`, with its title without the site's name (`Cart` for `Cart · Acme Store`). Its own first heading heads it instead when that's how the title starts, as it usually is, or when the title isn't the page's own: the site's name, or a title other pages share, such as a layout's on every page. A page whose first heading is something else (a finding, on a report) keeps it under the title.
-- Each page is a full render on your own server, so they render a few at a time: `concurrency`, 8 by default, on either handler. `timeout` is each page's own, from when its request starts, and `deadline` is the whole file's, 25 seconds by default, under common serverless limits (Netlify's synchronous functions stop at 26). A page not rendered by then is left out and counted, as a timed-out one is. On a host that allows longer, raise it together with the route's `maxDuration`: `export const maxDuration = 60` and `createLlmsFullHandler({ deadline: 55_000 })`.
+- Each page is a full render on your own server, so they render a few at a time: `concurrency`, 8 by default, on either handler. `timeout` is each page's own, from when its request starts, and `deadline` is the whole file's, 25 seconds by default, under common serverless limits (Netlify's synchronous functions stop at 26). A page not rendered by then failed, as a timed-out one did. On a host that allows longer, raise it together with the route's `maxDuration`: `export const maxDuration = 60` and `createLlmsFullHandler({ deadline: 55_000 })`.
 - A page with a [`markdown.ts`](/docs/plugins/md/markdown-file) default export is the fast path: it answers from its data without rendering the page, while any other page costs a full render and conversion.
-- A page that fails (a status other than `200`, a timeout, a private render) is left out of `llms-full.txt`, and `llms.txt` links it by its path, rather than failing the file. Both files say how many with an `x-affordances-md-dropped` header, and in development the server logs each page and why. The files never list them, since they're public and the list could name a private page.
+- A page that failed (a timeout, the `deadline`, a `5xx`, `408` or `429`, a fetch error, or a page still loading after its `timeout`) may render next time, so a file missing it is never cached:
+  - `llms-full.txt` answers `503`, with `Cache-Control: no-store` and `Retry-After`;
+  - `llms.txt` still links it, by its path, so its links are all there and right, and it stays cacheable.
+
+  Both say how many failed with an `x-affordances-md-dropped` header. They never list them, since they're public and the list could name a private page.
+
+- A page that isn't part of the public site is left out by design, and the file stays cacheable: a redirect, any other `4xx` (a `404`, a gate's `401`), a response that isn't Markdown, or a private render. `llms.txt` still links it by its path. In development the server logs each page left out, failed or not, and why; a private render is logged as an error, since it's usually a page you meant to be public.
 - Without an Affordances index (`@affordances/md` on its own), the pages come from `app/` alone, and `llms.txt` leaves out the Affordances line.
-- Both are cached publicly for an hour (`s-maxage=3600`).
+- Both are cached publicly for an hour (`s-maxage=3600`). `publicCache` on either handler sets another time, with the same values as [`markdown.ts`'s](/docs/plugins/md/caching): a `cacheLife` profile or `{ revalidate, expire? }` in seconds, which gives the header Next sends for a page cached that long. `false` means never:
+
+  ```ts title="app/llms-full.txt/route.ts"
+  import { createLlmsFullHandler } from '@affordances/md/next'
+
+  export const GET = createLlmsFullHandler({ publicCache: 'hours' }) // s-maxage=3600, stale-while-revalidate=82800
+  ```
+
+  A `503`, or a file rendered with credentials, is never cached, whatever it says.
 
 Both render by requesting the site's own pages, so they run at request time. They read the request first, which keeps Next from prerendering them during the build, when no server is running.
