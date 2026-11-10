@@ -3041,6 +3041,24 @@ test('llms.txt names each page as llms-full.txt heads it: a layout title other p
   expect(full.match(/^# .+(?= \()/gm)).toEqual(['# Alpha', '# Beta', '# Clean install'])
 })
 
+test('a heading names a page only when its title goes on past a separator and a space, not inside a word', async () => {
+  llmsPages(
+    (path) =>
+      ({
+        '/sign-in': mdPage('Sign-in · Acme', '# Sign\n\nIn.'),
+        '/cart': mdPage('Cart · Acme', '# Cart\n\nEmpty.'),
+        '/order': mdPage('Order: details', '# Order\n\nShipped.'),
+      })[path]!,
+  )
+  const paths = ['/sign-in', '/cart', '/order']
+  const index = await (
+    await createLlmsTxtHandler({ sections: () => [{ title: 'All', pages: paths }] })(
+      new Request(`${site}/llms.txt`),
+    )
+  ).text()
+  expect(index.match(/^- \[[^\]]+\]/gm)).toEqual(['- [Sign-in · Acme]', '- [Cart]', '- [Order]'])
+})
+
 test("llms-full heads each page with its title, unless that's its heading's start or not the page's own", async () => {
   llmsPages(
     (path) =>

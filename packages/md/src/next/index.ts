@@ -1282,8 +1282,9 @@ const sharedTitles = (pages: (PageText | undefined)[]) => {
   return new Set(titles.filter((title, i) => titles.indexOf(title) !== i))
 }
 // a page's name in llms.txt and llms-full.txt: its frontmatter title, without the site's name. its own first heading
-// names it instead when that's the title's start ("Cart" for "Cart · Acme", as before), or when the title isn't the
-// page's own (the site's name, or one other pages share)
+// names it instead when that's the title's start, before a separator and a space ("Cart" for "Cart · Acme", as
+// before, never "Sign" for "Sign-in · Acme"), or when the title isn't the page's own (the site's name, or one other
+// pages share)
 const pageName = (
   title: string | undefined,
   own: string | undefined,
@@ -1294,7 +1295,7 @@ const pageName = (
   const starts =
     own &&
     label &&
-    (label === own || (label.startsWith(own) && /^\s*[·|–—:-]/.test(label.slice(own.length))))
+    (label === own || (label.startsWith(own) && /^\s*[·|–—:-]\s/.test(label.slice(own.length))))
   return (own && (!label || label === name || starts) ? own : label) || own
 }
 // a page in llms-full.txt, headed `# Name (url)`: its own heading, when that names it, isn't repeated; any other stays
