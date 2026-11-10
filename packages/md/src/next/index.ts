@@ -1258,10 +1258,13 @@ const siteIndex = async (
   try {
     const headers = await extraHeaders(request, options.headers)
     headers.set('accept', 'application/json')
+    // never followed: a redirect (to an sso host, say) would take the headers option's secrets with it. a 3xx is no index
     const response = await fetch(new URL(SITE_INDEX, origin(request, options)), {
       headers,
+      redirect: 'manual',
       signal: AbortSignal.timeout(options.timeout ?? TIMEOUT),
     })
+    if (!response.ok) void response.body?.cancel().catch(() => {})
     const body = response.ok ? ((await response.json()) as Partial<SiteIndex>) : undefined
     return Array.isArray(body?.routes) ? (body as SiteIndex) : undefined
   } catch {

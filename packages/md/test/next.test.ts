@@ -2150,6 +2150,24 @@ const affordancesSite = (url: URL) =>
         { headers: { 'content-type': 'text/html' } },
       )
 
+test('the site index is never followed through a redirect, so the headers option stays on the site', async () => {
+  const asked: { url: string; redirect?: RequestRedirect }[] = []
+  vi.stubGlobal('fetch', async (url: URL, init: RequestInit) => {
+    asked.push({ url: String(url), redirect: init.redirect })
+    if (new URL(url).pathname === '/.well-known/affordances.json')
+      return new Response(null, { status: 302, headers: { location: 'https://sso.test/login' } })
+    return mdPage('Page', '# Page')
+  })
+  const index = await createLlmsTxtHandler({
+    headers: { 'x-vercel-protection-bypass': 's3cret' },
+    sections: () => [{ title: 'Pages', pages: ['/a'] }],
+  })(new Request(`${site}/llms.txt`))
+  expect(index.status).toBe(200)
+  // a 3xx is no index: no Affordances line, and nothing fetched from the sso host
+  expect(await index.text()).not.toContain('Affordances-enabled')
+  expect(asked.every((call) => call.url.startsWith(site) && call.redirect === 'manual')).toBe(true)
+})
+
 // the env name md() sets when there's no Affordances graph: md's own, never public api
 const SITE_INDEX_ENV = 'AFFORDANCES_MD_SITE_INDEX'
 
