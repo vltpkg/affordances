@@ -61,7 +61,7 @@ test('placeholders and names never become labels, and a group without a legend h
       '<fieldset aria-label="Color"><input type="radio" name="c" id="r"><label for="r">Red</label></fieldset>' +
       '</form>',
   )
-  expect(out).toBe('**Form**\n\n- Email\n- Color: Red\n')
+  expect(out).toBe('- Email\n- Color: Red\n')
 })
 
 test('a choice without a label is left out, so its value never shows', () => {
@@ -72,7 +72,7 @@ test('a choice without a label is left out, so its value never shows', () => {
       '<fieldset><legend>Hidden</legend><input type="checkbox" name="x" value="x_internal_2"></fieldset>' +
       '</form>',
   )
-  expect(out).toBe('**Form**\n\n- Public\n')
+  expect(out).toBe('- Public\n')
 })
 
 test('inline-style hiding is read the way css reads it: comments, escapes, spaced !important, content-visibility', () => {

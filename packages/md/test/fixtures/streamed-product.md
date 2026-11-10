@@ -15,8 +15,6 @@ $48.00
 
 A boxy tee in dense 300 gsm cotton that holds its shape wash after wash. Ink black, with a small mark on the back of the neck.
 
-**Form**
-
 - Size: S (selected), M, L (unavailable), XL
 
 Size L is sold out. 3 left in XL.

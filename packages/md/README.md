@@ -70,6 +70,7 @@ Without markers, the converter uses `<main>` (or `[role=main]`); failing that, i
 
 - **Forms:** listed as the fields they ask for, with radio groups labelled by their legend. Values, hidden inputs, and tokens are never output, unless the form opts in with `data-affordances-md="values"` (a settings page). Then each field's value is listed, except for hidden, password, and secret-looking fields.
 - **Cleanups:** skeleton tables (no cell text, or a header over empty rows) are dropped, a run of the same link becomes one, and inline elements spaced only by CSS get a space between words.
+- **Code:** fences keep their language and title, where `language-*` classes, `data-language`, `data-title` or a `<figure>`'s `<figcaption>` put them (rehype-pretty-code, Expressive Code, fumadocs).
 - **Twin links:** in the handler's markdown, links to the site's own pages (the ones `md()` found) point at their `.md` twins, keeping query and hash; other origins, `#fragments`, files and API routes are left alone. `createMdHandler({ linkTwins: false })` turns it off, and `htmlToMarkdown(html, { link })` takes the hook directly.
 - **Never output:** buttons, scripts, styles, comments, and `data-*` attributes.
 - **Frontmatter:** title, description, canonical url, og:image, and lang.

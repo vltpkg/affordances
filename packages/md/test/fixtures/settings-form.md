@@ -24,8 +24,8 @@ Support email
 
 - Private account (switch): on
 - Require 2FA (switch): off
-- Keep an audit log (checkbox, selected)
-- Notify all members (checkbox, mixed)
+- Keep an audit log (checkbox): on
+- Notify all members (checkbox): mixed
 - Compact view (toggle): off
 
 ### Publishing

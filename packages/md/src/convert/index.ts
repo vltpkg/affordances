@@ -14,7 +14,7 @@ import { select, selectAll } from 'hast-util-select'
 import { defaultHandlers, toMdast, type Handle } from 'hast-util-to-mdast'
 import { toString } from 'hast-util-to-string'
 import { gfmToMarkdown } from 'mdast-util-gfm'
-import { toMarkdown, type Handle as ToMarkdownHandle } from 'mdast-util-to-markdown'
+import { toMarkdown } from 'mdast-util-to-markdown'
 import { parse, postprocess, preprocess } from 'micromark'
 import { gfm } from 'micromark-extension-gfm'
 import { decodeString } from 'micromark-util-decode-string'
@@ -175,6 +175,13 @@ const word = (node: ElementContent | undefined) => {
   const text = isInline(node) ? toString(node).trim() : node?.type === 'text' ? node.value : ''
   return [...text.trim()].length > 1 ? text : ''
 }
+// a block with nothing to read: no text, no described image
+const emptyBlock = (node: Element) =>
+  !INLINE.has(node.tagName) &&
+  node.tagName !== 'img' &&
+  node.tagName !== 'br' &&
+  !toString(node).trim() &&
+  !described(node).length
 // the link an inline element starts or ends with: itself, or the first or last thing in it
 const edgeLink = (node: ElementContent | undefined, end: boolean): Element | undefined => {
   if (!isInline(node)) return
@@ -288,8 +295,11 @@ const pruneWith = (
     )
     // a link with nothing to read (no text, no described image) reads as its label, and has it before the spacing
     // below, so it's spaced like text; without one it's gone, and leaves no gap
-    // a link's text is its name, so what carries a value in it (a meter, an editor) isn't
-    if (child.tagName === 'a') child.children = without(child, valueBearing).children
+    // a link's text is its name, so what carries a value in it (a meter, an editor) isn't. a block in it with nothing
+    // to read (an avatar's empty fallback <div>) is gone too: it would make the link a block, and two links side by
+    // side would lose the space between them
+    if (child.tagName === 'a')
+      child.children = without(child, (inner) => valueBearing(inner) || emptyBlock(inner)).children
     if (child.tagName === 'a' && !toString(child).trim() && !described(child).length) {
       const label = linkLabel(child, byId)
       if (!label) return []
@@ -829,6 +839,8 @@ const valueOf = (field: Element) => {
 // each field's value and each toggle's state, but never a hidden field's, a password's, or one that looks like a
 // secret
 type Line = [label: string, value?: string]
+// what has a state of its own, given as on, off or mixed
+const TOGGLES = new Set(['switch', 'toggle', 'checkbox', 'radio'])
 const form: Handle = (state, node) => {
   const values = node.properties.dataAffordancesMd === 'values'
   const up = parents(node)
@@ -873,10 +885,8 @@ const form: Handle = (state, node) => {
     if (!label) continue
     const entry = type === 'text' ? label : `${label} (${type})`
     const on = stateOf(field)
-    if (values && (type === 'switch' || type === 'toggle'))
+    if (values && TOGGLES.has(type))
       lines.set(field, [entry, on === 'true' ? 'on' : on === 'mixed' ? 'mixed' : 'off'])
-    else if (values && type === 'checkbox' && on !== 'false')
-      lines.set(field, [`${label} (${type}, ${on === 'mixed' ? 'mixed' : 'selected'})`])
     else {
       const value = values && !secret(field, label) ? valueOf(field) : ''
       lines.set(field, value ? [entry, value] : [entry])
@@ -980,23 +990,15 @@ const form: Handle = (state, node) => {
   if (!lines.size) return out as never
 
   // the form's name: its aria-label or aria-labelledby, unless what it names is in the form and says it in place (a
-  // label or legend doesn't: the walk reads those as controls), or a heading before its first field; without either
-  // it's a form
+  // label or legend doesn't: the walk reads those as controls). a form without one has no title: what it says (a
+  // heading, a card's title) is already there
   const named = idrefs(node, byId).some(
     (el) =>
       up.has(el) &&
       !CONTROLS.has(el.tagName) &&
       !ancestors(el, up).some((at) => CONTROLS.has(at.tagName)),
   )
-  const first = parts.findIndex(Array.isArray)
-  const headed = parts
-    .slice(0, first)
-    .some(
-      (part) =>
-        isElement(part) &&
-        (/^h[1-6]$/.test(part.tagName) || select('h1, h2, h3, h4, h5, h6', part) !== undefined),
-    )
-  const title = named ? '' : accessibleName(node, { byId }, false) || (headed ? '' : 'Form')
+  const title = named ? '' : accessibleName(node, { byId }, false)
   return [
     ...(title
       ? [
@@ -1010,11 +1012,10 @@ const form: Handle = (state, node) => {
   ] as never
 }
 
-// a field's line as markdown text: its label, and its value, unescaped where markdown doesn't need it
-const lineText = ([label, value]: Line): PhrasingContent[] =>
-  value
-    ? [{ type: 'text', value: `${label}: ` }, { type: 'fieldValue', value } as never]
-    : [{ type: 'text', value: label }]
+// a field's line as markdown text: its label, and its value
+const lineText = ([label, value]: Line): PhrasingContent[] => [
+  { type: 'text', value: value ? `${label}: ${value}` : label },
+]
 // elements whose shape is their content: a form's fields in one are written where they are, not listed after it
 const SHAPED = new Set(['table', 'dl'])
 // a field's line written in place: a tag name no page can have, since html lowercases tag names
@@ -1197,15 +1198,65 @@ const verbatim =
           node.tagName === 'span' ? 'inline' : 'block',
         ) as never)
 
+// a code block's language: a language-* class on its <code>, or where highlighters put it instead: data-language on
+// the <code> or <pre> (rehype-pretty-code, expressive code), or a language-* class on the <pre> (prism)
+const classLanguage = (el: Element | undefined) =>
+  [el?.properties.className]
+    .flat()
+    .map(String)
+    .find((name) => name.startsWith('language-'))
+    ?.slice('language-'.length)
+const languageOf = (pre: Element) => {
+  const code = pre.children.find((child) => isElement(child) && child.tagName === 'code') as
+    | Element
+    | undefined
+  const said = [code?.properties.dataLanguage, pre.properties.dataLanguage]
+    .map((language) => String(language ?? '').trim())
+    .find(Boolean)
+  return (classLanguage(code) ?? said ?? classLanguage(pre))?.split(/\s/)[0] || null
+}
 // <pre data-title="route.ts"> keeps its title as fence meta: ```ts title="route.ts"
 const pre: Handle = (state, node) => {
   const result = defaultHandlers.pre(state, node) as
-    | { type: string; meta?: string | null }
+    | { type: string; lang?: string | null; meta?: string | null }
     | undefined
+  if (result?.type !== 'code') return result as never
+  result.lang = languageOf(node)
   const title = node.properties.dataTitle
-  if (result?.type === 'code' && title) result.meta = `title=${JSON.stringify(String(title))}`
+  if (title) result.meta = `title=${JSON.stringify(String(title))}`
   return result as never
 }
+// a code block's title where highlighters put it, outside the <pre>: a figcaption before it in its figure
+// (rehype-pretty-code, fumadocs, expressive code) or data-title on what holds it. it's the fence's title, so the
+// figcaption isn't said again; one after the code is a caption, and stays. a fence's title needs its language, so
+// without one it stays where it is (fumadocs gives one with rehype-code's addLanguageClass)
+const titled =
+  (fallback: Handle): Handle =>
+  (state, node, parent) => {
+    const [code, ...more] = selectAll('pre', node)
+    if (!code || more.length || code.properties.dataTitle || !languageOf(code))
+      return fallback(state, node, parent)
+    const order = selectAll('figcaption, pre', node)
+    const caption =
+      node.tagName === 'figure'
+        ? order.slice(0, order.indexOf(code)).find((el) => el.tagName === 'figcaption')
+        : undefined
+    const title = text(caption) || String(node.properties.dataTitle ?? '').trim()
+    if (!title) return fallback(state, node, parent)
+    const swap = (el: Element): Element => ({
+      ...el,
+      children: el.children.flatMap((child): ElementContent[] =>
+        child === caption
+          ? []
+          : child === code
+            ? [{ ...code, properties: { ...code.properties, dataTitle: title } }]
+            : isElement(child)
+              ? [swap(child)]
+              : [child],
+      ),
+    })
+    return fallback(state, swap(node), parent)
+  }
 
 const handlers: Handlers = {
   form,
@@ -1220,7 +1271,8 @@ const handlers: Handlers = {
   sup: wrap('sup'),
   sub: wrap('sub'),
   span: verbatim(defaultHandlers.span),
-  div: verbatim(defaultHandlers.div),
+  div: verbatim(titled(defaultHandlers.div)),
+  figure: titled(defaultHandlers.figure),
   // values and placeholders are the user's, not the page's; task-list checkboxes are read by the li handler
   input: () => undefined,
   select: () => undefined,
@@ -1228,23 +1280,15 @@ const handlers: Handlers = {
   button: () => undefined,
 }
 
-// a field's value, escaped only where markdown needs it: gfm's autolink escapes (support\@acme.dev,
-// https\://github.com) only keep text from becoming the same link, so a value goes without them
+// gfm escapes @, www. and https: (tj\@acme.dev) only so text doesn't become a link to itself, which reads the same, so
+// text goes without them. a heading keeps them: a heading's url shown as itself isn't part of a page's title (headingOf)
 const GFM = gfmToMarkdown()
-const AUTOLINK = new Set(
-  GFM.extensions?.find((extension) =>
-    extension.unsafe?.some((pattern) => pattern.character === '@'),
-  )?.unsafe,
-)
-const fieldValue: ToMarkdownHandle = (node, _, state, info) => {
-  const unsafe = state.unsafe
-  state.unsafe = unsafe.filter((pattern) => !AUTOLINK.has(pattern))
-  try {
-    return state.safe((node as { value: string }).value, info)
-  } finally {
-    state.unsafe = unsafe
-  }
-}
+for (const extension of GFM.extensions ?? [])
+  if (extension.unsafe?.some((pattern) => pattern.character === '@'))
+    extension.unsafe = extension.unsafe.map((pattern) => ({
+      ...pattern,
+      inConstruct: 'headingAtx',
+    }))
 
 // a link's url once it's absolute, then through the link hook; undefined when it can't be resolved
 const resolve = (url: string, base: string, relink: Options['link'], image: boolean) => {
@@ -1741,7 +1785,6 @@ const finish = (
 
   let output = toMarkdown(mdast, {
     extensions: [GFM],
-    handlers: { fieldValue } as never,
     bullet: '-',
     emphasis: '_',
     rule: '-',
