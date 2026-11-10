@@ -670,6 +670,8 @@ const renderPage =
     for (const [name, value] of given)
       if (!callerCredentials || !CREDENTIALS.includes(name)) headers.set(name, value)
     headers.set('accept', 'text/html')
+    // the page over the server's own loopback: compressing it for us costs the server more than the bytes it saves
+    headers.set('accept-encoding', 'identity')
     headers.set(RENDER_HEADER, '1')
     // the service's credentials that stood in, whose refreshed cookie must never reach the caller
     const serviceCredentials = !callerCredentials && credentialed(given)
