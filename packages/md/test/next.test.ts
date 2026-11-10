@@ -2089,17 +2089,19 @@ test("the handler converts the page a gate's adopted rewrite chose, with its sta
   vi.unstubAllEnvs()
 })
 
-test("md()'s adopt token is the same on every config load of a build, kept in next's cache folder", () => {
+test("md()'s adopt token is the same on every config load of one build, new on the next, and never written to a file", () => {
+  delete process.env.AFFORDANCES_MD_ADOPT
   const project = app(['app/page.tsx'])
-  const first = (md({ root: project })({}) as Config).env!.AFFORDANCES_MD_ADOPT!
-  const second = (md({ root: project })({}) as Config).env!.AFFORDANCES_MD_ADOPT!
+  const token = () => (md({ root: project })({}) as Config).env!.AFFORDANCES_MD_ADOPT!
+  const first = token()
   expect(first).toMatch(/^[\w-]{32,}$/)
-  expect(second).toBe(first)
-  expect(readFileSync(join(project, '.next/cache/affordances-md/adopt-token'), 'utf8')).toBe(first)
-  // a distDir of the app's own
-  const custom = md({ root: project })({ distDir: 'build' } as Config).env!.AFFORDANCES_MD_ADOPT!
-  expect(existsSync(join(project, 'build/cache/affordances-md/adopt-token'))).toBe(true)
-  expect(custom).not.toBe(first)
+  // next build's workers load the config again, with the env of the process that started them
+  expect(token()).toBe(first)
+  expect(existsSync(join(project, '.next'))).toBe(false)
+  // the next build is a new process, without it
+  delete process.env.AFFORDANCES_MD_ADOPT
+  expect(token()).not.toBe(first)
+  delete process.env.AFFORDANCES_MD_ADOPT
 })
 
 test('mdAlternate', () => {

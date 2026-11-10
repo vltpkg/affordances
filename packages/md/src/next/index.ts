@@ -29,7 +29,6 @@ import {
   ROUTES_ENV,
   scanApp,
   scanPublic,
-  adoptToken,
   sourceRegex,
   linkSources,
   toSource,
@@ -78,8 +77,6 @@ export type Config = {
   rewrites?: () => Promise<unknown> | unknown
   headers?: () => Promise<Header[]> | Header[]
   env?: Record<string, string | undefined>
-  // where next build writes, for the token's cache folder
-  distDir?: string
   // the slice md() touches; as loose as next's own type (an interface with no index signature), so a NextConfig fits
   turbopack?: { resolveAlias?: Record<string, unknown> }
   // typed loosely: its context drags in all of NextConfig, which two copies of next don't agree on
@@ -236,9 +233,9 @@ export const md =
         ...(cacheLife && { [CACHE_LIFE_ENV]: cacheLife }),
         ...(literalMd.length && { [LITERAL_ENV]: JSON.stringify(literalMd) }),
         ...(aliased.length && { [ALIASES_ENV]: JSON.stringify(aliased) }),
-        // the token mdProxy's adopt and rewrite carry a gate's answer to the handler with: new on each config load, the
-        // same in the proxy and the handler of one build
-        [ADOPT_ENV]: adoptToken(root, config.distDir),
+        // the token mdProxy's adopt and rewrite carry a gate's answer to the handler with: new on each build, and the same
+        // in every process of it, since next build loads the config before it starts its workers, which inherit its env
+        [ADOPT_ENV]: (process.env.AFFORDANCES_MD_ADOPT ??= crypto.randomUUID()),
       },
       rewrites: async () => {
         const user = normalize(await config.rewrites?.())

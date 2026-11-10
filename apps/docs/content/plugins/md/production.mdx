@@ -78,7 +78,7 @@ The route's own Markdown answers vary on `Accept`, and a twin also varies on `Ac
 
 - `AFFORDANCES_MD_ROUTES`, `_HANDLERS`, `_PUBLIC`, `_CACHE_LIFE`, `_LITERAL` and `_ALIASES` describe your app.
 - `AFFORDANCES_INDEX`, which `withAffordances` sets, is where the site index is. Without it the `llms` handlers never ask for one.
-- `AFFORDANCES_MD_ADOPT` is a random token, new on each build, that `proxy.ts`'s `md.rewrite` and `md.adopt` use to reach the route. Treat it as a secret, and keep it out of logs.
+- `AFFORDANCES_MD_ADOPT` is a random token, new on each build, that `proxy.ts`'s `md.rewrite` and `md.adopt` use to reach the route. It's kept in no file, and the route takes it off the request before `markdown.ts`, its fills, `append` or the `headers` option see it. Treat it as a secret: don't set it yourself, which would keep one token across builds.
 
 ## Where it fetches from
 
