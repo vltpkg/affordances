@@ -7,7 +7,7 @@ description: What the converter keeps from a page, what it drops, and how it rea
 
 Without [markers](/docs/plugins/md/markers), the converter takes the page's outermost `<main>` or `[role=main]` (a `<main>` first, when there are both), so a `<main>` inside it, such as one in a comment, is part of it. Without one, it takes the body minus `nav`, `header`, `footer`, `aside`, dialogs, and their ARIA roles.
 
-Scripts, styles, SVG, media, iframes, and anything hidden from people with `hidden`, `aria-hidden`, or an inline `display: none`, `visibility: hidden` or `content-visibility: hidden` style (read as CSS reads it, with comments and escapes) are always dropped, unless an `<AgentOnly>` put it there.
+Scripts, styles, SVG, media, iframes, and anything hidden from people with `hidden`, `aria-hidden`, or an inline `display: none`, `visibility: hidden` or `content-visibility: hidden` style (read as CSS reads it, with comments and escapes) are always dropped, unless an `<AgentOnly>` put it there or it's marked `data-affordances-md="show"` (see [Tabs and accordions](#tabs-and-accordions)).
 
 ## Streamed content
 
@@ -90,6 +90,61 @@ export default defineConfig({
   mdxOptions: { rehypeCodeOptions: { ...rehypeCodeDefaultOptions, addLanguageClass: true } },
 })
 ```
+
+## Tabs and accordions
+
+A tab set renders only its open panel, and an accordion only its open item, so the rest isn't in the HTML. Radix's `forceMount` (on shadcn's and fumadocs' components too) renders every panel, and the converter reads any panel left in the page, but one that's `hidden` is dropped like anything else people can't see. Mark each panel `data-affordances-md="show"` to keep it either way:
+
+```tsx title="components/install-tabs.tsx"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+
+export const InstallTabs = () => (
+  <Tabs defaultValue="npm">
+    <TabsList>
+      <TabsTrigger value="npm">npm</TabsTrigger>
+      <TabsTrigger value="pnpm">pnpm</TabsTrigger>
+    </TabsList>
+    <TabsContent
+      value="npm"
+      forceMount
+      data-affordances-md="show"
+      className="data-[state=inactive]:hidden"
+    >
+      <pre>
+        <code>npm i acme</code>
+      </pre>
+    </TabsContent>
+    <TabsContent
+      value="pnpm"
+      forceMount
+      data-affordances-md="show"
+      className="data-[state=inactive]:hidden"
+    >
+      <pre>
+        <code>pnpm add acme</code>
+      </pre>
+    </TabsContent>
+  </Tabs>
+)
+```
+
+````md
+**npm**
+
+```
+npm i acme
+```
+
+**pnpm**
+
+```
+pnpm add acme
+```
+````
+
+- A tab panel (`role="tabpanel"`) is headed by its tab's label, from its `aria-labelledby`, and its tab list is left out, since each panel now says it.
+- fumadocs' `<Tab>` takes the same two props. An accordion's or collapsible's content (`AccordionContent`, `CollapsibleContent`) takes them too and keeps its trigger's heading where it is.
+- The marker keeps the element it's on, like `<AgentOnly>`, and nothing hidden inside it. A tab list, `role="tabpanel"` or `hidden` alone never shows anything: those can be forged in untrusted HTML a page renders, so strip `data-affordances-md` from that as [Markers](/docs/plugins/md/markers) says.
 
 ## Links
 

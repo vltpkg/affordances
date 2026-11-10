@@ -29,6 +29,7 @@ import { AgentMain, AgentSkip, AgentText } from '@affordances/md/react'
 
 - A `skip` inside a `main` is respected, and a `main` inside another `main` is part of the outer one.
 - `data-affordances-md="skip"` on any element works like `<AgentSkip>`, for components you can't wrap.
+- `data-affordances-md="show"` keeps an element that's hidden from people until they open it, such as a tab panel or an accordion's content (see [Tabs and accordions](/docs/plugins/md/conversion#tabs-and-accordions)). Like `<AgentOnly>`, it keeps the element it's on, not what's hidden inside it. It's only for content people can reach on the page, never to show agents something people can't see.
 - `<AgentOnly>` must say what the page already shows people, in a form an agent can read. It's not for content people can't see.
 - Links in `md` are treated like the page's links: made absolute and pointed at their Markdown twin (see [Links](/docs/plugins/md/conversion#links)), so `md="[Ann](/~ann)"` works from a client component, which has no origin during SSR. `<a href="/~ann"><AgentText md="Ann" /></a>` keeps its link too, so inside a link, give `md` text only: a link in it would be a link inside a link.
 

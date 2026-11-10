@@ -66,6 +66,8 @@ On a route whose pages' own URLs can end in `.md` (a registry with a package nam
 
 Markers render `<affordances-md style="display:contents">`, so they don't affect layout and ship no client JS.
 
+`data-affordances-md="show"` keeps a panel people open on the page (a tab panel or an accordion's content, with Radix's `forceMount`) though it's hidden. A tab panel is headed by its tab, and the tab list is left out.
+
 Without markers, the converter uses `<main>` (or `[role=main]`); failing that, it uses the body minus `nav`, `header`, `footer`, `aside`, dialogs, and hidden content.
 
 - **Forms:** listed as the fields they ask for, with radio groups labelled by their legend. Values, hidden inputs, and tokens are never output, unless the form opts in with `data-affordances-md="values"` (a settings page). Then each field's value is listed, except for hidden, password, and secret-looking fields.

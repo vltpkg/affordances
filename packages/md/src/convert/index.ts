@@ -67,9 +67,12 @@ const isElement = (node: unknown): node is Element => (node as Element)?.type ==
 const mode = (node: Element) =>
   node.tagName === 'affordances-md'
     ? String(node.properties.dataMode ?? '')
-    : node.properties.dataAffordancesMd === 'skip'
-      ? 'skip'
+    : node.properties.dataAffordancesMd === 'skip' || node.properties.dataAffordancesMd === 'show'
+      ? node.properties.dataAffordancesMd
       : undefined
+// what's kept though it's hidden from people: <AgentOnly>, and what people can open on the page (a tab panel, an
+// accordion's content) marked data-affordances-md="show"
+const unhidden = (node: Element) => mode(node) === 'only' || mode(node) === 'show'
 
 // a code point a css escape names, or U+FFFD where css reads one instead: zero, a surrogate, or past the last code point
 const codePoint = (hex: string) => {
@@ -237,7 +240,7 @@ const dropped = (el: Element, style = declarations(el)) =>
   ALWAYS_DROP.has(el.tagName) ||
   mode(el) === 'skip' ||
   editor(el) ||
-  (mode(el) !== 'only' &&
+  (!unhidden(el) &&
     ((el.properties.hidden !== undefined && el.properties.hidden !== false) ||
       String(el.properties.ariaHidden) === 'true' ||
       styleHidden(style)))
@@ -255,15 +258,28 @@ const markdownOf = (md: string, block: boolean): Element => ({
 
 const prune = (parent: HastRoot | Element, literal = false) => {
   let byId: Map<string, Element> | undefined
-  pruneWith(parent, () => (byId ??= ids(parent)), literal)
+  let tabs: Set<string> | undefined
+  const page: Pruning = {
+    byId: () => (byId ??= ids(parent)),
+    tabs: () =>
+      (tabs ??= new Set(selectAll('[data-affordances-md=show]', parent).flatMap(labelledBy))),
+  }
+  pruneWith(parent, page, literal)
 }
-// with the page's ids, and the parent's style already parsed
+// what prune reads from the whole page, once it needs it: its ids, and the tabs that label a shown panel
+type Pruning = { byId: () => Map<string, Element>; tabs: () => Set<string> }
+// a tablist whose panels are shown: each panel is headed by its tab, so the tabs aren't said again
+const shownTablist = (el: Element, page: Pruning) =>
+  String(el.properties.role) === 'tablist' &&
+  selectAll('[role=tab]', el).some((tab) => page.tabs().has(String(tab.properties.id ?? '')))
+// with the page, and the parent's style already parsed
 const pruneWith = (
   parent: HastRoot | Element,
-  byId: () => Map<string, Element>,
+  page: Pruning,
   literal: boolean,
   style: Declarations = [],
 ) => {
+  const { byId } = page
   // each child's style, parsed once, for its own prune and for the spacing below
   const styles = new Map<ElementContent, Declarations>()
   parent.children = parent.children.flatMap((child): ElementContent[] => {
@@ -279,20 +295,43 @@ const pruneWith = (
       const block = child.properties.dataBlock !== undefined && child.properties.dataBlock !== false
       return [markdownOf(String(child.properties.dataMd ?? ''), block)]
     }
-    if (m === 'only') {
+    if (unhidden(child)) {
       const { hidden: _, ...properties } = child.properties
       child.properties = properties
     }
+    if (shownTablist(child, page)) return []
     const childStyle = declarations(child)
     styles.set(child, childStyle)
     // hidden from people means hidden from agents, unless it was marked for them
     if (dropped(child, childStyle)) return []
     pruneWith(
       child,
-      byId,
+      page,
       literal || child.tagName === 'pre' || child.tagName === 'code',
       childStyle,
     )
+    // a shown tab panel is headed by its tab's label
+    if (m === 'show' && String(child.properties.role) === 'tabpanel') {
+      const label = idrefs(child, byId())
+        .filter((tab) => String(tab.properties.role) === 'tab')
+        .map(words)
+        .filter(Boolean)
+        .join(' ')
+      if (label)
+        child.children.unshift({
+          type: 'element',
+          tagName: 'p',
+          properties: {},
+          children: [
+            {
+              type: 'element',
+              tagName: 'strong',
+              properties: {},
+              children: [{ type: 'text', value: label }],
+            },
+          ],
+        })
+    }
     // a link with nothing to read (no text, no described image) reads as its label, and has it before the spacing
     // below, so it's spaced like text; without one it's gone, and leaves no gap
     // a link's text is its name, so what carries a value in it (a meter, an editor) isn't. a block in it with nothing
@@ -442,7 +481,7 @@ const extract = (body: HastRoot, how: Options['extract']): HastRoot => {
   const main = outermost.find((m) => m.tagName === 'main') ?? outermost[0]
   if (main) return { type: 'root', children: [main] }
   // the page has no landmark: take the body and drop its chrome, but keep what was marked for agents
-  const chrome = new Set(selectAll(CHROME, body).filter((el) => mode(el) !== 'only'))
+  const chrome = new Set(selectAll(CHROME, body).filter((el) => !unhidden(el)))
   const strip = (parent: HastRoot | Element) => {
     const kept = (parent.children as ElementContent[]).filter(
       (child) => !(isElement(child) && chrome.has(child)),
@@ -679,12 +718,11 @@ const words = (node: Element | undefined): string =>
     : ''
 
 // the elements an aria-labelledby names, in its order; an id that isn't on the page is skipped
+// the ids an aria-labelledby names, in order; none when it's missing or empty, never ''
+const labelledBy = (node: Element) =>
+  [node.properties.ariaLabelledBy ?? []].flat().join(' ').split(/\s+/).filter(Boolean)
 const idrefs = (node: Element, byId: Map<string, Element>) =>
-  [node.properties.ariaLabelledBy ?? []]
-    .flat()
-    .join(' ')
-    .split(/\s+/)
-    .flatMap((id) => byId.get(id) ?? [])
+  labelledBy(node).flatMap((id) => byId.get(id) ?? [])
 
 // what a screen reader calls an element, in its order: what its aria-labelledby names, its native label (a
 // <label for>, the label around it, a fieldset's legend), its aria-label, its own words for a control named by its
