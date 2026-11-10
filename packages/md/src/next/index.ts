@@ -1435,28 +1435,34 @@ const frontmatter = (markdown: string): PageText => {
 const origin = (request: Request, options: MdHandlerOptions) =>
   options.origin ?? process.env.AFFORDANCES_MD_ORIGIN ?? new URL(request.url).origin
 
-// the headers option, resolved once per llms request rather than once per page it renders
-const resolved = async <O extends MdHandlerOptions>(request: Request, options: O) => ({
-  ...options,
-  headers: await extraHeaders(request, options.headers),
-})
-
-// the public site, cached for publicCache's time, unless the headers option rendered it with credentials
-const text = (
-  body: string,
-  options: { headers: Headers; publicCache?: LlmsCache },
-  failed: number,
+// the public site, whoever asks: everything the app gives (pages, sections, a page's markdown, append, the headers
+// option) sees one request with none of the visitor's headers, as a twin's public view does. the headers option is
+// resolved once per llms request, never once per page it renders. cached for publicCache's time, unless the headers
+// option or the caller carries credentials: a caller with them may have shaped it (a markdown() or a section reading
+// cookies()), so it's theirs
+const publicSite = async <O extends LlmsFetchOptions>(
   caller: Request,
-) =>
+  given: O,
+  cache: string | undefined,
+) => {
+  const request = viewRequest(caller)
+  const options = { ...given, headers: await extraHeaders(request, given.headers) }
+  const index = await siteIndex(request, options)
+  const personal = credentialed(options.headers) || credentialed(caller.headers)
+  return {
+    request,
+    options,
+    index,
+    routes: staticRoutes(index),
+    cache: personal ? undefined : cache,
+  }
+}
+
+const text = (body: string, cache: string | undefined, failed: number) =>
   new Response(body, {
     headers: {
       'content-type': 'text/plain; charset=utf-8',
-      // a caller with credentials may have shaped it (a markdown() or a section reading cookies()), so it's theirs
-      'cache-control':
-        (!credentialed(options.headers) &&
-          !credentialed(caller.headers) &&
-          llmsCache(options.publicCache)) ||
-        'private, no-store',
+      'cache-control': cache ?? 'private, no-store',
       ...(failed && { [DROPPED_HEADER]: String(failed) }),
     },
   })
@@ -1529,14 +1535,9 @@ export type LlmsFullOptions = LlmsFetchOptions & {
 // app/llms-full.txt/route.ts: every page's markdown in one file, from the same render and converter as /x.md.
 // rendered without the caller's cookies, so it's the public site; each page is headed `# Title (url)`
 export const createLlmsFullHandler = ({ pages, append, ...given }: LlmsFullOptions = {}) => {
-  checked(given)
+  const publicCache = checked(given)
   return async (caller: Request): Promise<Response> => {
-    // the public site, whoever asks: everything the app gives (pages, a page's markdown, append, the headers option)
-    // sees one request with none of the visitor's headers, as a twin's public view does
-    const request = viewRequest(caller)
-    const options = await resolved(request, given)
-    const index = await siteIndex(request, options)
-    const routes = staticRoutes(index)
+    const { request, options, index, routes, cache } = await publicSite(caller, given, publicCache)
     const list = pages ? await pages(request, routes) : routes
     const paths = list.filter((page) => typeof page === 'string')
     const links = twinLinks(new URL(request.url))
@@ -1568,13 +1569,13 @@ export const createLlmsFullHandler = ({ pages, append, ...given }: LlmsFullOptio
         return { failed: `append threw: ${String(error)}` }
       }
     })()
-    const fetched = await renderPages(request, paths, options)
+    const fetched = await renderPages(request, [...new Set(paths)], options)
+    const byPath = new Map(fetched.map((rendered) => [rendered.path, rendered]))
     // each in order: a path's rendered markdown, or an object's own, its links resolved against its url
-    let next = 0
     const entries = await Promise.all(
       list.map(async (page, i) => {
         if (typeof page !== 'string') return (await ofSite[i])!
-        const rendered = fetched[next++]!
+        const rendered = byPath.get(page)!
         return { rendered, read: rendered.markdown ? frontmatter(rendered.markdown) : undefined }
       }),
     )
@@ -1603,7 +1604,7 @@ export const createLlmsFullHandler = ({ pages, append, ...given }: LlmsFullOptio
       )
       return incomplete('llms-full.txt', failed)
     }
-    return text(`${[...parts, tail.extra].filter(Boolean).join('\n\n')}\n`, options, 0, caller)
+    return text(`${[...parts, tail.extra].filter(Boolean).join('\n\n')}\n`, cache, 0)
   }
 }
 
@@ -1638,7 +1639,7 @@ const fullPage = (page: PageText, url: string, name: string | undefined, shared:
 }
 
 // a concurrency that renders nothing, one page forever, or a cache time that isn't one, is a mistake to say when the
-// handler is made
+// handler is made. the file's Cache-Control, when it may have one
 const checked = (options: LlmsFetchOptions) => {
   const { concurrency, deadline, publicCache } = options
   const problem =
@@ -1654,6 +1655,7 @@ const checked = (options: LlmsFetchOptions) => {
     throw new TypeError(
       `[affordances-md] deadline is how long the whole file may take, in milliseconds above 0; got ${deadline}`,
     )
+  return llmsCache(publicCache)
 }
 
 // a page in llms.txt: a path whose title and description come from its own markdown, or given outright
@@ -1696,14 +1698,9 @@ export const createLlmsTxtHandler = ({
   full = '/llms-full.txt',
   ...given
 }: LlmsTxtOptions = {}) => {
-  checked(given)
+  const publicCache = checked(given)
   return async (caller: Request): Promise<Response> => {
-    // the public site, whoever asks: sections and the headers option see one request with none of the visitor's
-    // headers, as a twin's public view does
-    const request = viewRequest(caller)
-    const options = await resolved(request, given)
-    const index = await siteIndex(request, options)
-    const routes = staticRoutes(index)
+    const { request, options, index, routes, cache } = await publicSite(caller, given, publicCache)
     const lists: LlmsSection[] = sections
       ? await sections(request, routes)
       : [{ title: 'Pages', pages: routes }]
@@ -1778,6 +1775,6 @@ export const createLlmsTxtHandler = ({
     // a page that failed to render is still linked, by its path, so every link is there and right, and the file
     // stays cacheable; its header counts them
     const failed = dropped('llms.txt', pages)
-    return text(`${[...head, ...body].filter(Boolean).join('\n\n')}\n`, options, failed, caller)
+    return text(`${[...head, ...body].filter(Boolean).join('\n\n')}\n`, cache, failed)
   }
 }
