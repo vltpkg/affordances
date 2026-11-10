@@ -151,7 +151,8 @@ test('publicCache makes one cell public: opted in, no credentials, the .md url, 
                 )
             }
   warn.mockRestore()
-  expect([...statuses]).toEqual([200])
+  // an anonymous request for the page's own url, on an opted-in route, is sent to its twin
+  expect([...statuses].toSorted()).toEqual([200, 307])
   expect(cells).toEqual([
     'slot opted=true none twin partial=false set-cookie=false: s-maxage=3600, stale-while-revalidate=82800',
     'default opted=true none twin partial=false set-cookie=false: s-maxage=3600, stale-while-revalidate=82800',
@@ -287,11 +288,12 @@ test("an opted-in route's public view is one language: rendered, and its markdow
       publicCache: 'hours',
     }) as never
   expect(await twin({ 'accept-language': 'fr' })).toContain('lang=none')
-  // a view that stays private keeps it: signed in, asked for with Accept, or a route that didn't opt in
+  // a view that stays private keeps it: signed in, or a route that didn't opt in. one asked for with Accept is sent
+  // to the twin
   expect(await twin({ 'accept-language': 'fr', cookie: 'sid=1' })).toContain('lang=fr')
-  expect(await twin({ 'accept-language': 'fr', accept: 'text/markdown' }, '/x/express')).toContain(
-    'lang=fr',
-  )
+  expect(
+    await twin({ 'accept-language': 'fr', accept: 'text/markdown', cookie: 'sid=1' }, '/x/express'),
+  ).toContain('lang=fr')
   route('converted')
   expect(await twin({ 'accept-language': 'fr' })).toContain('LANG-fr')
 })
@@ -598,4 +600,45 @@ test('a response on an opted-in route that stays private says why, in production
   ])
   warn.mockRestore()
   error.mockRestore()
+})
+
+test('an anonymous Accept request on an opted-in route goes to its twin, never stored, with nothing rendered', async () => {
+  route('slot', 'hours')
+  let renders = 0
+  upstream = () => {
+    renders++
+    return new Response(page('<h1>express</h1>'), { headers: { 'content-type': 'text/html' } })
+  }
+  const asked = await createMdHandler()(
+    new Request(`${site}/x/express?tab=deps`, { headers: { accept: 'text/markdown' } }),
+  )
+  expect([
+    asked.status,
+    asked.headers.get('location'),
+    asked.headers.get('cache-control'),
+    asked.headers.get('vary'),
+    await asked.text(),
+    renders,
+  ]).toEqual([
+    307,
+    // relative: request.url's host is next's own, never the public one
+    '/x/express.md?tab=deps',
+    'private, no-store',
+    'Accept',
+    `This page's Markdown is at [/x/express.md?tab=deps](/x/express.md?tab=deps).\n`,
+    0,
+  ])
+  // unchanged: a credentialed one, and a route that didn't opt in, get their markdown at the page's url
+  const signedIn = await createMdHandler()(
+    new Request(`${site}/x/express`, { headers: { accept: 'text/markdown', cookie: 'sid=1' } }),
+  )
+  route('slot')
+  const off = await createMdHandler()(
+    new Request(`${site}/x/express`, { headers: { accept: 'text/markdown' } }),
+  )
+  expect([signedIn.status, off.status]).toEqual([200, 200])
+  expect([signedIn.headers.get('cache-control'), off.headers.get('cache-control')]).toEqual([
+    'private, no-store',
+    'private, no-store',
+  ])
 })

@@ -474,6 +474,18 @@ const markdownRedirect = (
   })
 }
 
+// a 307 from a page's own url to its twin, with a line naming it for an agent that doesn't follow redirects
+// relative, as every markdown redirect is: request.url's host is next's own (localhost behind a proxy), never the
+// public one. undefined for a url with no twin
+const toTwin = (url: URL) => {
+  const twin = twinLocation(url, url)
+  if (!twin) return undefined
+  return respond(`This page's Markdown is at [${twin}](${twin}).\n`, 307, {
+    location: twin,
+    'cache-control': 'private, no-store',
+  })
+}
+
 // an answer of the handler's own, never cached; personal when it was made with someone's credentials
 const fail = (status: number, message: string, personal = false) =>
   respond(`# ${message}\n`, status, {
@@ -551,6 +563,17 @@ const renderPage =
     const route = direct ? undefined : await markdownRoute(request, target)
     // whose request this is: the caller's own credentials, or none, so the headers option's may stand in
     const callerCredentials = credentialed(request.headers)
+    // an anonymous agent asking for the page's own url with Accept, on a route whose markdown is public: sent to the
+    // twin, the url a cdn can keep, with nothing rendered. never stored itself, so it's safe on a cdn that ignores Vary
+    if (
+      negotiated &&
+      !/\.md$/i.test(url.pathname) &&
+      route?.module.publicCache !== undefined &&
+      !callerCredentials
+    ) {
+      const twin = toTwin(url)
+      if (twin) return twin
+    }
     // a response that may be public is one view for everyone, which a CDN keys on its url alone: all of it (the
     // headers option, the render, markdown.ts and its fills, append) sees one request, with no visitor's headers. a
     // credentialed or negotiated request, which stays private, is the visitor's own
@@ -1106,11 +1129,13 @@ const renderPages = async (
       const headers = new Headers(options.headers)
       headers.set('accept', 'text/markdown')
       // each page's own timeout, from when its fetch starts, not from when the file was asked for
-      const response = await fetch(target, {
-        headers,
-        redirect: 'manual',
-        signal: AbortSignal.any([AbortSignal.timeout(timeout), overall.signal]),
-      })
+      const signal = AbortSignal.any([AbortSignal.timeout(timeout), overall.signal])
+      let response = await fetch(target, { headers, redirect: 'manual', signal })
+      // a route whose markdown is public sends an anonymous Accept request to its twin: followed, that one hop only
+      const twin = new URL(target)
+      twin.pathname = mdPath(target.pathname)
+      if (response.status === 307 && response.headers.get('location') === twin.href)
+        response = await fetch(twin, { headers, redirect: 'manual', signal })
       // a server error, or one that asks to be retried, may answer next time: the page failed. any other status (a
       // redirect, a 404, a gate's 401) is the page's answer, and it isn't a page of the public site
       const { status } = response

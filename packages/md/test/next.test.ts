@@ -2888,6 +2888,26 @@ const cache = async (llms: (request: Request) => Promise<Response>) =>
   (await llms(new Request(`${site}/llms-full.txt`))).headers.get('cache-control')
 const fine = () => ['/fine']
 
+test("llms follows an opted-in route's redirect to its own twin, that one hop only", async () => {
+  const fetched: string[] = []
+  llmsPages(async (path) => {
+    fetched.push(path)
+    if (path === '/public')
+      return new Response(null, { status: 307, headers: { location: `${site}/public.md` } })
+    if (path === '/away')
+      return new Response(null, { status: 307, headers: { location: `${site}/elsewhere.md` } })
+    return mdPage(`Page ${path}`, `# Page ${path}\n\nBody.`)
+  })
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const full = await createLlmsFullHandler({ pages: () => ['/public', '/away'] })(
+    new Request(`${site}/llms-full.txt`),
+  )
+  expect(await full.text()).toBe(`# Page /public.md (${site}/public)\n\nBody.\n`)
+  // a redirect anywhere else is the page's answer, left out by design, and never followed
+  expect(fetched.toSorted()).toEqual(['/away', '/public', '/public.md'])
+  warn.mockRestore()
+})
+
 test('publicCache on the llms handlers sets how long a CDN keeps the file, never a file that failed or has credentials', async () => {
   llmsPages((at, signal) => (at === '/slow' ? failing['/slow']!(signal) : mdPage('Fine', '# Fine')))
   expect(await cache(createLlmsFullHandler({ pages: fine }))).toBe(
