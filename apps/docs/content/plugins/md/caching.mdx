@@ -104,6 +104,26 @@ export const publicCache = 'hours'
 
 `revalidateTag` refreshes the data, not a CDN's copy of the `.md`, which lasts its own time.
 
+## On Vercel
+
+A twin is the Markdown route's request plus one request of its own, for the page: the route fetches the page from the same deployment and converts its HTML. On Vercel that's two function invocations (the route's, then the page's own render) and the page's whole HTML crossing the network between them, so an uncached twin costs about what its page does, plus the conversion. Three things make it cheaper:
+
+- A cached twin costs nothing after the first request: give the page a `cacheLife`, or the route `publicCache`, and the CDN answers.
+- A [`markdown.ts`](/docs/plugins/md/markdown-file) default export that answers skips the page's render, and its invocation.
+- An anonymous `Accept: text/markdown` request on a `publicCache` route is a `307` to the twin, so it shares the twin's cache.
+
+Vercel's edge sets the `Host` the handler builds its own origin from, so the page fetch reaches the same deployment with no setting. On a deployment with [Deployment Protection](https://vercel.com/docs/deployment-protection), the page fetch needs the bypass too. Pass Vercel's automation bypass secret as a header, which isn't a credential, so it applies to every render:
+
+```ts title="app/api/affordances/md/[[...path]]/route.ts"
+import { createMdHandler } from '@affordances/md/next'
+
+export const GET = createMdHandler({
+  headers: { 'x-vercel-protection-bypass': process.env.VERCEL_AUTOMATION_BYPASS_SECRET ?? '' },
+})
+```
+
+`llms.txt` and `llms-full.txt` fetch each page through that route, so they need the same `headers` on their own handlers to reach it.
+
 ## Behind a proxy
 
 The handler fetches pages from the request's own origin. When a proxy changes it, set `AFFORDANCES_MD_ORIGIN`, or build the handler with options:
