@@ -1,14 +1,17 @@
 // with its .js, as proxy.ts imports it: next.config loads this entry in plain node
 import { NextRequest } from 'next/server.js'
 import {
+  escapeRegExp,
   FlightDataError,
   flightStripper,
   fromDigest,
   headingOf,
   type Page,
+  pageTitle,
   readStreamed,
   relinkMarkdown,
   type SlotNames,
+  TITLE_SEPARATORS,
   yaml,
 } from '../convert/index.ts'
 import { mdPath } from '../path.ts'
@@ -1486,7 +1489,9 @@ const incomplete = (file: string, failed: number) =>
 
 // "Cart · Acme Store" → "Cart", given the site's name
 const short = (name: string | undefined, label: string | undefined) =>
-  name && label ? label.replace(new RegExp(`\\s*[·|–—-]\\s*${literal(name)}$`), '') : label
+  name && label
+    ? label.replace(new RegExp(`\\s*[${TITLE_SEPARATORS}]\\s*${escapeRegExp(name)}$`), '')
+    : label
 
 // which pages to include: yours, given the index's routes without a dynamic segment, or those routes as they are
 // a page of llms-full.txt: a path, rendered from its markdown route, or its markdown given outright (from a data layer),
@@ -1613,9 +1618,9 @@ const sharedTitles = (pages: (PageText | undefined)[]) => {
   return new Set(titles.filter((title, i) => titles.indexOf(title) !== i))
 }
 // a page's name in llms.txt and llms-full.txt: its frontmatter title, without the site's name. its own first heading
-// names it instead when that's the title's start, before a separator and a space ("Cart" for "Cart · Acme", as
-// before, never "Sign" for "Sign-in · Acme"), or when the title isn't the page's own (the site's name, or one other
-// pages share)
+// names it instead when the title is that heading in a template, as pageTitle reads one ("Cart" for "Cart · Acme",
+// never "Sign" for "Sign-in · Acme"), or when the title isn't the page's own (the site's name, or one other pages
+// share)
 const pageName = (
   title: string | undefined,
   own: string | undefined,
@@ -1623,11 +1628,7 @@ const pageName = (
   shared: Set<string>,
 ) => {
   const label = title && !shared.has(title) ? short(name, title) : undefined
-  const starts =
-    own &&
-    label &&
-    (label === own || (label.startsWith(own) && /^\s*[·|–—:-]\s/.test(label.slice(own.length))))
-  return (own && (!label || label === name || starts) ? own : label) || own
+  return (own && (!label || label === name || pageTitle(label, own) === own) ? own : label) || own
 }
 // a page in llms-full.txt, headed `# Name (url)`: its own heading, when that names it, isn't repeated; any other stays
 const fullPage = (page: PageText, url: string, name: string | undefined, shared: Set<string>) => {
@@ -1785,6 +1786,3 @@ export const createLlmsTxtHandler = ({
     return text(`${[...head, ...body].filter(Boolean).join('\n\n')}\n`, options, failed, caller)
   }
 }
-
-// a string matched as itself in a RegExp
-const literal = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
