@@ -233,6 +233,27 @@ export const publicPattern = (entries: string[]) =>
     })
     .join('|')
 
+// the token mdProxy and the handler share: made once, kept in next's own cache folder (.next/cache, which next build
+// keeps and git ignores), so every compiler of one build (each loads next.config) inlines the same one. never derived
+// from anything a caller can see. a tree it can't write still gets one, for this load
+export const adoptToken = (root: string, distDir?: string) => {
+  const fs = process.getBuiltinModule?.('node:fs')
+  const path = process.getBuiltinModule?.('node:path')
+  const file = path?.join(root, distDir ?? '.next', 'cache', 'affordances-md', 'adopt-token')
+  if (fs && file)
+    try {
+      const saved = fs.readFileSync(file, 'utf8').trim()
+      if (/^[\w-]{32,}$/.test(saved)) return saved
+    } catch {}
+  const token = crypto.randomUUID()
+  if (fs && path && file)
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      fs.writeFileSync(file, token, { mode: 0o600 })
+    } catch {}
+  return token
+}
+
 // .affordances/md.ts: one lazy import per route's markdown.ts, which @affordances/md/routes is aliased to. written
 // only when it changed, so watchers don't loop. its path, or undefined when there's no markdown.ts
 export const writeMarkdownRoutes = (

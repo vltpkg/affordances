@@ -1667,6 +1667,7 @@ test('@affordances/md/next/proxy is the same proxy side as @affordances/md/next,
     'MD_PATH',
     'RENDER_HEADER',
     'isMdRequest',
+    'mdAliasPath',
     'mdLink',
     'mdPagePath',
     'mdPath',
@@ -2030,6 +2031,73 @@ test('md() composes with existing rewrites in either shape', async () => {
   const nested = (await withMd({ rewrites: async () => ({ beforeFiles: [graph] }) })
     .rewrites!()) as { beforeFiles: unknown[] }
   expect(nested.beforeFiles).toEqual([graph, ...rewrites.beforeFiles])
+})
+
+// /dashboard.md with the header mdProxy's adopt sets, or a caller's own
+const withAdopt = (adopt: string) =>
+  createMdHandler()(
+    new Request(`${site}/dashboard.md`, { headers: { 'x-affordances-md-adopt': adopt } }),
+  )
+
+test("the handler converts the page a gate's adopted rewrite chose, with its status, and ignores the header without md()'s token", async () => {
+  vi.stubEnv('AFFORDANCES_MD_ADOPT', 'build-token')
+  upstream = (url) =>
+    new Response(page(`<h1>Page ${url.pathname}</h1>`), {
+      headers: { 'content-type': 'text/html' },
+    })
+  const gated = await withAdopt('build-token;404;/404')
+  expect([gated.status, gated.headers.get('cache-control'), gated.headers.get('vary')]).toEqual([
+    404,
+    'private, no-store',
+    'Accept',
+  ])
+  expect(await gated.text()).toContain('# Page /404')
+  expect(seen.at(-1)!.url.pathname).toBe('/404')
+  // a rewrite with no status of its own keeps the page's
+  expect((await withAdopt('build-token;200;/beta/dashboard')).status).toBe(200)
+  expect(seen.at(-1)!.url.pathname).toBe('/beta/dashboard')
+  // a header that isn't this build's is refused, never taken for no gate: 500, and nothing rendered
+  const before = seen.length
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  for (const forged of ['guess;404;/admin', 'build-token;404;//evil.test/x', ''])
+    expect((await withAdopt(forged)).status).toBe(500)
+  expect(seen.length).toBe(before)
+  // markdown.ts, which may log or forward its request's headers, gets the gate's own and never the token
+  let saw: Request | undefined
+  markdownFiles({
+    '/dashboard': ({ request }) => {
+      saw = request
+      return '# Dash'
+    },
+  })
+  const own = await createMdHandler()(
+    new Request(`${site}/dashboard.md`, {
+      headers: { 'x-affordances-md-adopt': 'build-token;200;/dashboard', 'x-user-id': 'alice' },
+    }),
+  )
+  expect(await own.text()).toContain('# Dash')
+  expect([saw!.headers.has('x-affordances-md-adopt'), saw!.headers.get('x-user-id')]).toEqual([
+    false,
+    'alice',
+  ])
+  // and without md()'s token in the build, every adopt header is refused
+  vi.stubEnv('AFFORDANCES_MD_ADOPT', '')
+  expect((await withAdopt('build-token;404;/404')).status).toBe(500)
+  error.mockRestore()
+  vi.unstubAllEnvs()
+})
+
+test("md()'s adopt token is the same on every config load of a build, kept in next's cache folder", () => {
+  const project = app(['app/page.tsx'])
+  const first = (md({ root: project })({}) as Config).env!.AFFORDANCES_MD_ADOPT!
+  const second = (md({ root: project })({}) as Config).env!.AFFORDANCES_MD_ADOPT!
+  expect(first).toMatch(/^[\w-]{32,}$/)
+  expect(second).toBe(first)
+  expect(readFileSync(join(project, '.next/cache/affordances-md/adopt-token'), 'utf8')).toBe(first)
+  // a distDir of the app's own
+  const custom = md({ root: project })({ distDir: 'build' } as Config).env!.AFFORDANCES_MD_ADOPT!
+  expect(existsSync(join(project, 'build/cache/affordances-md/adopt-token'))).toBe(true)
+  expect(custom).not.toBe(first)
 })
 
 test('mdAlternate', () => {

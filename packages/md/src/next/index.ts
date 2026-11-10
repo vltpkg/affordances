@@ -23,6 +23,7 @@ import {
   ROUTES_ENV,
   scanApp,
   scanPublic,
+  adoptToken,
   sourceRegex,
   linkSources,
   toSource,
@@ -30,6 +31,7 @@ import {
 } from './routes.ts'
 import {
   accepts,
+  ADOPT_HEADER,
   hasTwin,
   pageRoute,
   apiRoute,
@@ -50,6 +52,7 @@ import {
 export {
   isMdRequest,
   MD_PATH,
+  mdAliasPath,
   mdLink,
   mdPagePath,
   mdPath,
@@ -68,6 +71,8 @@ export type Config = {
   rewrites?: () => Promise<unknown> | unknown
   headers?: () => Promise<Header[]> | Header[]
   env?: Record<string, string | undefined>
+  // where next build writes, for the token's cache folder
+  distDir?: string
   // the slice md() touches; as loose as next's own type (an interface with no index signature), so a NextConfig fits
   turbopack?: { resolveAlias?: Record<string, unknown> }
   // typed loosely: its context drags in all of NextConfig, which two copies of next don't agree on
@@ -228,6 +233,9 @@ export const md =
         ...(literalMd.length && { [LITERAL_ENV]: JSON.stringify(literalMd) }),
         ...(aliased.length && { [ALIASES_ENV]: JSON.stringify(aliased) }),
         ...(!afforded && { [SITE_INDEX_ENV]: 'none' }),
+        // the token mdProxy's adopt and rewrite carry a gate's answer to the handler with: new on each config load, the
+        // same in the proxy and the handler of one build
+        [ADOPT_ENV]: adoptToken(root, config.distDir),
       },
       rewrites: async () => {
         const user = normalize(await config.rewrites?.())
@@ -533,7 +541,14 @@ const pageUrl = (request: Request, options: MdHandlerOptions, path: string) => {
 // why markdown on a route opted into publicCache stayed private, for x-affordances-md-uncached
 export type Uncached = 'credentials' | 'set-cookie' | 'status' | 'partial' | 'error' | 'invalid'
 export const UNCACHED_HEADER = 'x-affordances-md-uncached'
-type Seen = { opted?: boolean; why?: Uncached; routed?: MarkdownRoute; target?: URL }
+type Seen = {
+  opted?: boolean
+  why?: Uncached
+  routed?: MarkdownRoute
+  target?: URL
+  // a gate's rewrite mdProxy adopted: the page it chose, never sent on to the twin of the url asked for
+  adopted?: boolean
+}
 
 // a response on an opted-in route that isn't public says why, in production too, where a gate setting a cookie for a
 // signed-out visitor is otherwise silent: the first reason the render met, or what the answer itself shows
@@ -555,8 +570,13 @@ const sayUncached = (response: Response, why: Uncached | undefined) => {
 
 const convertPage = (options: MdHandlerOptions) => {
   const render = renderPage(options)
-  return async (request: Request, pagePath: string, direct: boolean): Promise<Response> => {
-    const seen: Seen = {}
+  return async (
+    request: Request,
+    pagePath: string,
+    direct: boolean,
+    adopted = false,
+  ): Promise<Response> => {
+    const seen: Seen = { adopted }
     const rendered = await render(request, pagePath, direct, seen)
     const response = seen.routed
       ? await notFoundPage(rendered, seen.routed, seen.target!)
@@ -597,6 +617,7 @@ const renderPage =
     // an anonymous agent asking for the page's own url with Accept, on a route whose markdown is public: sent to the
     // twin, the url a cdn can keep, with nothing rendered. never stored itself, so it's safe on a cdn that ignores Vary
     if (
+      !seen.adopted &&
       negotiated &&
       !/\.md$/i.test(url.pathname) &&
       route?.module.publicCache !== undefined &&
@@ -786,6 +807,35 @@ export const createMdHandler = (options: MdHandlerOptions = {}) => {
   const convert = convertPage(options)
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url)
+    // a gate's rewrite: the page it chose, with its status, always private
+    const adopted = adoptedBy(request)
+    if (adopted === 'refused') {
+      if (process.env.NODE_ENV !== 'production')
+        console.error(
+          `[affordances-md] ${new URL(request.url).pathname} came with an ${ADOPT_HEADER} that isn't this build's, so it answers 500. mdProxy sets it; a caller's own never counts.`,
+        )
+      return fail(500, "The page's gate couldn't be verified")
+    }
+    if (adopted) {
+      // the page the gate chose, with its own query
+      const asked = new URL(request.url)
+      asked.search = adopted.search
+      // the gate's own headers, never the token: markdown.ts, its fills, append and the headers option may log or
+      // forward them, and the token is what keeps a caller from running any route's markdown.ts past its gate
+      const sent = new Headers(request.headers)
+      sent.delete(ADOPT_HEADER)
+      const gated = new NextRequest(asked, {
+        method: request.method,
+        headers: sent,
+        signal: request.signal,
+      })
+      const found = await convert(gated, adopted.page, false, true)
+      const headers = new Headers(found.headers)
+      headers.set('cache-control', 'private, no-store')
+      headers.set('vary', 'Accept')
+      const status = adopted.status === 200 ? found.status : adopted.status
+      return new Response(found.body, { status, headers })
+    }
     // a rewritten request keeps its original url in next (/blog/post.md, or /blog/post with Accept); one made straight
     // to the handler's url (/api/affordances/md/x) skipped a page-scoped proxy.ts gate, so it never gets a markdown.ts
     const direct = handlerPrefix.test(url.pathname)
@@ -1121,6 +1171,28 @@ export const GET = /* @__PURE__ */ createMdHandler()
 const SITE_INDEX = '/.well-known/affordances.json'
 
 type SiteIndex = { name?: string; routes: { route: string; description?: string }[] }
+
+const ADOPT_ENV = 'AFFORDANCES_MD_ADOPT'
+// a gate's rewrite or status that mdProxy adopted: the page and status on ADOPT_HEADER, taken only with this build's
+// token, so a caller who sends the header gets nothing. status 200 keeps the page's own
+const adoptedBy = (request: Request) => {
+  const said = request.headers.get(ADOPT_HEADER)
+  if (said === null) return undefined
+  // spelled out: next inlines process.env.NAME, never process.env[name]
+  const token = process.env.AFFORDANCES_MD_ADOPT
+  const [given, status] = said.split(';', 2)
+  const at = said.indexOf(';', said.indexOf(';') + 1)
+  const page = at < 0 ? '' : said.slice(at + 1)
+  // a header that isn't this build's is refused, never taken for no gate at all: the gate's answer is never bypassed
+  if (!token || given !== token || !page.startsWith('/') || page.startsWith('//')) return 'refused'
+  const code = Number(status)
+  const target = new URL(page, 'http://page')
+  return {
+    page: target.pathname,
+    search: target.search,
+    status: code >= 200 && code < 600 ? code : 200,
+  }
+}
 
 // 'none' when md() found no Affordances graph on the app, so there's no index to fetch
 const SITE_INDEX_ENV = 'AFFORDANCES_MD_SITE_INDEX'

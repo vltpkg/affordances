@@ -94,7 +94,7 @@ Then the public URL gets everything a page's own URL does:
 - twin links: the converted Markdown links `/package/@babel/core/versions` as its `.md`;
 - its route's [`markdown.ts`](/docs/plugins/md/markdown-file), with `params` exactly as `page.tsx` gets them for that URL: `{ pkg: '%40babel%2Fcore' }`, still encoded;
 
-An alias doesn't route anything. Your proxy or rewrite still sends the page there; the alias tells `md()` what it does, so keep the two in step.
+An alias doesn't route anything. Your proxy or rewrite still sends the page there; the alias tells `md()` what it does, so keep the two in step, or have the proxy map with [`mdAliasPath`](#with-a-proxyts) so there's one table.
 
 - Each alias is checked when the config loads. One whose destination no page in `app/` answers throws, quoting the alias and naming the nearest pages, so a typo fails `next dev` and `next build`, not a request.
 - The first alias that matches a URL wins, in the order you list them, before the URL is matched against `app/` as it is.
@@ -145,8 +145,27 @@ export const proxy = (request: NextRequest) => {
 - `md.page` is a `URL`: the page the request is for, HTML or Markdown alike. `/compare.md` is `/compare`, `/index.md` is `/`, and a [`literalMd`](#pages-whose-url-ends-in-md) page keeps its own `.md`, since the handler tells which it is. It has the request's search. Run every gate on it.
 - `md.markdown` says whether the request is for Markdown.
 - `md.redirect(url, status?)` is `NextResponse.redirect`, except that a Markdown request sent to a page on this site goes to that page's `.md` (`/sign-in.md?…`), so an agent stays in Markdown. Another origin gets a plain redirect, never a `.md`. A Markdown request's redirect is `private, no-store` and varies on `Accept`.
+- `md.rewrite(destination, init?)` is `NextResponse.rewrite`, except that a Markdown request gets the destination page's Markdown, with `init.status`: a flag gate's `md.rewrite(new URL('/404', request.url), { status: 404 })` answers with the `404` page's Markdown. It's `private, no-store` and varies on `Accept`. Another origin, and a page request, get Next's own rewrite.
 - `md.next(init?)` lets the request through: a Markdown request to the handler, any other with `NextResponse.next(init)`.
+- `md.request` is the page as a `NextRequest`, with the request's method, headers and cookies, for a gate that takes a request rather than a URL (a middleware's route matcher).
+- `md.adopt(response)` makes a response from a middleware you didn't write right for a Markdown request: its redirect to a page on this site goes to that page's `.md`, its rewrite to a page on this site gives that page's Markdown with the response's status, its `NextResponse.next()` goes on to the handler, and anything else it answers is made `private, no-store`. The cookies it set go along. Another origin, and any request that isn't for Markdown, get the response as it came, so it's safe on every path.
 - `md.link` is the page's `Link` value, for a site that maps URLs onto routes without [`aliases`](#public-urls-your-proxy-maps-onto-routes); see [below](#link-from-the-proxy).
+
+`md.redirect`, `md.rewrite` and `md.next` are for gates you write. `md.adopt` is for a response from a third-party middleware, gating `md.request`:
+
+```ts title="proxy.ts"
+import type { NextFetchEvent, NextRequest } from 'next/server'
+import { mdProxy } from '@affordances/md/next/proxy'
+import { authMiddleware } from './auth'
+
+export const proxy = async (request: NextRequest, event: NextFetchEvent) => {
+  const md = mdProxy(request)
+  const answer = await authMiddleware(md.request, event)
+  return answer ? md.adopt(answer) : md.next()
+}
+```
+
+`mdAliasPath(pathname)` is the app route URL a public URL renders through [`aliases`](#public-urls-your-proxy-maps-onto-routes), as the handler resolves it, or the pathname as it is, for a proxy that maps the same URLs and wants one source of truth.
 
 Import it from `@affordances/md/next/proxy`, which holds only the matching, so your proxy's bundle carries neither the converter nor any `markdown.ts`. `@affordances/md/next` exports the same functions.
 

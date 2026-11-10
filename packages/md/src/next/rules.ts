@@ -18,6 +18,9 @@ import {
 export const MD_PATH = '/api/affordances/md'
 // set on the handler's own fetch of the page, so it never gets rewritten back to markdown
 export const RENDER_HEADER = 'x-affordances-md-render'
+// a gate's rewrite or status, adopted by mdProxy for a markdown request: md()'s per-build token, the gate's status,
+// and the page, set on the rewrite's request headers. the handler takes it only with the token
+export const ADOPT_HEADER = 'x-affordances-md-adopt'
 
 export type Has = { type: 'header' | 'query'; key: string; value?: string }
 export type Rewrite = { source: string; destination: string; has?: Has[]; missing?: Has[] }

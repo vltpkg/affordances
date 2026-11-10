@@ -31,7 +31,7 @@ type Check = {
   path: string
   headers?: Record<string, string>
   status: number
-  // each header's value, or null for one that isn't there
+  // each header's value, or null for one that isn't there. a location is compared as sent: relative stays relative
   expect?: Record<string, string | null>
   // text the body has
   body?: string
@@ -69,12 +69,37 @@ const plain: Check[] = [
   // streamed after the shell, which next sends as a 200
   { path: '/gone.md', status: 404, expect: { 'cache-control': PRIVATE }, not: '# Item' },
   { path: '/moved.md', status: 307, expect: { location: '/ok.md', 'cache-control': PRIVATE } },
+  { path: '/forbidden.md', status: 403, expect: { 'cache-control': PRIVATE }, not: '# Item' },
+  { path: '/unauthorized.md', status: 401, expect: { 'cache-control': PRIVATE }, not: '# Item' },
   // the route's own notFoundMarkdown, for the same streamed notFound()
   {
     path: '/missing.md',
     status: 404,
     expect: { 'cache-control': PRIVATE },
     body: '# Nothing here',
+  },
+  // a gate in proxy.js: md.rewrite to another page with a status, and an adopted redirect
+  { path: '/flagged.md', status: 404, expect: { 'cache-control': PRIVATE }, body: '# Fine' },
+  {
+    path: '/flagged.md',
+    headers: { 'x-affordances-md-adopt': 'guess;200;/static-gone' },
+    status: 404,
+    body: '# Fine',
+  },
+  { path: '/old.md', status: 307, expect: { location: '/ok.md', 'cache-control': PRIVATE } },
+  // the gate's own request headers reach the page's markdown.ts, never the client's
+  {
+    path: '/whoami.md',
+    headers: { 'x-user-id': 'victim' },
+    status: 200,
+    body: 'user=alice adopt=null',
+    not: 'victim',
+  },
+  {
+    path: '/who-rw.md',
+    status: 200,
+    expect: { 'cache-control': PRIVATE },
+    body: 'adopt=null via=rewrite',
   },
   // prerendered, with notFound() in a boundary
   { path: '/static-gone.md', status: 404, expect: { 'cache-control': PRIVATE } },
@@ -108,9 +133,11 @@ const plain: Check[] = [
     expect: { link: '</docs/intro.md>; rel="alternate"; type="text/markdown"' },
   },
   { path: '/docs/intro.md', status: 200, body: '# docs/intro' },
+  // /ok is a publicCache page, which llms reads at its twin: in the file though the origin isn't request.url's
   {
     path: '/llms-full.txt',
     status: 200,
+    body: '# Fine',
     expect: { 'cache-control': 'public, max-age=0, s-maxage=3600' },
   },
   {
@@ -136,6 +163,13 @@ const cacheComponents: Check[] = [
   },
   { path: '/static.md', status: 200, cachedLike: '/static', body: '# Static' },
   { path: '/slotted.md', status: 200, expect: { 'cache-control': PRIVATE }, body: 'Filled.' },
+  // a profile of the app's own: on the page, its twin follows; in markdown.ts's publicCache, as next would send it
+  { path: '/weekly.md', status: 200, cachedLike: '/weekly', body: '# Weekly' },
+  {
+    path: '/weekly-route.md',
+    status: 200,
+    expect: { 'cache-control': 's-maxage=604800, stale-while-revalidate=604800' },
+  },
   // a url no route matches: next's own not-found page, converted
   { path: '/nope.md', status: 404, body: 'This page could not be found.' },
 ]
@@ -173,6 +207,7 @@ const install = (version: string, tarball: string, suite: (typeof suites)[number
   const app = join(here, suite.dir)
   cpSync(join(app, 'app'), join(dir, 'app'), { recursive: true })
   cpSync(join(app, 'next.config.mjs'), join(dir, 'next.config.mjs'))
+  if (existsSync(join(app, 'proxy.js'))) cpSync(join(app, 'proxy.js'), join(dir, 'proxy.js'))
   if (existsSync(join(app, 'public')))
     cpSync(join(app, 'public'), join(dir, 'public'), { recursive: true })
   writeFileSync(
@@ -198,9 +233,12 @@ const install = (version: string, tarball: string, suite: (typeof suites)[number
 
 const start = async (dir: string, ready: string) => {
   const port = await freePort()
+  // the handler fetches pages from 127.0.0.1 while the checks ask localhost, as behind a proxy where the public host
+  // isn't the server's own: nothing md answers may depend on request.url's host
   const server = spawn(join(dir, 'node_modules/.bin/next'), ['start', '-p', String(port)], {
     cwd: dir,
     stdio: 'ignore',
+    env: { ...process.env, AFFORDANCES_MD_ORIGIN: `http://127.0.0.1:${port}` },
   })
   const base = `http://localhost:${port}`
   for (let i = 0; i < 120; i++) {
@@ -240,9 +278,7 @@ const problems = async (base: string, check: Check) => {
   const wrong: string[] = []
   if (response.status !== check.status) wrong.push(`status ${response.status}, not ${check.status}`)
   for (const [name, value] of Object.entries(check.expect ?? {})) {
-    const raw = response.headers.get(name)
-    // a location is the same whether it's absolute or relative to the server
-    const got = name === 'location' && raw ? raw.replace(base, '') : raw
+    const got = response.headers.get(name)
     if (got !== value) wrong.push(`${name}: ${got}, not ${value}`)
   }
   if (check.body && !body.includes(check.body)) wrong.push(`no ${JSON.stringify(check.body)}`)

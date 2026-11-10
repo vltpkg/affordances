@@ -90,3 +90,129 @@ test('mdProxy reads like the docs: no casts, and NextResponses out', () => {
   // a plain Request works too, as in a test
   expectTypeOf(mdProxy).parameter(0).toEqualTypeOf<Request>()
 })
+
+// the request headers a rewrite gives the route it rewrites to (NextResponse.rewrite's request.headers)
+const sent = (response: Response, name: string) =>
+  response.headers.get(`x-middleware-request-${name}`)
+const TOKEN = 'build-token'
+
+test('md.request is the page as a NextRequest, with the request method, headers and cookies', () => {
+  const md = proxy('/dashboard.md?tab=a', { cookie: 'sid=1', 'x-flag': 'beta' })
+  expect(md.request).toBeInstanceOf(NextRequest)
+  expect([
+    md.request.nextUrl.pathname + md.request.nextUrl.search,
+    md.request.method,
+    md.request.headers.get('x-flag'),
+    md.request.cookies.get('sid')?.value,
+  ]).toEqual(['/dashboard?tab=a', 'GET', 'beta', '1'])
+})
+
+test("md.rewrite gives a markdown request the destination page's markdown, with its status, and is NextResponse.rewrite otherwise", () => {
+  vi.stubEnv('AFFORDANCES_MD_ADOPT', TOKEN)
+  const flagged = proxy('/new-dashboard.md', { cookie: 'sid=1' }).rewrite('/404', { status: 404 })
+  expect([
+    flagged.headers.get('x-middleware-rewrite'),
+    sent(flagged, 'x-affordances-md-adopt'),
+    sent(flagged, 'cookie'),
+    flagged.headers.get('cache-control'),
+    flagged.headers.get('vary'),
+  ]).toEqual([
+    `${site}/api/affordances/md/404`,
+    `${TOKEN};404;/404`,
+    'sid=1',
+    'private, no-store',
+    'Accept',
+  ])
+  // a page request, and another origin, get next's own rewrite
+  const html = proxy('/new-dashboard').rewrite('/beta')
+  expect([html.headers.get('x-middleware-rewrite'), sent(html, 'x-affordances-md-adopt')]).toEqual([
+    `${site}/beta`,
+    null,
+  ])
+  expect(proxy('/x.md').rewrite('https://other.test/x').headers.get('x-middleware-rewrite')).toBe(
+    'https://other.test/x',
+  )
+  expectTypeOf(proxy('/x').rewrite).parameters.toEqualTypeOf<
+    Parameters<typeof NextResponse.rewrite>
+  >()
+})
+
+test("md.adopt makes a middleware's own redirect or rewrite right for a markdown request, and leaves any other as it is", () => {
+  vi.stubEnv('AFFORDANCES_MD_ADOPT', TOKEN)
+  const md = proxy('/dashboard.md')
+  // a gate's redirect to sign in, with the cookie it set: to the sign-in page's .md
+  const gate = NextResponse.redirect(new URL('/sign-in', site))
+  gate.cookies.set('handshake', '1')
+  const redirected = md.adopt(gate)
+  expect([
+    redirected.status,
+    redirected.headers.get('location'),
+    redirected.headers.get('set-cookie'),
+    redirected.headers.get('cache-control'),
+  ]).toEqual([307, `${site}/sign-in.md`, 'handshake=1; Path=/', 'private, no-store'])
+  // a flag gate's rewrite to a beta page, or to its 404: that page's markdown, with the gate's status
+  const beta = md.adopt(NextResponse.rewrite(new URL('/beta/dashboard', site)))
+  expect([beta.headers.get('x-middleware-rewrite'), sent(beta, 'x-affordances-md-adopt')]).toEqual([
+    `${site}/api/affordances/md/beta/dashboard`,
+    `${TOKEN};200;/beta/dashboard`,
+  ])
+  const missing = md.adopt(NextResponse.rewrite(new URL('/404', site), { status: 404 }))
+  expect(sent(missing, 'x-affordances-md-adopt')).toBe(`${TOKEN};404;/404`)
+  // let through: on to this page's markdown
+  expect(md.adopt(NextResponse.next()).headers.get('x-middleware-rewrite')).toBe(
+    `${site}/api/affordances/md/dashboard`,
+  )
+  // the gate's own answer stays its own, made private
+  const denied = md.adopt(new Response('no', { status: 401 }))
+  expect([denied.status, denied.headers.get('cache-control')]).toEqual([401, 'private, no-store'])
+  // another origin, and a request that isn't for markdown, as they are
+  const away = NextResponse.redirect('https://idp.test/authorize')
+  expect(md.adopt(away)).toBe(away)
+  const html = NextResponse.rewrite(new URL('/beta', site))
+  expect(proxy('/dashboard').adopt(html)).toBe(html)
+})
+
+test('a caller sending the adopt header gets nothing: md.next never carries it, and only the token counts', () => {
+  vi.stubEnv('AFFORDANCES_MD_ADOPT', TOKEN)
+  const forged = { 'x-affordances-md-adopt': `${TOKEN};404;/admin` }
+  // md's own rewrite sets it afresh, never the caller's
+  const rewritten = proxy('/dashboard.md', forged).rewrite('/beta')
+  expect(sent(rewritten, 'x-affordances-md-adopt')).toBe(`${TOKEN};200;/beta`)
+  // without md()'s token in the build, a gate's answer never goes out unverified: 500, nothing carried
+  vi.stubEnv('AFFORDANCES_MD_ADOPT', '')
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const unverified = proxy('/dashboard.md', forged).rewrite('/beta')
+  expect([
+    unverified.status,
+    unverified.headers.get('x-middleware-rewrite'),
+    unverified.headers.get('cache-control'),
+  ]).toEqual([500, null, 'private, no-store'])
+  error.mockRestore()
+})
+
+test("md.adopt and md.rewrite carry the gate's own request headers to the page, and the destination's query", () => {
+  vi.stubEnv('AFFORDANCES_MD_ADOPT', TOKEN)
+  // the client says it's victim; the gate, having checked the session, says alice
+  const md = proxy('/dashboard.md', { 'x-user-id': 'victim', cookie: 'sid=1' })
+  const gate = new Headers({ 'x-user-id': 'alice', cookie: 'sid=1' })
+  const through = md.adopt(NextResponse.next({ request: { headers: gate } }))
+  expect([through.headers.get('x-middleware-rewrite'), sent(through, 'x-user-id')]).toEqual([
+    `${site}/api/affordances/md/dashboard`,
+    'alice',
+  ])
+  const flagged = md.adopt(
+    NextResponse.rewrite(new URL('/beta', site), { request: { headers: gate } }),
+  )
+  expect([sent(flagged, 'x-user-id'), sent(flagged, 'x-affordances-md-adopt')]).toEqual([
+    'alice',
+    `${TOKEN};200;/beta`,
+  ])
+  const own = md.rewrite('/beta', { request: { headers: gate } })
+  expect(sent(own, 'x-user-id')).toBe('alice')
+  // a gate that set none: the client's own, as before
+  expect(sent(md.adopt(NextResponse.rewrite(new URL('/beta', site))), 'x-user-id')).toBe('victim')
+  // the destination's query goes along
+  expect(sent(md.rewrite('/login?next=%2Fdashboard'), 'x-affordances-md-adopt')).toBe(
+    `${TOKEN};200;/login?next=%2Fdashboard`,
+  )
+})
