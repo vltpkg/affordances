@@ -128,6 +128,111 @@ export const scanApp = (
   }
 }
 
+// public/'s files, which next serves before any dynamic page, so a root catch-all never gets a twin for them: each
+// file's url as a request asks for it (percent-encoded, as next matches a source), or a folder's, `/images/*.png|.jpg`,
+// for its files of those extensions only ('' for a name with none), so a page under the same name (/images/gallery,
+// /docs/next.js) keeps its twin. symlinks are followed. the folder holding the most files is folded first, until the
+// pattern hasTwin and the Link rules share fits PUBLIC_BUDGET, which keeps the env value next inlines small too
+export const PUBLIC_ENV = 'AFFORDANCES_MD_PUBLIC'
+const PUBLIC_BUDGET = 2000
+export const scanPublic = (root: string): string[] => {
+  const fs = process.getBuiltinModule?.('node:fs')
+  const path = process.getBuiltinModule?.('node:path')
+  const dir = path?.join(root, 'public')
+  if (!fs || !path || !dir || !fs.existsSync(dir)) return []
+  const files: string[] = []
+  const seen = new Set<string>()
+  const walk = (at: string, url: string) => {
+    let real: string
+    try {
+      real = fs.realpathSync(at)
+    } catch {
+      return
+    }
+    // a link back up the tree is walked once
+    if (seen.has(real)) return
+    seen.add(real)
+    for (const child of fs.readdirSync(at, { withFileTypes: true })) {
+      const next = path.join(at, child.name)
+      let folder = child.isDirectory()
+      if (child.isSymbolicLink())
+        try {
+          folder = fs.statSync(next).isDirectory()
+        } catch {
+          continue
+        }
+      if (folder) walk(next, `${url}/${child.name}`)
+      else files.push(asRequested(`${url}/${child.name}`))
+    }
+  }
+  walk(dir, '')
+  // each folder's files, counted once
+  const under = new Map<string, string[]>()
+  for (const file of files) {
+    const parts = file.split('/').slice(1, -1)
+    for (let i = 1; i <= parts.length; i += 1) {
+      const folder = `/${parts.slice(0, i).join('/')}/`
+      const held = under.get(folder)
+      if (held) held.push(file)
+      else under.set(folder, [file])
+    }
+  }
+  // the most files first, the deepest of those that hold the same. each fold takes its folder's files out of the
+  // pattern and puts one entry in, its length kept as it goes, so no step rebuilds the whole pattern
+  const order = [...under].toSorted(
+    (x, y) => y[1].length - x[1].length || y[0].length - x[0].length,
+  )
+  const entries = new Set(files)
+  const folded: string[] = []
+  let length = publicPattern(files).length
+  const fold = (folder: string, inside: string[]) => {
+    for (const file of inside) if (entries.delete(file)) length -= publicPattern([file]).length + 1
+    for (const entry of folded.filter((other) => other.startsWith(folder))) {
+      entries.delete(entry)
+      length -= publicPattern([entry]).length + 1
+    }
+    const kinds = [
+      ...new Set(
+        inside.map((file) => /\.[^./]*$/.exec(file.slice(file.lastIndexOf('/')))?.[0] ?? ''),
+      ),
+    ]
+    const entry = `${folder}*${kinds.toSorted().join('|')}`
+    entries.add(entry)
+    folded.push(entry)
+    length += publicPattern([entry]).length + 1
+  }
+  for (const [folder, inside] of order) {
+    if (length <= PUBLIC_BUDGET) break
+    // already inside a folded folder
+    if (!folded.some((entry) => folder.startsWith(entry.slice(0, entry.indexOf('*')))))
+      fold(folder, inside)
+  }
+  // folders side by side at the top that still don't fit: public/ itself, by kind of file
+  if (length > PUBLIC_BUDGET) fold('/', files)
+  return [...entries].toSorted((x, y) => x.localeCompare(y))
+}
+// a public/ path as a request's pathname has it
+const asRequested = (name: string) => {
+  const url = new URL('http://public')
+  url.pathname = name
+  return url.pathname
+}
+const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+// public/'s entries as one regex source over a pathname without its leading /: hasTwin tests it, and the Link rules'
+// lookahead is it, so a public file never gets a Link to a twin it doesn't have
+export const publicPattern = (entries: string[]) =>
+  entries
+    .map((entry) => {
+      const star = entry.indexOf('*')
+      if (star < 0) return escaped(entry.slice(1))
+      const kinds = entry
+        .slice(star + 1)
+        .split('|')
+        .map((kind) => (kind ? `[^/]*${escaped(kind)}` : '[^/.]+'))
+      return `${escaped(entry.slice(1, star))}(?:[^/]+/)*(?:${kinds.join('|')})`
+    })
+    .join('|')
+
 // .affordances/md.ts: one lazy import per route's markdown.ts, which @affordances/md/routes is aliased to. written
 // only when it changed, so watchers don't loop. its path, or undefined when there's no markdown.ts
 export const writeMarkdownRoutes = (
@@ -368,6 +473,16 @@ export const builtPages = (): string[] => strings(process.env.AFFORDANCES_MD_ROU
 // the route handlers md() found outside api/, through next's env as the pages are
 export const HANDLERS_ENV = 'AFFORDANCES_MD_HANDLERS'
 export const builtHandlers = (): string[] => strings(process.env.AFFORDANCES_MD_HANDLERS)
+// public/'s files md() found, and whether a url is one of them (or under a folder that stands for its files)
+const builtPublic = perEnv((raw: string | undefined) => {
+  const pattern = publicPattern(strings(raw))
+  return pattern ? new RegExp(`^/(?:${pattern})$`) : undefined
+})
+export const isPublicFile = (pathname: string) =>
+  // spelled out: next inlines process.env.NAME, never process.env[name]
+  builtPublic(process.env.AFFORDANCES_MD_PUBLIC, process.env.AFFORDANCES_MD_PUBLIC)?.test(
+    pathname,
+  ) ?? false
 // path-to-regexp names are word characters: [product-id] → :productid
 const param = (name: string) => name.replace(/\W/g, '')
 

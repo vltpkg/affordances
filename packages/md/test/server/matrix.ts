@@ -1,14 +1,14 @@
-// the server suite on each Next version md supports: test/server's app, built and started with next start against
-// @affordances/md as published (its packed dist), then asked for each twin. md's answers are the same on every
-// version, so one table holds for all of them; a Next that changes something md reads must fail closed, which the
-// table says too. run after `vlt run build`:
+// the server suites on each Next version md supports: test/server's apps (one plain, one with cacheComponents and
+// partialPrefetching), each built and started with next start against @affordances/md as published (its packed dist),
+// then asked for each twin. md's answers are the same on every version, so one table holds for all of them; a Next
+// that changes something md reads must fail closed, which the table says too. run after `vlt run build`:
 //
 //   node test/server/matrix.ts                  the tested versions
 //   node test/server/matrix.ts 16.5.0-canary.50  any others
 //
 // installs are kept under the system temp dir, one per version, so a rerun only reinstalls md
 import { execFileSync, spawn } from 'node:child_process'
-import { cpSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { request } from 'node:http'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -37,11 +37,13 @@ type Check = {
   body?: string
   // text it never has
   not?: string
+  // a path whose Cache-Control this one's equals: the page a twin is cached like
+  cachedLike?: string
 }
 
 const PUBLIC = 's-maxage=3600, stale-while-revalidate=82800'
 const PRIVATE = 'private, no-store'
-const checks: Check[] = [
+const plain: Check[] = [
   { path: '/ok.md', status: 200, expect: { 'cache-control': PUBLIC }, body: '# Fine' },
   // negotiated markdown is never public
   {
@@ -71,6 +73,26 @@ const checks: Check[] = [
     body: '# Fine',
     not: 'evil.test',
   },
+  // a part rendered in the browser by design (dynamic with ssr: false, useSearchParams) isn't an error
+  {
+    path: '/csr.md',
+    status: 200,
+    expect: { 'cache-control': PUBLIC, 'x-affordances-md-error': null },
+    body: '# Charts',
+  },
+  {
+    path: '/sp.md',
+    status: 200,
+    expect: { 'cache-control': PUBLIC, 'x-affordances-md-error': null },
+    body: '# Search',
+  },
+  // under the root catch-all: a page named like a public/ folder keeps its Link, and the folder's file has no twin
+  {
+    path: '/docs/intro',
+    status: 200,
+    expect: { link: '</docs/intro.md>; rel="alternate"; type="text/markdown"' },
+  },
+  { path: '/docs/intro.md', status: 200, body: '# docs/intro' },
   {
     path: '/llms-full.txt',
     status: 200,
@@ -83,8 +105,27 @@ const checks: Check[] = [
   },
 ]
 
+// a twin is cached like its page, by next's own caching, with no markdown.ts: a page cached with cacheLife, a static
+// one. a filled slot reads data with whatever the request carried, so that twin stays private
+const cacheComponents: Check[] = [
+  { path: '/cached.md', status: 200, cachedLike: '/cached', body: '# Cached' },
+  {
+    path: '/cached',
+    status: 200,
+    expect: { 'cache-control': 's-maxage=86400, stale-while-revalidate=518400' },
+  },
+  { path: '/static.md', status: 200, cachedLike: '/static', body: '# Static' },
+  { path: '/slotted.md', status: 200, expect: { 'cache-control': PRIVATE }, body: 'Filled.' },
+]
+
+// each app, the page next start is asked for until it answers, and its checks
+const suites = [
+  { name: 'plain', dir: '.', ready: '/ok', checks: plain },
+  { name: 'cache-components', dir: 'cache-components', ready: '/static', checks: cacheComponents },
+]
+
 const md = fileURLToPath(new URL('../..', import.meta.url))
-const app = fileURLToPath(new URL('.', import.meta.url))
+const here = fileURLToPath(new URL('.', import.meta.url))
 const cache = join(tmpdir(), 'affordances-md-matrix')
 
 const run = (command: string, args: string[], cwd: string) =>
@@ -99,13 +140,19 @@ const freePort = () =>
   })
 
 // the app on this version, with md as packed: what a project that installs it gets
-const install = (version: string, tarball: string) => {
-  const dir = join(cache, version)
+const install = (version: string, tarball: string, suite: (typeof suites)[number]) => {
+  const dir = join(cache, `${version}-${suite.name}`)
   mkdirSync(dir, { recursive: true })
   for (const entry of readdirSync(dir))
     if (entry !== 'node_modules') rmSync(join(dir, entry), { recursive: true, force: true })
+  // npm keeps an installed md whose tarball has the same name and version: always this build's
+  rmSync(join(dir, 'node_modules/@affordances'), { recursive: true, force: true })
+  rmSync(join(dir, 'package-lock.json'), { force: true })
+  const app = join(here, suite.dir)
   cpSync(join(app, 'app'), join(dir, 'app'), { recursive: true })
   cpSync(join(app, 'next.config.mjs'), join(dir, 'next.config.mjs'))
+  if (existsSync(join(app, 'public')))
+    cpSync(join(app, 'public'), join(dir, 'public'), { recursive: true })
   writeFileSync(
     join(dir, 'package.json'),
     JSON.stringify({
@@ -127,7 +174,7 @@ const install = (version: string, tarball: string) => {
   return dir
 }
 
-const start = async (dir: string) => {
+const start = async (dir: string, ready: string) => {
   const port = await freePort()
   const server = spawn(join(dir, 'node_modules/.bin/next'), ['start', '-p', String(port)], {
     cwd: dir,
@@ -136,7 +183,7 @@ const start = async (dir: string) => {
   const base = `http://localhost:${port}`
   for (let i = 0; i < 120; i++) {
     try {
-      await fetch(`${base}/ok`)
+      await fetch(`${base}${ready}`)
       return { base, stop: () => server.kill() }
     } catch {
       await new Promise((resolve) => setTimeout(resolve, 250))
@@ -176,6 +223,11 @@ const problems = async (base: string, check: Check) => {
   }
   if (check.body && !body.includes(check.body)) wrong.push(`no ${JSON.stringify(check.body)}`)
   if (check.not && body.includes(check.not)) wrong.push(`has ${JSON.stringify(check.not)}`)
+  if (check.cachedLike) {
+    const page = (await get(`${base}${check.cachedLike}`)).headers.get('cache-control')
+    const twin = response.headers.get('cache-control')
+    if (twin !== page) wrong.push(`cache-control: ${twin}, not the page's ${page}`)
+  }
   return wrong
 }
 
@@ -186,21 +238,22 @@ const tarball = join(
   run('npm', ['pack', '--pack-destination', cache], md).trim().split('\n').at(-1)!,
 )
 let failed = 0
-for (const version of versions) {
-  const dir = install(version, tarball)
-  const server = await start(dir)
-  try {
-    for (const check of checks) {
-      const wrong = await problems(server.base, check)
-      const label = `${check.path}${check.headers ? ` ${JSON.stringify(check.headers)}` : ''}`
-      console.log(
-        `${wrong.length ? '✗' : '✓'} next ${version} ${label}${wrong.length ? `: ${wrong.join('; ')}` : ''}`,
-      )
-      if (wrong.length) failed++
+for (const version of versions)
+  for (const suite of suites) {
+    const dir = install(version, tarball, suite)
+    const server = await start(dir, suite.ready)
+    try {
+      for (const check of suite.checks) {
+        const wrong = await problems(server.base, check)
+        const label = `${suite.name} ${check.path}${check.headers ? ` ${JSON.stringify(check.headers)}` : ''}`
+        console.log(
+          `${wrong.length ? '✗' : '✓'} next ${version} ${label}${wrong.length ? `: ${wrong.join('; ')}` : ''}`,
+        )
+        if (wrong.length) failed++
+      }
+    } finally {
+      server.stop()
     }
-  } finally {
-    server.stop()
   }
-}
 console.log(failed ? `${failed} failed` : `all passed on ${versions.join(', ')}`)
 process.exitCode = failed ? 1 : 0

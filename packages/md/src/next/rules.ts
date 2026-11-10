@@ -7,6 +7,7 @@ import {
   builtLiteral,
   builtPages,
   compileDestination,
+  isPublicFile,
   perEnv,
   routeSegment,
   sourceParams,
@@ -234,10 +235,13 @@ export const pageRoute = (
 // whether a url on this site has a markdown twin: a page url (not an api route, next's internals or a .md file, except
 // a literalMd page) that is one of md()'s pages or maps onto one through an alias. without md()'s pages (withMd left
 // out, a test) every page url does
-// a route handler that next routes the url to (/llms.txt) is a route of its own, never a page with a twin
+// a route handler that next routes the url to (/llms.txt), or a file in public/ (/openapi.json), is never a page with a
+// twin
 export const hasTwin = (pathname: string) => {
   const path = pathname.replace(/(.)\/$/, '$1')
   if (!(path === '/' || pageRegex.test(path) || isLiteral(path))) return false
+  // a file in public/, which next serves before a dynamic page could answer for it
+  if (isPublicFile(path)) return false
   if (!builtPages().length) return true
   const found = pageRoute(path, { strict: false })
   return found !== undefined && !found.handler

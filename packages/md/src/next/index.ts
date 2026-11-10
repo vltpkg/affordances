@@ -17,9 +17,12 @@ import {
   builtPages,
   checkAliases,
   HANDLERS_ENV,
+  PUBLIC_ENV,
+  publicPattern,
   LITERAL_ENV,
   ROUTES_ENV,
   scanApp,
+  scanPublic,
   sourceRegex,
   linkSources,
   toSource,
@@ -103,6 +106,12 @@ const notInternal = (source: string) =>
       // a lookahead's $ is the whole path's end, so a segment's end is spelled (?:/|$)
       `/:${name}((?!(?:api|_next)(?:/|$))${own ?? '[^/]+'})`,
   )
+// public/'s files take back the Link a page's rule gave them (a root catch-all's, /docs/[slug]'s): one rule after
+// md()'s own, on the pattern hasTwin reads too, so a file never says it has a twin it doesn't have
+const publicLinks = (files: string[]): Header[] => {
+  const pattern = publicPattern(files)
+  return pattern ? [{ source: `/:file(${pattern})`, headers: [{ key: 'Link', value: '' }] }] : []
+}
 
 // the Link rules for a source, a page's (/products/:slug) or an alias's (/package/@:scope/:name): one per way its
 // optional params can be there (linkSources), each kept off its own twin and off api routes and next's internals.
@@ -145,6 +154,7 @@ const withAlternates = (
   user: Header[],
   pages: string[],
   aliases: Record<string, string>,
+  files: string[] = [],
 ): Header[] => {
   const bySource = new Map(alternates(pages).map(({ source, parts }) => [source, parts]))
   const claimed = new Set<string>()
@@ -165,7 +175,7 @@ const withAlternates = (
     .map(({ source, value }) => ({ source, headers: [{ key: 'Link', value }] }))
   // first, so a Link the app sets itself on a broader source still wins; an alias's after a page's, since it's the
   // public url's own
-  return [...own, ...aliasAlternates(aliases), ...merged]
+  return [...own, ...aliasAlternates(aliases), ...publicLinks(files), ...merged]
 }
 const isLink = (header: { key: string }) => header.key.toLowerCase() === 'link'
 
@@ -197,6 +207,7 @@ export const md =
         : config.cacheLife
     const profiles = customProfiles(life)
     const { pages, markdown, problems, handlers } = scanApp(root)
+    const files = scanPublic(root)
     const generated = writeMarkdownRoutes(root, markdown, problems, profiles)
     const cacheLife = cacheLifeEnv(life, config.expireTime)
     // a source next would reject throws here, not on the first request
@@ -209,6 +220,7 @@ export const md =
         ...config.env,
         [ROUTES_ENV]: JSON.stringify(pages),
         ...(handlers.length && { [HANDLERS_ENV]: JSON.stringify(handlers) }),
+        ...(files.length && { [PUBLIC_ENV]: JSON.stringify(files) }),
         ...(cacheLife && { [CACHE_LIFE_ENV]: cacheLife }),
         ...(literalMd.length && { [LITERAL_ENV]: JSON.stringify(literalMd) }),
         ...(aliased.length && { [ALIASES_ENV]: JSON.stringify(aliased) }),
@@ -235,7 +247,7 @@ export const md =
       },
       headers: async () => {
         const user = (await config.headers?.()) ?? []
-        return link ? withAlternates(user, pages, aliases) : user
+        return link ? withAlternates(user, pages, aliases, files) : user
       },
       // the handler imports @affordances/md/routes; point it at this app's generated one
       ...(generated && {

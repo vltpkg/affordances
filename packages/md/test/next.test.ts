@@ -5,6 +5,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { AsyncLocalStorage } from 'node:async_hooks'
@@ -40,6 +41,7 @@ import {
   ALIASES_ENV,
   LITERAL_ENV,
   HANDLERS_ENV,
+  PUBLIC_ENV,
   ROUTES_ENV,
   scanApp,
   unfitExports,
@@ -3081,7 +3083,9 @@ test("llms-full heads each page with its title, unless that's its heading's star
 // and checked again (lib/load-custom-routes.js); it exits the process on one it rejects
 const { default: loadCustomRoutes } = createRequire(import.meta.url)(
   'next/dist/lib/load-custom-routes.js',
-) as { default: (config: object) => Promise<{ rewrites: { beforeFiles: Rewrite[] } }> }
+) as {
+  default: (config: object) => Promise<{ rewrites: { beforeFiles: Rewrite[] }; headers: Header[] }>
+}
 const nextLoads = async (config: object) => {
   const exit = vi.spyOn(process, 'exit').mockImplementation((code) => {
     throw new Error(`next rejected the routes (exit ${code})`)
@@ -3198,6 +3202,85 @@ test('a root catch-all route handler leaves every page its markdown and its twin
   expect(await about.text()).toContain('# About og')
   const og = await handler(new Request(`${site}/og/x`, { headers: { accept: 'text/markdown' } }))
   expect([og.headers.get('content-type'), await og.text()]).toEqual(['image/svg+xml', 'svg'])
+  vi.unstubAllEnvs()
+})
+
+test("a root catch-all twins pages, never public/'s files or next's metadata routes, and keeps their Link off", async () => {
+  const images = Array.from({ length: 3000 }, (_, i) => `public/images/${i}.png`)
+  const project = app([
+    'app/page.tsx',
+    'app/[...slug]/page.tsx',
+    'app/sitemap.ts',
+    'app/robots.ts',
+    'app/manifest.ts',
+    'app/opengraph-image.tsx',
+    'app/llms.txt/route.ts',
+    'public/openapi.json',
+    'public/spec/v 1.yaml',
+    // a folder named like the pages under it, as a docs site's images often are
+    'public/docs/logo.png',
+    ...images,
+  ])
+  // a folder linked in, as a monorepo's shared assets are
+  mkdirSync(join(project, 'shared/fonts'), { recursive: true })
+  writeFileSync(join(project, 'shared/fonts/inter.woff2'), '')
+  symlinkSync(join(project, 'shared/fonts'), join(project, 'public/fonts'))
+  const config: Config = md({ root: project })({})
+  // thousands of images are one entry, with the extensions in it; names as a request asks for them
+  const listed = JSON.parse(config.env![PUBLIC_ENV]!) as string[]
+  expect(listed).toEqual([
+    '/docs/logo.png',
+    '/fonts/inter.woff2',
+    '/images/*.png',
+    '/openapi.json',
+    '/spec/v%201.yaml',
+  ])
+  for (const name of [ROUTES_ENV, HANDLERS_ENV, PUBLIC_ENV]) vi.stubEnv(name, config.env![name]!)
+  const none = [
+    '/openapi.json',
+    '/spec/v%201.yaml',
+    '/images/12.png',
+    '/docs/logo.png',
+    '/fonts/inter.woff2',
+    '/sitemap.xml',
+    '/robots.txt',
+    '/manifest.webmanifest',
+    '/opengraph-image',
+    '/llms.txt',
+  ]
+  expect(none.filter(hasTwin)).toEqual([])
+  // pages under a public/ folder's name keep theirs: /docs/intro beside public/docs/, and under the folded images
+  // folder, any name that isn't one of its files' kinds (/images/gallery, /images/v1.2)
+  const kept = [
+    '/',
+    '/guide/intro',
+    '/openapi',
+    '/images',
+    '/docs/intro',
+    '/images/gallery',
+    '/images/v1.2',
+  ]
+  expect(kept.filter(hasTwin)).toEqual(kept)
+  // a page's links: its own kept go to their twins, the rest stay as they are
+  upstream = () =>
+    new Response(
+      page(
+        `<h1>Guide</h1><p>${[...none, '/guide/next'].map((href) => `<a href="${href}">${href}</a>`).join(' ')}</p>`,
+      ),
+      { headers: { 'content-type': 'text/html' } },
+    )
+  const markdown = await (await createMdHandler()(new Request(`${site}/guide/intro.md`))).text()
+  expect(markdown).toContain(`[/guide/next](${site}/guide/next.md)`)
+  for (const href of none) expect(markdown).toContain(`(${site}${href})`)
+  // and a path has a Link exactly when it has a twin, in rules next loads
+  const rules = await config.headers!()
+  for (const path of [...none.slice(0, 5), ...kept.slice(1)])
+    expect([path, Boolean(linkOn(rules, path))]).toEqual([path, hasTwin(path)])
+  expect(linkOn(rules, '/guide/intro')).toBe(alternate('/guide/intro.md'))
+  expect(linkOn(rules, '/openapi')).toBe(alternate('/openapi.md'))
+  expect(linkOn(rules, '/docs/intro')).toBe(alternate('/docs/intro.md'))
+  expect(linkOn(rules, '/images/gallery')).toBe(alternate('/images/gallery.md'))
+  expect((await nextLoads(config)).headers.length).toBeGreaterThan(0)
   vi.unstubAllEnvs()
 })
 
