@@ -173,6 +173,22 @@ const plain: Check[] = [
 // a twin is cached like its page, by next's own caching, with no markdown.ts: a page cached with cacheLife, a static
 // one. a filled slot reads data with whatever the request carried, so that twin stays private
 const cacheComponents: Check[] = [
+  // each of next's built-in profiles in markdown.ts's publicCache gets the Cache-Control next sends a page cached with
+  // it: md's copy of next's table and header, held against next's own on each version
+  ...['minutes', 'hours', 'days', 'weeks', 'max', 'default'].map((profile) => ({
+    path: `/life-route/${profile}.md`,
+    status: 200,
+    cachedLike: `/life/${profile}`,
+    body: '# Life route',
+  })),
+  // 'seconds' has no page to compare: next never prerenders a cache whose expire is under its MIN_PRERENDERABLE_EXPIRE
+  // (300), so a page cached with it is dynamic and its twin private. in publicCache it's still a second, by design
+  {
+    path: '/life-route/seconds.md',
+    status: 200,
+    expect: { 'cache-control': 's-maxage=1, stale-while-revalidate=59' },
+    body: '# Life route',
+  },
   { path: '/cached.md', status: 200, cachedLike: '/cached', body: '# Cached' },
   {
     path: '/cached',
@@ -324,7 +340,9 @@ const problems = async (base: string, check: Check) => {
   if (check.cachedLike) {
     const page = (await get(`${base}${check.cachedLike}`)).headers.get('cache-control')
     const twin = response.headers.get('cache-control')
-    if (twin !== page) wrong.push(`cache-control: ${twin}, not the page's ${page}`)
+    // two private answers would match too: the page must be one a CDN keeps
+    if (!page?.startsWith('s-maxage=')) wrong.push(`the page's cache-control is ${page}`)
+    else if (twin !== page) wrong.push(`cache-control: ${twin}, not the page's ${page}`)
   }
   return wrong
 }
