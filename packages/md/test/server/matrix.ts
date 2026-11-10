@@ -100,8 +100,13 @@ const plain: Check[] = [
   },
   {
     path: '/llms-errored.txt',
-    status: 503,
-    expect: { 'cache-control': 'no-store', 'x-affordances-md-dropped': '1' },
+    status: 200,
+    expect: {
+      'cache-control': 'public, max-age=0, s-maxage=3600',
+      'x-affordances-md-dropped': null,
+    },
+    body: '# Fine',
+    not: '# Report',
   },
 ]
 

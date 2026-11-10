@@ -1138,32 +1138,36 @@ const renderPages = async (
       headers.set('accept', 'text/markdown')
       // each page's own timeout, from when its fetch starts, not from when the file was asked for
       const signal = AbortSignal.any([AbortSignal.timeout(timeout), overall.signal])
-      let response = await fetch(target, { headers, redirect: 'manual', signal })
-      // a route whose markdown is public sends an anonymous Accept request to its twin: followed, that one hop only
-      const twin = new URL(target)
-      twin.pathname = mdPath(target.pathname)
-      if (response.status === 307 && response.headers.get('location') === twin.href)
-        response = await fetch(twin, { headers, redirect: 'manual', signal })
+      // the page's twin, the url its markdown is cached at; on a literalMd route /x/notes.md may be a page of its own,
+      // so there the page's own url asked for with Accept, which is never ambiguous
+      const at = new URL(target)
+      const twin = mdPath(target.pathname)
+      if (!isLiteral(target.pathname) && !isLiteral(twin)) at.pathname = twin
+      const response = await fetch(at, { headers, redirect: 'manual', signal })
+      // a body never read is let go, so no connection is held for it
+      const left = (why: string, failed = false) => {
+        void response.body?.cancel().catch(() => {})
+        return failed ? { path, failed: why } : { path, left: why }
+      }
       // a server error, or one that asks to be retried, may answer next time: the page failed. any other status (a
       // redirect, a 404, a gate's 401) is the page's answer, and it isn't a page of the public site
       const { status } = response
-      if (status >= 500 || status === 408 || status === 429)
-        return { path, failed: `answered ${status}` }
-      if (!response.ok) return { path, left: `answered ${status}` }
+      if (status >= 500 || status === 408 || status === 429) return left(`answered ${status}`, true)
+      if (!response.ok) return left(`answered ${status}`)
       const type = response.headers.get('content-type') ?? 'no content-type'
-      if (!type.startsWith('text/markdown')) return { path, left: `answered ${type}, not markdown` }
+      if (!type.startsWith('text/markdown')) return left(`answered ${type}, not markdown`)
       // a page its markdown route rendered privately (with credentials of the route's own, a private page, a
       // cookie set in answer) isn't the public view: left out, so the files stay public. negotiated markdown is
       // private too, but only because of where it was served, so it counts
       if (response.headers.has(PERSONAL_HEADER) || response.headers.has('set-cookie'))
-        return { path, left: 'rendered with credentials, or it set a cookie', private: true }
+        return { ...left('rendered with credentials, or it set a cookie'), private: true }
+      // a boundary on it caught an error: the page's own, which a retry won't change, so it's left out of the public
+      // files as a private page is, and they stay cacheable
+      if (response.headers.has(ERROR_HEADER)) return left('a boundary on it caught an error')
       const markdown = await response.text()
-      // converted as far as it streamed, or with a boundary that caught an error: its title still names it, but it
-      // isn't the whole page
+      // converted as far as it streamed: its title still names it, but it isn't the whole page
       if (response.headers.has(PARTIAL_HEADER))
         return { path, markdown, failed: `still loading after ${timeout}ms` }
-      if (response.headers.has(ERROR_HEADER))
-        return { path, markdown, failed: 'a part of it failed to render' }
       return { path, markdown }
     } catch (error) {
       if (overall.signal.aborted) return { path, failed: late }
@@ -1262,12 +1266,17 @@ const text = (
   body: string,
   options: { headers: Headers; publicCache?: LlmsCache },
   failed: number,
+  caller: Request,
 ) =>
   new Response(body, {
     headers: {
       'content-type': 'text/plain; charset=utf-8',
+      // a caller with credentials may have shaped it (a markdown() or a section reading cookies()), so it's theirs
       'cache-control':
-        (!credentialed(options.headers) && llmsCache(options.publicCache)) || 'private, no-store',
+        (!credentialed(options.headers) &&
+          !credentialed(caller.headers) &&
+          llmsCache(options.publicCache)) ||
+        'private, no-store',
       ...(failed && { [DROPPED_HEADER]: String(failed) }),
     },
   })
@@ -1301,7 +1310,16 @@ const short = (name: string | undefined, label: string | undefined) =>
   name && label ? label.replace(new RegExp(`\\s*[·|–—-]\\s*${literal(name)}$`), '') : label
 
 // which pages to include: yours, given the index's routes without a dynamic segment, or those routes as they are
-export type Pages = (request: Request, routes: string[]) => string[] | Promise<string[]>
+// a page of llms-full.txt: a path, rendered from its markdown route, or its markdown given outright (from a data layer),
+// which is never rendered or fetched. its links are made absolute and point at twins, as a rendered page's are
+export type LlmsFullPage =
+  | string
+  | {
+      url: string
+      title?: string
+      markdown: string | ((request: Request) => string | Promise<string>)
+    }
+export type Pages = (request: Request, routes: string[]) => LlmsFullPage[] | Promise<LlmsFullPage[]>
 
 // what the llms handlers use for their own requests. how each page renders is its markdown route's (createMdHandler's
 // options there), since each page is fetched from it
@@ -1320,32 +1338,95 @@ export type LlmsFetchOptions = Pick<MdHandlerOptions, 'origin' | 'headers' | 'ti
 export type LlmsCache = PublicCache<CacheLifeProfile | (string & {})> | false
 
 export type LlmsFullOptions = LlmsFetchOptions & {
-  // the paths to include, in order; defaults to every page that needs no params
+  // the pages to include, in order: paths, or { url, title?, markdown }; defaults to every page that needs no params
   pages?: Pages
+  // more markdown at the end of the file, as createMdHandler's append; head each block `# Title (url)`, as pages are
+  append?: MdHandlerOptions['append']
 }
 
 // app/llms-full.txt/route.ts: every page's markdown in one file, from the same render and converter as /x.md.
 // rendered without the caller's cookies, so it's the public site; each page is headed `# Title (url)`
-export const createLlmsFullHandler = ({ pages, ...given }: LlmsFullOptions = {}) => {
+export const createLlmsFullHandler = ({ pages, append, ...given }: LlmsFullOptions = {}) => {
   checked(given)
-  return async (request: Request): Promise<Response> => {
+  return async (caller: Request): Promise<Response> => {
+    // the public site, whoever asks: everything the app gives (pages, a page's markdown, append, the headers option)
+    // sees one request with none of the visitor's headers, as a twin's public view does
+    const request = viewRequest(caller)
     const options = await resolved(request, given)
     const index = await siteIndex(request, options)
     const routes = staticRoutes(index)
-    const paths = pages ? await pages(request, routes) : routes
-    const rendered = await renderPages(request, paths, options)
-    const texts = rendered.map(({ markdown }) => (markdown ? frontmatter(markdown) : undefined))
+    const list = pages ? await pages(request, routes) : routes
+    const paths = list.filter((page) => typeof page === 'string')
+    const links = twinLinks(new URL(request.url))
+    // the site's own markdown (an object page's markdown(), append) starts alongside the renders, never after them,
+    // each with its failure caught as it happens: one that threw may give it next time, so the file isn't whole
+    const ofSite = list.map(
+      async (page): Promise<{ rendered: Rendered; read?: PageText } | undefined> => {
+        if (typeof page === 'string') return undefined
+        // a url that doesn't parse is a failed page, as a markdown() that throws is, never an unhandled rejection
+        if (!URL.canParse(page.url, request.url))
+          return { rendered: { path: page.url, failed: "its url doesn't parse" } }
+        const url = new URL(page.url, request.url).href
+        try {
+          const markdown =
+            typeof page.markdown === 'function' ? await page.markdown(request) : page.markdown
+          return {
+            rendered: { path: page.url, markdown },
+            read: { title: page.title, body: relinkMarkdown(markdown, url, links) },
+          }
+        } catch (error) {
+          return { rendered: { path: page.url, failed: `markdown() threw: ${String(error)}` } }
+        }
+      },
+    )
+    const appended = (async () => {
+      try {
+        return { extra: (await append?.(request))?.trim() }
+      } catch (error) {
+        return { failed: `append threw: ${String(error)}` }
+      }
+    })()
+    const fetched = await renderPages(request, paths, options)
+    // each in order: a path's rendered markdown, or an object's own, its links resolved against its url
+    let next = 0
+    const entries = await Promise.all(
+      list.map(async (page, i) => {
+        if (typeof page !== 'string') return (await ofSite[i])!
+        const rendered = fetched[next++]!
+        return { rendered, read: rendered.markdown ? frontmatter(rendered.markdown) : undefined }
+      }),
+    )
+    const tail = await appended
+    if (tail.failed) entries.push({ rendered: { path: 'append', failed: tail.failed } })
+    const texts = entries.map(({ read }) => read)
     const shared = sharedTitles(texts)
-    const parts = rendered.map(({ path }, i) => {
-      const page = texts[i]
-      return page ? fullPage(page, new URL(path, request.url).href, index?.name, shared) : ''
-    })
+    const parts = entries.map(({ rendered, read }) =>
+      read ? fullPage(read, new URL(rendered.path, request.url).href, index?.name, shared) : '',
+    )
     // a page that failed is missing, so the file isn't whole: never sent as if it were
-    const failed = dropped('llms-full.txt', rendered)
-    if (failed) return incomplete('llms-full.txt', failed)
-    return text(`${parts.filter(Boolean).join('\n\n')}\n`, options, 0)
+    const failed = dropped(
+      'llms-full.txt',
+      entries.map(({ rendered }) => rendered),
+    )
+    if (failed) {
+      // in production, once per process: the server's log is where a 503 the site never sees gets named (development
+      // names each failed page on every request)
+      const named = entries.flatMap(({ rendered }) =>
+        rendered.failed ? [`${rendered.path} (${rendered.failed})`] : [],
+      )
+      if (process.env.NODE_ENV === 'production' && !toldIncomplete) {
+        toldIncomplete = true
+        console.warn(
+          `[affordances-md] llms-full.txt answered 503: ${named.join(', ')}. It's never cached until every page renders: raise the deadline and the route's maxDuration, or cache the pages' twins.`,
+        )
+      }
+      return incomplete('llms-full.txt', failed)
+    }
+    return text(`${[...parts, tail.extra].filter(Boolean).join('\n\n')}\n`, options, 0, caller)
   }
 }
+// whether an llms-full.txt 503 has been said in production, once per process
+let toldIncomplete = false
 
 // a title more than one page has (a layout's, for every page) isn't a page's name
 const sharedTitles = (pages: (PageText | undefined)[]) => {
@@ -1431,7 +1512,10 @@ export const createLlmsTxtHandler = ({
   ...given
 }: LlmsTxtOptions = {}) => {
   checked(given)
-  return async (request: Request): Promise<Response> => {
+  return async (caller: Request): Promise<Response> => {
+    // the public site, whoever asks: sections and the headers option see one request with none of the visitor's
+    // headers, as a twin's public view does
+    const request = viewRequest(caller)
     const options = await resolved(request, given)
     const index = await siteIndex(request, options)
     const routes = staticRoutes(index)
@@ -1493,7 +1577,7 @@ export const createLlmsTxtHandler = ({
     // a page that failed to render is still linked, by its path, so every link is there and right, and the file
     // stays cacheable; its header counts them
     const failed = dropped('llms.txt', pages)
-    return text(`${[...head, ...body].filter(Boolean).join('\n\n')}\n`, options, failed)
+    return text(`${[...head, ...body].filter(Boolean).join('\n\n')}\n`, options, failed, caller)
   }
 }
 

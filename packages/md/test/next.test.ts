@@ -1431,9 +1431,11 @@ test("llms-full and llms.txt render each page as an anonymous visitor, so markdo
   expect(text).toContain(`# About us (${site}/about)\n\nWe make tees.`)
   expect(text).toContain('Not signed in.')
   expect(text).not.toContain('ALICE-SECRET')
-  expect(full.headers.get('cache-control')).toBe('public, max-age=0, s-maxage=3600')
-  // each page's own url asked for with Accept, which the rewrites and proxy.ts see like any visitor's request
-  expect(routed.map((call) => call.url.pathname)).toEqual(['/about', '/me'])
+  // a caller with credentials gets the public file, never cached as everyone's: a markdown() of the app's own could
+  // have read them through cookies()
+  expect(full.headers.get('cache-control')).toBe('private, no-store')
+  // each page's twin, the url its markdown is cached at, which the rewrites and proxy.ts see like any visitor's request
+  expect(routed.map((call) => call.url.pathname)).toEqual(['/about.md', '/me.md'])
   expect(routed.every((call) => call.headers.get('accept') === 'text/markdown')).toBe(true)
   for (const call of routed) {
     expect(call.headers.has('cookie')).toBe(false)
@@ -1445,7 +1447,7 @@ test("llms-full and llms.txt render each page as an anonymous visitor, so markdo
     createLlmsTxtHandler({ title: 'Shop' })(new Request(`${site}/llms.txt`, { headers: caller })),
   )
   expect(await index.text()).toContain(`- [About us](${site}/about.md)`)
-  expect(index.headers.get('cache-control')).toBe('public, max-age=0, s-maxage=3600')
+  expect(index.headers.get('cache-control')).toBe('private, no-store')
   expect(routed.every((call) => !call.headers.has('cookie'))).toBe(true)
 })
 
@@ -1594,7 +1596,7 @@ test("markdown.ts answers only at the page's own url, the one proxy.ts gated, ma
   expect(calls).toHaveLength(3)
 })
 
-test("llms asks for each page's own url with Accept, so a literal route's x and x.md are each themselves, and skips one the proxy redirects", async () => {
+test("llms asks for each page's twin, and on a literal route the page's own url with Accept, so x and x.md are each themselves; it skips one the proxy redirects", async () => {
   vi.stubEnv(LITERAL_ENV, JSON.stringify(['/x/:pkg']))
   markdownFiles({ '/': () => '# Home' })
   process.env[ROUTES_ENV] = JSON.stringify(['/', '/x/[pkg]'])
@@ -1606,8 +1608,8 @@ test("llms asks for each page's own url with Accept, so a literal route's x and 
   const appFetch = globalThis.fetch
   // a proxy.ts gate, turning the anonymous request for /private away
   vi.stubGlobal('fetch', (url: URL, init: RequestInit) =>
-    new URL(url).pathname === '/private'
-      ? Promise.resolve(new Response(null, { status: 307, headers: { location: '/login' } }))
+    new URL(url).pathname === '/private.md'
+      ? Promise.resolve(new Response(null, { status: 307, headers: { location: '/login.md' } }))
       : appFetch(url, init),
   )
   const text = await (
@@ -1615,7 +1617,11 @@ test("llms asks for each page's own url with Accept, so a literal route's x and 
       new Request(`${site}/llms-full.txt`),
     )
   ).text()
-  expect(routed.map((call) => call.url.pathname)).toEqual(['/', '/x/readme', '/x/readme.md'])
+  expect(routed.map((call) => call.url.pathname)).toEqual([
+    '/index.md',
+    '/x/readme',
+    '/x/readme.md',
+  ])
   expect(text).toBe(
     `# Home (${site}/)\n\n# /x/readme (${site}/x/readme)\n\n# /x/readme.md (${site}/x/readme.md)\n`,
   )
@@ -1637,7 +1643,7 @@ test("llms never fetches a path that leaves the site's origin, nor sends it the 
   })(new Request(`${site}/llms.txt`))
   const origins = [...seen, ...routed].map((call) => new URL(call.url).origin)
   expect(new Set(origins)).toEqual(new Set([site]))
-  expect(routed.map((call) => call.url.pathname)).toEqual(['/about'])
+  expect(routed.map((call) => call.url.pathname)).toEqual(['/about.md'])
 })
 
 test('the llms handlers take only the options they use for their own requests', () => {
@@ -2751,7 +2757,8 @@ const llmsPages = (answer: (path: string, signal: AbortSignal) => Response | Pro
   let inFlight = 0
   const most = { value: 0 }
   vi.stubGlobal('fetch', async (url: URL, init: RequestInit) => {
-    const path = new URL(url).pathname
+    // llms asks for each page's twin: the page it's for
+    const path = mdPagePath(new URL(url).pathname)
     if (path === '/.well-known/affordances.json') return new Response('', { status: 404 })
     inFlight++
     most.value = Math.max(most.value, inFlight)
@@ -2796,7 +2803,7 @@ test('llms renders a few pages at a time, 8 by default, each with its own timeou
 })
 
 // one page that renders, and one of each way a page is left out by design
-const pages = () => ['/fine', '/gone', '/moved', '/file', '/mine', '//evil.test/x']
+const pages = () => ['/fine', '/gone', '/moved', '/file', '/errored', '/mine', '//evil.test/x']
 const leftOut = (path: string) =>
   path === '/gone'
     ? new Response('', { status: 404 })
@@ -2806,7 +2813,9 @@ const leftOut = (path: string) =>
         ? new Response('{}', { headers: { 'content-type': 'application/json' } })
         : path === '/mine'
           ? mdPage('Mine', '# Mine', { 'x-affordances-md-personal': '1' })
-          : mdPage('Fine', '# Fine\n\nBody.')
+          : path === '/errored'
+            ? mdPage('Errored', '# Errored\n\nLoading…', { 'x-affordances-md-error': '1' })
+            : mdPage('Fine', '# Fine\n\nBody.')
 
 test('a page llms leaves out by design is named, with why, in development, and the file stays public', async () => {
   llmsPages(leftOut)
@@ -2818,7 +2827,7 @@ test('a page llms leaves out by design is named, with why, in development, and t
   expect(full.headers.get('cache-control')).toBe('public, max-age=0, s-maxage=3600')
   expect(full.headers.has('x-affordances-md-dropped')).toBe(false)
   expect(warn.mock.calls.map(([message]) => message)).toEqual([
-    '[affordances-md] llms-full.txt left out 4 pages: /gone (answered 404), /moved (answered 307), /file (answered application/json, not markdown), //evil.test/x (not on this site)',
+    '[affordances-md] llms-full.txt left out 5 pages: /gone (answered 404), /moved (answered 307), /file (answered application/json, not markdown), /errored (a boundary on it caught an error), //evil.test/x (not on this site)',
   ])
   // a private page is usually one meant to be public: an error that says what keeps it out
   expect(error.mock.calls.map(([message]) => message)).toEqual([
@@ -2834,7 +2843,7 @@ test('a page llms leaves out by design is named, with why, in development, and t
   expect(index.headers.get('cache-control')).toBe('public, max-age=0, s-maxage=3600')
   expect(index.headers.has('x-affordances-md-dropped')).toBe(false)
   expect(String(warn.mock.calls[0]?.[0])).toMatch(
-    /^\[affordances-md\] llms\.txt left out 4 pages: \/gone/,
+    /^\[affordances-md\] llms\.txt left out 5 pages: \/gone/,
   )
   // in production: nothing logged
   vi.stubEnv('NODE_ENV', 'production')
@@ -2855,7 +2864,6 @@ const failing: Record<string, (signal: AbortSignal) => Response | Promise<Respon
   '/broken': () => new Response('', { status: 500 }),
   '/busy': () => new Response('', { status: 429 }),
   '/partial': () => mdPage('Partial', '# Partial\n\nHalf.', { 'x-affordances-md-partial': '1' }),
-  '/errored': () => mdPage('Errored', '# Errored\n\nLoading…', { 'x-affordances-md-error': '1' }),
   '/refused': () => Promise.reject(new TypeError('fetch failed')),
 }
 
@@ -2882,7 +2890,6 @@ test('llms-full with a page that failed is a 503 no cache keeps, with the count 
     "[affordances-md] llms-full.txt couldn't render 1 page: /broken (answered 500)",
     "[affordances-md] llms-full.txt couldn't render 1 page: /busy (answered 429)",
     "[affordances-md] llms-full.txt couldn't render 1 page: /partial (still loading after 20ms)",
-    "[affordances-md] llms-full.txt couldn't render 1 page: /errored (a part of it failed to render)",
     "[affordances-md] llms-full.txt couldn't render 1 page: /refused (failed: TypeError: fetch failed)",
   ])
   // with a page left out by design as well, only the failed one counts
@@ -2901,27 +2908,201 @@ test('llms-full with a page that failed is a 503 no cache keeps, with the count 
   warn.mockRestore()
 })
 
+test('a 503 from llms-full is said in production too, once per process, naming the pages and why', async () => {
+  vi.stubEnv('NODE_ENV', 'production')
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  llmsPages((at, signal) => (at === '/slow' ? failing['/slow']!(signal) : mdPage('Fine', '# Fine')))
+  for (let i = 0; i < 2; i++) {
+    const full = await createLlmsFullHandler({ pages: () => ['/fine', '/slow'], timeout: 20 })(
+      new Request(`${site}/llms-full.txt`),
+    )
+    // the body is the count only: the file is public, and a page's name could be private
+    expect([full.status, await full.text()]).toEqual([
+      503,
+      "llms-full.txt is incomplete: 1 page couldn't be rendered. Retry in 30 seconds.\n",
+    ])
+  }
+  expect(warn.mock.calls.map(([message]) => message)).toEqual([
+    "[affordances-md] llms-full.txt answered 503: /slow (took longer than 20ms). It's never cached until every page renders: raise the deadline and the route's maxDuration, or cache the pages' twins.",
+  ])
+  warn.mockRestore()
+  vi.unstubAllEnvs()
+})
+
 const cache = async (llms: (request: Request) => Promise<Response>) =>
   (await llms(new Request(`${site}/llms-full.txt`))).headers.get('cache-control')
 const fine = () => ['/fine']
 
-test("llms follows an opted-in route's redirect to its own twin, that one hop only", async () => {
-  const fetched: string[] = []
+test("llms-full starts the site's own markdown alongside the renders, and an append that throws makes it a 503", async () => {
+  const events: string[] = []
   llmsPages(async (path) => {
+    events.push(`render ${path}`)
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    events.push(`rendered ${path}`)
+    return mdPage('Slow', '# Slow')
+  })
+  await createLlmsFullHandler({
+    pages: () => [
+      '/slow',
+      { url: '/given', markdown: () => (events.push('markdown()'), '# Given') },
+    ],
+    append: () => (events.push('append'), undefined),
+  })(new Request(`${site}/llms-full.txt`))
+  // both before the render is done, not after it
+  expect(events.indexOf('markdown()')).toBeLessThan(events.indexOf('rendered /slow'))
+  expect(events.indexOf('append')).toBeLessThan(events.indexOf('rendered /slow'))
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const broken = await createLlmsFullHandler({
+    pages: () => ['/slow'],
+    append: () => {
+      throw new Error('cms down')
+    },
+  })(new Request(`${site}/llms-full.txt`))
+  expect([broken.status, broken.headers.get('cache-control')]).toEqual([503, 'no-store'])
+  // a page url that doesn't parse fails it the same way, never as a rejection no one awaits
+  const rejected: unknown[] = []
+  const onRejection = (reason: unknown) => rejected.push(reason)
+  process.on('unhandledRejection', onRejection)
+  const bad = await createLlmsFullHandler({
+    pages: () => ['/slow', { url: 'http://[', markdown: '# Bad' }],
+  })(new Request(`${site}/llms-full.txt`))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  process.off('unhandledRejection', onRejection)
+  expect([bad.status, rejected]).toEqual([503, []])
+  warn.mockRestore()
+})
+
+test('llms-full takes pages with their markdown given, never rendered, and append at the end', async () => {
+  const fetched: string[] = []
+  llmsPages((path) => {
     fetched.push(path)
-    if (path === '/public')
-      return new Response(null, { status: 307, headers: { location: `${site}/public.md` } })
-    if (path === '/away')
-      return new Response(null, { status: 307, headers: { location: `${site}/elsewhere.md` } })
-    return mdPage(`Page ${path}`, `# Page ${path}\n\nBody.`)
+    // as its markdown route sends it: links already resolved
+    return mdPage('Guide', `# Guide\n\nRead [the changelog](${site}/changelog.md).`)
+  })
+  vi.stubEnv(ROUTES_ENV, JSON.stringify(['/', '/guide', '/changelog', '/package/[name]']))
+  const full = await createLlmsFullHandler({
+    pages: () => [
+      '/guide',
+      // a string, its title given
+      {
+        url: '/changelog',
+        title: 'Changelog',
+        markdown: '## 1.0\n\nSee [the guide](/guide) and [npm](https://npmjs.com).',
+      },
+      // a function of the request, named by its own heading
+      {
+        url: '/package/express',
+        markdown: async (request) => `# express\n\nAsked at ${new URL(request.url).pathname}.`,
+      },
+    ],
+    append: () => `# Support (${site}/support)\n\nEmail us.`,
+  })(new Request(`${site}/llms-full.txt`))
+  expect(await full.text()).toBe(
+    [
+      `# Guide (${site}/guide)\n\nRead [the changelog](${site}/changelog.md).`,
+      // its links made absolute and twinned, as a rendered page's are
+      `# Changelog (${site}/changelog)\n\n## 1.0\n\nSee [the guide](${site}/guide.md) and [npm](https://npmjs.com/).`,
+      `# express (${site}/package/express)\n\nAsked at /llms-full.txt.`,
+      `# Support (${site}/support)\n\nEmail us.\n`,
+    ].join('\n\n'),
+  )
+  expect(fetched).toEqual(['/guide'])
+  // a markdown() that throws is a page that failed: the file isn't whole
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const broken = await createLlmsFullHandler({
+    pages: () => [
+      {
+        url: '/package/x',
+        markdown: () => {
+          throw new Error('registry down')
+        },
+      },
+    ],
+  })(new Request(`${site}/llms-full.txt`))
+  expect([broken.status, broken.headers.get('x-affordances-md-dropped')]).toEqual([503, '1'])
+  expect(String(warn.mock.calls[0]?.[0])).toContain(
+    '/package/x (markdown() threw: Error: registry down)',
+  )
+  warn.mockRestore()
+  vi.unstubAllEnvs()
+})
+
+test("the llms files are the public site whoever asks: what the app gives sees no visitor's headers, and a credentialed caller's copy is private", async () => {
+  llmsPages(() => mdPage('Guide', '# Guide\n\nBody.'))
+  const heard: string[] = []
+  const who = (request: Request) => {
+    const said = `cookie=${request.headers.get('cookie') ?? 'none'} auth=${request.headers.get('authorization') ?? 'none'}`
+    heard.push(said)
+    return said
+  }
+  const full = createLlmsFullHandler({
+    pages: (request) => {
+      who(request)
+      return [
+        '/guide',
+        { url: '/who', title: 'Who', markdown: (asked) => `# Who\n\n${who(asked)}` },
+      ]
+    },
+    append: (request) => `# Appended (${site}/appended)\n\n${who(request)}`,
+  })
+  const index = createLlmsTxtHandler({
+    sections: (request) => [{ title: who(request), pages: ['/guide'] }],
+  })
+  for (const headers of [
+    {},
+    { cookie: 'session=alice' },
+    { authorization: 'Bearer alice-token' },
+  ] as Record<string, string>[]) {
+    const caller = Object.keys(headers).length > 0
+    for (const [llms, file] of [
+      [full, 'llms-full.txt'],
+      [index, 'llms.txt'],
+    ] as const) {
+      const response = await llms(new Request(`${site}/${file}`, { headers }))
+      const body = await response.text()
+      expect(body).not.toContain('alice')
+      expect([file, headers, response.headers.get('cache-control')]).toEqual([
+        file,
+        headers,
+        caller ? 'private, no-store' : 'public, max-age=0, s-maxage=3600',
+      ])
+    }
+  }
+  expect(new Set(heard)).toEqual(new Set(['cookie=none auth=none']))
+})
+
+test("llms asks for each page's twin directly, follows no redirect, and lets go of a body it doesn't read", async () => {
+  const fetched: string[] = []
+  let cancelled = 0
+  const unread = () =>
+    new ReadableStream({
+      start: (controller) => controller.enqueue(new Uint8Array(8)),
+      cancel: () => void cancelled++,
+    })
+  vi.stubGlobal('fetch', async (url: URL) => {
+    const at = new URL(url).pathname
+    fetched.push(at)
+    if (at === '/.well-known/affordances.json') return new Response('', { status: 404 })
+    if (at === '/away.md')
+      return new Response(unread(), { status: 307, headers: { location: '/elsewhere.md' } })
+    if (at === '/gone.md') return new Response(unread(), { status: 404 })
+    return mdPage(`Page ${at}`, `# Page ${at}\n\nBody.`)
   })
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-  const full = await createLlmsFullHandler({ pages: () => ['/public', '/away'] })(
+  const full = await createLlmsFullHandler({ pages: () => ['/', '/public', '/away', '/gone'] })(
     new Request(`${site}/llms-full.txt`),
   )
-  expect(await full.text()).toBe(`# Page /public.md (${site}/public)\n\nBody.\n`)
-  // a redirect anywhere else is the page's answer, left out by design, and never followed
-  expect(fetched.toSorted()).toEqual(['/away', '/public', '/public.md'])
+  expect(await full.text()).toBe(
+    `# Page /index.md (${site}/)\n\nBody.\n\n# Page /public.md (${site}/public)\n\nBody.\n`,
+  )
+  // each twin once, never a redirect's target
+  expect(fetched.filter((at) => !at.startsWith('/.well-known')).toSorted()).toEqual([
+    '/away.md',
+    '/gone.md',
+    '/index.md',
+    '/public.md',
+  ])
+  expect(cancelled).toBe(2)
   warn.mockRestore()
 })
 
@@ -2983,13 +3164,12 @@ test('llms.txt with a page that failed links it by its path, stays cacheable, an
     `- [/broken](${site}/broken.md)`,
     `- [/busy](${site}/busy.md)`,
     `- [Partial](${site}/partial.md)`,
-    `- [Errored](${site}/errored.md)`,
     `- [/refused](${site}/refused.md)`,
   ])
   expect(index.headers.get('cache-control')).toBe('public, max-age=0, s-maxage=3600')
-  expect(index.headers.get('x-affordances-md-dropped')).toBe('6')
+  expect(index.headers.get('x-affordances-md-dropped')).toBe('5')
   expect(String(warn.mock.calls[0]?.[0])).toMatch(
-    /^\[affordances-md\] llms\.txt couldn't render 6 pages: \/slow/,
+    /^\[affordances-md\] llms\.txt couldn't render 5 pages: \/slow/,
   )
   warn.mockRestore()
 })
