@@ -40,7 +40,7 @@ import { createMdHandler } from '@affordances/md/next'
 export const GET = createMdHandler({ maxBytes: 32 * 1024 * 1024, timeout: 20_000 })
 ```
 
-- `maxBytes`, 6 MiB by default: the largest page HTML it converts. It's a memory guard, since a page is read whole before converting. A page past it answers `413` saying so, and the server logs which page and the line to change, so a page that grows (a report, a changelog) is caught when it crosses it.
+- `maxBytes`, 16 MiB by default: the most of a page's HTML it keeps to convert, a memory guard. Next's Flight data (the payload a page hydrates from, and with `partialPrefetching` most of a big page's bytes) doesn't count: it's read for its error rows as the page streams and never kept, so a 30 MB `partialPrefetching` page converts with the default. The whole response, Flight data and all, can be up to 8 times `maxBytes`. A page past either answers `413` saying so, and the server logs which page and the line to change, so a page that grows (a report, a changelog) is caught when it crosses it.
 - `timeout`, 10 seconds by default: how long the page has to stream. A page still streaming then is converted as far as it got and marked partial; one that sent nothing answers `504`.
 
 The rest of its options (`origin`, `headers`, `append`, `linkTwins`) are in [Caching and privacy](/docs/plugins/md/caching).

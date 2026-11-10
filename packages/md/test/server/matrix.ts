@@ -66,6 +66,13 @@ const plain: Check[] = [
     status: 200,
     expect: { 'cache-control': PRIVATE, 'x-affordances-md-error': '1' },
   },
+  // a sanitized README whose attribute holds markup like Flight data and md's own: it stays the link's title
+  {
+    path: '/readme.md',
+    status: 200,
+    body: '# left-pad',
+    not: '\n# evil-pkg',
+  },
   // streamed after the shell, which next sends as a 200
   { path: '/gone.md', status: 404, expect: { 'cache-control': PRIVATE }, not: '# Item' },
   { path: '/moved.md', status: 307, expect: { location: '/ok.md', 'cache-control': PRIVATE } },

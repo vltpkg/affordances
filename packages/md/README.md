@@ -36,7 +36,7 @@ import { md } from '@affordances/md/next'
 export default withAffordances(nextConfig, { plugins: [md()] })
 ```
 
-`init`'s route is one line, `export { GET } from '@affordances/md/next'`, and it's your file. To set options, replace it: `export const GET = createMdHandler({ maxBytes: 32 * 1024 * 1024, timeout: 20_000 })`. `maxBytes` (6 MiB by default) is the largest page HTML it converts; past it, the page answers `413` with the line to change, and the server logs it. `timeout` (10 seconds) is how long a page has to stream.
+`init`'s route is one line, `export { GET } from '@affordances/md/next'`, and it's your file. To set options, replace it: `export const GET = createMdHandler({ maxBytes: 32 * 1024 * 1024, timeout: 20_000 })`. `maxBytes` (16 MiB by default) is the most HTML it keeps from a page; Next's Flight data is read as it streams and never kept, so it doesn't count, and the whole response can be up to 8 times it. Past either, the page answers `413` with the line to change, and the server logs it. `timeout` (10 seconds) is how long a page has to stream.
 
 Every page answers with `Link: </x.md>; rel="alternate"; type="text/markdown"`, so agents can find the markdown (`md({ link: false })` turns it off). For a `<link>` in the HTML too, add `alternates: mdAlternate(path)` to `generateMetadata`.
 
@@ -108,7 +108,7 @@ Markdown rendered with the caller's cookies or authorization, or from a page tha
 
 - **Redirects:** a same-origin redirect becomes a redirect to the `.md` url, including a `redirect()` that runs after the page started streaming (Next sends that as a 200 that refreshes; the handler answers 307, or 308 when permanent). A cross-origin redirect is passed through, never followed.
 - **Errors:** a `notFound()`, `forbidden()` or `unauthorized()` that runs after the page started streaming (Next sends the shell as a 200, then the error) answers `404`, `403` or `401`, `private, no-store`, never the shell's markdown. A page with a boundary that caught any other error (an `error.tsx`) keeps its status, and is `private, no-store` with `x-affordances-md-error: 1`, since part of it is missing.
-- **Limits:** a page has 10s to render (`timeout`) and at most 6 MiB of HTML (`maxBytes`). A page still streaming at the timeout is converted as far as it got: unresolved boundaries keep their fallback, a note says so, and the response is `private, no-store` with `x-affordances-md-partial: 1`. One that sends nothing by then is a `504`.
+- **Limits:** a page has 10s to render (`timeout`) and at most 16 MiB of HTML to keep (`maxBytes`), Flight data aside. A page still streaming at the timeout is converted as far as it got: unresolved boundaries keep their fallback, a note says so, and the response is `private, no-store` with `x-affordances-md-partial: 1`. One that sends nothing by then is a `504`.
 - **Origin:** set `AFFORDANCES_MD_ORIGIN` when the server can't reach itself at the request's origin. A path that would leave the origin (`//host/…`) answers 400 before anything is fetched.
 - **Headers:** `createMdHandler({ headers })` adds request headers to the page fetch, e.g. `x-vercel-protection-bypass` on a protected preview.
 

@@ -509,111 +509,639 @@ const slotMarkers = (parent: HastRoot | Element, found: Element[] = []) => {
 const FILLABLE = 'affordancesSlot'
 
 // next's flight data (self.__next_f pushes: the payload the client hydrates from and, with partialPrefetching, a
-// second render to prefetch from) is most of a big page's bytes and none of what it says. each push is swapped for an
-// empty script before parsing, and the swap is kept only if every one parsed as a script: one inside an attribute, a
-// comment or a textarea isn't a script, so the page is parsed as sent. a push has no < in it (next escapes them), so
-// in a page as next sends it, the script ends where the match does. its open tag is read as the tokenizer reads it,
-// for the shapes next sends (attributes bare or double-quoted): a quoted value runs to its closing quote, > and all,
-// and any other shape doesn't match, so a value can't pass for a push and leave the script's text on the page
+// second render to prefetch from) is most of a big page's bytes and none of what it says. flightStripper takes each
+// push out as the page streams, reading it for its error rows: a push is the text of a script element, as parse5 would
+// find one, so a <script in a comment, an attribute, raw text or rcdata, a <template> or another script is never taken
+// for one. only the script's text is swapped, for a nonce (hex and dashes), so even a mistaken swap can't end the context
+// it's in. after parsing, every nonce must be a script's whole text and no script may still hold a push, or the swaps
+// can't be trusted
 const CALL = String.raw`\s*(?:\(self\.__next_f\s*=\s*self\.__next_f\s*\|\|\s*\[\]\)|self\.__next_f)\.push\(`
-const FLIGHT = new RegExp(
-  String.raw`<script(?:\s+[\w-]+(?:="[^"]*")?)*\s*>${CALL}([^<]*)\)\s*;?\s*<\/script>`,
-  'g',
-)
-// the page and its flight data: each push's argument, in page order. a page parsed as sent reads it from its own
-// script elements instead, since a match there may not have been one
 const PUSH = new RegExp(String.raw`^${CALL}([\s\S]*)\)\s*;?\s*$`)
-const parsed = (html: string): { tree: HastRoot; errors: string[] } => {
-  // a nonce per page, so nothing in it can pass for a swap
-  const nonce = crypto.randomUUID()
-  const flight: string[] = []
-  const lean = html.replace(FLIGHT, (_, push: string) => {
-    flight.push(push)
-    return `<script data-affordances-flight="${nonce}"></script>`
-  })
-  let tree = fromHtml(flight.length ? lean : html)
-  let streamed = resolveStreamed(tree)
-  const swapped = streamed.scripts.filter((s) => s.properties.dataAffordancesFlight === nonce)
-  if (swapped.length !== flight.length) {
-    tree = fromHtml(html)
-    streamed = resolveStreamed(tree)
-    flight.length = 0
-    for (const script of streamed.scripts) {
-      const push = PUSH.exec(toString(script))?.[1]
-      if (push !== undefined) flight.push(push)
-    }
-  }
-  streamed.resolve()
-  return { tree, errors: flight.length ? flightErrors(flight) : [] }
-}
+// a script that starts like a push is one, read or not: one that doesn't end like one can't be read
+const PUSHED = new RegExp(String.raw`^${CALL}`)
 
-// the digests of the error rows (<id>:E{"digest":…}) in a page's flight data, '' for one without, read as react's
-// client reads the stream: next's [1, text] and [3, base64] pushes are its bytes, in order, and each row is an id, a
-// tag, then either a length and that many bytes (a long string, a typed array) or everything to the next newline. a
-// row's bytes are skipped by their length, so a page's own long text (a readme, which react sends raw in a T row) can't
-// pass for a row
-const LENGTH_TAGS = new Set([...'TAOobUSsLlGgMmV'].map((tag) => tag.charCodeAt(0)))
-const hex = (byte: number) => (byte > 96 ? byte - 87 : byte - 48)
-const flightBytes = (flight: string[]): Uint8Array | undefined => {
-  const parts: Uint8Array[] = []
-  for (const push of flight) {
-    let value: unknown
-    try {
-      value = JSON.parse(push)
-    } catch {
-      return undefined
-    }
-    if (!Array.isArray(value)) return undefined
-    if (value[0] === 1 && typeof value[1] === 'string')
-      parts.push(new TextEncoder().encode(value[1]))
-    else if (value[0] === 3 && typeof value[1] === 'string')
-      parts.push(Uint8Array.from(atob(value[1]), (char) => char.charCodeAt(0)))
-  }
-  const bytes = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0))
-  let at = 0
-  for (const part of parts) {
-    bytes.set(part, at)
-    at += part.length
-  }
-  return bytes
+// the html tokenizer's raw text (rawtext and rcdata) elements: their text runs to their own end tag. noscript isn't
+// one: the page is parsed with scripting off, as hast-util-from-html parses it
+const RAW = new Set(['style', 'xmp', 'iframe', 'noembed', 'noframes', 'title', 'textarea'])
+// a start tag that ends foreign content (svg, math) and is an html element again
+const BREAKOUT = new Set(
+  'b big blockquote body br center code dd div dl dt em embed h1 h2 h3 h4 h5 h6 head hr i img li listing menu meta nobr ol p pre ruby s small span strong strike sub sup table tt u ul var'.split(
+    ' ',
+  ),
+)
+// a foreign element whose content is html: svg's foreignObject, desc and title, math's text elements, and an
+// annotation-xml that says it's html
+const INTEGRATION = {
+  svg: new Set(['foreignobject', 'desc', 'title']),
+  math: new Set(['mi', 'mo', 'mn', 'ms', 'mtext']),
 }
-const flightErrors = (flight: string[]): string[] => {
-  const digests: string[] = []
-  // a push react's client couldn't read either: an error of its own, since what's in it can't be told
-  const bytes = flightBytes(flight)
-  if (!bytes) return ['']
-  let i = 0
-  while (i < bytes.length) {
-    // the id, to its colon
-    while (i < bytes.length && bytes[i] !== 58) i += 1
-    i += 1
-    const tag = bytes[i]!
-    if (LENGTH_TAGS.has(tag)) {
-      let length = 0
-      for (i += 1; i < bytes.length && bytes[i] !== 44; i += 1)
-        length = (length << 4) | hex(bytes[i]!)
-      i += 1 + length
-      continue
-    }
-    // a capital letter (and #, r, x) is a tag of its own; anything else starts a model row
-    const tagged = (tag > 64 && tag < 91) || tag === 35 || tag === 114 || tag === 120
-    const start = tagged ? i + 1 : i
-    let end = bytes.indexOf(10, start)
-    if (end === -1) end = bytes.length
-    if (tag === 69) {
-      try {
-        const row = JSON.parse(new TextDecoder().decode(bytes.subarray(start, end))) as {
-          digest?: unknown
+const space = (char: string | undefined) =>
+  char === ' ' || char === '\n' || char === '\t' || char === '\f' || char === '\r'
+const alpha = (char: string | undefined) => !!char && /[a-z]/i.test(char)
+const lower = (text: string) =>
+  /[A-Z]/.test(text) ? text.replace(/[A-Z]+/g, (upper) => upper.toLowerCase()) : text
+// a script's end tag, or (in its escaped text) what changes how its text is read
+const SCRIPT_DATA = /<\/script(?=[\t\n\f\r />])|<!--/gi
+const SCRIPT_ESCAPED = /<\/script(?=[\t\n\f\r />])|<script(?=[\t\n\f\r />])|-->/gi
+const SCRIPT_DOUBLE = /<\/script(?=[\t\n\f\r />])|-->/gi
+// the longest lookahead any state needs: <!DOCTYPE, <![CDATA[, </script and the character after it
+const LOOKAHEAD = 10
+// a whole tag in html content, as the tokenizer reads it, in one step: its name, then attributes (a quote starts a value
+// only after a name and =, as in the tokenizer, and nothing outside a quoted value can hold >), to its >. each part
+// takes all it can, so it never backtracks into another reading. anything else (a quote that hasn't closed yet, an
+// attribute starting with =) goes the long way
+const TAG = new RegExp(
+  String.raw`([a-zA-Z][^\t\n\f\r />]*)(?:[\t\n\f\r /]+(?![\t\n\f\r /])|[^\t\n\f\r />=]+(?![^\t\n\f\r />=])(?:[\t\n\f\r ]*=[\t\n\f\r ]*(?:"[^"]*"|'[^']*'|[^\t\n\f\r >"']+(?![^\t\n\f\r >])))?)*>`,
+  'y',
+)
+const NAME_RUN = /[^\t\n\f\r />=]+/y
+const VALUE_RUN = /[^\t\n\f\r >]+/y
+const SPACE_RUN = /[\t\n\f\r ]+/y
+
+type Foreign = { name: string; ns: 'svg' | 'math'; html: boolean }
+type State =
+  | 'data'
+  | 'tagName'
+  | 'attributes'
+  | 'commentStart'
+  | 'comment'
+  | 'bogus'
+  | 'cdata'
+  | 'raw'
+  | 'script'
+  | 'foreignScript'
+  | 'plaintext'
+type Attribute =
+  | 'before'
+  | 'name'
+  | 'after'
+  | 'beforeValue'
+  | 'dq'
+  | 'sq'
+  | 'unquoted'
+  | 'afterValue'
+  | 'slash'
+
+// what a push said: its error rows' digests, and whether any push or error row couldn't be read
+export type Swapped = { nonce: string; count: number; errors: string[]; unreadable: boolean }
+export const flightStripper = () => {
+  const nonce = crypto.randomUUID()
+  const rows = rowScanner()
+  let count = 0
+  let carry = ''
+  let state: State = 'data'
+  // the tag being read: its name (lowercased, the first 32 characters), end or start, self-closing, its attributes'
+  // names, and annotation-xml's encoding
+  let name = ''
+  let end = false
+  let selfClosing = false
+  let attribute: Attribute = 'before'
+  let attributeName = ''
+  let attributes = new Set<string>()
+  let encoding = ''
+  // the raw text element being read, a script's text so far (held, since it's swapped whole or given back whole), and
+  // where in its escapes the script's text is
+  let raw = ''
+  let script: string[] = []
+  let escape: 'data' | 'escaped' | 'double' = 'data'
+  let dashed = false
+  // the open foreign elements, and how many templates are open: a script in a template's content isn't in the page
+  const foreign: Foreign[] = []
+  let templates = 0
+  const inForeign = () => foreign.length > 0 && !foreign.at(-1)!.html
+  // a script element's text is complete: a push (not in a template) is swapped for the nonce, anything else is given
+  // back as it was
+  const ended = (out: string[]) => {
+    const text = script.join('')
+    script = []
+    if (templates || !PUSHED.test(text)) return void out.push(text)
+    const push = PUSH.exec(text)?.[1]
+    if (push === undefined) rows.unreadable()
+    else rows.push(push)
+    count += 1
+    out.push(nonce)
+  }
+  const startTag = () => {
+    if (inForeign()) {
+      if (
+        BREAKOUT.has(name) ||
+        (name === 'font' && ['color', 'face', 'size'].some((a) => attributes.has(a)))
+      )
+        while (foreign.length && !foreign.at(-1)!.html) foreign.pop()
+      else {
+        if (name === 'script' && !selfClosing) return 'foreignScript'
+        if (!selfClosing) {
+          const ns = name === 'svg' ? 'svg' : name === 'math' ? 'math' : foreign.at(-1)!.ns
+          const html =
+            INTEGRATION[ns].has(name) ||
+            (ns === 'math' &&
+              name === 'annotation-xml' &&
+              /^(text\/html|application\/xhtml\+xml)$/.test(lower(encoding)))
+          foreign.push({ name, ns, html })
         }
-        digests.push(typeof row?.digest === 'string' ? row.digest : '')
-      } catch {
-        // an error row react couldn't read either: still an error
-        digests.push('')
+        return 'data'
       }
     }
-    i = end + 1
+    if ((name === 'svg' || name === 'math') && !selfClosing) {
+      foreign.push({ name, ns: name, html: false })
+      return 'data'
+    }
+    if (name === 'template') templates += 1
+    if (name === 'script') {
+      escape = 'data'
+      return 'script'
+    }
+    if (RAW.has(name)) {
+      raw = name
+      return 'raw'
+    }
+    return name === 'plaintext' ? 'plaintext' : 'data'
   }
-  return digests
+  const endTag = () => {
+    if (inForeign() && (name === 'br' || name === 'p'))
+      while (foreign.length && !foreign.at(-1)!.html) foreign.pop()
+    if (inForeign()) {
+      // the nearest open foreign element of that name, up to the html around it
+      for (let at = foreign.length - 1; at >= 0 && !foreign[at]!.html; at -= 1)
+        if (foreign[at]!.name === name) {
+          foreign.length = at
+          break
+        }
+      return
+    }
+    if (foreign.length && foreign.at(-1)!.name === name) foreign.pop()
+    else if (name === 'template' && templates) templates -= 1
+  }
+  const run = (text: string, final: boolean) => {
+    const buffer = carry + text
+    carry = ''
+    const out: string[] = []
+    const n = buffer.length
+    let i = 0
+    // not enough left to decide: keep the rest for the next chunk (always a few characters), or at the end, go on
+    const short = (need: number) => !final && n - i < need
+    while (i < n) {
+      if (state === 'data') {
+        const lt = buffer.indexOf('<', i)
+        if (lt < 0) {
+          out.push(buffer.slice(i))
+          i = n
+          break
+        }
+        out.push(buffer.slice(i, lt))
+        i = lt
+        if (short(LOOKAHEAD)) break
+        const next = buffer[i + 1]
+        // a whole tag in html content at once, when it's all here (html ignores self-closing but on svg and math)
+        const at = next === '/' ? i + 2 : i + 1
+        if (!inForeign() && alpha(buffer[at])) {
+          TAG.lastIndex = at
+          const tag = TAG.exec(buffer)
+          // svg and math go the long way, since only theirs can be self-closing (<svg/> opens no foreign content)
+          if (tag && !/^(svg|math)$/i.test(tag[1]!)) {
+            out.push(buffer.slice(i, TAG.lastIndex))
+            i = TAG.lastIndex
+            ;[name, end, selfClosing] = [lower(tag[1]!.slice(0, 32)), next === '/', false]
+            state = end ? (endTag(), 'data') : startTag()
+            if (state === 'script' || state === 'foreignScript') script = []
+            continue
+          }
+        }
+        if (alpha(next)) {
+          out.push('<')
+          i += 1
+          ;[state, name, end, selfClosing, attributes, encoding] = [
+            'tagName',
+            '',
+            false,
+            false,
+            new Set(),
+            '',
+          ]
+        } else if (next === '/') {
+          const after = buffer[i + 2]
+          if (alpha(after)) {
+            out.push('</')
+            i += 2
+            ;[state, name, end, selfClosing, attributes, encoding] = [
+              'tagName',
+              '',
+              true,
+              false,
+              new Set(),
+              '',
+            ]
+          } else if (after === '>') {
+            out.push('</>')
+            i += 3
+          } else {
+            out.push('</')
+            i += 2
+            state = after === undefined ? 'data' : 'bogus'
+          }
+        } else if (next === '!') {
+          const head = buffer.slice(i, i + 9)
+          if (head.startsWith('<!--')) {
+            out.push('<!--')
+            i += 4
+            state = 'commentStart'
+          } else if (lower(head) === '<!doctype' || (head === '<![CDATA[' && inForeign())) {
+            out.push(head)
+            i += 9
+            state = head === '<![CDATA[' ? 'cdata' : 'bogus'
+          } else {
+            out.push('<!')
+            i += 2
+            state = 'bogus'
+          }
+        } else if (next === '?') {
+          out.push('<?')
+          i += 2
+          state = 'bogus'
+        } else {
+          out.push('<')
+          i += 1
+        }
+      } else if (state === 'tagName') {
+        let at = i
+        while (at < n && !space(buffer[at]) && buffer[at] !== '/' && buffer[at] !== '>') at += 1
+        if (name.length < 32) name += lower(buffer.slice(i, Math.min(at, i + 32 - name.length)))
+        out.push(buffer.slice(i, at))
+        i = at
+        if (i < n) [state, attribute] = ['attributes', 'before']
+      } else if (state === 'attributes') {
+        // runs of a name, an unquoted value or spaces in one step: most of a page's tags are attributes
+        const runOf =
+          attribute === 'name'
+            ? NAME_RUN
+            : attribute === 'unquoted'
+              ? VALUE_RUN
+              : attribute === 'before' || attribute === 'after' || attribute === 'beforeValue'
+                ? SPACE_RUN
+                : undefined
+        if (runOf) {
+          runOf.lastIndex = i
+          const found = runOf.exec(buffer)
+          if (found) {
+            const taken = found[0]
+            if (attribute === 'name' && attributeName.length < 32)
+              attributeName += lower(taken.slice(0, 32))
+            else if (
+              attribute === 'unquoted' &&
+              attributeName === 'encoding' &&
+              encoding.length < 32
+            )
+              encoding += taken.slice(0, 32)
+            out.push(taken)
+            i += taken.length
+            continue
+          }
+        }
+        const char = buffer[i]!
+        if (attribute === 'dq' || attribute === 'sq') {
+          const quote = buffer.indexOf(attribute === 'dq' ? '"' : "'", i)
+          const stop = quote < 0 ? n : quote
+          if (attributeName === 'encoding' && encoding.length < 32)
+            encoding += buffer.slice(i, Math.min(stop, i + 32))
+          out.push(buffer.slice(i, quote < 0 ? n : quote + 1))
+          i = quote < 0 ? n : quote + 1
+          if (quote >= 0) attribute = 'afterValue'
+          continue
+        }
+        out.push(char)
+        i += 1
+        if (char === '>') {
+          if (attribute === 'name') attributes.add(attributeName)
+          if (attribute === 'slash') selfClosing = true
+          state = end ? (endTag(), 'data') : startTag()
+          if (state === 'script' || state === 'foreignScript') script = []
+          continue
+        }
+        if (attribute === 'before' || attribute === 'after') {
+          if (space(char)) continue
+          if (char === '/') attribute = 'slash'
+          else if (char === '=' && attribute === 'after') attribute = 'beforeValue'
+          else [attribute, attributeName] = ['name', lower(char)]
+        } else if (attribute === 'name') {
+          if (space(char) || char === '/' || char === '=') {
+            attributes.add(attributeName)
+            attribute = char === '=' ? 'beforeValue' : char === '/' ? 'slash' : 'after'
+          } else if (attributeName.length < 32) attributeName += lower(char)
+        } else if (attribute === 'beforeValue') {
+          if (space(char)) continue
+          if (char === '"') attribute = 'dq'
+          else if (char === "'") attribute = 'sq'
+          else {
+            attribute = 'unquoted'
+            if (attributeName === 'encoding') encoding = char
+          }
+        } else if (attribute === 'unquoted') {
+          if (space(char)) attribute = 'before'
+          else if (attributeName === 'encoding' && encoding.length < 32) encoding += char
+        } else if (attribute === 'afterValue') {
+          if (space(char)) attribute = 'before'
+          else if (char === '/') attribute = 'slash'
+          else [attribute, attributeName] = ['name', lower(char)]
+        } else if (attribute === 'slash') {
+          // a / right before > is self-closing (above); anything else is read again as before an attribute
+          if (char === '/') attribute = 'slash'
+          else if (space(char)) attribute = 'before'
+          else [attribute, attributeName] = ['name', lower(char)]
+        }
+      } else if (state === 'commentStart') {
+        if (short(2)) break
+        // <!--> and <!---> end at once
+        const shut = buffer[i] === '>' ? 1 : buffer.startsWith('->', i) ? 2 : 0
+        out.push(buffer.slice(i, i + shut))
+        i += shut
+        state = shut ? 'data' : 'comment'
+      } else if (state === 'comment') {
+        const dashes = buffer.indexOf('--', i)
+        if (dashes < 0 || (!final && dashes + 4 > n)) {
+          const keep = dashes < 0 ? Math.max(i, n - 1) : dashes
+          out.push(buffer.slice(i, keep))
+          i = keep
+          if (!final) break
+          out.push(buffer.slice(i))
+          i = n
+          break
+        }
+        const close = buffer[dashes + 2] === '>' ? 3 : buffer.startsWith('!>', dashes + 2) ? 4 : 0
+        out.push(buffer.slice(i, close ? dashes + close : dashes + 1))
+        i = close ? dashes + close : dashes + 1
+        if (close) state = 'data'
+      } else if (state === 'bogus' || state === 'cdata') {
+        const stop = buffer.indexOf(state === 'bogus' ? '>' : ']]>', i)
+        const keep =
+          stop >= 0
+            ? stop + (state === 'bogus' ? 1 : 3)
+            : final || state === 'bogus'
+              ? n
+              : Math.max(i, n - 2)
+        out.push(buffer.slice(i, keep))
+        i = keep
+        if (stop >= 0) state = 'data'
+        else if (!final && state === 'cdata') break
+      } else if (state === 'raw') {
+        const close = buffer.indexOf('</', i)
+        if (close < 0) {
+          out.push(buffer.slice(i, Math.max(i, n - 1)))
+          i = Math.max(i, n - 1)
+          if (final) {
+            out.push(buffer.slice(i))
+            i = n
+          }
+          break
+        }
+        out.push(buffer.slice(i, close))
+        i = close
+        if (short(raw.length + 3)) break
+        if (
+          lower(buffer.slice(i + 2, i + 2 + raw.length)) === raw &&
+          /[\t\n\f\r />]/.test(buffer[i + 2 + raw.length] ?? '')
+        )
+          state = 'data'
+        else {
+          out.push('</')
+          i += 2
+        }
+      } else if (state === 'script') {
+        if (dashed) {
+          // right after <!--, more dashes then > (<!-->, <!--->) end the escape it started
+          while (i < n && buffer[i] === '-') script.push(buffer[i++]!)
+          if (i === n && !final) break
+          dashed = false
+          if (buffer[i] === '>') {
+            script.push('>')
+            i += 1
+            escape = 'data'
+          }
+          continue
+        }
+        const pattern =
+          escape === 'data' ? SCRIPT_DATA : escape === 'escaped' ? SCRIPT_ESCAPED : SCRIPT_DOUBLE
+        pattern.lastIndex = i
+        const found = pattern.exec(buffer)
+        // a match may be cut off by the chunk's end, or need the character after it: wait for more
+        if (!final && (!found || found.index > n - LOOKAHEAD)) {
+          const keep = Math.max(i, Math.min(found?.index ?? n, n - LOOKAHEAD))
+          script.push(buffer.slice(i, keep))
+          i = keep
+          break
+        }
+        if (!found) {
+          // the page ended inside the script: what it held is given back as it was
+          script.push(buffer.slice(i))
+          out.push(script.join(''))
+          script = []
+          i = n
+          break
+        }
+        script.push(buffer.slice(i, found.index))
+        i = found.index
+        const match = lower(found[0])
+        if (match === '</script' && escape !== 'double') {
+          ended(out)
+          state = 'data'
+        } else {
+          script.push(found[0])
+          i += found[0].length
+          if (match === '<!--') [escape, dashed] = ['escaped', true]
+          else if (match === '-->') escape = 'data'
+          else escape = match === '<script' ? 'double' : 'escaped'
+        }
+      } else if (state === 'foreignScript') {
+        // an svg or math script's text is read as text: it's a push only if nothing but text comes before its end tag
+        const lt = buffer.indexOf('<', i)
+        if (lt < 0) {
+          script.push(buffer.slice(i))
+          i = n
+          break
+        }
+        script.push(buffer.slice(i, lt))
+        i = lt
+        if (short(LOOKAHEAD)) break
+        if (
+          /^<\/script[\t\n\f\r />]/i.test(buffer.slice(i, i + 9)) ||
+          (final && /^<\/script$/i.test(buffer.slice(i)))
+        )
+          ended(out)
+        else {
+          out.push(script.join(''))
+          script = []
+        }
+        state = 'data'
+      } else {
+        out.push(buffer.slice(i))
+        i = n
+      }
+    }
+    carry = buffer.slice(i)
+    if (final && carry) {
+      out.push(carry)
+      carry = ''
+    }
+    if (final && script.length) {
+      out.push(script.join(''))
+      script = []
+    }
+    return out.join('')
+  }
+  return {
+    write: (text: string) => run(text, false),
+    end: () => run('', true),
+    swapped: (): Swapped => ({ nonce, count, ...rows.errors() }),
+  }
+}
+
+// why a page's swapped flight data can't be trusted: a nonce that didn't parse as a script's whole text, a push left
+// in a script (a swap the stripper missed), or a push or error row that can't be read
+export class FlightDataError extends Error {
+  readonly reason: 'count' | 'unswapped' | 'push' | 'row'
+  constructor(reason: FlightDataError['reason']) {
+    super(`the page's flight data can't be read (${reason})`)
+    this.name = 'FlightDataError'
+    this.reason = reason
+  }
+}
+// a script's own text: an svg script can hold elements, and another script's text isn't its own
+const scriptText = (script: Element) =>
+  script.children.map((child) => (child.type === 'text' ? child.value : '')).join('')
+const untrusted = (scripts: Element[], swapped: Swapped): FlightDataError['reason'] | undefined => {
+  let count = 0
+  for (const script of scripts) {
+    const text = scriptText(script)
+    if (text === swapped.nonce) count += 1
+    else if (PUSHED.test(text)) return 'unswapped'
+  }
+  if (count !== swapped.count) return 'count'
+  return swapped.unreadable ? 'push' : undefined
+}
+
+// the digests of the error rows (<id>:E{"digest":…}) in a page's flight data, read as react's client reads the stream:
+// next's [1, text] and [3, base64] pushes are its bytes, in order, and each row is an id, a tag, then either a length
+// and that many bytes (a long string, a typed array) or everything to the next newline. a row's bytes are skipped by
+// their length, so a page's own long text (a readme, which react sends raw in a T row) can't pass for a row, and only
+// an error row's are kept, so its memory is one row at most. a push or an error row that can't be read is unreadable
+const LENGTH_TAGS = new Set([...'TAOobUSsLlGgMmV'].map((tag) => tag.charCodeAt(0)))
+const ROW_CAP = 65_536
+const hex = (byte: number) => (byte > 96 ? byte - 87 : byte - 48)
+const fromBase64 = (base64: string) => {
+  const decode = (Uint8Array as { fromBase64?: (text: string) => Uint8Array }).fromBase64
+  if (decode) return decode(base64)
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+  return bytes
+}
+const rowScanner = () => {
+  const digests: string[] = []
+  let state: 'id' | 'tag' | 'length' | 'skip' | 'line' = 'id'
+  let size = 0
+  let row: Uint8Array[] | undefined
+  let held = 0
+  let unreadable = false
+  const ended = (complete: boolean) => {
+    if (!row) return
+    const bytes = new Uint8Array(held)
+    let at = 0
+    for (const part of row) {
+      bytes.set(part, at)
+      at += part.length
+    }
+    row = undefined
+    // an error row cut off where the page ended is still an error, one that can't say which
+    if (!complete) return void digests.push('')
+    if (held > ROW_CAP) return void (unreadable = true)
+    try {
+      const said = JSON.parse(new TextDecoder().decode(bytes)) as { digest?: unknown }
+      digests.push(typeof said?.digest === 'string' ? said.digest : '')
+    } catch {
+      unreadable = true
+    }
+  }
+  const keep = (bytes: Uint8Array) => {
+    if (!row || held > ROW_CAP) return
+    row.push(bytes.slice())
+    held += bytes.length
+  }
+  // a push's bytes: what's skipped (a long row's bytes, a row that isn't an error) is jumped over, never stepped through
+  const scan = (bytes: Uint8Array) => {
+    for (let i = 0; i < bytes.length;) {
+      if (state === 'id') {
+        const colon = bytes.indexOf(58, i)
+        if (colon < 0) return
+        state = 'tag'
+        i = colon + 1
+      } else if (state === 'tag') {
+        const tag = bytes[i]!
+        i += 1
+        if (LENGTH_TAGS.has(tag)) {
+          state = 'length'
+          size = 0
+          continue
+        }
+        // a capital letter (and #, r, x) is a tag of its own; anything else starts a model row
+        const tagged = (tag > 64 && tag < 91) || tag === 35 || tag === 114 || tag === 120
+        ;[row, held] = [tag === 69 ? [] : undefined, 0]
+        state = !tagged && tag === 10 ? 'id' : 'line'
+      } else if (state === 'length') {
+        const byte = bytes[i]!
+        i += 1
+        if (byte === 44) state = size ? 'skip' : 'id'
+        else size = (size << 4) | hex(byte)
+      } else if (state === 'skip') {
+        const take = Math.min(size, bytes.length - i)
+        size -= take
+        i += take
+        if (!size) state = 'id'
+      } else {
+        const newline = bytes.indexOf(10, i)
+        const end = newline < 0 ? bytes.length : newline
+        keep(bytes.subarray(i, end))
+        if (newline < 0) return
+        ended(true)
+        state = 'id'
+        i = newline + 1
+      }
+    }
+  }
+  return {
+    push: (push: string) => {
+      let value: unknown
+      try {
+        value = JSON.parse(push)
+      } catch {
+        unreadable = true
+        return
+      }
+      if (!Array.isArray(value)) unreadable = true
+      else if (value[0] === 1 && typeof value[1] === 'string')
+        scan(new TextEncoder().encode(value[1]))
+      else if (value[0] === 3 && typeof value[1] === 'string') {
+        try {
+          scan(fromBase64(value[1]))
+        } catch {
+          unreadable = true
+        }
+      }
+    },
+    unreadable: () => void (unreadable = true),
+    errors: () => {
+      if (state === 'line') ended(false)
+      state = 'id'
+      return { errors: digests, unreadable }
+    },
+  }
+}
+
+// a page's html with its flight pushes taken out, parsed: the tree and the error rows' digests, or why they can't be
+// trusted
+const strippedTree = (html: string, swapped: Swapped) => {
+  const tree = fromHtml(html)
+  const streamed = resolveStreamed(tree)
+  const reason = untrusted(streamed.scripts, swapped)
+  return { tree, streamed, reason }
 }
 
 // the part of the page that becomes markdown; prunes the body in place, so read the head first
@@ -1738,7 +2266,34 @@ export type Redirect = { status: 307 | 308; location: string }
 export type Fallback = { status: 401 | 403 | 404 }
 
 export const readPage = (html: string, options: Options = {}): Page => {
-  const { tree, errors } = parsed(html)
+  const strip = flightStripper()
+  const lean = strip.write(html) + strip.end()
+  const swapped = strip.swapped()
+  const { tree, streamed, reason } = strippedTree(lean, swapped)
+  if (!reason) {
+    streamed.resolve()
+    return readTree({ tree, errors: swapped.errors }, options)
+  }
+  // swaps that can't be trusted: the page as sent, as parse5 reads it, and an error of its own (private, never a status)
+  const sent = fromHtml(html)
+  resolveStreamed(sent).resolve()
+  return readTree({ tree: sent, errors: [''] }, options)
+}
+
+// a page whose flight pushes flightStripper took out as it streamed. the page as sent is gone, so swaps that can't be
+// trusted throw: the handler answers 502, and a caller that forgets to catch it fails closed too. not part of the
+// package's api: only the handler, which did the stripping, says a page was
+export const readStreamed = (html: string, swapped: Swapped, options: Options = {}): Page => {
+  const { tree, streamed, reason } = strippedTree(html, swapped)
+  if (reason) throw new FlightDataError(reason)
+  streamed.resolve()
+  return readTree({ tree, errors: swapped.errors }, options)
+}
+
+const readTree = (
+  { tree, errors }: { tree: HastRoot; errors: string[] },
+  options: Options,
+): Page => {
   const meta = head(tree, options.url)
   // a redirect() or notFound() next streamed into the page: the first error row that's one of next's control flow
   const control = errors.map(fromDigest).find((said) => said !== undefined)

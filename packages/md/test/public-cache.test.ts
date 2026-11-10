@@ -487,8 +487,9 @@ test("any error row counts, whatever it holds; a next digest md can't read is sa
         headers: { 'content-type': 'text/html' },
       })
     const response = await createMdHandler()(new Request(`${site}/x/express.md`))
-    // a next digest md can't read may be a redirect or a status it can't tell: never a 200 of the shell
-    const status = row.includes('NEXT_') ? 502 : 200
+    // a next digest md can't read may be a redirect or a status it can't tell, and a row that isn't json can't be read
+    // at all: never a 200 of the shell
+    const status = row.includes('NEXT_') || row.includes('not json') ? 502 : 200
     // and its body is md's own, never the shell's markdown
     const shell = (await response.text()).includes('express')
     expect([row, response.status, response.headers.get('cache-control'), shell]).toEqual([
@@ -498,7 +499,7 @@ test("any error row counts, whatever it holds; a next digest md can't read is sa
       status === 200,
     ])
   }
-  // flight data react couldn't read is an error too
+  // flight data react couldn't read is a 502 too, with nothing of the page in it
   upstream = () =>
     new Response(
       `${page('<h1>express</h1>')}<script>self.__next_f.push([1,"x"]</script><script>self.__next_f.push(nope)</script>`,
@@ -506,11 +507,18 @@ test("any error row counts, whatever it holds; a next digest md can't read is sa
         headers: { 'content-type': 'text/html' },
       },
     )
-  expect(
-    (await createMdHandler()(new Request(`${site}/x/express.md`))).headers.get('cache-control'),
-  ).toBe('private, no-store')
-  // once, naming only the digest's kind: the rest can hold a url
+  const unreadable = await createMdHandler()(new Request(`${site}/x/express.md`))
+  expect([
+    unreadable.status,
+    unreadable.headers.get('cache-control'),
+    (await unreadable.text()).includes('express'),
+  ]).toEqual([502, 'private, no-store', false])
+  // each once per process, in production too: the unreadable row, and the digest by its kind alone (the rest can hold
+  // a url)
   expect(error.mock.calls.map(([message]) => message)).toEqual([
+    expect.stringMatching(
+      /^\[affordances-md\] \/x\/express's Flight data couldn't be read \((row|push)\), so it answers 502, private, no-store\./,
+    ),
     "[affordances-md] a page streamed a Next.js digest @affordances/md doesn't know (NEXT_HTTP_ERROR_FALLBACK), so its markdown answers 502, private, no-store. Update @affordances/md, or report it if you're on the latest.",
   ])
   error.mockRestore()

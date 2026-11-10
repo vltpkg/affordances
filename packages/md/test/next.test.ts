@@ -205,13 +205,13 @@ test('loop guard, size limit, timeout', async () => {
   expect(warn).toHaveBeenCalledWith(
     `[affordances-md] /a is larger than maxBytes (10 bytes), so it answers 413. ${fix}`,
   )
-  // the default, 6 MiB, suggests twice it
+  // the default, 16 MiB, suggests twice it. a response past 8 times it, flight data and all, is never read
   upstream = () =>
     new Response(page('<h1>Big</h1>'), {
-      headers: { 'content-type': 'text/html', 'content-length': String(7 * 1024 * 1024) },
+      headers: { 'content-type': 'text/html', 'content-length': String(129 * 1024 * 1024) },
     })
   expect(await (await get('/big')).text()).toContain(
-    'larger than 6 MiB (maxBytes). To convert it, raise maxBytes in the md route (app/api/affordances/md/[[...path]]/route.ts): `export const GET = createMdHandler({ maxBytes: 12 * 1024 * 1024 })`.',
+    'Its response is larger than 128 MiB in all (8 × maxBytes). To convert it, raise maxBytes in the md route (app/api/affordances/md/[[...path]]/route.ts): `export const GET = createMdHandler({ maxBytes: 32 * 1024 * 1024 })`.',
   )
   warn.mockRestore()
   vi.stubGlobal(

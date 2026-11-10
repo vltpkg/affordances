@@ -1,10 +1,12 @@
 // with its .js, as proxy.ts imports it: next.config loads this entry in plain node
 import { NextRequest } from 'next/server.js'
 import {
+  FlightDataError,
+  flightStripper,
   fromDigest,
   headingOf,
   type Page,
-  readPage,
+  readStreamed,
   relinkMarkdown,
   type SlotNames,
   yaml,
@@ -335,32 +337,41 @@ export const ERROR_HEADER = 'x-affordances-md-error'
 // because of where it was served: llms reads it to leave such a page out of its public files
 const PERSONAL_HEADER = 'x-affordances-md-personal'
 
-// the page's html as far as it streams before the deadline. undefined past maxBytes; complete is false when the
-// deadline or a broken stream cut it short
+// the page's html as far as it streams before the deadline, without its flight pushes, which are read for their error
+// rows as they come and never held: maxBytes is the html the converter keeps, so a partialPrefetching page's flight
+// data (most of its bytes) costs no memory. { whole } past maxBytes, or past RAW times it in all; complete is false
+// when the deadline or a broken stream cut it short
+const RAW = 8
 const streamed = async (response: Response, deadline: Promise<void>, maxBytes: number) => {
-  if (!response.body) return { html: '', complete: true }
+  const strip = flightStripper()
+  if (!response.body) return { html: '', complete: true, swapped: strip.swapped() }
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   const late = deadline.then(() => undefined)
   let html = ''
-  let size = 0
+  let raw = 0
+  const done = (complete: boolean) => {
+    html += strip.write(decoder.decode()) + strip.end()
+    return { html, complete, swapped: strip.swapped() }
+  }
   try {
     for (;;) {
       const chunk = await Promise.race([reader.read(), late])
       if (!chunk) break
-      if (chunk.done) return { html: html + decoder.decode(), complete: true }
-      size += chunk.value.byteLength
-      if (size > maxBytes) {
+      if (chunk.done) return done(true)
+      raw += chunk.value.byteLength
+      html += strip.write(decoder.decode(chunk.value, { stream: true }))
+      if (html.length > maxBytes || raw > maxBytes * RAW) {
         void reader.cancel().catch(() => {})
-        return undefined
+        // the html kept says it first: that's what raising maxBytes is for
+        return { whole: html.length <= maxBytes }
       }
-      html += decoder.decode(chunk.value, { stream: true })
     }
   } catch {
     // the fetch was aborted at the deadline mid-read
   }
   void reader.cancel().catch(() => {})
-  return { html: html + decoder.decode(), complete: false }
+  return done(false)
 }
 
 const extraHeaders = async (request: Request, headers: MdHandlerOptions['headers']) =>
@@ -588,7 +599,7 @@ const convertPage = (options: MdHandlerOptions) => {
 const renderPage =
   (options: MdHandlerOptions) =>
   async (request: Request, pagePath: string, direct: boolean, seen: Seen): Promise<Response> => {
-    const { timeout = TIMEOUT, maxBytes = 6 * MIB, append } = options
+    const { timeout = TIMEOUT, maxBytes = 16 * MIB, append } = options
     if (request.headers.has(RENDER_HEADER)) return fail(508, 'Loop detected')
 
     const url = new URL(request.url)
@@ -711,35 +722,58 @@ const renderPage =
     }
     // a page past maxBytes, which a page that grows (a report, a changelog) can reach long after launch: the answer
     // and the server's log both say what to change
-    const tooLarge = () => {
-      const limit = maxBytes % MIB ? `${maxBytes} bytes` : `${maxBytes / MIB} MiB`
+    // the html it keeps past maxBytes, or the whole response, flight data and all, past RAW times it
+    const tooLarge = (whole: boolean) => {
+      const size = (bytes: number) => (bytes % MIB ? `${bytes} bytes` : `${bytes / MIB} MiB`)
+      const limit = whole
+        ? `${size(maxBytes * RAW)} in all (${RAW} × maxBytes)`
+        : `${size(maxBytes)} (maxBytes)`
+      const named = whole ? limit : `maxBytes (${size(maxBytes)})`
       const fix = `To convert it, raise maxBytes in the md route (app/api/affordances/md/[[...path]]/route.ts): \`export const GET = createMdHandler({ maxBytes: ${Math.ceil((2 * maxBytes) / MIB)} * 1024 * 1024 })\`.`
       // in production too, where a page grows past it, once per page
       once(
         `maxBytes ${target.pathname}`,
-        `[affordances-md] ${target.pathname} is larger than maxBytes (${limit}), so it answers 413. ${fix}`,
+        `[affordances-md] ${target.pathname} is larger than ${named}, so it answers 413. ${fix}`,
         true,
       )
       return fail(
         413,
-        `The page is too large to convert\n\nIts HTML is larger than ${limit} (maxBytes). ${fix}`,
+        `The page is too large to convert\n\nIts ${whole ? 'response' : 'HTML'} is larger than ${limit}. ${fix}`,
       )
     }
-    if (Number(upstream.headers.get('content-length') ?? 0) > maxBytes) {
+    if (Number(upstream.headers.get('content-length') ?? 0) > maxBytes * RAW) {
       clearTimeout(timer)
-      return tooLarge()
+      return tooLarge(true)
     }
     const body = await streamed(upstream, deadline, maxBytes)
     clearTimeout(timer)
-    if (!body) return tooLarge()
+    if ('whole' in body) return tooLarge(body.whole === true)
     // a page whose shell arrived is converted as far as it streamed: boundaries still loading keep their fallback
     const partial = !body.complete
     if (partial && !body.html.trim()) return slow()
     // the page, read once: what it streamed, the slots it rendered, and its markdown
-    const read = readPage(body.html, {
-      url: target.href,
-      link: options.linkTwins === false ? undefined : twinLinks(target),
-    })
+    let read: Page
+    try {
+      read = readStreamed(body.html, body.swapped, {
+        url: target.href,
+        link: options.linkTwins === false ? undefined : twinLinks(target),
+      })
+    } catch (error) {
+      if (!(error instanceof FlightDataError)) throw error
+      // flight data the stripper can't account for (a push it didn't take out, one it can't read, a placeholder that
+      // isn't a script): what the page says can't be told, so none of it goes out. in production too, once
+      if (!toldFlight) {
+        toldFlight = true
+        console.error(
+          `[affordances-md] ${target.pathname}'s Flight data couldn't be read (${error.reason}), so it answers 502, private, no-store. If it's a page of Next's own, update @affordances/md or report it.`,
+        )
+      }
+      return fail(
+        502,
+        "The page couldn't be read to convert it",
+        credentialed(headers) || upstream.headers.has('set-cookie'),
+      )
+    }
     // personal: rendered with someone's credentials (the caller's, or the route's service ones), or answered with a
     // cookie. a credential-free render is the anonymous public view, whatever cache-control next put on it (next
     // sends private, no-store for every dynamic render), so only this marks a page for llms to leave out
@@ -1022,6 +1056,9 @@ const streamedAnswer = (page: Page, target: URL, cache: RedirectCache, personal:
   if (page.fallback) return fail(page.fallback.status, HTTP_ERRORS[page.fallback.status]!, personal)
   return undefined
 }
+
+// whether a page's unreadable flight data has been said, once per process
+let toldFlight = false
 
 // the kind of a digest of next's (NEXT_…) that fromDigest can't read, from a next newer than this md, or undefined.
 // only its kind, since the rest can hold a url. said once per process, in production too, since that's where a new
