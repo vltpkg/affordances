@@ -3001,7 +3001,7 @@ const leftOut = (path: string) =>
         : path === '/mine'
           ? mdPage('Mine', '# Mine', { 'x-affordances-md-personal': '1' })
           : path === '/errored'
-            ? mdPage('Errored', '# Errored\n\nLoading…', { 'x-affordances-md-error': '1' })
+            ? mdPage('Errored', '# Errored\n\nLoading…', { 'x-affordances-md-uncached': 'error' })
             : mdPage('Fine', '# Fine\n\nBody.')
 
 test('a page llms leaves out by design is named, with why, in development, and the file stays public', async () => {

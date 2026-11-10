@@ -333,9 +333,6 @@ const viewRequest = (request: Request) =>
 
 // set on markdown converted from a page that hadn't finished streaming by the timeout
 export const PARTIAL_HEADER = 'x-affordances-md-partial'
-// set on markdown converted from a page whose flight data has an error row: a boundary that caught an error
-// (error.tsx), or a digest of next's this version doesn't know. part of the page is missing, so it's never cached
-export const ERROR_HEADER = 'x-affordances-md-error'
 // set on markdown that's private for a personal reason (credentials, a private page, a cookie set in answer), not just
 // because of where it was served: llms reads it to leave such a page out of its public files
 const PERSONAL_HEADER = 'x-affordances-md-personal'
@@ -380,10 +377,49 @@ const streamed = async (response: Response, deadline: Promise<void>, maxBytes: n
 const extraHeaders = async (request: Request, headers: MdHandlerOptions['headers']) =>
   new Headers(typeof headers === 'function' ? await headers(request) : headers)
 
-const respond = (body: string, status: number, headers: Record<string, string> = {}) =>
+// why an answer of the route's own isn't public, on every one that isn't
+export type Uncached =
+  | 'credentials'
+  | 'set-cookie'
+  | 'gate'
+  | 'status'
+  | 'partial'
+  | 'error'
+  | 'negotiated'
+  | 'invalid'
+  | 'private'
+export const UNCACHED_HEADER = 'x-affordances-md-uncached'
+// how an answer of the route's own is cached: public only with a grant (the route's publicCache, or the page's own
+// cache-control), private, no-store otherwise. personal marks one llms leaves out
+type Caching = { grant?: string; why?: Uncached; personal?: boolean }
+
+// the one place an answer's cache headers are written, so one without a grant is private by construction. it varies
+// on Accept, as well as on whatever it already varies on
+const cached = (headers: Headers, { grant, why, personal }: Caching) => {
+  headers.set('cache-control', grant ?? 'private, no-store')
+  if (!grant) headers.set(UNCACHED_HEADER, why ?? 'status')
+  if (personal) headers.set(PERSONAL_HEADER, '1')
+  const vary = headers.get('vary')
+  if (!vary) headers.set('vary', 'Accept')
+  else if (!/(^|,)\s*accept\s*(,|$)/i.test(vary)) headers.set('vary', `${vary}, Accept`)
+  return headers
+}
+
+// markdown of the route's own, or a redirect when there's no body
+const respond = (
+  body: string | null,
+  status: number,
+  cache: Caching,
+  headers: Record<string, string> = {},
+) =>
   new Response(body, {
     status,
-    headers: { 'content-type': 'text/markdown; charset=utf-8', vary: 'Accept', ...headers },
+    headers: cached(
+      new Headers(
+        body === null ? headers : { 'content-type': 'text/markdown; charset=utf-8', ...headers },
+      ),
+      cache,
+    ),
   })
 
 // a request (or the headers option) that carries someone's credentials, whose response is theirs alone
@@ -476,28 +512,11 @@ const passPage = async (request: Request, target: URL, options: MdHandlerOptions
 // a redirect as next gives it, from wherever it came: the page's own 3xx, the refresh meta it streams for a redirect()
 // after the shell (readPage's redirect), or the digest of a redirect() thrown in markdown.ts
 type NextRedirect = { status: number; location: string | null }
-// how a redirect answering a markdown request is cached: private, no-store, or the page's own cache-control
-type RedirectCache = { private: boolean; personal?: boolean; cacheControl?: string }
-
 // every redirect a markdown request gets: to the target's twin when it has one (twinLocation: a page on this site,
-// with its /. guard), otherwise as it is, never followed. it varies on Accept
-const markdownRedirect = (
-  { status, location }: NextRedirect,
-  target: URL,
-  cache: RedirectCache,
-) => {
+// with its /. guard), otherwise as it is, never followed
+const markdownRedirect = ({ status, location }: NextRedirect, target: URL, cache: Caching) => {
   const to = (location && twinLocation(new URL(location, target), target)) ?? location
-  return new Response(null, {
-    status,
-    headers: {
-      ...(to && { location: to }),
-      vary: 'Accept',
-      ...(cache.private
-        ? { 'cache-control': 'private, no-store' }
-        : cache.cacheControl && { 'cache-control': cache.cacheControl }),
-      ...(cache.personal && { [PERSONAL_HEADER]: '1' }),
-    },
-  })
+  return respond(null, status, cache, to ? { location: to } : {})
 }
 
 // a 307 from a page's own url to its twin, with a line naming it for an agent that doesn't follow redirects
@@ -506,10 +525,7 @@ const markdownRedirect = (
 const toTwin = (url: URL) => {
   const twin = twinLocation(url, url)
   if (!twin) return undefined
-  return respond(`This page's Markdown is at [${twin}](${twin}).\n`, 307, {
-    location: twin,
-    'cache-control': 'private, no-store',
-  })
+  return respond(`This page's Markdown is at [${twin}](${twin}).\n`, 307, {}, { location: twin })
 }
 
 // a page's own 404 (a notFound() in it, streamed or not, or in its markdown.ts or a fill) in its markdown.ts's
@@ -527,21 +543,19 @@ const notFoundPage = async (response: Response, { module, args }: MarkdownRoute,
     url: target.href,
   }
   const body = `${yaml(meta)}${given.markdown.trim()}\n`
-  return respond(body, 404, {
-    'x-affordances-tokens': String(Math.ceil(body.length / 4)),
-    'cache-control': 'private, no-store',
-    ...(response.headers.has(PERSONAL_HEADER) && { [PERSONAL_HEADER]: '1' }),
-  })
+  return respond(
+    body,
+    404,
+    { personal: response.headers.has(PERSONAL_HEADER) },
+    { 'x-affordances-tokens': String(Math.ceil(body.length / 4)) },
+  )
 }
 // the Responses a default export returned itself, which no other answer replaces
 const authoredResponses = new WeakSet<Response>()
 
 // an answer of the handler's own, never cached; personal when it was made with someone's credentials
 const fail = (status: number, message: string, personal = false) =>
-  respond(`# ${message}\n`, status, {
-    'cache-control': 'private, no-store',
-    ...(personal && { [PERSONAL_HEADER]: '1' }),
-  })
+  respond(`# ${message}\n`, status, { personal })
 
 // a path on the site's own origin as a url, or undefined: new URL reads one that starts with //host as another
 // origin, and the caller's credentials (or the headers option) never go there
@@ -551,35 +565,13 @@ const pageUrl = (request: Request, options: MdHandlerOptions, path: string) => {
   return url.origin === base.origin ? url : undefined
 }
 
-// renders the page as html the normal way (real RSC, Suspense, auth), then converts it
-// why markdown on a route opted into publicCache stayed private, for x-affordances-md-uncached
-export type Uncached = 'credentials' | 'set-cookie' | 'status' | 'partial' | 'error' | 'invalid'
-export const UNCACHED_HEADER = 'x-affordances-md-uncached'
 type Seen = {
-  opted?: boolean
+  // on a route opted into publicCache, what kept it private before anything rendered: said instead of 'private'
   why?: Uncached
   routed?: MarkdownRoute
   target?: URL
   // a gate's rewrite mdProxy adopted: the page it chose, never sent on to the twin of the url asked for
   adopted?: boolean
-}
-
-// a response on an opted-in route that isn't public says why, in production too, where a gate setting a cookie for a
-// signed-out visitor is otherwise silent: the first reason the render met, or what the answer itself shows
-const sayUncached = (response: Response, why: Uncached | undefined) => {
-  const cache = response.headers.get('cache-control') ?? ''
-  if (/s-maxage/.test(cache) && !/private|no-store/.test(cache)) return response
-  const reason =
-    why ??
-    (response.status !== 200
-      ? 'status'
-      : response.headers.has(PARTIAL_HEADER)
-        ? 'partial'
-        : response.headers.has(ERROR_HEADER)
-          ? 'error'
-          : undefined)
-  if (reason) response.headers.set(UNCACHED_HEADER, reason)
-  return response
 }
 
 const convertPage = (options: MdHandlerOptions) => {
@@ -595,7 +587,11 @@ const convertPage = (options: MdHandlerOptions) => {
     const response = seen.routed
       ? await notFoundPage(rendered, seen.routed, seen.target!)
       : rendered
-    return seen.opted ? sayUncached(response, seen.why) : response
+    // the reason an opted-in route met first says more than 'private' does, in production too, where a gate setting a
+    // cookie for a signed-out visitor is otherwise silent
+    if (seen.why && response.headers.get(UNCACHED_HEADER) === 'private')
+      response.headers.set(UNCACHED_HEADER, seen.why)
+    return response
   }
 }
 
@@ -650,10 +646,9 @@ const renderPage =
     // where they go unused, so the rule is the same whichever way the route answers
     const early = shareable ? await extraHeaders(view, options.headers) : undefined
     const oneView = shareable && !credentialed(early!)
-    seen.opted = route?.module.publicCache !== undefined
-    if (seen.opted && (callerCredentials || (shareable && !oneView))) seen.why = 'credentials'
-    else if (seen.opted && publicCacheControl(route!.module.publicCache).problem)
-      seen.why = 'invalid'
+    const opted = route?.module.publicCache !== undefined
+    if (opted && (callerCredentials || (shareable && !oneView))) seen.why = 'credentials'
+    else if (opted && publicCacheControl(route!.module.publicCache).problem) seen.why = 'invalid'
     const asked = oneView ? view : request
     const routed = route && oneView ? { ...route, args: { ...route.args, request: asked } } : route
     seen.routed = routed
@@ -700,15 +695,14 @@ const renderPage =
 
     // the page's own redirect, or one it streamed, is cached as the page would be
     const cacheControl = upstream.headers.get('cache-control') ?? ''
-    const pageCache: RedirectCache = {
-      private:
-        negotiated ||
-        callerCredentials ||
-        serviceCredentials ||
-        /private|no-store/.test(cacheControl) ||
-        upstream.headers.has('set-cookie'),
-      cacheControl,
-    }
+    const pageCache: Caching =
+      negotiated ||
+      callerCredentials ||
+      serviceCredentials ||
+      /private|no-store/.test(cacheControl) ||
+      upstream.headers.has('set-cookie')
+        ? {}
+        : { grant: cacheControl || undefined }
     if (upstream.status >= 300 && upstream.status < 400) {
       clearTimeout(timer)
       const location = upstream.headers.get('location')
@@ -826,21 +820,36 @@ const renderPage =
       oneView && !personalOnly && !partial && !errored && upstream.status === 200
         ? publicHeader(route!.route, route!.module)
         : undefined
-    return respond(markdown, upstream.status, {
-      // a page that varies on the language the render was asked in varies the markdown too
-      vary: varies && headers.has('accept-language') ? 'Accept, Accept-Language' : 'Accept',
-      'x-affordances-tokens': String(Math.ceil(markdown.length / 4)),
-      ...(result.url && { link: `<${result.url}>; rel="canonical"` }),
-      // a partial page is never cached, so the next request gets the whole one
-      ...(shared
-        ? { 'cache-control': shared }
-        : personal || partial || errored
-          ? { 'cache-control': 'private, no-store' }
-          : cacheControl && { 'cache-control': cacheControl }),
-      ...(partial && { [PARTIAL_HEADER]: '1' }),
-      ...(errored && { [ERROR_HEADER]: '1' }),
-      ...(personalOnly && { [PERSONAL_HEADER]: '1' }),
-    })
+    // a partial page is never cached, so the next request gets the whole one
+    const grant = shared ?? (personal || partial || errored ? undefined : cacheControl || undefined)
+    return respond(
+      markdown,
+      upstream.status,
+      {
+        grant,
+        why: credentialed(headers)
+          ? 'credentials'
+          : upstream.headers.has('set-cookie')
+            ? 'set-cookie'
+            : upstream.status !== 200
+              ? 'status'
+              : partial
+                ? 'partial'
+                : errored
+                  ? 'error'
+                  : negotiated
+                    ? 'negotiated'
+                    : 'private',
+        personal: personalOnly,
+      },
+      {
+        // a page that varies on the language the render was asked in varies the markdown too
+        ...(varies && headers.has('accept-language') && { vary: 'Accept, Accept-Language' }),
+        'x-affordances-tokens': String(Math.ceil(markdown.length / 4)),
+        ...(result.url && { link: `<${result.url}>; rel="canonical"` }),
+        ...(partial && { [PARTIAL_HEADER]: '1' }),
+      },
+    )
   }
 
 // the markdown of the page a request is for. a .md path on a literalMd route is the page itself when that answers
@@ -872,9 +881,9 @@ export const createMdHandler = (options: MdHandlerOptions = {}) => {
         signal: request.signal,
       })
       const found = await convert(gated, adopted.page, false, true)
-      const headers = new Headers(found.headers)
-      headers.set('cache-control', 'private, no-store')
-      headers.set('vary', 'Accept')
+      // why it's private, unless it already was
+      const why = (found.headers.get(UNCACHED_HEADER) as Uncached | null) ?? 'gate'
+      const headers = cached(new Headers(found.headers), { why })
       const status = adopted.status === 200 ? found.status : adopted.status
       return new Response(found.body, { status, headers })
     }
@@ -1052,11 +1061,11 @@ const thrownAnswer = (error: unknown, target: URL, personal: boolean) => {
     typeof error === 'object' && error !== null && 'digest' in error ? error.digest : undefined
   const thrown = typeof digest === 'string' ? fromDigest(digest) : undefined
   if (!thrown) return undefined
-  if ('location' in thrown) return markdownRedirect(thrown, target, { private: true, personal })
+  if ('location' in thrown) return markdownRedirect(thrown, target, { personal })
   return fail(thrown.status, HTTP_ERRORS[thrown.status]!, personal)
 }
 // the same, streamed after the shell as a flight error row: readPage's redirect or fallback
-const streamedAnswer = (page: Page, target: URL, cache: RedirectCache, personal: boolean) => {
+const streamedAnswer = (page: Page, target: URL, cache: Caching, personal: boolean) => {
   if (page.redirect) return markdownRedirect(page.redirect, target, cache)
   if (page.fallback) return fail(page.fallback.status, HTTP_ERRORS[page.fallback.status]!, personal)
   return undefined
@@ -1181,11 +1190,11 @@ const authoredMarkdown = async (
     // the author's own caching holds, but only when they set one, only at the .md url (at the page's own url,
     // negotiated, that url serves the html too), and never for a credentialed request
     const own = passed.headers.get('cache-control') ?? ''
-    if (personal || /private|no-store/.test(own)) passed.headers.set(PERSONAL_HEADER, '1')
-    if (personal || negotiated || !own) passed.headers.set('cache-control', 'private, no-store')
-    const vary = passed.headers.get('vary')
-    if (!vary) passed.headers.set('vary', 'Accept')
-    else if (!/(^|,)\s*accept\s*(,|$)/i.test(vary)) passed.headers.set('vary', `${vary}, Accept`)
+    cached(passed.headers, {
+      grant: personal || negotiated || !own ? undefined : own,
+      why: personal ? 'credentials' : negotiated ? 'negotiated' : 'private',
+      personal: personal || /private|no-store/.test(own),
+    })
     authoredResponses.add(passed)
     return passed
   }
@@ -1207,14 +1216,21 @@ const authoredMarkdown = async (
   const page = `${yaml(meta)}${given.markdown.trim()}\n`
   const extra = await append?.(request)
   const body = extra ? `${page}\n${extra.trim()}\n` : page
-  return respond(body, 200, {
-    'x-affordances-tokens': String(Math.ceil(body.length / 4)),
-    link: `<${target.href}>; rel="canonical"`,
-    // it read data with whatever the request carried, which the handler can't tell a credential from (an x-api-key):
-    // never cached, unless its markdown.ts says the route's markdown is public, and then only an anonymous .md
-    'cache-control': (oneView && publicHeader(route, module)) || 'private, no-store',
-    ...(personal && { [PERSONAL_HEADER]: '1' }),
-  })
+  return respond(
+    body,
+    200,
+    {
+      // it read data with whatever the request carried, which the handler can't tell a credential from (an x-api-key):
+      // never cached, unless its markdown.ts says the route's markdown is public, and then only an anonymous .md
+      grant: (oneView && publicHeader(route, module)) || undefined,
+      why: personal ? 'credentials' : negotiated ? 'negotiated' : 'private',
+      personal,
+    },
+    {
+      'x-affordances-tokens': String(Math.ceil(body.length / 4)),
+      link: `<${target.href}>; rel="canonical"`,
+    },
+  )
 }
 
 // app/api/affordances/md/[[...path]]/route.ts: export { GET } from '@affordances/md/next'
@@ -1335,7 +1351,8 @@ const renderPages = async (
         return { ...left('rendered with credentials, or it set a cookie'), private: true }
       // a boundary on it caught an error: the page's own, which a retry won't change, so it's left out of the public
       // files as a private page is, and they stay cacheable
-      if (response.headers.has(ERROR_HEADER)) return left('a boundary on it caught an error')
+      if (response.headers.get(UNCACHED_HEADER) === 'error')
+        return left('a boundary on it caught an error')
       const markdown = await response.text()
       // converted as far as it streamed: its title still names it, but it isn't the whole page
       if (response.headers.has(PARTIAL_HEADER))

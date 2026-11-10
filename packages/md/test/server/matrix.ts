@@ -64,7 +64,7 @@ const plain: Check[] = [
   {
     path: '/boom.md',
     status: 200,
-    expect: { 'cache-control': PRIVATE, 'x-affordances-md-error': '1' },
+    expect: { 'cache-control': PRIVATE, 'x-affordances-md-uncached': 'error' },
   },
   // a sanitized README whose attribute holds markup like Flight data and md's own: it stays the link's title
   {
@@ -124,13 +124,13 @@ const plain: Check[] = [
   {
     path: '/csr.md',
     status: 200,
-    expect: { 'cache-control': PUBLIC, 'x-affordances-md-error': null },
+    expect: { 'cache-control': PUBLIC, 'x-affordances-md-uncached': null },
     body: '# Charts',
   },
   {
     path: '/sp.md',
     status: 200,
-    expect: { 'cache-control': PUBLIC, 'x-affordances-md-error': null },
+    expect: { 'cache-control': PUBLIC, 'x-affordances-md-uncached': null },
     body: '# Search',
   },
   // under the root catch-all: a page named like a public/ folder keeps its Link, and the folder's file has no twin

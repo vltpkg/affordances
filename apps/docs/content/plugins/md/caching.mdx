@@ -7,7 +7,7 @@ The handler forwards the caller's `cookie`, `authorization`, and `accept-languag
 
 - With a cookie or bearer token, or when the page is `private` or `no-store`, or sets a cookie, the Markdown is sent with `Cache-Control: private, no-store`.
 - Markdown served at a URL that also serves the page's HTML is `private, no-store` too, whatever it is: converted Markdown, a redirect, or what a `markdown.ts` returns. That's the page's own URL asked for with `Accept: text/markdown`, and a `literalMd` page whose own URL ends in `.md`. A cache that ignores `Vary` (Cloudflare's Cache Everything does) would serve one for the other. The `.md` twin URL is its own, so it keeps the page's `Cache-Control`. On a route with [`publicCache`](#caching-public-markdown), an anonymous request for the page's own URL with `Accept: text/markdown` gets a `307` to the twin instead, `private, no-store` with `Vary: Accept` and a line naming the twin for an agent that doesn't follow redirects. Nothing is rendered, the redirect is never stored, and the twin is the URL a CDN keeps. A request with credentials, and a route without `publicCache`, still get their Markdown at the page's URL. The redirect's `Location` is relative, so it's right behind any proxy. `llms.txt` and `llms-full.txt` read each page at its twin, so they never take the redirect.
-- A page with a boundary that caught an error (its `error.tsx`, or a `<Suspense>` child that threw) is missing that part, so its Markdown is `private, no-store` with `x-affordances-md-error: 1`, whatever the page's own `Cache-Control` or `publicCache` says.
+- A page with a boundary that caught an error (its `error.tsx`, or a `<Suspense>` child that threw) is missing that part, so its Markdown is `private, no-store` with `x-affordances-md-uncached: error`, whatever the page's own `Cache-Control` or `publicCache` says.
 - Otherwise it keeps the page's own `Cache-Control`.
 - Next sets an app page's own `Vary` itself, to its RSC headers (`getVaryHeader()`), replacing whatever `next.config` `headers`, `proxy.ts` or `md()` set. So a page's HTML never says it varies on `Accept`, though its URL answers Markdown to `Accept: text/markdown`. Vercel's cache isn't affected, since the `Accept` rewrite runs before it. A shared cache of your own in front of the site would need to key on `Accept` itself, or bypass Markdown requests.
 - Converted Markdown has `Vary: Accept` (and `Accept-Language` too when the page varies on it, since the handler forwards the caller's language), `X-Affordances-Tokens` with an estimate of its length in tokens, and a `Link` to the canonical page when it has one.
@@ -71,9 +71,12 @@ When one of them doesn't hold, the response says which in `x-affordances-md-unca
 | `status`      | The answer wasn't a `200`: a redirect, a `404`, a `notFound()` after the shell.                 |
 | `partial`     | The page was still streaming at the handler's `timeout`.                                        |
 | `error`       | A boundary on the page caught an error.                                                         |
+| `gate`        | Your `proxy.ts` chose the page with `md.rewrite` or `md.adopt`.                                 |
+| `negotiated`  | It's the page's own URL, asked for with `Accept: text/markdown`.                                |
 | `invalid`     | `publicCache` isn't a `cacheLife` profile or `{ revalidate, expire? }`.                         |
+| `private`     | The route has no `publicCache`, and the page's own `Cache-Control` is private or missing.       |
 
-A route without `publicCache` never sends it.
+Every answer of the Markdown route's own that isn't public sends it, on any route: a page's own redirect, its `404`, the route's `502`. A file or route handler it passes through keeps its own headers.
 
 A `Response` your default export returns keeps its own `Cache-Control`, as before. A name that isn't a profile, or an object with another field (`'hourz'`, `{ revalidat: 300 }`), fails `tsc` (and `next build`), named in the route's `markdown.ts` with Next's closest profile, against Next's profiles and your `next.config`'s. In development the server also says which file and what it can be. Until it's fixed, the route isn't cached.
 

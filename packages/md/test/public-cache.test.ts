@@ -160,9 +160,11 @@ test('publicCache makes one cell public: opted in, no credentials, the .md url, 
   ])
 })
 
-// a response's headers but its cache-control
+// a response's headers but how it's cached and why
 const without = (response: Response) =>
-  [...response.headers].filter(([name]) => name !== 'cache-control')
+  [...response.headers].filter(
+    ([name]) => name !== 'cache-control' && name !== 'x-affordances-md-uncached',
+  )
 
 test('a credentialed request to an opted-in route stays private and personal, as it is today', async () => {
   route('slot', 'hours')
@@ -459,7 +461,7 @@ test('a page with a flight error row is never public, on an opted-in route or of
         200,
         'private, no-store',
       ])
-      expect(response.headers.get('x-affordances-md-error')).toBe('1')
+      expect(response.headers.get('x-affordances-md-uncached')).toBe('error')
     }
   // a page without one, opted in, is still public
   route('converted', 'hours')
@@ -467,7 +469,7 @@ test('a page with a flight error row is never public, on an opted-in route or of
     new Response(page('<h1>express</h1>'), { headers: { 'content-type': 'text/html' } })
   const fine = await createMdHandler()(new Request(`${site}/x/express.md`))
   expect(fine.headers.get('cache-control')).toBe('s-maxage=3600, stale-while-revalidate=82800')
-  expect(fine.headers.has('x-affordances-md-error')).toBe(false)
+  expect(fine.headers.has('x-affordances-md-uncached')).toBe(false)
 })
 
 test("any error row counts, whatever it holds; a next digest md can't read is said once per process", async () => {
@@ -542,7 +544,7 @@ test("a boundary that renders in the browser by design isn't an error: an opted-
       marker,
       response.status,
       response.headers.get('cache-control'),
-      response.headers.has('x-affordances-md-error'),
+      response.headers.has('x-affordances-md-uncached'),
     ]).toEqual([marker, 200, 's-maxage=3600, stale-while-revalidate=82800', false])
   }
 })
@@ -570,7 +572,7 @@ const sent = {
     }),
 }
 
-test('a response on an opted-in route that stays private says why, in production too, from a fixed set', async () => {
+test('markdown that stays private says why, on any route, in production too, from a fixed set', async () => {
   vi.stubEnv('NODE_ENV', 'production')
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
   const error = vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -584,8 +586,9 @@ test('a response on an opted-in route that stays private says why, in production
       ['streaming', 'hours', {}, { timeout: 30 }],
       ['errored', 'hours', {}, {}],
       ['page', 'hourz', {}, {}],
-      // a route that didn't opt in never says
+      // a route that didn't opt in says too
       ['page', undefined, { headers: { cookie: 'sid=1' } }, {}],
+      ['page', undefined, {}, {}],
     ]
   const reasons: (string | null)[] = []
   // one at a time: each sets the route and the page
@@ -604,7 +607,8 @@ test('a response on an opted-in route that stays private says why, in production
     'partial',
     'error',
     'invalid',
-    null,
+    'credentials',
+    'private',
   ])
   warn.mockRestore()
   error.mockRestore()

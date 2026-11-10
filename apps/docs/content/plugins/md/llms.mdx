@@ -179,7 +179,7 @@ A page given as a path is rendered the way `/page.md` is, to read its title and 
 
   Both say how many failed with an `x-affordances-md-dropped` header. They never list them, since they're public and the list could name a private page.
 
-- A page that isn't part of the public site is left out by design, and the file stays cacheable: a redirect, any other `4xx` (a `404`, a gate's `401`), a response that isn't Markdown, a private render, or a page with a boundary that caught an error (`x-affordances-md-error`), which a retry wouldn't change. `llms.txt` still links it by its path. In development the server logs each page left out, failed or not, and why; a private render is logged as an error, since it's usually a page you meant to be public.
+- A page that isn't part of the public site is left out by design, and the file stays cacheable: a redirect, any other `4xx` (a `404`, a gate's `401`), a response that isn't Markdown, a private render, or a page with a boundary that caught an error (`x-affordances-md-uncached: error`), which a retry wouldn't change. `llms.txt` still links it by its path. In development the server logs each page left out, failed or not, and why; a private render is logged as an error, since it's usually a page you meant to be public.
 - Without an Affordances index (`@affordances/md` on its own), the pages come from `app/` alone, and `llms.txt` leaves out the Affordances line.
 - Both are cached publicly for an hour (`s-maxage=3600`). `publicCache` on either handler sets another time, with the same values as [`markdown.ts`'s](/docs/plugins/md/caching): a `cacheLife` profile or `{ revalidate, expire? }` in seconds, which gives the header Next sends for a page cached that long. `false` means never:
 
