@@ -516,7 +516,8 @@ const markdownRedirect = ({ status, location }: NextRedirect, target: URL, cache
 // public one. undefined for a url with no twin
 const toTwin = (url: URL) => {
   const twin = twinLocation(url, url)
-  if (!twin) return undefined
+  // on a literalMd route, x.md is a page of its own, not x's twin: the negotiated render answers instead
+  if (!twin || isLiteral(mdPath(url.pathname))) return undefined
   return respond(`This page's Markdown is at [${twin}](${twin}).\n`, 307, {}, { location: twin })
 }
 

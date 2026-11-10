@@ -655,6 +655,23 @@ test('an anonymous Accept request on an opted-in route goes to its twin, never s
   ])
 })
 
+test("on a literalMd route, x.md is a page of its own, so Accept on x gets x's markdown there, never a 307 to x.md", async () => {
+  route('converted', 'hours')
+  vi.stubEnv('AFFORDANCES_MD_LITERAL', JSON.stringify(['/x/:pkg']))
+  upstream = (url) =>
+    new Response(page(`<h1>Page ${url.pathname}</h1>`), {
+      headers: { 'content-type': 'text/html' },
+    })
+  const asked = await createMdHandler()(
+    new Request(`${site}/x/express`, { headers: { accept: 'text/markdown' } }),
+  )
+  expect([asked.status, asked.headers.get('location'), asked.headers.get('cache-control')]).toEqual(
+    [200, null, 'private, no-store'],
+  )
+  expect(await asked.text()).toContain('# Page /x/express')
+  vi.unstubAllEnvs()
+})
+
 // a page that called notFound(): before its shell went out (next's 404, its not-found.tsx), or after (a 200 with the
 // error row)
 const notFound = {

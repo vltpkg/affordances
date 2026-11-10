@@ -52,6 +52,17 @@ const plain: Check[] = [
     status: 307,
     expect: { location: '/ok.md', 'cache-control': PRIVATE },
   },
+  // on a literalMd route, /notes/a.md is the note a.md: Accept on /notes/a gets /notes/a's markdown, never a 307 there
+  {
+    path: '/notes/a',
+    headers: { accept: 'text/markdown' },
+    status: 200,
+    expect: { location: null, 'cache-control': PRIVATE },
+    body: '# Note a',
+    not: 'a.md',
+  },
+  { path: '/notes/a.md', status: 200, body: 'Note a.md' },
+  { path: '/llms-notes.txt', status: 200, body: '# Note a' },
   // with credentials it's the person's own markdown, at the page's url, never public
   {
     path: '/ok',
