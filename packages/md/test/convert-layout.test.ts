@@ -44,7 +44,7 @@ test('a field line in a definition stays on its term’s line', () => {
       '<form data-affordances-md="values"><dl><dt><label for="s">Seats</label></dt>' +
         '<dd><input id="s" value="5"></dd></dl></form>',
     ),
-  ).toBe('**Form**\n\nSeats: 5\n')
+  ).toBe('Seats: 5\n')
 })
 
 test('boxes stacked in a cell are spaced, whatever their text ends with', () => {
@@ -69,6 +69,23 @@ test('what is laid out as one run in a cell stays whole', () => {
   expect(cell('<span class="inline-block">v</span><span>2</span>')).toBe('| v2 |')
 })
 
+// an avatar as shadcn renders one in a stack: a link with its name for screen readers, and the image's fallback
+const avatar = (href: string, name: string, fallback: string) =>
+  `<a href="${href}"><span class="sr-only">${name}</span>${fallback}</a>`
+
+test('links side by side are spaced when one holds an empty block, as an avatar fallback does', () => {
+  for (const fallback of ['<div></div>', '<span><span><div></div></span></span>'])
+    expect(
+      md(
+        `<div class="flex -space-x-2">${avatar('/a', 'Ann', fallback)}${avatar('/b', 'Bo', fallback)}</div>`,
+      ),
+    ).toBe('[Ann](https://site.test/a) [Bo](https://site.test/b)\n')
+  // a block with something to read keeps the link a block
+  expect(
+    md('<div class="flex"><a href="/a"><h3>Ann</h3></a><a href="/b"><h3>Bo</h3></a></div>'),
+  ).toBe('### [Ann](https://site.test/a)\n\n### [Bo](https://site.test/b)\n')
+})
+
 test('single characters in boxes stay one word, and a field line in a cell keeps one space', () => {
   expect(
     md(
@@ -81,6 +98,12 @@ test('single characters in boxes stay one word, and a field line in a cell keeps
     md(
       '<form data-affordances-md="values"><table><tr><th>Item</th></tr><tr><td><div><label for="q">Qty</label></div>' +
         '<div><input id="q" value="5"></div></td></tr></table></form>',
-    ).split('\n')[4],
+    ).split('\n')[2],
   ).toBe('| Qty: 5 |')
+})
+
+test("a link's <br> is a line break, never an empty block", () => {
+  expect(md('<p><a href="/ann">Ann Lee<br>Engineer</a></p>')).toBe(
+    '[Ann Lee\\\nEngineer](https://site.test/ann)\n',
+  )
 })

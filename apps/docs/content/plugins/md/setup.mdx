@@ -3,6 +3,8 @@ title: Setup
 description: Add the md plugin to your Next.js config, then the route handler that renders and converts pages.
 ---
 
+It needs Next.js 16 or later, with the App Router. `partialPrefetching` is a Next 16.3 option; the rest, `cacheComponents`, `cacheLife` profiles, `forbidden()` and `unauthorized()`, and `proxy.ts`, works from 16.0.
+
 With the Affordances graph, add `md()` to `withAffordances`'s plugins:
 
 ```ts title="next.config.ts"
@@ -20,7 +22,7 @@ import { withMd } from '@affordances/md/next'
 export default withMd(nextConfig)
 ```
 
-Then add the route handler. `init` writes it:
+Then add the route handler. `init` writes it, and adds `.affordances/**/*.ts` to your `tsconfig.json`'s `include`, so `tsc` checks each [`markdown.ts`](/docs/plugins/md/markdown-file) against its route (commit both):
 
 <Run cmd="@affordances/md init" />
 
@@ -38,10 +40,12 @@ import { createMdHandler } from '@affordances/md/next'
 export const GET = createMdHandler({ maxBytes: 32 * 1024 * 1024, timeout: 20_000 })
 ```
 
-- `maxBytes`, 6 MiB by default: the largest page HTML it converts. It's a memory guard, since a page is read whole before converting. A page past it answers `413` saying so, and the server logs which page and the line to change, so a page that grows (a report, a changelog) is caught when it crosses it.
+- `maxBytes`, 16 MiB by default: the most of a page's HTML it keeps to convert, a memory guard. Next's Flight data (the payload a page hydrates from, and with `partialPrefetching` most of a big page's bytes) doesn't count: it's read for its error rows as the page streams and never kept, so a 30 MB `partialPrefetching` page converts with the default. The whole response, Flight data and all, can be up to 8 times `maxBytes`. A page past either answers `413` saying so, and the server logs which page and the line to change, so a page that grows (a report, a changelog) is caught when it crosses it.
 - `timeout`, 10 seconds by default: how long the page has to stream. A page still streaming then is converted as far as it got and marked partial; one that sent nothing answers `504`.
 
 The rest of its options (`origin`, `headers`, `append`, `linkTwins`) are in [Caching and privacy](/docs/plugins/md/caching).
+
+The handler fetches each page from the request's own origin. `next start` builds that from its own hostname and port, never from the `Host` header, so a caller can't point it at another server. With `experimental.trustHostHeader` (Vercel sets it, behind its own edge) or a custom server, `Host` decides it: behind a proxy of your own that passes `Host` through, set `AFFORDANCES_MD_ORIGIN` to the URL the server reaches itself at, such as `http://localhost:3000`.
 
 ## Routing
 
@@ -90,7 +94,7 @@ Then the public URL gets everything a page's own URL does:
 - twin links: the converted Markdown links `/package/@babel/core/versions` as its `.md`;
 - its route's [`markdown.ts`](/docs/plugins/md/markdown-file), with `params` exactly as `page.tsx` gets them for that URL: `{ pkg: '%40babel%2Fcore' }`, still encoded;
 
-An alias doesn't route anything. Your proxy or rewrite still sends the page there; the alias tells `md()` what it does, so keep the two in step.
+An alias doesn't route anything. Your proxy or rewrite still sends the page there; the alias tells `md()` what it does, so keep the two in step, or have the proxy map with [`mdAliasPath`](#with-a-proxyts) so there's one table.
 
 - Each alias is checked when the config loads. One whose destination no page in `app/` answers throws, quoting the alias and naming the nearest pages, so a typo fails `next dev` and `next build`, not a request.
 - The first alias that matches a URL wins, in the order you list them, before the URL is matched against `app/` as it is.
@@ -141,8 +145,27 @@ export const proxy = (request: NextRequest) => {
 - `md.page` is a `URL`: the page the request is for, HTML or Markdown alike. `/compare.md` is `/compare`, `/index.md` is `/`, and a [`literalMd`](#pages-whose-url-ends-in-md) page keeps its own `.md`, since the handler tells which it is. It has the request's search. Run every gate on it.
 - `md.markdown` says whether the request is for Markdown.
 - `md.redirect(url, status?)` is `NextResponse.redirect`, except that a Markdown request sent to a page on this site goes to that page's `.md` (`/sign-in.md?…`), so an agent stays in Markdown. Another origin gets a plain redirect, never a `.md`. A Markdown request's redirect is `private, no-store` and varies on `Accept`.
+- `md.rewrite(destination, init?)` is `NextResponse.rewrite`, except that a Markdown request gets the destination page's Markdown, with `init.status`: a flag gate's `md.rewrite(new URL('/404', request.url), { status: 404 })` answers with the `404` page's Markdown. It's `private, no-store` and varies on `Accept`. Another origin, and a page request, get Next's own rewrite.
 - `md.next(init?)` lets the request through: a Markdown request to the handler, any other with `NextResponse.next(init)`.
+- `md.request` is the page as a `NextRequest`, with the request's method, headers and cookies, for a gate that takes a request rather than a URL (a middleware's route matcher).
+- `md.adopt(response)` makes a response from a middleware you didn't write right for a Markdown request: its redirect to a page on this site goes to that page's `.md`, its rewrite to a page on this site gives that page's Markdown with the response's status, its `NextResponse.next()` goes on to the handler, and anything else it answers is made `private, no-store`. The cookies it set go along. Another origin, and any request that isn't for Markdown, get the response as it came, so it's safe on every path.
 - `md.link` is the page's `Link` value, for a site that maps URLs onto routes without [`aliases`](#public-urls-your-proxy-maps-onto-routes); see [below](#link-from-the-proxy).
+
+`md.redirect`, `md.rewrite` and `md.next` are for gates you write. `md.adopt` is for a response from a third-party middleware, gating `md.request`:
+
+```ts title="proxy.ts"
+import type { NextFetchEvent, NextRequest } from 'next/server'
+import { mdProxy } from '@affordances/md/next/proxy'
+import { authMiddleware } from './auth'
+
+export const proxy = async (request: NextRequest, event: NextFetchEvent) => {
+  const md = mdProxy(request)
+  const answer = await authMiddleware(md.request, event)
+  return answer ? md.adopt(answer) : md.next()
+}
+```
+
+`mdAliasPath(pathname)` is the app route URL a public URL renders through [`aliases`](#public-urls-your-proxy-maps-onto-routes), as the handler resolves it, or the pathname as it is, for a proxy that maps the same URLs and wants one source of truth.
 
 Import it from `@affordances/md/next/proxy`, which holds only the matching, so your proxy's bundle carries neither the converter nor any `markdown.ts`. `@affordances/md/next` exports the same functions.
 
@@ -165,7 +188,16 @@ export const proxy = (request: NextRequest) => {
 
 The proxy runs once, on the URL that was requested: `/dashboard/1.md`, or `/dashboard/1` with `Accept: text/markdown`. For a page converted from its HTML, the handler's own request for the page goes through the proxy again, but a route with a [`markdown.ts`](/docs/plugins/md/markdown-file) isn't rendered, so that first run is its only gate. With 0.1.0's recipe, which returned early for Markdown requests before its gates, remove that skip before adding a `markdown.ts`.
 
-Your proxy's matcher has to match a page's `.md` URL as well as the page. `'/dashboard/:path*'` covers `/dashboard/123.md`, but `'/dashboard/:id(\\d+)'` doesn't: the `.md` URL slips past the gate. Add `'/dashboard/:id(\\d+).md'` to the matcher, or run the gate-first recipe above with no `matcher` at all. The handler never runs a `markdown.ts` for a request made straight to its own URL (`/api/affordances/md/…`), which a proxy matcher scoped to your pages wouldn't see; that gets the page's HTML render, gated at the page's URL.
+Your proxy's matcher has to match a page's `.md` URL as well as the page, its root included:
+
+```ts title="proxy.ts"
+export const config = {
+  // the dashboard, its pages, and each one's .md twin: /dashboard.md isn't under /dashboard/
+  matcher: ['/dashboard', '/dashboard.md', '/dashboard/:path*'],
+}
+```
+
+`'/dashboard/:path*'` covers `/dashboard/123.md`, but not `/dashboard.md`, the twin of `/dashboard` itself: without `'/dashboard.md'` in the list, `app/dashboard/markdown.ts` runs ungated there. A matcher that names a page's exact shape (`'/dashboard/:id(\\d+)'`) misses its `.md` URL (`/dashboard/123.md`) too; add `'/dashboard/:id(\\d+).md'`. Or run the gate-first recipe above with no `matcher` at all, which covers every shape. The handler never runs a `markdown.ts` for a request made straight to its own URL (`/api/affordances/md/…`), which a proxy matcher scoped to your pages wouldn't see; that gets the page's HTML render, gated at the page's URL.
 
 `mdProxy` is built on two lower-level functions, which stay: `isMdRequest(request)` is `md.markdown`, and `mdRewrite(request)` returns the handler URL a Markdown request goes to, or `undefined`, for a proxy that rewrites it itself. A proxy can't see `public/`, so a real `.md` file there matches too.
 

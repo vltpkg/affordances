@@ -7,6 +7,7 @@
     "markdown-file",
     "caching",
     "llms",
+    "production",
     "page-actions",
     "converter"
   ]

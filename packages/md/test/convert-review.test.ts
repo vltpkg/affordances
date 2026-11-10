@@ -17,7 +17,7 @@ test('A13: a table in a form keeps its shape, with each field written where it i
         '</tbody></table><button>Update</button></form>',
     ),
   ).toBe(
-    '**Form**\n\n| Product | Price | Qty      |\n| ------- | ----- | -------- |\n| Shirt   | $10   | Quantity |\n| Hat     | $5    | Quantity |\n',
+    '| Product | Price | Qty      |\n| ------- | ----- | -------- |\n| Shirt   | $10   | Quantity |\n| Hat     | $5    | Quantity |\n',
   )
   // so does a definition list, and a values form shows the value in place
   expect(
@@ -25,13 +25,13 @@ test('A13: a table in a form keeps its shape, with each field written where it i
       '<form data-affordances-md="values"><dl><dt>Plan</dt><dd>Pro</dd><dt>Seats</dt>' +
         '<dd><input aria-label="Seats" value="5"></dd></dl><label for="n">Name</label><input id="n" value="Acme"></form>',
     ),
-  ).toBe('**Form**\n\n**Plan**: Pro\n\n**Seats**: Seats: 5\n\n- Name: Acme\n')
+  ).toBe('**Plan**: Pro\n\n**Seats**: Seats: 5\n\n- Name: Acme\n')
   // what holds no field converts as usual around the lines
   expect(
     md(
       '<form><p>Update your <em>shipping</em> details.</p><div><label>Name <input name="n"></label><p>As on your card.</p></div></form>',
     ),
-  ).toBe('**Form**\n\nUpdate your _shipping_ details.\n\n- Name\n\nAs on your card.\n')
+  ).toBe('Update your _shipping_ details.\n\n- Name\n\nAs on your card.\n')
 })
 
 test('A14: a form named by its own legend or label keeps that name as its title', () => {
@@ -60,14 +60,14 @@ test('A16: controls and links named by their content or aria-labelledby', () => 
     md(
       '<form data-affordances-md="values"><button role="switch" aria-checked="true">Wi-Fi</button></form>',
     ),
-  ).toBe('**Form**\n\n- Wi-Fi (switch): on\n')
+  ).toBe('- Wi-Fi (switch): on\n')
   // a toggle group: a radiogroup of buttons named by their content
   expect(
     md(
       '<form data-affordances-md="values"><div role="radiogroup" aria-label="Align">' +
         '<button role="radio" aria-checked="true">Left</button><button role="radio" aria-checked="false">Right</button></div></form>',
     ),
-  ).toBe('**Form**\n\n- Align: Left (selected), Right\n')
+  ).toBe('- Align: Left (selected), Right\n')
   // a link with nothing in it, named by aria-labelledby
   expect(
     md('<p><span id="n">Ann</span> <a href="/u/ann" aria-labelledby="n"><span></span></a></p>'),
@@ -82,7 +82,7 @@ test('A16: controls and links named by their content or aria-labelledby', () => 
       '<form data-affordances-md="values"><button role="combobox">dk_live_LEAK</button>' +
         '<button role="switch" aria-checked="false">Notify <input value="LEAK2"></button></form>',
     ),
-  ).toBe('**Form**\n\n- Notify (switch): off\n')
+  ).toBe('- Notify (switch): off\n')
 })
 
 test('A17: a heading or caption whose text is a button reads the button’s text', () => {
@@ -138,7 +138,7 @@ test('a field labelled by a textarea, select or input doesn’t carry its value 
       '<form><select id="s"><option selected>LEAK-sel</option></select><input id="i" value="LEAK-in">' +
         '<output id="o">LEAK-out</output><input aria-labelledby="s i o" aria-label="Kept" name="x"></form>',
     ),
-  ).toBe('**Form**\n\n- Kept\n')
+  ).toBe('- Kept\n')
 })
 
 test('A13: a definition list whose terms are a form’s labels writes each line on its own', () => {
@@ -147,7 +147,7 @@ test('A13: a definition list whose terms are a form’s labels writes each line 
       '<form data-affordances-md="values"><dl><dt><label for="s">Seats</label></dt><dd><input id="s" value="5"></dd>' +
         '<dt><label for="p">Password</label></dt><dd><input id="p" type="password" value="LEAK-pw"></dd></dl></form>',
     ),
-  ).toBe('**Form**\n\nSeats: 5\n\nPassword (password)\n')
+  ).toBe('Seats: 5\n\nPassword (password)\n')
   // a term with words of its own keeps them
   expect(md('<dl><dt></dt><dd>Alone</dd><dt>Term</dt><dd>Def</dd></dl>')).toBe(
     'Alone\n\n**Term**: Def\n',

@@ -61,7 +61,7 @@ test('placeholders and names never become labels, and a group without a legend h
       '<fieldset aria-label="Color"><input type="radio" name="c" id="r"><label for="r">Red</label></fieldset>' +
       '</form>',
   )
-  expect(out).toBe('**Form**\n\n- Email\n- Color: Red\n')
+  expect(out).toBe('- Email\n- Color: Red\n')
 })
 
 test('a choice without a label is left out, so its value never shows', () => {
@@ -72,7 +72,7 @@ test('a choice without a label is left out, so its value never shows', () => {
       '<fieldset><legend>Hidden</legend><input type="checkbox" name="x" value="x_internal_2"></fieldset>' +
       '</form>',
   )
-  expect(out).toBe('**Form**\n\n- Public\n')
+  expect(out).toBe('- Public\n')
 })
 
 test('inline-style hiding is read the way css reads it: comments, escapes, spaced !important, content-visibility', () => {
@@ -147,5 +147,65 @@ test("the canonical is the <head>'s, an http(s) url that can't break the Link he
   // <, > and whitespace are percent-encoded, so they're safe
   expect(canonical('<link rel="canonical" href="https://shop.test/a b<c">')).toBe(
     'https://shop.test/a%20b%3Cc',
+  )
+})
+
+// a tab set as a page renders it, each panel hidden one of the ways people can't see it, marked or not
+const HIDE = {
+  hidden: 'hidden',
+  'display: none': 'style="display:none"',
+  'aria-hidden': 'aria-hidden="true"',
+  'visibility: hidden': 'style="visibility:hidden"',
+}
+const tabSet = (hide: string, mark = '', role = 'tabpanel') =>
+  '<div role="tablist"><button role="tab" id="t1" aria-controls="p1">npm</button>' +
+  '<button role="tab" id="t2" aria-controls="p2">pnpm</button></div>' +
+  `<div role="${role}" id="p1" aria-labelledby="t1" ${hide} ${mark}><p>LEAK-one</p></div>` +
+  `<div role="${role}" id="p2" aria-labelledby="t2" ${hide} ${mark}><p>LEAK-two</p></div>`
+
+test('a hidden tab panel, accordion or region stays hidden without the show marker, however it looks', () => {
+  for (const hide of Object.values(HIDE))
+    for (const role of ['tabpanel', 'region', 'group'])
+      for (const mark of [
+        '',
+        'data-state="inactive"',
+        'data-affordances-md="values"',
+        'data-affordances-md="Show"',
+      ])
+        expect(md(tabSet(hide, mark, role))).not.toContain('LEAK')
+})
+
+test('the show marker keeps what it marks, headed by its tab, and nothing hidden inside it', () => {
+  for (const hide of Object.values(HIDE))
+    expect(md(tabSet(hide, 'data-affordances-md="show"'))).toBe(
+      '**npm**\n\nLEAK-one\n\n**pnpm**\n\nLEAK-two\n',
+    )
+  // like <AgentOnly>, it keeps the marked element on its own, with no trigger needed, and only it
+  expect(
+    md('<div hidden data-affordances-md="show"><p>Kept</p><p hidden>LEAK-inner</p></div>'),
+  ).toBe('Kept\n')
+  // a heading only comes from a tab, never from something hidden: what labels a panel is named as ever
+  expect(
+    md(
+      '<span id="h" hidden>LEAK-label</span><div hidden data-affordances-md="show" role="tabpanel" aria-labelledby="h">' +
+        '<p>Kept</p></div><p id="x">Plain</p><div hidden data-affordances-md="show" role="tabpanel" aria-labelledby="x"><p>Too</p></div>',
+    ),
+  ).toBe('Kept\n\nPlain\n\nToo\n')
+  // a tablist stays when none of its tabs labels a shown panel
+  expect(md('<div role="tablist"><span role="tab" id="a">Overview</span></div><p>Body</p>')).toBe(
+    'Overview\n\nBody\n',
+  )
+})
+
+test('a shown panel without aria-labelledby takes no tablist out, and a missing aria-labelledby names nothing', () => {
+  expect(
+    md(
+      '<div hidden data-affordances-md="show"><p>Kept</p></div>' +
+        '<div role="tablist"><a role="tab" href="/a">Overview</a><a role="tab" href="/b">Files</a></div>',
+    ),
+  ).toBe('Kept\n\n[Overview](https://shop.test/a) [Files](https://shop.test/b)\n')
+  // an element whose id is empty is never what a missing aria-labelledby points at
+  expect(md('<span id="">Other text</span><p><a href="/x"><svg></svg></a></p>')).toBe(
+    'Other text\n',
   )
 })

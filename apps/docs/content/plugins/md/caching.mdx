@@ -6,17 +6,33 @@ description: The Markdown is the page that caller would see, and it's only cache
 The handler forwards the caller's `cookie`, `authorization`, and `accept-language` headers, so a signed-in agent gets the page that person would see. Everything about that response stays personal:
 
 - With a cookie or bearer token, or when the page is `private` or `no-store`, or sets a cookie, the Markdown is sent with `Cache-Control: private, no-store`.
-- Markdown served at a URL that also serves the page's HTML is `private, no-store` too, whatever it is: converted Markdown, a redirect, or what a `markdown.ts` returns. That's the page's own URL asked for with `Accept: text/markdown`, and a `literalMd` page whose own URL ends in `.md`. A cache that ignores `Vary` (Cloudflare's Cache Everything does) would serve one for the other. The `.md` twin URL is its own, so it keeps the page's `Cache-Control`.
+- Markdown served at a URL that also serves the page's HTML is `private, no-store` too, whatever it is: converted Markdown, a redirect, or what a `markdown.ts` returns. That's the page's own URL asked for with `Accept: text/markdown`, and a `literalMd` page whose own URL ends in `.md`. A cache that ignores `Vary` (Cloudflare's Cache Everything does) would serve one for the other. The `.md` twin URL is its own, so it keeps the page's `Cache-Control`. On a route with [`publicCache`](#caching-public-markdown), an anonymous request for the page's own URL with `Accept: text/markdown` gets a `307` to the twin instead, `private, no-store` with `Vary: Accept` and a line naming the twin for an agent that doesn't follow redirects. Nothing is rendered, the redirect is never stored, and the twin is the URL a CDN keeps. A request with credentials, and a route without `publicCache`, still get their Markdown at the page's URL. The redirect's `Location` is relative, so it's right behind any proxy. `llms.txt` and `llms-full.txt` read each page at its twin, so they never take the redirect.
+- A page with a boundary that caught an error (its `error.tsx`, or a `<Suspense>` child that threw) is missing that part, so its Markdown is `private, no-store` with `x-affordances-md-uncached: error`, whatever the page's own `Cache-Control` or `publicCache` says.
 - Otherwise it keeps the page's own `Cache-Control`.
+- Next sets an app page's own `Vary` itself, to its RSC headers (`getVaryHeader()`), replacing whatever `next.config` `headers`, `proxy.ts` or `md()` set. So a page's HTML never says it varies on `Accept`, though its URL answers Markdown to `Accept: text/markdown`. Vercel's cache isn't affected, since the `Accept` rewrite runs before it. A shared cache of your own in front of the site would need to key on `Accept` itself, or bypass Markdown requests.
 - Converted Markdown has `Vary: Accept` (and `Accept-Language` too when the page varies on it, since the handler forwards the caller's language), `X-Affordances-Tokens` with an estimate of its length in tokens, and a `Link` to the canonical page when it has one.
 
 A response the handler passes on rather than converts (a file in `public/`, JSON, a client navigation's RSC payload, a `.md`-named page's HTML) keeps the page's own headers, except that it's `private, no-store` whenever the request carried a cookie or an `authorization` header, and a cookie set in answer to the `headers` option's credentials never goes out.
 
-The status code is the page's. A redirect to the same site stays in Markdown (to the target's `.md`), varies on `Accept`, and is cached as the page would be (private when it's credentialed, private, or sets a cookie). One to another origin is passed on as it came, never followed: the agent decides whether to follow it. That includes a `redirect()` a page calls after its shell has streamed, which Next can only send as a `200` that refreshes the browser: the handler answers it with a real `307` (`308` for `permanentRedirect()`). A `notFound()`, `forbidden()` or `unauthorized()` after the shell is the same: Next sends a `200`, and the handler answers `404`, `403` or `401`, `private, no-store`. A page that is still streaming after 10 seconds is converted as far as it got, marked partial and never cached ([slow boundaries](/docs/plugins/md/conversion#slow-boundaries)); one that sends nothing by then answers `504`, and one larger than 6 MiB answers `413`, saying how to raise `maxBytes`.
+The status code is the page's. A redirect to the same site stays in Markdown (to the target's `.md`), varies on `Accept`, and is cached as the page would be (private when it's credentialed, private, or sets a cookie). One to another origin is passed on as it came, never followed: the agent decides whether to follow it. That includes a `redirect()` a page calls after its shell has streamed, which Next can only send as a `200` that refreshes the browser: the handler answers it with a real `307` (`308` for `permanentRedirect()`). A `notFound()`, `forbidden()` or `unauthorized()` after the shell is the same: Next sends a `200`, and the handler answers `404`, `403` or `401`, `private, no-store`. A page that is still streaming after 10 seconds is converted as far as it got, marked partial and never cached ([slow boundaries](/docs/plugins/md/conversion#slow-boundaries)); one that sends nothing by then answers `504`, and one whose HTML, Flight data aside, is larger than 16 MiB answers `413`, saying how to raise `maxBytes`.
 
 ## Caching public Markdown
 
-Markdown from a `markdown.ts` (a default export or its slots) is `private, no-store`, since it read data with whatever the request carried. So is a page Next renders dynamically, which it always sends as `private, no-store`. When a route's Markdown is public, say so in its `markdown.ts`, and a CDN can keep it:
+**A twin is cached like its page: give the page a `cacheLife` and its `.md` follows.** An anonymous request for the `.md` keeps the page's own `Cache-Control`, so a page with `'use cache'` and `cacheLife('days')` sends `s-maxage=86400, stale-while-revalidate=518400` on both, and a static page sends Next's `s-maxage=31536000` on both, with no `markdown.ts`:
+
+```tsx title="app/guide/[slug]/page.tsx"
+import { cacheLife } from 'next/cache'
+
+export default async function Page({ params }: PageProps<'/guide/[slug]'>) {
+  'use cache'
+  cacheLife('days')
+  return <Guide slug={(await params).slug} />
+}
+```
+
+That holds as long as the twin is the page's anonymous view: no cookie or `authorization`, the `.md` URL rather than the page's own with `Accept`, no filled slot, and nothing that made it private (a cookie set in answer, an error boundary, a partial render).
+
+Markdown from a `markdown.ts` (a default export or its slots) is `private, no-store`, since it read data with whatever the request carried. So is a page Next renders dynamically, which it always sends as `private, no-store`. For those, say the Markdown is public in the route's `markdown.ts`, and a CDN can keep it:
 
 ```ts title="app/package/[pkg]/markdown.ts"
 export const publicCache = 'hours'
@@ -43,8 +59,24 @@ It applies only to the anonymous view of the `.md` URL. The response is public o
 
 - the request has no `cookie` and no `authorization`, and the handler's `headers` option adds neither;
 - it's the `.md` URL, not the page's own URL asked for with `Accept: text/markdown`, which stays private since some CDN modes ignore `Vary`;
-- the answer is a `200`, and the page finished streaming before the timeout;
+- the answer is a `200`, the page finished streaming before the timeout, and no boundary in it caught an error;
 - the page didn't set a cookie. A page that sets one for an anonymous visitor (a session, an auth handshake) stays private, and in development the server says which cookie.
+
+When one of them doesn't hold, the response says which in `x-affordances-md-uncached`, in production too, so a gate that sets a cookie for a signed-out visitor shows up in your logs:
+
+| Value         | Why the Markdown stayed private                                                                 |
+| ------------- | ----------------------------------------------------------------------------------------------- |
+| `credentials` | The request carried a `cookie` or `authorization`, or the handler's `headers` option added one. |
+| `set-cookie`  | The page set a cookie for the anonymous visitor.                                                |
+| `status`      | The answer wasn't a `200`: a redirect, a `404`, a `notFound()` after the shell.                 |
+| `partial`     | The page was still streaming at the handler's `timeout`.                                        |
+| `error`       | A boundary on the page caught an error.                                                         |
+| `gate`        | Your `proxy.ts` chose the page with `md.rewrite` or `md.adopt`.                                 |
+| `negotiated`  | It's the page's own URL, asked for with `Accept: text/markdown`.                                |
+| `invalid`     | `publicCache` isn't a `cacheLife` profile or `{ revalidate, expire? }`.                         |
+| `private`     | The route has no `publicCache`, and the page's own `Cache-Control` is private or missing.       |
+
+Every answer of the Markdown route's own that isn't public sends it, on any route: a page's own redirect, its `404`, the route's `502`. A file or route handler it passes through keeps its own headers.
 
 A `Response` your default export returns keeps its own `Cache-Control`, as before. A name that isn't a profile, or an object with another field (`'hourz'`, `{ revalidat: 300 }`), fails `tsc` (and `next build`), named in the route's `markdown.ts` with Next's closest profile, against Next's profiles and your `next.config`'s. In development the server also says which file and what it can be. Until it's fixed, the route isn't cached.
 
@@ -76,6 +108,26 @@ export const publicCache = 'hours'
 
 `revalidateTag` refreshes the data, not a CDN's copy of the `.md`, which lasts its own time.
 
+## On Vercel
+
+A twin is the Markdown route's request plus one request of its own, for the page: the route fetches the page from the same deployment and converts its HTML. On Vercel that's two function invocations (the route's, then the page's own render) and the page's whole HTML crossing the network between them, so an uncached twin costs about what its page does, plus the conversion. Three things make it cheaper:
+
+- A cached twin costs nothing after the first request: give the page a `cacheLife`, or the route `publicCache`, and the CDN answers.
+- A [`markdown.ts`](/docs/plugins/md/markdown-file) default export that answers skips the page's render, and its invocation.
+- An anonymous `Accept: text/markdown` request on a `publicCache` route is a `307` to the twin, so it shares the twin's cache.
+
+Vercel's edge sets the `Host` the handler builds its own origin from, so the page fetch reaches the same deployment with no setting. On a deployment with [Deployment Protection](https://vercel.com/docs/deployment-protection), the page fetch needs the bypass too. Pass Vercel's automation bypass secret as a header, which isn't a credential, so it applies to every render:
+
+```ts title="app/api/affordances/md/[[...path]]/route.ts"
+import { createMdHandler } from '@affordances/md/next'
+
+export const GET = createMdHandler({
+  headers: { 'x-vercel-protection-bypass': process.env.VERCEL_AUTOMATION_BYPASS_SECRET ?? '' },
+})
+```
+
+`llms.txt` and `llms-full.txt` fetch each page through that route, so they need the same `headers` on their own handlers to reach it.
+
 ## Behind a proxy
 
 The handler fetches pages from the request's own origin. When a proxy changes it, set `AFFORDANCES_MD_ORIGIN`, or build the handler with options:
@@ -86,13 +138,13 @@ import { createMdHandler } from '@affordances/md/next'
 export const GET = createMdHandler({ origin: 'http://localhost:3000', timeout: 5000 })
 ```
 
-| Option     | Default       | Description                                                          |
-| ---------- | ------------- | -------------------------------------------------------------------- |
-| `origin`   | the request's | Where to fetch pages from                                            |
-| `timeout`  | `10000`       | Milliseconds before converting what has streamed, or answering `504` |
-| `maxBytes` | 6 MiB         | The largest page HTML it converts, or answers `413`                  |
-| `headers`  | none          | More headers on the page fetch: an object, or `(request) => headers` |
-| `append`   | none          | More Markdown after the page's, such as an actions summary           |
+| Option     | Default       | Description                                                             |
+| ---------- | ------------- | ----------------------------------------------------------------------- |
+| `origin`   | the request's | Where to fetch pages from                                               |
+| `timeout`  | `10000`       | Milliseconds before converting what has streamed, or answering `504`    |
+| `maxBytes` | 16 MiB        | The most HTML it keeps from a page, Flight data aside, or answers `413` |
+| `headers`  | none          | More headers on the page fetch: an object, or `(request) => headers`    |
+| `append`   | none          | More Markdown after the page's, such as an actions summary              |
 
 `headers` are set after the forwarded ones, for a request the render needs that the caller didn't send, such as `x-vercel-protection-bypass` on a protected preview. A `cookie` or `authorization` here applies only to a request that sent neither: a signed-in person's Markdown is rendered with their own credentials alone, never the service account's, so it never shows more than they could see, while an anonymous request renders with the service's. It's all or nothing, so a visitor carrying any cookie, even an unrelated one (analytics, consent), is rendered without the option's credentials, as if there were none; it fails closed. On a protected preview whose bypass rides on a `cookie` or `authorization` here, that visitor's Markdown may be the protection or login page rather than the content; a bypass in its own header, such as `x-vercel-protection-bypass`, isn't a credential and always applies, so use one of those for a protected preview. Either way the Markdown is private, and a cookie set in answer to the service's never goes out. Put a service account's credentials in `cookie` or `authorization`: the handler can't tell any other header (an `x-api-key`) is one, so it wouldn't keep a person's request from using it, nor treat the response as theirs. The `llms.txt` and `llms-full.txt` handlers take it too: they render anonymously, so its credentials always apply there, and the files are then `private, no-store`.
 

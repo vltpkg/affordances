@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { CACHE_LIFE_ENV, cacheControlFor, PROFILES } from '../src/next/cache.ts'
@@ -150,7 +151,8 @@ test('publicCache makes one cell public: opted in, no credentials, the .md url, 
                 )
             }
   warn.mockRestore()
-  expect([...statuses]).toEqual([200])
+  // an anonymous request for the page's own url, on an opted-in route, is sent to its twin
+  expect([...statuses].toSorted()).toEqual([200, 307])
   expect(cells).toEqual([
     'slot opted=true none twin partial=false set-cookie=false: s-maxage=3600, stale-while-revalidate=82800',
     'default opted=true none twin partial=false set-cookie=false: s-maxage=3600, stale-while-revalidate=82800',
@@ -158,9 +160,11 @@ test('publicCache makes one cell public: opted in, no credentials, the .md url, 
   ])
 })
 
-// a response's headers but its cache-control
+// a response's headers but how it's cached and why
 const without = (response: Response) =>
-  [...response.headers].filter(([name]) => name !== 'cache-control')
+  [...response.headers].filter(
+    ([name]) => name !== 'cache-control' && name !== 'x-affordances-md-uncached',
+  )
 
 test('a credentialed request to an opted-in route stays private and personal, as it is today', async () => {
   route('slot', 'hours')
@@ -286,11 +290,12 @@ test("an opted-in route's public view is one language: rendered, and its markdow
       publicCache: 'hours',
     }) as never
   expect(await twin({ 'accept-language': 'fr' })).toContain('lang=none')
-  // a view that stays private keeps it: signed in, asked for with Accept, or a route that didn't opt in
+  // a view that stays private keeps it: signed in, or a route that didn't opt in. one asked for with Accept is sent
+  // to the twin
   expect(await twin({ 'accept-language': 'fr', cookie: 'sid=1' })).toContain('lang=fr')
-  expect(await twin({ 'accept-language': 'fr', accept: 'text/markdown' }, '/x/express')).toContain(
-    'lang=fr',
-  )
+  expect(
+    await twin({ 'accept-language': 'fr', accept: 'text/markdown', cookie: 'sid=1' }, '/x/express'),
+  ).toContain('lang=fr')
   route('converted')
   expect(await twin({ 'accept-language': 'fr' })).toContain('LANG-fr')
 })
@@ -429,4 +434,372 @@ test("the one public view carries none of the visitor's headers: no user agent o
   )
   expect(await signedIn.text()).toContain('ua=agent/1 country=FR')
   expect(signedIn.headers.get('cache-control')).toBe('private, no-store')
+})
+
+// a page whose boundary caught an error (error.tsx), as next start sent it: 200, with the error as a flight error row
+// whose digest is a number, and the boundary's fallback in the html
+const errored = (version: string) =>
+  readFileSync(
+    new URL(`./fixtures/streamed-error-boundary-next${version}.html`, import.meta.url),
+    'utf8',
+  )
+const flight = (text: string) => `<script>self.__next_f.push(${JSON.stringify([1, text])})</script>`
+
+test('a page with a flight error row is never public, on an opted-in route or off one, and says so', async () => {
+  for (const version of ['16.3', '16.4'])
+    for (const opted of [true, false]) {
+      route('converted', opted ? 'hours' : undefined)
+      // next's own cache-control, as a static page has it, isn't passed on either
+      upstream = () =>
+        new Response(errored(version), {
+          headers: { 'content-type': 'text/html', 'cache-control': 's-maxage=31536000' },
+        })
+      const response = await createMdHandler()(new Request(`${site}/x/express.md`))
+      expect([version, opted, response.status, response.headers.get('cache-control')]).toEqual([
+        version,
+        opted,
+        200,
+        'private, no-store',
+      ])
+      expect(response.headers.get('x-affordances-md-uncached')).toBe('error')
+    }
+  // a page without one, opted in, is still public
+  route('converted', 'hours')
+  upstream = () =>
+    new Response(page('<h1>express</h1>'), { headers: { 'content-type': 'text/html' } })
+  const fine = await createMdHandler()(new Request(`${site}/x/express.md`))
+  expect(fine.headers.get('cache-control')).toBe('s-maxage=3600, stale-while-revalidate=82800')
+  expect(fine.headers.has('x-affordances-md-uncached')).toBe(false)
+})
+
+test("any error row counts, whatever it holds; a next digest md can't read is said once per process", async () => {
+  route('converted', 'hours')
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  vi.stubEnv('NODE_ENV', 'production')
+  const rows = [
+    '5:E{"digest":"1234567"}\n',
+    '5:E{"message":"no digest in development"}\n',
+    '5:E{not json\n',
+    '5:E{"digest":"NEXT_HTTP_ERROR_FALLBACK;418"}\n',
+    '5:E{"digest":"NEXT_SOMETHING_NEW;x"}\n',
+  ]
+  for (const row of rows) {
+    upstream = () =>
+      new Response(page('<h1>express</h1>') + flight(row), {
+        headers: { 'content-type': 'text/html' },
+      })
+    const response = await createMdHandler()(new Request(`${site}/x/express.md`))
+    // a next digest md can't read may be a redirect or a status it can't tell, and a row that isn't json can't be read
+    // at all: never a 200 of the shell
+    const status = row.includes('NEXT_') || row.includes('not json') ? 502 : 200
+    // and its body is md's own, never the shell's markdown
+    const shell = (await response.text()).includes('express')
+    expect([row, response.status, response.headers.get('cache-control'), shell]).toEqual([
+      row,
+      status,
+      'private, no-store',
+      status === 200,
+    ])
+  }
+  // flight data react couldn't read is a 502 too, with nothing of the page in it
+  upstream = () =>
+    new Response(
+      `${page('<h1>express</h1>')}<script>self.__next_f.push([1,"x"]</script><script>self.__next_f.push(nope)</script>`,
+      {
+        headers: { 'content-type': 'text/html' },
+      },
+    )
+  const unreadable = await createMdHandler()(new Request(`${site}/x/express.md`))
+  expect([
+    unreadable.status,
+    unreadable.headers.get('cache-control'),
+    (await unreadable.text()).includes('express'),
+  ]).toEqual([502, 'private, no-store', false])
+  // each once per process, in production too: the unreadable row, and the digest by its kind alone (the rest can hold
+  // a url)
+  expect(error.mock.calls.map(([message]) => message)).toEqual([
+    expect.stringMatching(
+      /^\[affordances-md\] \/x\/express's Flight data couldn't be read \((row|push)\), so it answers 502, private, no-store\./,
+    ),
+    "[affordances-md] a page streamed a Next.js digest @affordances/md doesn't know (NEXT_HTTP_ERROR_FALLBACK), so its markdown answers 502, private, no-store. Update @affordances/md, or report it if you're on the latest.",
+  ])
+  error.mockRestore()
+})
+
+// a boundary that renders in the browser by design, as next start sent it on 16.3 and 16.4: dynamic() with ssr: false,
+// or useSearchParams() in a static page's <Suspense>. react writes <!--$!--> and a template (data-dgst
+// BAILOUT_TO_CLIENT_SIDE_RENDERING on 16.3, empty on 16.4, as a real error's stripped digest is), or $RX in a dynamic
+// render, and no flight error row, since a client component never runs in flight
+test("a boundary that renders in the browser by design isn't an error: an opted-in twin stays public", async () => {
+  route('converted', 'hours')
+  for (const marker of [
+    '<!--$!--><template data-dgst="BAILOUT_TO_CLIENT_SIDE_RENDERING"></template><p>Loading…</p><!--/$-->',
+    '<!--$!--><template data-dgst=""></template><p>Loading…</p><!--/$-->',
+    '<!--$?--><template id="B:0"></template><p>Loading…</p><!--/$--><script>$RX("B:0","BAILOUT_TO_CLIENT_SIDE_RENDERING")</script>',
+  ]) {
+    upstream = () =>
+      new Response(page(`<h1>express</h1>${marker}`), { headers: { 'content-type': 'text/html' } })
+    const response = await createMdHandler()(new Request(`${site}/x/express.md`))
+    expect([
+      marker,
+      response.status,
+      response.headers.get('cache-control'),
+      response.headers.has('x-affordances-md-uncached'),
+    ]).toEqual([marker, 200, 's-maxage=3600, stale-while-revalidate=82800', false])
+  }
+})
+
+// the page as next sent it: a page, one that sets a cookie, a 404, one still streaming, one with a flight error row
+const sent = {
+  page: () => new Response(page('<h1>express</h1>'), { headers: { 'content-type': 'text/html' } }),
+  cookie: () =>
+    new Response(page('<h1>express</h1>'), {
+      headers: { 'content-type': 'text/html', 'set-cookie': 'handshake=1' },
+    }),
+  gone: () =>
+    new Response(page('<h1>Gone</h1>'), { status: 404, headers: { 'content-type': 'text/html' } }),
+  streaming: () =>
+    new Response(
+      new ReadableStream({
+        start: (controller) =>
+          controller.enqueue(new TextEncoder().encode(page('<h1>express</h1>'))),
+      }),
+      { headers: { 'content-type': 'text/html' } },
+    ),
+  errored: () =>
+    new Response(page('<h1>express</h1>') + flight('5:E{"digest":"1"}\n'), {
+      headers: { 'content-type': 'text/html' },
+    }),
+}
+
+test('markdown that stays private says why, on any route, in production too, from a fixed set', async () => {
+  vi.stubEnv('NODE_ENV', 'production')
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const cases: [keyof typeof sent, unknown, RequestInit, Parameters<typeof createMdHandler>[0]][] =
+    [
+      ['page', 'hours', {}, {}],
+      ['page', 'hours', { headers: { cookie: 'sid=1' } }, {}],
+      ['page', 'hours', {}, { headers: { authorization: 'Bearer service' } }],
+      ['cookie', 'hours', {}, {}],
+      ['gone', 'hours', {}, {}],
+      ['streaming', 'hours', {}, { timeout: 30 }],
+      ['errored', 'hours', {}, {}],
+      ['page', 'hourz', {}, {}],
+      // a route that didn't opt in says too
+      ['page', undefined, { headers: { cookie: 'sid=1' } }, {}],
+      ['page', undefined, {}, {}],
+    ]
+  const reasons: (string | null)[] = []
+  // one at a time: each sets the route and the page
+  for (const [answer, cache, init, options] of cases) {
+    route('converted', cache)
+    upstream = sent[answer]
+    const response = await createMdHandler(options)(new Request(`${site}/x/express.md`, init))
+    reasons.push(response.headers.get('x-affordances-md-uncached'))
+  }
+  expect(reasons).toEqual([
+    null,
+    'credentials',
+    'credentials',
+    'set-cookie',
+    'status',
+    'partial',
+    'error',
+    'invalid',
+    'credentials',
+    'private',
+  ])
+  warn.mockRestore()
+  error.mockRestore()
+})
+
+test('an anonymous Accept request on an opted-in route goes to its twin, never stored, with nothing rendered', async () => {
+  route('slot', 'hours')
+  let renders = 0
+  upstream = () => {
+    renders++
+    return new Response(page('<h1>express</h1>'), { headers: { 'content-type': 'text/html' } })
+  }
+  const asked = await createMdHandler()(
+    new Request(`${site}/x/express?tab=deps`, { headers: { accept: 'text/markdown' } }),
+  )
+  expect([
+    asked.status,
+    asked.headers.get('location'),
+    asked.headers.get('cache-control'),
+    asked.headers.get('vary'),
+    await asked.text(),
+    renders,
+  ]).toEqual([
+    307,
+    // relative: request.url's host is next's own, never the public one
+    '/x/express.md?tab=deps',
+    'private, no-store',
+    'Accept',
+    `This page's Markdown is at [/x/express.md?tab=deps](/x/express.md?tab=deps).\n`,
+    0,
+  ])
+  // unchanged: a credentialed one, and a route that didn't opt in, get their markdown at the page's url
+  const signedIn = await createMdHandler()(
+    new Request(`${site}/x/express`, { headers: { accept: 'text/markdown', cookie: 'sid=1' } }),
+  )
+  route('slot')
+  const off = await createMdHandler()(
+    new Request(`${site}/x/express`, { headers: { accept: 'text/markdown' } }),
+  )
+  expect([signedIn.status, off.status]).toEqual([200, 200])
+  expect([signedIn.headers.get('cache-control'), off.headers.get('cache-control')]).toEqual([
+    'private, no-store',
+    'private, no-store',
+  ])
+})
+
+test("on a literalMd route, x.md is a page of its own, so Accept on x gets x's markdown there, never a 307 to x.md", async () => {
+  route('converted', 'hours')
+  vi.stubEnv('AFFORDANCES_MD_LITERAL', JSON.stringify(['/x/:pkg']))
+  upstream = (url) =>
+    new Response(page(`<h1>Page ${url.pathname}</h1>`), {
+      headers: { 'content-type': 'text/html' },
+    })
+  const asked = await createMdHandler()(
+    new Request(`${site}/x/express`, { headers: { accept: 'text/markdown' } }),
+  )
+  expect([asked.status, asked.headers.get('location'), asked.headers.get('cache-control')]).toEqual(
+    [200, null, 'private, no-store'],
+  )
+  expect(await asked.text()).toContain('# Page /x/express')
+  vi.unstubAllEnvs()
+})
+
+// a page that called notFound(): before its shell went out (next's 404, its not-found.tsx), or after (a 200 with the
+// error row)
+const notFound = {
+  unstreamed: () =>
+    new Response(page('<h1>404</h1><p>This page could not be found.</p>'), {
+      status: 404,
+      headers: { 'content-type': 'text/html' },
+    }),
+  streamed: () =>
+    new Response(
+      page('<h1>express</h1><p>Loading…</p>') +
+        flight('5:E{"digest":"NEXT_HTTP_ERROR_FALLBACK;404"}\n'),
+      { headers: { 'content-type': 'text/html' } },
+    ),
+}
+
+test("notFoundMarkdown is the route's 404 whenever its page called notFound(), streamed or not, never cached", async () => {
+  const asked: Record<string, string | string[]>[] = []
+  authored[ROUTE] = async () =>
+    ({
+      notFoundMarkdown: ({ params }: { params: Record<string, string> }) => {
+        asked.push(params)
+        return `# No package ${decodeURIComponent(params.pkg!)}\n\nSearch the [registry](/search).`
+      },
+      publicCache: 'hours',
+    }) as never
+  const bodies: string[] = []
+  for (const kind of ['unstreamed', 'streamed'] as const) {
+    upstream = notFound[kind]
+    const response = await createMdHandler()(new Request(`${site}/x/%40acme%2Fnope.md`))
+    expect([kind, response.status, response.headers.get('cache-control')]).toEqual([
+      kind,
+      404,
+      'private, no-store',
+    ])
+    bodies.push(await response.text())
+  }
+  // the same body either way, with the unknown param it was asked for
+  expect(bodies[0]).toBe(bodies[1])
+  expect(bodies[0]).toBe(
+    `---\ntitle: "No package @acme/nope"\nurl: "${site}/x/%40acme%2Fnope"\n---\n\n# No package @acme/nope\n\nSearch the [registry](/search).\n`,
+  )
+  expect(asked).toEqual([{ pkg: '%40acme%2Fnope' }, { pkg: '%40acme%2Fnope' }])
+  // a 404 the default export or a fill throws runs it too
+  authored[ROUTE] = async () =>
+    ({
+      default: () => {
+        throw Object.assign(new Error('NEXT_HTTP_ERROR_FALLBACK;404'), {
+          digest: 'NEXT_HTTP_ERROR_FALLBACK;404',
+        })
+      },
+      notFoundMarkdown: () => '# Gone',
+    }) as never
+  const thrown = await createMdHandler()(new Request(`${site}/x/express.md`))
+  expect([thrown.status, (await thrown.text()).trim().split('\n').at(-1)]).toEqual([404, '# Gone'])
+})
+
+test("notFoundMarkdown returning undefined keeps the page's own 404, and a direct hit or a 200 never runs it", async () => {
+  let runs = 0
+  authored[ROUTE] = async () =>
+    ({
+      notFoundMarkdown: () => {
+        runs++
+        return undefined
+      },
+    }) as never
+  // the converted not-found.tsx, and the fixed body for a streamed one, as before
+  upstream = notFound.unstreamed
+  const unstreamed = await createMdHandler()(new Request(`${site}/x/nope.md`))
+  expect([unstreamed.status, await unstreamed.text()]).toEqual([
+    404,
+    expect.stringContaining('This page could not be found.'),
+  ])
+  upstream = notFound.streamed
+  const streamed = await createMdHandler()(new Request(`${site}/x/nope.md`))
+  expect([streamed.status, await streamed.text()]).toEqual([404, '# Not found\n'])
+  expect(runs).toBe(2)
+  // straight to the handler's url, which a page-scoped gate never saw: no markdown.ts, so no notFoundMarkdown
+  upstream = notFound.unstreamed
+  const direct = await createMdHandler()(new Request(`${site}/api/affordances/md/x/nope`))
+  expect(direct.status).toBe(404)
+  // a page that answered: nothing to say
+  upstream = () =>
+    new Response(page('<h1>express</h1>'), { headers: { 'content-type': 'text/html' } })
+  expect((await createMdHandler()(new Request(`${site}/x/express.md`))).status).toBe(200)
+  expect(runs).toBe(2)
+})
+
+test('one args.request per twin: the default export and every fill get the same object, so a WeakMap dedupes their data', async () => {
+  for (const publicCache of [undefined, 'hours']) {
+    const requests: Request[] = []
+    authored[ROUTE] = async () =>
+      ({
+        default: ({ request }: { request: Request }) => {
+          requests.push(request)
+          return undefined
+        },
+        slots: {
+          readme: ({ request }: { request: Request }) => {
+            requests.push(request)
+            return 'Readme.'
+          },
+          deps: ({ request }: { request: Request }) => {
+            requests.push(request)
+            return 'Deps.'
+          },
+        },
+        ...(publicCache && { publicCache }),
+      }) as never
+    upstream = () =>
+      new Response(page(`<h1>express</h1>${slot('readme')}${slot('deps')}`), {
+        headers: { 'content-type': 'text/html' },
+      })
+    const response = await createMdHandler()(new Request(`${site}/x/express.md`))
+    expect(await response.text()).toContain('Deps.')
+    expect([publicCache, requests.length, new Set(requests).size]).toEqual([publicCache, 3, 1])
+  }
+})
+
+test('a development warning is said once per route per process, never on every request', async () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  authored['/w/[pkg]'] = async () => ({ default: () => undefined }) as never
+  vi.stubEnv(ROUTES_ENV, JSON.stringify([ROUTE, '/w/[pkg]']))
+  upstream = () => new Response(page('<h1>w</h1>'), { headers: { 'content-type': 'text/html' } })
+  for (const pkg of ['a', 'a', 'b']) await createMdHandler()(new Request(`${site}/w/${pkg}.md`))
+  expect(warn.mock.calls.map(([message]) => message)).toEqual([
+    '[affordances-md] /w/[pkg]/markdown.ts returned nothing for /w/a, so its HTML is converted',
+  ])
+  delete authored['/w/[pkg]']
+  warn.mockRestore()
 })

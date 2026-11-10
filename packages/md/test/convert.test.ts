@@ -30,6 +30,12 @@ test("an opted-in form never shows a value whose field's name says it's a secret
     'privateKey',
     'stripe_signing_key',
     'signingKey',
+    'authorization',
+    'cookie',
+    'sid',
+    'session_sid',
+    'signature',
+    'webhookSignature',
     'webhook_secret',
     'auth_token',
     'authtoken',
@@ -79,6 +85,8 @@ test("an opted-in form never shows a value whose field's name says it's a secret
     'cc-exp',
   ]
   const plain = [
+    'side',
+    'inside',
     'pinned',
     'spinner',
     'opinion',
@@ -216,13 +224,18 @@ test('a secret is told apart from a field that only shares a word with one', () 
       // a url with a user and password is a secret whatever its field says
       labelled('Endpoint', 200, 'postgres://app:hunter2@db.internal:5432/prod'),
       labelled('Homepage', 201, 'https://shop.test/about'),
+      // and so is a bearer token, or a jwt
+      labelled('Header', 202, 'Bearer hunter3'),
+      labelled('Assertion', 203, 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.hunter4'),
+      labelled('Greeting', 204, 'Bear with us'),
     ].join('')}</form></main>`,
   )
   for (const [i, label] of hidden.entries())
     expect({ label, shown: markdown.includes(`VALUE-${i}\n`) }).toEqual({ label, shown: false })
   for (const [i, label] of shown.entries()) expect(markdown).toContain(`${label}: VALUE-${i + 100}`)
-  expect(markdown).not.toContain('hunter2')
+  expect(markdown).not.toMatch(/hunter[234]/)
   expect(markdown).toContain('Homepage: https://shop.test/about')
+  expect(markdown).toContain('Greeting: Bear with us')
 })
 
 test('never outputs values, tokens, scripts, comments, or data attributes', () => {
@@ -353,4 +366,54 @@ test('a label wrapping a control never carries its value, even on a form that op
   expect(markdown).not.toContain('sk-OPTIN-SECRET')
   expect(markdown).not.toContain('United States')
   expect(markdown).toContain('- Key (textarea)\n- Region (select)')
+})
+
+// a page with this <title> and h1, converted
+const titled = (said: string, h1: string) =>
+  htmlToMarkdown(
+    `<html><head><title>${said}</title></head><body><main><h1>${h1}</h1><p>Body</p></main></body></html>`,
+    { url: 'https://shop.test/page' },
+  )
+
+test("the title is the page's h1 when the <title> is the h1 in the site's template, and the <title> otherwise", () => {
+  // the h1 on either side of a separator, however it's spaced
+  for (const shape of [
+    'Authentication — Acme Docs',
+    'Acme Docs | Authentication',
+    'Authentication\n  ·  Acme',
+  ])
+    expect(titled(shape, 'Authentication').markdown).toBe(
+      '---\ntitle: "Authentication"\nurl: "https://shop.test/page"\n---\n\n# Authentication\n\nBody\n',
+    )
+  expect(titled('Cart - Acme', 'Cart').title).toBe('Cart')
+  // an h1 that isn't the <title>'s name leaves it as it is: a headline isn't the page's name
+  expect(titled('Benchmarks for 2026', 'Next is 3x faster').title).toBe('Benchmarks for 2026')
+  // nor is a subtitle, a word with a hyphen in it, or the h1 as part of a longer name
+  expect(titled('Cart: details', 'Cart').title).toBe('Cart: details')
+  expect(titled('Sign-in · Acme', 'Sign').title).toBe('Sign-in · Acme')
+  expect(titled('Cart items · Acme', 'Cart').title).toBe('Cart items · Acme')
+})
+
+// a page whose meta description is "Sign  in with a token.", with this content under its h1, converted
+const described = (body: string, frontmatter = true) =>
+  htmlToMarkdown(
+    `<html><head><title>Auth</title><meta name="description" content="Sign  in with a token."></head>` +
+      `<body><main><h1>Auth</h1>${body}</main></body></html>`,
+    { url: 'https://shop.test/page', frontmatter },
+  ).markdown
+
+test('the paragraph right after the h1 goes when it says the description the frontmatter already has', () => {
+  const head =
+    '---\ntitle: "Auth"\ndescription: "Sign  in with a token."\nurl: "https://shop.test/page"\n---\n\n'
+  expect(described('<p>Sign in <em>with</em> a\n token.</p><p>Body</p>')).toBe(
+    `${head}# Auth\n\nBody\n`,
+  )
+  // anything else stays: other text, the same text later on, or no frontmatter to say it
+  expect(described('<p>Sign in with a token, or a key.</p>')).toBe(
+    `${head}# Auth\n\nSign in with a token, or a key.\n`,
+  )
+  expect(described('<p>Intro</p><p>Sign in with a token.</p>')).toBe(
+    `${head}# Auth\n\nIntro\n\nSign in with a token.\n`,
+  )
+  expect(described('<p>Sign in with a token.</p>', false)).toBe('# Auth\n\nSign in with a token.\n')
 })

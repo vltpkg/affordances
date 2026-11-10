@@ -27,7 +27,7 @@ export default async function markdown({
 
 Name the route, as you would for `page.tsx`'s `PageProps`, and `params` is typed from it: `[pkg]` is a `string`, `[...slug]` a `string[]`, and `[[...slug]]` a `string[]` or left out. Without a route, `MarkdownArgs` is as it was in 0.2.0, every param a `string` or `string[]`.
 
-`md()` checks each `markdown.ts` against its own route in the `.affordances/md.ts` it generates, so a route string that names another route, or a param the route doesn't have, fails `tsc`. TypeScript skips a folder whose name starts with a dot unless `include` names it, so `md()` adds the entry to your `tsconfig.json`, as Next adds `.next/types`, and warns when it does, since a build changed a file you track (`Updated tsconfig.json: added ".affordances/**/*.ts" to "include"`). Commit the change:
+`md()` checks each `markdown.ts` against its own route in the `.affordances/md.ts` it generates, so a route string that names another route, or a param the route doesn't have, fails `tsc`. TypeScript skips a folder whose name starts with a dot unless `include` names it, so add the entry to your `tsconfig.json` once, and commit it. `affordances-md init` adds it for you, keeping your comments and formatting. `md()` never edits the file: when the entry is missing, it says the line to add, once per process. Without the entry `markdown.ts` still works, with its `params` typed by `MarkdownArgs<'/route'>`, but nothing checks that each file names its own route:
 
 ```json title="tsconfig.json"
 {
@@ -35,13 +35,13 @@ Name the route, as you would for `page.tsx`'s `PageProps`, and `params` is typed
 }
 ```
 
-It changes only the `include` array, keeping your comments and formatting, and only when the file has an `include` of its own and the entry isn't there yet. When it can't do that safely (the file doesn't parse, `include` comes from a file it `extends`, or the file is read-only), it leaves the file alone and warns with the line to add. A read-only tree never stops the config from loading.
+`init` changes only the `include` array, and only when the file has an `include` of its own and the entry isn't there yet. When it can't do that safely (the file doesn't parse, or `include` comes from a file it `extends`), it leaves the file alone and says the line to add. Add `.affordances/` to `.gitignore`: `md()` writes `.affordances/md.ts` when the config loads. A read-only tree never stops the config from loading.
 
-A file named `markdown.ts` next to a page that has none of these exports (`default`, `slots`, `publicCache`) isn't one, such as a helper that happens to have the name. `md()` leaves it out, so the page converts from its HTML, and says so when the config loads. `tsc` (and `next build`) stops with the same message, naming the file and what it exports. If it's for something else, move it out of `app/` or rename it. A file that exports any of them is checked against its route as above.
+A file named `markdown.ts` next to a page that has none of these exports (`default`, `slots`, `publicCache`, `notFoundMarkdown`) isn't one, such as a helper that happens to have the name. `md()` leaves it out, so the page converts from its HTML, and says so when the config loads. `tsc` (and `next build`) stops with the same message, naming the file and what it exports. If it's for something else, move it out of `app/` or rename it. A file that exports any of them is checked against its route as above.
 
 ## Authorization
 
-**`markdown.ts` doesn't render the page, so checks in its layout or page don't run for it.** A `redirect('/login')` in `layout.tsx`, or a `notFound()` in `page.tsx` for a record the person can't see, never happens on this path. Your `proxy.ts` runs once, on the URL that was requested (`/dashboard/1.md`, not the page's path), and only if its matcher covers that URL, so don't let `markdown.ts` depend on it alone. Gate on [`mdProxy`](/docs/plugins/md/setup#with-a-proxyts)'s `md.page`, which is `/dashboard/1` for both. A matcher that names the page's exact shape (`'/dashboard/:id(\\d+)'`) misses its `.md` URL, `/dashboard/123.md`; [match that too](/docs/plugins/md/setup#with-a-proxyts), or gate with no matcher. A proxy that skips its gate for Markdown requests, as 0.1.0's setup recipe did, leaves nothing in front of `markdown.ts` at all: see [the proxy recipe](/docs/plugins/md/setup#with-a-proxyts).
+**`markdown.ts` doesn't render the page, so checks in its layout or page don't run for it.** A `redirect('/login')` in `layout.tsx`, or a `notFound()` in `page.tsx` for a record the person can't see, never happens on this path. Your `proxy.ts` runs once, on the URL that was requested (`/dashboard/1.md`, not the page's path), and only if its matcher covers that URL, so don't let `markdown.ts` depend on it alone. Gate on [`mdProxy`](/docs/plugins/md/setup#with-a-proxyts)'s `md.page`, which is `/dashboard/1` for both. A matcher must list each page's `.md` URL too: `'/dashboard/:path*'` misses `/dashboard.md`, and `'/dashboard/:id(\\d+)'` misses `/dashboard/123.md`. [Match those too](/docs/plugins/md/setup#with-a-proxyts), or gate with no matcher. A proxy that skips its gate for Markdown requests, as 0.1.0's setup recipe did, leaves nothing in front of `markdown.ts` at all: see [the proxy recipe](/docs/plugins/md/setup#with-a-proxyts).
 
 So `markdown.ts` must read its data through fetchers that the API itself authorizes, with the cookies or token the request carries. That's what keeps its Markdown to what that person could see on the page. `cookies()` and `headers()` from `next/headers` work in it, since it runs inside the visitor's own Markdown request, and `request` is that request:
 
@@ -77,6 +77,24 @@ What `markdown.ts` returns is `Cache-Control: private, no-store` by default, sin
 - **`undefined`**: the page is converted from its HTML, as if there were no `markdown.ts`. Use it to cover some cases of a route and not others. In development, the handler logs a warning naming the route, so a forgotten `return` doesn't go unnoticed.
 
 `llms.txt`, `llms-full.txt`, and Copy Page go through the same handler, so they use it too.
+
+## Not found
+
+When the route's page calls `notFound()`, its Markdown is the page's `not-found.tsx`, converted. Called after the page started streaming, it's a fixed `# Not found`, since Next sends that boundary to be rendered in the browser. `notFoundMarkdown` gives the route's own 404 instead, the same either way:
+
+```ts title="app/package/[pkg]/markdown.ts"
+import type { NotFoundMarkdown } from '@affordances/md/next'
+
+export const notFoundMarkdown: NotFoundMarkdown<'/package/[pkg]'> = ({ params }) =>
+  `# No package ${decodeURIComponent(params.pkg)}\n\nSearch the [registry](/search) for it.`
+```
+
+- **It runs whenever the route's page answered `404` through `notFound()`**, in the page, its layout, the default export or a fill, before or after the shell. The page decides, so no routing is copied into `markdown.ts`.
+- **It gets the default export's arguments**, `params` included, so an unknown `pkg` can say which one.
+- **It returns** a string, `{ markdown, title?, description? }`, or `undefined` for the page's own 404 as above. The answer is always `404`, `private, no-store`.
+- **It's named so it never clashes** with `notFound` from `next/navigation`, which a default export calls in the same file.
+- **A request straight to `/api/affordances/md/…` never runs it**, as it runs no `markdown.ts`. A URL no route matches has no `markdown.ts` either: it's the app's `not-found.tsx`, converted.
+- `forbidden()` and `unauthorized()` keep their fixed `# Forbidden` and `# Unauthorized`.
 
 ## Slots
 
@@ -114,9 +132,28 @@ export const slots = {
 - **A slot's own condition doesn't gate its fill.** `{isOwner && <AgentSlot name="billing">…</AgentSlot>}` keeps the slot off another person's page, but HTML from someone else on that page (a README rendered as raw HTML) can carry a `billing` marker, and then `slots.billing` runs in that person's request. So **each fill authorizes its own data**, as `markdown.ts` does: it reads through fetchers your API checks against the request's cookies or token, never on the assumption that the page chose to render its slot.
 - **Only the slots that reach the Markdown run.** A slot inside `<AgentSkip>`, outside `<AgentMain>`, or hidden from people never runs its fill, so its data stays off the parts of the page you left out. A name the page renders more than once is filled nowhere: each copy converts its own content.
 - **A fill returns Markdown**, which takes the slot's place as blocks of its own (an inline `<AgentSlot>` splits its paragraph), with its links resolved as the page's are. `undefined` leaves the slot's own content, converted as usual.
+- **One `request` per twin.** The default export and every fill of one twin get the same `request` object, so a `WeakMap` keyed by it shares data they all need, fetched once:
+
+  ```ts title="app/report/[id]/markdown.ts"
+  const reports = new WeakMap<Request, Promise<Report>>()
+  const report = (args: MarkdownArgs<'/report/[id]'>) => {
+    if (!reports.has(args.request))
+      reports.set(args.request, getReport(args.params.id, args.request))
+    return reports.get(args.request)!
+  }
+  ```
+
+  That's supported: each twin's `request` is the same object across all of them, and a new one for each twin.
+
 - **A fill runs in the visitor's own request**, as the default export does: `cookies()` and `headers()` work, and it reads data only through fetchers your API authorizes. A page with a filled slot is `private, no-store`. Next's `notFound()` or `redirect()` in a fill answers for the whole page.
 - **A request made straight to `/api/affordances/md/…` runs no fill**, as it runs no `markdown.ts`: each slot converts its own content.
+- **When the page's own error or empty state renders no slot, authorize in the default export and return `undefined`.** A page that shows "This package is private" in place of its README, as a `200`, renders no `readme` slot, so `slots.readme` never runs and its `notFound()` never answers: the `.md` is that error state, as a `200`. Check access in the default export, call `notFound()` or `unauthorized()` there, and return `undefined` to go on to the render and the fills. A fill's `notFound()` answers for the page only when its slot rendered.
 - In development, the handler warns, naming the route's `markdown.ts`, about a fill with no slot on the page, a slot with no fill, a name used twice, and a fill that returned nothing.
+
+> **Security: a fill runs on your server, as the visitor.** It has the visitor's cookies or token, and no browser in between. Code that was safe in the browser because of CORS, or the network it ran on, isn't automatically safe here: a client query function reused in a fill is the usual way in.
+>
+> - Anything a fill fetches from a URL taken from data (a link in a README, a `$ref`, a webhook URL) needs an allowlist: `https:` only, an exact host, and every redirect hop checked against it (fetch with `redirect: 'manual'` and check each `Location`). Otherwise it can reach your server's private network.
+> - Never attach credentials to a host you don't own. An API client that adds the visitor's token to every request sends it to whatever URL the data names.
 
 A slot is a marker in the page's HTML, so HTML from someone else (a README rendered as raw HTML) could carry one. Strip `<affordances-md>` from untrusted HTML, as for [every marker](/docs/plugins/md/markers). A fill only ever runs in this visitor's own request for this page, so with each fill authorizing its own data, a forged slot can make a fill run or move its output on the page, never show anyone data their own credentials don't reach.
 

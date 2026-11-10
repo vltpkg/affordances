@@ -7,7 +7,7 @@ description: What the converter keeps from a page, what it drops, and how it rea
 
 Without [markers](/docs/plugins/md/markers), the converter takes the page's outermost `<main>` or `[role=main]` (a `<main>` first, when there are both), so a `<main>` inside it, such as one in a comment, is part of it. Without one, it takes the body minus `nav`, `header`, `footer`, `aside`, dialogs, and their ARIA roles.
 
-Scripts, styles, SVG, media, iframes, and anything hidden from people with `hidden`, `aria-hidden`, or an inline `display: none`, `visibility: hidden` or `content-visibility: hidden` style (read as CSS reads it, with comments and escapes) are always dropped, unless an `<AgentOnly>` put it there.
+Scripts, styles, SVG, media, iframes, and anything hidden from people with `hidden`, `aria-hidden`, or an inline `display: none`, `visibility: hidden` or `content-visibility: hidden` style (read as CSS reads it, with comments and escapes) are always dropped, unless an `<AgentOnly>` put it there or it's marked `data-affordances-md="show"` (see [Tabs and accordions](#tabs-and-accordions)).
 
 ## Streamed content
 
@@ -57,7 +57,8 @@ If the page is still streaming when the handler's `timeout` runs out (10 seconds
 
 - Headings, paragraphs, lists, blockquotes, tables, and rules, with GitHub-flavored Markdown for tables, strikethrough, and task lists.
 - A skeleton table, waiting on data, is dropped: one with no text in any cell, or with header text over body rows that are all empty. The header is the `<thead>`, or without one, a first row of only `<th>` cells. Any table with text in a body cell is kept. A header cell, heading, caption, summary or term whose only text is a button's, as in a sortable column (`<th><button>Name</button></th>`) or an accordion (`<h3><button aria-expanded>Shipping</button></h3>`), reads the button's text.
-- Inline elements laid out side by side with CSS gaps, such as `<span>express</span><span class="ml-2">5.3.0</span>`, get a space where a letter or digit meets another: `express 5.3.0`. Where punctuation meets, as in `<span>$</span><span>48</span>`, they stay together, and so do single characters: a heading split into one `<span>` per letter stays `Hello`, an odometer's digits stay `123`. In a flex or grid container (a `flex`, `inline-flex`, `grid` or `inline-grid` class, responsive ones such as `md:flex` included, or the same `display` in a style), bare text is spaced from an element beside it the same way, since each is its own box: `configure<span>vlt</span>` becomes `configure vlt`. Outside one, text beside an element is the same run of text, so `un<b>believ</b>able` stays whole. An element made a box of its own, with a `block`, `flex` or `grid` class or `display`, is spaced from whatever is beside it, punctuation or not. In a table cell, which is one line of Markdown, stacked blocks are spaced too: `<td><div>1,542</div><div>1,533–1,550</div></td>` reads `1,542 1,533–1,550`. Code is left as written.
+- Inline elements laid out side by side with CSS gaps, such as `<span>express</span><span class="ml-2">5.3.0</span>`, get a space where a letter or digit meets another: `express 5.3.0`. Where punctuation meets, as in `<span>$</span><span>48</span>`, they stay together, and so do single characters: a heading split into one `<span>` per letter stays `Hello`, an odometer's digits stay `123`. In a flex or grid container (a `flex`, `inline-flex`, `grid` or `inline-grid` class, responsive ones such as `md:flex` included, or the same `display` in a style), bare text is spaced from an element beside it the same way, since each is its own box: `configure<span>vlt</span>` becomes `configure vlt`. Outside one, text beside an element is the same run of text, so `un<b>believ</b>able` stays whole. Links side by side are spaced even when one holds an empty block, as an avatar stack's fallback `<div>` does: `[Ann](…) [Bo](…)`. An element made a box of its own, with a `block`, `flex` or `grid` class or `display`, is spaced from whatever is beside it, punctuation or not. In a table cell, which is one line of Markdown, stacked blocks are spaced too: `<td><div>1,542</div><div>1,533–1,550</div></td>` reads `1,542 1,533–1,550`. Code is left as written.
+- Text isn't escaped where Markdown would only make it a link to itself, so `tj@acme.dev`, `www.acme.dev` and `https://acme.dev` read as they are, in paragraphs and table cells alike. In a heading they stay escaped (`tj\@acme.dev`), since a URL shown as itself isn't part of a page's name in llms.txt. What would change the meaning, such as `*`, `_`, `[` or a cell's `|`, is escaped everywhere.
 - A heading's link to its own `#fragment` (the usual self-link) is unwrapped, so it reads `## Effects`.
 - `<details>` becomes its summary in bold followed by its content, and `<dl>` becomes `**term**: definition`. A list or paragraphs in a definition stay blocks after the term's line, instead of running into it.
 - Images need both an `http` or `https` `src` and alt text; without alt text, they tell an agent nothing.
@@ -74,6 +75,77 @@ export { GET } from '@affordances/md/next'
 ```
 ````
 
+Highlighters put both elsewhere, and the converter reads them there too:
+
+- **The language:** a `data-language` on the `<code>` or `<pre>` (rehype-pretty-code, Expressive Code), or a `language-*` class on the `<pre>` (Prism).
+- **The title:** a `<figcaption>` before the code in its `<figure>` (rehype-pretty-code, fumadocs, Expressive Code), or a `data-title` on the element that holds it. It becomes the fence's title and isn't repeated as text. A `<figcaption>` after the code is a caption, and stays as text.
+
+A fence's title needs its language, so a block without one keeps its title as text above it. Shiki on its own, and fumadocs by default, write no language into the HTML. With fumadocs, turn on rehype-code's `addLanguageClass`:
+
+```ts title="source.config.ts"
+import { rehypeCodeDefaultOptions } from 'fumadocs-core/mdx-plugins'
+import { defineConfig } from 'fumadocs-mdx/config'
+
+export default defineConfig({
+  mdxOptions: { rehypeCodeOptions: { ...rehypeCodeDefaultOptions, addLanguageClass: true } },
+})
+```
+
+## Tabs and accordions
+
+A tab set renders only its open panel, and an accordion only its open item, so the rest isn't in the HTML. Radix's `forceMount` (on shadcn's and fumadocs' components too) renders every panel, and the converter reads any panel left in the page, but one that's `hidden` is dropped like anything else people can't see. Mark each panel `data-affordances-md="show"` to keep it either way:
+
+```tsx title="components/install-tabs.tsx"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+
+export const InstallTabs = () => (
+  <Tabs defaultValue="npm">
+    <TabsList>
+      <TabsTrigger value="npm">npm</TabsTrigger>
+      <TabsTrigger value="pnpm">pnpm</TabsTrigger>
+    </TabsList>
+    <TabsContent
+      value="npm"
+      forceMount
+      data-affordances-md="show"
+      className="data-[state=inactive]:hidden"
+    >
+      <pre>
+        <code>npm i acme</code>
+      </pre>
+    </TabsContent>
+    <TabsContent
+      value="pnpm"
+      forceMount
+      data-affordances-md="show"
+      className="data-[state=inactive]:hidden"
+    >
+      <pre>
+        <code>pnpm add acme</code>
+      </pre>
+    </TabsContent>
+  </Tabs>
+)
+```
+
+````md
+**npm**
+
+```
+npm i acme
+```
+
+**pnpm**
+
+```
+pnpm add acme
+```
+````
+
+- A tab panel (`role="tabpanel"`) is headed by its tab's label, from its `aria-labelledby`, and its tab list is left out, since each panel now says it.
+- fumadocs' `<Tab>` takes the same two props. An accordion's or collapsible's content (`AccordionContent`, `CollapsibleContent`) takes them too and keeps its trigger's heading where it is.
+- The marker keeps the element it's on, like `<AgentOnly>`, and nothing hidden inside it. A tab list, `role="tabpanel"` or `hidden` alone never shows anything: those can be forged in untrusted HTML a page renders, so strip `data-affordances-md` from that as [Markers](/docs/plugins/md/markers) says.
+
 ## Links
 
 Links and images get absolute URLs. A link to `#`, or to anything but `http`, `https`, `mailto`, or `tel` (such as `javascript:` or `data:`), keeps only its text, however the scheme is spelled. Links laid out side by side, with no text between them, get a space, so they don't run together, including links named only by `aria-label` (an avatar stack) and links each inside its own wrapper. A link with nothing to read reads as its `aria-labelledby`, `aria-label` or `title`, in that order, and without any of them it's dropped. A run of the same link, with the same URL and text and only whitespace between, such as a row of avatars all labelled "View all contributors", becomes one, wrappers or not.
@@ -84,9 +156,9 @@ Markdown from a marker, an `<AgentText md>` or a [slot's](/docs/plugins/md/marke
 
 ## Forms
 
-A form becomes a list of what it asks for: each field's label, read as a screen reader names it (its `aria-labelledby`, else its `<label>`, its `aria-label`, its own words for a switch, checkbox, radio or toggle button, then its `title`), with its type when it isn't text, and each choice group with its legend, its options, and which are selected or unavailable. ARIA controls count as fields, as shadcn and Radix render them: `role="switch"`, `role="checkbox"` and `role="radio"` (grouped by their `radiogroup`) with `aria-checked`, a toggle button with `aria-pressed`, and a select trigger with `role="combobox"`. Their hidden native mirrors aren't counted again. A name never reads what's hidden from people, or what carries a value: an `aria-labelledby` that points at something hidden, at a `<textarea>`, a select's option, an `<output>`, `<meter>` or `<progress>`, a slider or an editor, or a label, link or button with one of those in it, takes nothing from it. A field's placeholder and `name` are never its label, so a field with neither label is left out, and so is a choice without a label. A group without a `<legend>` or an `aria-label` on its fieldset lists its options alone. Values, placeholders, hidden inputs, and tokens never appear. The list sits where the fields are, among the form's other text (a card's title, hints, errors), in page order. A table or definition list in a form keeps its shape, with each field's line written where the field is: a cart's quantity column reads `Quantity`. It's headed with the form's `aria-label` or `aria-labelledby` (a `<legend>` or `<label>` it names included), or by a heading before its first field; a form with neither is headed **Form**.
+A form becomes a list of what it asks for: each field's label, read as a screen reader names it (its `aria-labelledby`, else its `<label>`, its `aria-label`, its own words for a switch, checkbox, radio or toggle button, then its `title`), with its type when it isn't text, and each choice group with its legend, its options, and which are selected or unavailable. ARIA controls count as fields, as shadcn and Radix render them: `role="switch"`, `role="checkbox"` and `role="radio"` (grouped by their `radiogroup`) with `aria-checked`, a toggle button with `aria-pressed`, and a select trigger with `role="combobox"`. Their hidden native mirrors aren't counted again. A name never reads what's hidden from people, or what carries a value: an `aria-labelledby` that points at something hidden, at a `<textarea>`, a select's option, an `<output>`, `<meter>` or `<progress>`, a slider or an editor, or a label, link or button with one of those in it, takes nothing from it. A field's placeholder and `name` are never its label, so a field with neither label is left out, and so is a choice without a label. A group without a `<legend>` or an `aria-label` on its fieldset lists its options alone. Values, placeholders, hidden inputs, and tokens never appear. The list sits where the fields are, among the form's other text (a card's title, hints, errors), in page order. A table or definition list in a form keeps its shape, with each field's line written where the field is: a cart's quantity column reads `Quantity`. It's headed with the form's `aria-label` or `aria-labelledby` (a `<legend>` or `<label>` it names included). A form without one gets no heading of its own, since what it already says (a heading, a card's title) is kept in place.
 
-On a settings page the values are the content. Mark the form with `data-affordances-md="values"` to include each field's current value, the selected option of each select (a combobox's shown value, unless it's showing its placeholder), the state of each checkbox, and `on` or `off` for each switch and toggle. A value is escaped only where Markdown needs it, so `support@acme.dev` and `https://github.com/acme` read as they are:
+On a settings page the values are the content. Mark the form with `data-affordances-md="values"` to include each field's current value, the selected option of each select (a combobox's shown value, unless it's showing its placeholder), and `on`, `off` or `mixed` for each checkbox, switch, toggle and lone radio button (one in a group shows which is selected, marked or not). A value is escaped only where Markdown needs it, so `support@acme.dev` and `https://github.com/acme` read as they are:
 
 ```html
 <form data-affordances-md="values">
@@ -105,8 +177,8 @@ On a settings page the values are the content. Mark the form with `data-affordan
 - Region (select): Europe
 ```
 
-Values appear only on forms marked this way. Even then, hidden inputs, password fields, and any field whose `name`, `id`, `autocomplete`, label, `aria-label`, or placeholder looks like a secret gives only its label (`<label>API key <input name="k"></label>` does). That's a whole word such as `cvv`, `cvc`, `ssn`, `social_security`, `jwt`, `csrf`, `dsn`, `card_number`, `credit_card`, `one-time-code`, `bearer`, `credential`, `iban`, `account_number`, `routing_number`, any key (`key`, `api_key`, `service_role_key`) but a public, primary, foreign, sort, partition or musical key and key features, a URL with credentials in it (`database_url`, `webhook_url`), or "password" in another language (`passwort`, `contraseña`, `wachtwoord`, `senha`, `пароль`, `密码`, `パスワード` and more); one ending in `secret`, `password`, `pwd`, `passcode` or `passphrase` (`webhook_secret`); `token`, `pin`, `otp`, `totp`, `mfa`, `2fa`, `seed`, `mnemonic`, `pw`, `pass` or `session` when it ends the name, has a number or version, or names the secret (`authToken`, `pin_v2`, `session_id`, but not `token_name`, `pin_to_top` or `session_title`); `recovery`, `backup`, `verification` or `security` followed by what the secret is (`recovery_phrase`, `verification_code`, but not `recovery_email`); or one of autocomplete's `cc-` card fields. A value that's a URL with a user and password (`postgres://app:pw@db`) is hidden whatever its field says. Words are matched whole, in any case or separator style, with a number as a word of its own (`cvv2`, `apiKey1`), so `pinned`, `tokenizer` and an email's `cc` still show their values. The handler already marks Markdown rendered with the caller's cookies `private, no-store`.
+Values appear only on forms marked this way. Even then, hidden inputs, password fields, and any field whose `name`, `id`, `autocomplete`, label, `aria-label`, or placeholder looks like a secret gives only its label (`<label>API key <input name="k"></label>` does). That's a whole word such as `cvv`, `cvc`, `ssn`, `social_security`, `jwt`, `csrf`, `dsn`, `card_number`, `credit_card`, `one-time-code`, `bearer`, `credential`, `iban`, `authorization`, `cookie`, `sid`, `signature`, `account_number`, `routing_number`, any key (`key`, `api_key`, `service_role_key`) but a public, primary, foreign, sort, partition or musical key and key features, a URL with credentials in it (`database_url`, `webhook_url`), or "password" in another language (`passwort`, `contraseña`, `wachtwoord`, `senha`, `пароль`, `密码`, `パスワード` and more); one ending in `secret`, `password`, `pwd`, `passcode` or `passphrase` (`webhook_secret`); `token`, `pin`, `otp`, `totp`, `mfa`, `2fa`, `seed`, `mnemonic`, `pw`, `pass` or `session` when it ends the name, has a number or version, or names the secret (`authToken`, `pin_v2`, `session_id`, but not `token_name`, `pin_to_top` or `session_title`); `recovery`, `backup`, `verification` or `security` followed by what the secret is (`recovery_phrase`, `verification_code`, but not `recovery_email`); or one of autocomplete's `cc-` card fields. A value that's a URL with a user and password (`postgres://app:pw@db`), a bearer token (`Bearer …`) or a JWT is hidden whatever its field says. Words are matched whole, in any case or separator style, with a number as a word of its own (`cvv2`, `apiKey1`), so `pinned`, `tokenizer` and an email's `cc` still show their values. The handler already marks Markdown rendered with the caller's cookies `private, no-store`.
 
 ## The page around it
 
-At the top, YAML frontmatter carries the page's `title`, `description`, canonical `url`, `image`, and `lang`, from its metadata. If the content has no `#` heading, the title becomes one. The canonical `url` is the `<head>`'s `<link rel="canonical">`, if it's an `http` or `https` URL. JSON-LD scripts are appended as fenced JSON.
+At the top, YAML frontmatter carries the page's `title`, `description`, canonical `url`, `image`, and `lang`, from its metadata. The `title` is the `<title>`, or the page's `#` heading when the `<title>` is that heading in the site's template, on either side of a `·`, `|`, `–`, `—` or `-` with spaces around it: `Authentication — Acme Docs` with `<h1>Authentication</h1>` is `Authentication`. Any other `<title>` stays as written. If the content has no `#` heading, the title becomes one. A page that renders its description under its heading doesn't say it twice: the block right after the `#` heading is left out when its text is exactly the `description`. The canonical `url` is the `<head>`'s `<link rel="canonical">`, if it's an `http` or `https` URL. JSON-LD scripts are appended as fenced JSON.

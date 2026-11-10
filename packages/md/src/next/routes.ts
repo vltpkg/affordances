@@ -31,7 +31,7 @@ export type MarkdownFile = { route: string; file: string }
 export type Problem = { route: string; message: string }
 
 // what a markdown.ts next to a page can export for affordances
-const EXPORTS = ['default', 'slots', 'publicCache']
+const EXPORTS = ['default', 'slots', 'publicCache', 'notFoundMarkdown']
 const MENTIONED = new RegExp(`\\b(${EXPORTS.join('|')})\\b|\\bexport\\s*\\*|\\bexports\\b`)
 // the names a markdown.ts exports, when it exports some and reading its text makes plain none is one of EXPORTS:
 // undefined when it may have one (it mentions one anywhere, re-exports everything from another module, or is commonjs)
@@ -128,6 +128,111 @@ export const scanApp = (
   }
 }
 
+// public/'s files, which next serves before any dynamic page, so a root catch-all never gets a twin for them: each
+// file's url as a request asks for it (percent-encoded, as next matches a source), or a folder's, `/images/*.png|.jpg`,
+// for its files of those extensions only ('' for a name with none), so a page under the same name (/images/gallery,
+// /docs/next.js) keeps its twin. symlinks are followed. the folder holding the most files is folded first, until the
+// pattern hasTwin and the Link rules share fits PUBLIC_BUDGET, which keeps the env value next inlines small too
+export const PUBLIC_ENV = 'AFFORDANCES_MD_PUBLIC'
+const PUBLIC_BUDGET = 2000
+export const scanPublic = (root: string): string[] => {
+  const fs = process.getBuiltinModule?.('node:fs')
+  const path = process.getBuiltinModule?.('node:path')
+  const dir = path?.join(root, 'public')
+  if (!fs || !path || !dir || !fs.existsSync(dir)) return []
+  const files: string[] = []
+  const seen = new Set<string>()
+  const walk = (at: string, url: string) => {
+    let real: string
+    try {
+      real = fs.realpathSync(at)
+    } catch {
+      return
+    }
+    // a link back up the tree is walked once
+    if (seen.has(real)) return
+    seen.add(real)
+    for (const child of fs.readdirSync(at, { withFileTypes: true })) {
+      const next = path.join(at, child.name)
+      let folder = child.isDirectory()
+      if (child.isSymbolicLink())
+        try {
+          folder = fs.statSync(next).isDirectory()
+        } catch {
+          continue
+        }
+      if (folder) walk(next, `${url}/${child.name}`)
+      else files.push(asRequested(`${url}/${child.name}`))
+    }
+  }
+  walk(dir, '')
+  // each folder's files, counted once
+  const under = new Map<string, string[]>()
+  for (const file of files) {
+    const parts = file.split('/').slice(1, -1)
+    for (let i = 1; i <= parts.length; i += 1) {
+      const folder = `/${parts.slice(0, i).join('/')}/`
+      const held = under.get(folder)
+      if (held) held.push(file)
+      else under.set(folder, [file])
+    }
+  }
+  // the most files first, the deepest of those that hold the same. each fold takes its folder's files out of the
+  // pattern and puts one entry in, its length kept as it goes, so no step rebuilds the whole pattern
+  const order = [...under].toSorted(
+    (x, y) => y[1].length - x[1].length || y[0].length - x[0].length,
+  )
+  const entries = new Set(files)
+  const folded: string[] = []
+  let length = publicPattern(files).length
+  const fold = (folder: string, inside: string[]) => {
+    for (const file of inside) if (entries.delete(file)) length -= publicPattern([file]).length + 1
+    for (const entry of folded.filter((other) => other.startsWith(folder))) {
+      entries.delete(entry)
+      length -= publicPattern([entry]).length + 1
+    }
+    const kinds = [
+      ...new Set(
+        inside.map((file) => /\.[^./]*$/.exec(file.slice(file.lastIndexOf('/')))?.[0] ?? ''),
+      ),
+    ]
+    const entry = `${folder}*${kinds.toSorted().join('|')}`
+    entries.add(entry)
+    folded.push(entry)
+    length += publicPattern([entry]).length + 1
+  }
+  for (const [folder, inside] of order) {
+    if (length <= PUBLIC_BUDGET) break
+    // already inside a folded folder
+    if (!folded.some((entry) => folder.startsWith(entry.slice(0, entry.indexOf('*')))))
+      fold(folder, inside)
+  }
+  // folders side by side at the top that still don't fit: public/ itself, by kind of file
+  if (length > PUBLIC_BUDGET) fold('/', files)
+  return [...entries].toSorted((x, y) => x.localeCompare(y))
+}
+// a public/ path as a request's pathname has it
+const asRequested = (name: string) => {
+  const url = new URL('http://public')
+  url.pathname = name
+  return url.pathname
+}
+const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+// public/'s entries as one regex source over a pathname without its leading /: hasTwin tests it, and the Link rules'
+// lookahead is it, so a public file never gets a Link to a twin it doesn't have
+export const publicPattern = (entries: string[]) =>
+  entries
+    .map((entry) => {
+      const star = entry.indexOf('*')
+      if (star < 0) return escaped(entry.slice(1))
+      const kinds = entry
+        .slice(star + 1)
+        .split('|')
+        .map((kind) => (kind ? `[^/]*${escaped(kind)}` : '[^/.]+'))
+      return `${escaped(entry.slice(1, star))}(?:[^/]+/)*(?:${kinds.join('|')})`
+    })
+    .join('|')
+
 // .affordances/md.ts: one lazy import per route's markdown.ts, which @affordances/md/routes is aliased to. written
 // only when it changed, so watchers don't loop. its path, or undefined when there's no markdown.ts
 export const writeMarkdownRoutes = (
@@ -185,7 +290,7 @@ ${problems.map(({ message }, i) => `export type Problem${i} = Fix<${JSON.stringi
     )
     if (!stale) return undefined
   }
-  includeGenerated(path.join(root, 'tsconfig.json'))
+  sayInclude(path.join(root, 'tsconfig.json'))
   return out
 }
 
@@ -199,7 +304,7 @@ const errorCode = (error: unknown) =>
   (typeof error === 'object' && error !== null && 'code' in error && String(error.code)) ||
   String(error)
 
-const GENERATED = '.affordances/**/*.ts'
+export const GENERATED = '.affordances/**/*.ts'
 
 // the index of a comment's last character when one starts at i (// up to its line's end, /* to */), else undefined
 const commentEnd = (text: string, i: number) => {
@@ -235,7 +340,14 @@ const stringEnd = (text: string, i: number) => {
   if (j >= text.length) throw new SyntaxError('Unterminated string')
   return j + 1
 }
-const parseJsonc = (text: string): unknown => JSON.parse(plainJson(text))
+// tsconfig.json's own fields, or undefined for a file that doesn't parse
+const parseJsonc = (text: string) => {
+  try {
+    return JSON.parse(plainJson(text)) as { include?: unknown } | undefined
+  } catch {
+    return undefined
+  }
+}
 
 // the top-level "include" array in tsconfig.json's own text: where its last entry ends, whether a comma follows it,
 // and where the array closes. undefined when the file has none of its own
@@ -274,37 +386,27 @@ const includeArray = (text: string) => {
 }
 
 // tsc skips a folder whose name starts with a dot unless include names it, so with next's default tsconfig the check
-// of each markdown.ts against its route would never run. md() adds the entry, as next adds .next/types, changing only
-// the include array and keeping the file's comments and formatting. when it can't do that safely (the file doesn't
-// parse, include is inherited through extends or missing, or the edit wouldn't read back as just that entry added),
-// it says what to add instead
-const includeGenerated = (tsconfig: string) => {
-  const fs = process.getBuiltinModule?.('node:fs')
-  if (!fs?.existsSync(tsconfig)) return
-  const warn = (why: string) =>
-    console.warn(
-      `[affordances-md] tsconfig.json ${why}, so tsc can't check each markdown.ts against its route. Add "${GENERATED}" to its "include".`,
-    )
-  let text: string
-  try {
-    text = fs.readFileSync(tsconfig, 'utf8')
-  } catch {
-    return warn("couldn't be read")
-  }
-  let before: { include?: unknown }
-  try {
-    before = parseJsonc(text) as { include?: unknown }
-  } catch {
-    return warn("couldn't be read")
-  }
+// of each markdown.ts against its route only runs once include names .affordances/. md() never edits tsconfig.json: it
+// says the line, once per process. `affordances-md init` adds it, changing only the include array and keeping the
+// file's comments and formatting
+const hasGenerated = (include: unknown) =>
+  Array.isArray(include) &&
+  include.some((entry) => typeof entry === 'string' && entry.startsWith('.affordances/'))
+// false for a file that doesn't parse
+export const includesGenerated = (text: string) => hasGenerated(parseJsonc(text)?.include)
+// tsconfig.json with .affordances/ added to its include, kept when it's there already, or why that can't be done safely
+// (the file doesn't parse, include is inherited through extends or missing, or the edit wouldn't read back as just
+// that entry added)
+export const withGenerated = (
+  text: string,
+): { text: string } | { kept: true } | { why: string } => {
+  const before = parseJsonc(text)
+  if (!before) return { why: "couldn't be read" }
+  if (hasGenerated(before.include)) return { kept: true }
   if (!Array.isArray(before.include))
-    return warn('has no "include" of its own to add .affordances/ to')
-  if (
-    before.include.some((entry) => typeof entry === 'string' && entry.startsWith('.affordances/'))
-  )
-    return
+    return { why: 'has no "include" of its own to add .affordances/ to' }
   const array = includeArray(text)
-  if (!array) return warn('has an "include" md() can\'t edit safely')
+  if (!array) return { why: 'has an "include" that can\'t be edited safely' }
   const entry = JSON.stringify(GENERATED)
   let edited: string
   if (array.last === undefined)
@@ -320,22 +422,42 @@ const includeGenerated = (tsconfig: string) => {
     const comma = array.comma ? '' : ','
     edited = `${text.slice(0, array.last)}${comma}${after}\n${indent}${entry}${array.comma ? ',' : ''}${text.slice(end)}`
   }
+  const expected = { ...before, include: [...before.include, GENERATED] }
+  if (JSON.stringify(parseJsonc(edited)) !== JSON.stringify(expected))
+    return { why: 'has an "include" that can\'t be edited safely' }
+  return { text: edited }
+}
+// a warning said once per what it's about (a route and the thing wrong with it) per process, never on every request a
+// page gets or each rebuild of next dev: in development only, unless production says it too, or only production does
+const told = new Set<string>()
+export const once = (
+  about: string,
+  message: string,
+  {
+    production = false,
+    level = 'warn',
+  }: { production?: boolean | 'only'; level?: 'warn' | 'error' } = {},
+) => {
+  const inProduction = process.env.NODE_ENV === 'production'
+  if ((inProduction ? !production : production === 'only') || told.has(about)) return
+  told.add(about)
+  console[level](message)
+}
+
+// said once per tsconfig.json per process, in production too
+const sayInclude = (tsconfig: string) => {
+  const fs = process.getBuiltinModule?.('node:fs')
+  if (!fs?.existsSync(tsconfig)) return
+  // one md() can't read is said as one without the line, as is one that doesn't parse
+  let text = ''
   try {
-    const after = parseJsonc(edited) as { include: unknown[] }
-    const expected = { ...before, include: [...before.include, GENERATED] }
-    if (JSON.stringify(after) !== JSON.stringify(expected))
-      return warn('has an "include" md() can\'t edit safely')
-  } catch {
-    return warn('has an "include" md() can\'t edit safely')
-  }
-  try {
-    fs.writeFileSync(tsconfig, edited)
-  } catch (error) {
-    return warn(`couldn't be written (${errorCode(error)})`)
-  }
-  // a tracked file changed by a build: said as a warning, the change first, so it stands out in next's output
-  console.warn(
-    `[affordances-md] Updated tsconfig.json: added "${GENERATED}" to "include", so tsc checks each markdown.ts against its route, as Next adds ".next/types/**/*.ts". Commit this change, and add .affordances/ to .gitignore.`,
+    text = fs.readFileSync(tsconfig, 'utf8')
+  } catch {}
+  if (includesGenerated(text)) return
+  once(
+    `include ${tsconfig}`,
+    `[affordances-md] To have tsc check each markdown.ts against its route, add "${GENERATED}" to "include" in tsconfig.json, or run \`affordances-md init\`, which adds it. md() doesn't edit tsconfig.json.`,
+    { production: true },
   )
 }
 
@@ -368,6 +490,16 @@ export const builtPages = (): string[] => strings(process.env.AFFORDANCES_MD_ROU
 // the route handlers md() found outside api/, through next's env as the pages are
 export const HANDLERS_ENV = 'AFFORDANCES_MD_HANDLERS'
 export const builtHandlers = (): string[] => strings(process.env.AFFORDANCES_MD_HANDLERS)
+// public/'s files md() found, and whether a url is one of them (or under a folder that stands for its files)
+const builtPublic = perEnv((raw: string | undefined) => {
+  const pattern = publicPattern(strings(raw))
+  return pattern ? new RegExp(`^/(?:${pattern})$`) : undefined
+})
+export const isPublicFile = (pathname: string) =>
+  // spelled out: next inlines process.env.NAME, never process.env[name]
+  builtPublic(process.env.AFFORDANCES_MD_PUBLIC, process.env.AFFORDANCES_MD_PUBLIC)?.test(
+    pathname,
+  ) ?? false
 // path-to-regexp names are word characters: [product-id] → :productid
 const param = (name: string) => name.replace(/\W/g, '')
 

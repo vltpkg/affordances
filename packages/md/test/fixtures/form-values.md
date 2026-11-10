@@ -5,8 +5,6 @@ url: "https://shop.test/page"
 
 # General settings
 
-**Form**
-
 - Display name: Acme Inc
 - Contact email (email): ops@acme.test
 - Region (select): Europe

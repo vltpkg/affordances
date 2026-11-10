@@ -1,7 +1,7 @@
 // the docs' and README's examples for md()'s server side, type-checked by tsc (this package's tsconfig includes
 // test/), so an example that stops compiling fails `vlt run typecheck`. each is written as its page shows it
 import type { NextConfig } from 'next'
-import { NextResponse, type NextRequest } from 'next/server'
+import { type NextFetchEvent, NextResponse, type NextRequest } from 'next/server'
 import { cookies } from 'next/headers'
 import { unauthorized } from 'next/navigation'
 import { cacheLife, cacheTag, revalidateTag } from 'next/cache'
@@ -57,6 +57,19 @@ export const rewriting = (request: NextRequest) => {
   if (md.markdown) return md.next()
   const url = collapse(request.nextUrl)
   return url ? NextResponse.rewrite(url) : NextResponse.next()
+}
+
+// the third-party middleware the adopt example imports from './auth'
+declare const authMiddleware: (
+  request: NextRequest,
+  event: NextFetchEvent,
+) => Promise<Response | undefined>
+
+// setup.mdx, "With a proxy.ts": a third-party middleware's answer, adopted
+export const adopting = async (request: NextRequest, event: NextFetchEvent) => {
+  const md = mdProxy(request)
+  const answer = await authMiddleware(md.request, event)
+  return answer ? md.adopt(answer) : md.next()
 }
 
 // setup.mdx, "Link from the proxy"

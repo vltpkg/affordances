@@ -14,7 +14,7 @@ import { select, selectAll } from 'hast-util-select'
 import { defaultHandlers, toMdast, type Handle } from 'hast-util-to-mdast'
 import { toString } from 'hast-util-to-string'
 import { gfmToMarkdown } from 'mdast-util-gfm'
-import { toMarkdown, type Handle as ToMarkdownHandle } from 'mdast-util-to-markdown'
+import { toMarkdown } from 'mdast-util-to-markdown'
 import { parse, postprocess, preprocess } from 'micromark'
 import { gfm } from 'micromark-extension-gfm'
 import { decodeString } from 'micromark-util-decode-string'
@@ -67,9 +67,12 @@ const isElement = (node: unknown): node is Element => (node as Element)?.type ==
 const mode = (node: Element) =>
   node.tagName === 'affordances-md'
     ? String(node.properties.dataMode ?? '')
-    : node.properties.dataAffordancesMd === 'skip'
-      ? 'skip'
+    : node.properties.dataAffordancesMd === 'skip' || node.properties.dataAffordancesMd === 'show'
+      ? node.properties.dataAffordancesMd
       : undefined
+// what's kept though it's hidden from people: <AgentOnly>, and what people can open on the page (a tab panel, an
+// accordion's content) marked data-affordances-md="show"
+const unhidden = (node: Element) => mode(node) === 'only' || mode(node) === 'show'
 
 // a code point a css escape names, or U+FFFD where css reads one instead: zero, a surrogate, or past the last code point
 const codePoint = (hex: string) => {
@@ -135,8 +138,20 @@ const cells = (row: Element, tags = ['td', 'th']) =>
 const emptyRow = (row: Element) =>
   cells(row).every((cell) => !text(cell) && !described(cell).length)
 const skeleton = (table: Element) => {
-  const rows = selectAll('tr', table)
-  const header = new Set(selectAll('thead tr', table))
+  // its rows, and those in a thead, in one walk
+  const rows: Element[] = []
+  const header = new Set<Element>()
+  const walk = (parent: Element, inHead: boolean) => {
+    for (const child of parent.children) {
+      if (!isElement(child)) continue
+      if (child.tagName === 'tr') {
+        rows.push(child)
+        if (inHead) header.add(child)
+      }
+      walk(child, inHead || child.tagName === 'thead')
+    }
+  }
+  walk(table, false)
   const first = rows[0]
   if (!header.size && first && !cells(first, ['td']).length) header.add(first)
   const body = rows.filter((row) => !header.has(row))
@@ -175,6 +190,14 @@ const word = (node: ElementContent | undefined) => {
   const text = isInline(node) ? toString(node).trim() : node?.type === 'text' ? node.value : ''
   return [...text.trim()].length > 1 ? text : ''
 }
+// what has nothing to read: no text, no described image
+const nothingToRead = (node: Element) => !toString(node).trim() && !described(node).length
+// a block with nothing to read
+const emptyBlock = (node: Element) =>
+  !INLINE.has(node.tagName) &&
+  node.tagName !== 'img' &&
+  node.tagName !== 'br' &&
+  nothingToRead(node)
 // the link an inline element starts or ends with: itself, or the first or last thing in it
 const edgeLink = (node: ElementContent | undefined, end: boolean): Element | undefined => {
   if (!isInline(node)) return
@@ -230,7 +253,7 @@ const dropped = (el: Element, style = declarations(el)) =>
   ALWAYS_DROP.has(el.tagName) ||
   mode(el) === 'skip' ||
   editor(el) ||
-  (mode(el) !== 'only' &&
+  (!unhidden(el) &&
     ((el.properties.hidden !== undefined && el.properties.hidden !== false) ||
       String(el.properties.ariaHidden) === 'true' ||
       styleHidden(style)))
@@ -248,15 +271,28 @@ const markdownOf = (md: string, block: boolean): Element => ({
 
 const prune = (parent: HastRoot | Element, literal = false) => {
   let byId: Map<string, Element> | undefined
-  pruneWith(parent, () => (byId ??= ids(parent)), literal)
+  let tabs: Set<string> | undefined
+  const page: Pruning = {
+    byId: () => (byId ??= ids(parent)),
+    tabs: () =>
+      (tabs ??= new Set(selectAll('[data-affordances-md=show]', parent).flatMap(labelledBy))),
+  }
+  pruneWith(parent, page, literal)
 }
-// with the page's ids, and the parent's style already parsed
+// what prune reads from the whole page, once it needs it: its ids, and the tabs that label a shown panel
+type Pruning = { byId: () => Map<string, Element>; tabs: () => Set<string> }
+// a tablist whose panels are shown: each panel is headed by its tab, so the tabs aren't said again
+const shownTablist = (el: Element, page: Pruning) =>
+  String(el.properties.role) === 'tablist' &&
+  selectAll('[role=tab]', el).some((tab) => page.tabs().has(String(tab.properties.id ?? '')))
+// with the page, and the parent's style already parsed
 const pruneWith = (
   parent: HastRoot | Element,
-  byId: () => Map<string, Element>,
+  page: Pruning,
   literal: boolean,
   style: Declarations = [],
 ) => {
+  const { byId } = page
   // each child's style, parsed once, for its own prune and for the spacing below
   const styles = new Map<ElementContent, Declarations>()
   parent.children = parent.children.flatMap((child): ElementContent[] => {
@@ -272,25 +308,51 @@ const pruneWith = (
       const block = child.properties.dataBlock !== undefined && child.properties.dataBlock !== false
       return [markdownOf(String(child.properties.dataMd ?? ''), block)]
     }
-    if (m === 'only') {
+    if (unhidden(child)) {
       const { hidden: _, ...properties } = child.properties
       child.properties = properties
     }
+    if (shownTablist(child, page)) return []
     const childStyle = declarations(child)
     styles.set(child, childStyle)
     // hidden from people means hidden from agents, unless it was marked for them
     if (dropped(child, childStyle)) return []
     pruneWith(
       child,
-      byId,
+      page,
       literal || child.tagName === 'pre' || child.tagName === 'code',
       childStyle,
     )
+    // a shown tab panel is headed by its tab's label
+    if (m === 'show' && String(child.properties.role) === 'tabpanel') {
+      const label = idrefs(child, byId())
+        .filter((tab) => String(tab.properties.role) === 'tab')
+        .map(words)
+        .filter(Boolean)
+        .join(' ')
+      if (label)
+        child.children.unshift({
+          type: 'element',
+          tagName: 'p',
+          properties: {},
+          children: [
+            {
+              type: 'element',
+              tagName: 'strong',
+              properties: {},
+              children: [{ type: 'text', value: label }],
+            },
+          ],
+        })
+    }
     // a link with nothing to read (no text, no described image) reads as its label, and has it before the spacing
     // below, so it's spaced like text; without one it's gone, and leaves no gap
-    // a link's text is its name, so what carries a value in it (a meter, an editor) isn't
-    if (child.tagName === 'a') child.children = without(child, valueBearing).children
-    if (child.tagName === 'a' && !toString(child).trim() && !described(child).length) {
+    // a link's text is its name, so what carries a value in it (a meter, an editor) isn't. a block in it with nothing
+    // to read (an avatar's empty fallback <div>) is gone too: it would make the link a block, and two links side by
+    // side would lose the space between them
+    if (child.tagName === 'a')
+      child.children = without(child, (inner) => valueBearing(inner) || emptyBlock(inner)).children
+    if (child.tagName === 'a' && nothingToRead(child)) {
       const label = linkLabel(child, byId)
       if (!label) return []
       child.children = [{ type: 'text', value: label }]
@@ -410,29 +472,35 @@ const resolveStreamed = (tree: HastRoot) => {
   return { scripts, resolve }
 }
 
+// the elements that are, in page order, with none inside another: one walk that stops at each
+const outermost = (root: HastRoot, is: (el: Element) => boolean) => {
+  const found: Element[] = []
+  const walk = (parent: HastRoot | Element) => {
+    for (const child of parent.children)
+      if (isElement(child)) {
+        if (is(child)) found.push(child)
+        else walk(child)
+      }
+  }
+  walk(root)
+  return found
+}
 const extract = (body: HastRoot, how: Options['extract']): HastRoot => {
   if (typeof how === 'function') return how(body)
   if (how === 'none') return body
   // a main inside another main is already part of it
-  const marked = selectAll('affordances-md[data-mode=main]', body)
-  const outer = marked.filter(
-    (m) =>
-      !marked.some(
-        (other) => other !== m && selectAll('affordances-md[data-mode=main]', other).includes(m),
-      ),
+  const outer = outermost(
+    body,
+    (el) => el.tagName === 'affordances-md' && el.properties.dataMode === 'main',
   )
   if (outer.length) return { type: 'root', children: outer }
   // the outermost landmark, so a <main> or role=main in a comment inside it never replaces it; among several, a real
   // <main> before a [role=main], since a role survives sanitizers that keep attributes
-  const landmarks = selectAll('main, [role=main]', body)
-  const outermost = landmarks.filter(
-    (m) =>
-      !landmarks.some((other) => other !== m && selectAll('main, [role=main]', other).includes(m)),
-  )
-  const main = outermost.find((m) => m.tagName === 'main') ?? outermost[0]
+  const landmarks = outermost(body, (el) => el.tagName === 'main' || el.properties.role === 'main')
+  const main = landmarks.find((m) => m.tagName === 'main') ?? landmarks[0]
   if (main) return { type: 'root', children: [main] }
   // the page has no landmark: take the body and drop its chrome, but keep what was marked for agents
-  const chrome = new Set(selectAll(CHROME, body).filter((el) => mode(el) !== 'only'))
+  const chrome = new Set(selectAll(CHROME, body).filter((el) => !unhidden(el)))
   const strip = (parent: HastRoot | Element) => {
     const kept = (parent.children as ElementContent[]).filter(
       (child) => !(isElement(child) && chrome.has(child)),
@@ -460,115 +528,639 @@ const slotMarkers = (parent: HastRoot | Element, found: Element[] = []) => {
 const FILLABLE = 'affordancesSlot'
 
 // next's flight data (self.__next_f pushes: the payload the client hydrates from and, with partialPrefetching, a
-// second render to prefetch from) is most of a big page's bytes and none of what it says. each push is swapped for an
-// empty script before parsing, and the swap is kept only if every one parsed as a script: one inside an attribute, a
-// comment or a textarea isn't a script, so the page is parsed as sent. a push has no < in it (next escapes them), so
-// in a page as next sends it, the script ends where the match does. its open tag is read as the tokenizer reads it,
-// for the shapes next sends (attributes bare or double-quoted): a quoted value runs to its closing quote, > and all,
-// and any other shape doesn't match, so a value can't pass for a push and leave the script's text on the page
+// second render to prefetch from) is most of a big page's bytes and none of what it says. flightStripper takes each
+// push out as the page streams, reading it for its error rows: a push is the text of a script element, as parse5 would
+// find one, so a <script in a comment, an attribute, raw text or rcdata, a <template> or another script is never taken
+// for one. only the script's text is swapped, for a nonce (hex and dashes), so even a mistaken swap can't end the context
+// it's in. after parsing, every nonce must be a script's whole text and no script may still hold a push, or the swaps
+// can't be trusted
 const CALL = String.raw`\s*(?:\(self\.__next_f\s*=\s*self\.__next_f\s*\|\|\s*\[\]\)|self\.__next_f)\.push\(`
-const FLIGHT = new RegExp(
-  String.raw`<script(?:\s+[\w-]+(?:="[^"]*")?)*\s*>${CALL}([^<]*)\)\s*;?\s*<\/script>`,
-  'g',
-)
-// the page and its flight data: each push's argument, in page order. a page parsed as sent reads it from its own
-// script elements instead, since a match there may not have been one
 const PUSH = new RegExp(String.raw`^${CALL}([\s\S]*)\)\s*;?\s*$`)
-const parsed = (html: string): { tree: HastRoot; digests: string[] } => {
-  // a nonce per page, so nothing in it can pass for a swap
+// a script that starts like a push is one, read or not: one that doesn't end like one can't be read
+const PUSHED = new RegExp(String.raw`^${CALL}`)
+
+// the html tokenizer's raw text (rawtext and rcdata) elements: their text runs to their own end tag. noscript isn't
+// one: the page is parsed with scripting off, as hast-util-from-html parses it
+const RAW = new Set(['style', 'xmp', 'iframe', 'noembed', 'noframes', 'title', 'textarea'])
+// a start tag that ends foreign content (svg, math) and is an html element again
+const BREAKOUT = new Set(
+  'b big blockquote body br center code dd div dl dt em embed h1 h2 h3 h4 h5 h6 head hr i img li listing menu meta nobr ol p pre ruby s small span strong strike sub sup table tt u ul var'.split(
+    ' ',
+  ),
+)
+// a foreign element whose content is html: svg's foreignObject, desc and title, math's text elements, and an
+// annotation-xml that says it's html
+const INTEGRATION = {
+  svg: new Set(['foreignobject', 'desc', 'title']),
+  math: new Set(['mi', 'mo', 'mn', 'ms', 'mtext']),
+}
+const space = (char: string | undefined) =>
+  char === ' ' || char === '\n' || char === '\t' || char === '\f' || char === '\r'
+const alpha = (char: string | undefined) => !!char && /[a-z]/i.test(char)
+const lower = (text: string) =>
+  /[A-Z]/.test(text) ? text.replace(/[A-Z]+/g, (upper) => upper.toLowerCase()) : text
+// a script's end tag, or (in its escaped text) what changes how its text is read
+const SCRIPT_DATA = /<\/script(?=[\t\n\f\r />])|<!--/gi
+const SCRIPT_ESCAPED = /<\/script(?=[\t\n\f\r />])|<script(?=[\t\n\f\r />])|-->/gi
+const SCRIPT_DOUBLE = /<\/script(?=[\t\n\f\r />])|-->/gi
+// the longest lookahead any state needs: <!DOCTYPE, <![CDATA[, </script and the character after it
+const LOOKAHEAD = 10
+// a whole tag in html content, as the tokenizer reads it, in one step: its name, then attributes (a quote starts a value
+// only after a name and =, as in the tokenizer, and nothing outside a quoted value can hold >), to its >. each part
+// takes all it can, so it never backtracks into another reading. anything else (a quote that hasn't closed yet, an
+// attribute starting with =) goes the long way
+const TAG = new RegExp(
+  String.raw`([a-zA-Z][^\t\n\f\r />]*)(?:[\t\n\f\r /]+(?![\t\n\f\r /])|[^\t\n\f\r />=]+(?![^\t\n\f\r />=])(?:[\t\n\f\r ]*=[\t\n\f\r ]*(?:"[^"]*"|'[^']*'|[^\t\n\f\r >"']+(?![^\t\n\f\r >])))?)*>`,
+  'y',
+)
+const NAME_RUN = /[^\t\n\f\r />=]+/y
+const VALUE_RUN = /[^\t\n\f\r >]+/y
+const SPACE_RUN = /[\t\n\f\r ]+/y
+
+type Foreign = { name: string; ns: 'svg' | 'math'; html: boolean }
+type State =
+  | 'data'
+  | 'tagName'
+  | 'attributes'
+  | 'commentStart'
+  | 'comment'
+  | 'bogus'
+  | 'cdata'
+  | 'raw'
+  | 'script'
+  | 'foreignScript'
+  | 'plaintext'
+type Attribute =
+  | 'before'
+  | 'name'
+  | 'after'
+  | 'beforeValue'
+  | 'dq'
+  | 'sq'
+  | 'unquoted'
+  | 'afterValue'
+  | 'slash'
+
+// what a push said: its error rows' digests, and whether any push or error row couldn't be read
+export type Swapped = { nonce: string; count: number; errors: string[]; unreadable: boolean }
+export const flightStripper = () => {
   const nonce = crypto.randomUUID()
-  const flight: string[] = []
-  const lean = html.replace(FLIGHT, (_, push: string) => {
-    flight.push(push)
-    return `<script data-affordances-flight="${nonce}"></script>`
-  })
-  let tree = fromHtml(flight.length ? lean : html)
-  let streamed = resolveStreamed(tree)
-  const swapped = streamed.scripts.filter((s) => s.properties.dataAffordancesFlight === nonce)
-  if (swapped.length !== flight.length) {
-    tree = fromHtml(html)
-    streamed = resolveStreamed(tree)
-    flight.length = 0
-    for (const script of streamed.scripts) {
-      const push = PUSH.exec(toString(script))?.[1]
-      if (push !== undefined) flight.push(push)
+  const rows = rowScanner()
+  let count = 0
+  let carry = ''
+  let state: State = 'data'
+  // the tag being read: its name (lowercased, the first 32 characters), end or start, self-closing, its attributes'
+  // names, and annotation-xml's encoding
+  let name = ''
+  let end = false
+  let selfClosing = false
+  let attribute: Attribute = 'before'
+  let attributeName = ''
+  let attributes = new Set<string>()
+  let encoding = ''
+  // the raw text element being read, a script's text so far (held, since it's swapped whole or given back whole), and
+  // where in its escapes the script's text is
+  let raw = ''
+  let script: string[] = []
+  let escape: 'data' | 'escaped' | 'double' = 'data'
+  let dashed = false
+  // the open foreign elements, and how many templates are open: a script in a template's content isn't in the page
+  const foreign: Foreign[] = []
+  let templates = 0
+  const inForeign = () => foreign.length > 0 && !foreign.at(-1)!.html
+  // a script element's text is complete: a push (not in a template) is swapped for the nonce, anything else is given
+  // back as it was
+  const ended = (out: string[]) => {
+    const text = script.join('')
+    script = []
+    if (templates || !PUSHED.test(text)) return void out.push(text)
+    const push = PUSH.exec(text)?.[1]
+    if (push === undefined) rows.unreadable()
+    else rows.push(push)
+    count += 1
+    out.push(nonce)
+  }
+  const startTag = () => {
+    if (inForeign()) {
+      if (
+        BREAKOUT.has(name) ||
+        (name === 'font' && ['color', 'face', 'size'].some((a) => attributes.has(a)))
+      )
+        while (foreign.length && !foreign.at(-1)!.html) foreign.pop()
+      else {
+        if (name === 'script' && !selfClosing) return 'foreignScript'
+        if (!selfClosing) {
+          const ns = name === 'svg' ? 'svg' : name === 'math' ? 'math' : foreign.at(-1)!.ns
+          const html =
+            INTEGRATION[ns].has(name) ||
+            (ns === 'math' &&
+              name === 'annotation-xml' &&
+              /^(text\/html|application\/xhtml\+xml)$/.test(lower(encoding)))
+          foreign.push({ name, ns, html })
+        }
+        return 'data'
+      }
     }
+    if ((name === 'svg' || name === 'math') && !selfClosing) {
+      foreign.push({ name, ns: name, html: false })
+      return 'data'
+    }
+    if (name === 'template') templates += 1
+    if (name === 'script') {
+      escape = 'data'
+      return 'script'
+    }
+    if (RAW.has(name)) {
+      raw = name
+      return 'raw'
+    }
+    return name === 'plaintext' ? 'plaintext' : 'data'
   }
-  streamed.resolve()
-  // a healthy page's flight data names none of next's control flow, so it's read only when it does, or when a push is
-  // base64 bytes ([3, …]) that could
-  const named = flight.some((push) => push.includes('NEXT_') || /^\s*\[\s*3\s*,/.test(push))
+  const endTag = () => {
+    if (inForeign() && (name === 'br' || name === 'p'))
+      while (foreign.length && !foreign.at(-1)!.html) foreign.pop()
+    if (inForeign()) {
+      // the nearest open foreign element of that name, up to the html around it
+      for (let at = foreign.length - 1; at >= 0 && !foreign[at]!.html; at -= 1)
+        if (foreign[at]!.name === name) {
+          foreign.length = at
+          break
+        }
+      return
+    }
+    if (foreign.length && foreign.at(-1)!.name === name) foreign.pop()
+    else if (name === 'template' && templates) templates -= 1
+  }
+  const run = (text: string, final: boolean) => {
+    const buffer = carry + text
+    carry = ''
+    const out: string[] = []
+    const n = buffer.length
+    let i = 0
+    // not enough left to decide: keep the rest for the next chunk (always a few characters), or at the end, go on
+    const short = (need: number) => !final && n - i < need
+    while (i < n) {
+      if (state === 'data') {
+        const lt = buffer.indexOf('<', i)
+        if (lt < 0) {
+          out.push(buffer.slice(i))
+          i = n
+          break
+        }
+        out.push(buffer.slice(i, lt))
+        i = lt
+        if (short(LOOKAHEAD)) break
+        const next = buffer[i + 1]
+        // a whole tag in html content at once, when it's all here (html ignores self-closing but on svg and math)
+        const at = next === '/' ? i + 2 : i + 1
+        if (!inForeign() && alpha(buffer[at])) {
+          TAG.lastIndex = at
+          const tag = TAG.exec(buffer)
+          // svg and math go the long way, since only theirs can be self-closing (<svg/> opens no foreign content)
+          if (tag && !/^(svg|math)$/i.test(tag[1]!)) {
+            out.push(buffer.slice(i, TAG.lastIndex))
+            i = TAG.lastIndex
+            ;[name, end, selfClosing] = [lower(tag[1]!.slice(0, 32)), next === '/', false]
+            state = end ? (endTag(), 'data') : startTag()
+            if (state === 'script' || state === 'foreignScript') script = []
+            continue
+          }
+        }
+        if (alpha(next)) {
+          out.push('<')
+          i += 1
+          ;[state, name, end, selfClosing, attributes, encoding] = [
+            'tagName',
+            '',
+            false,
+            false,
+            new Set(),
+            '',
+          ]
+        } else if (next === '/') {
+          const after = buffer[i + 2]
+          if (alpha(after)) {
+            out.push('</')
+            i += 2
+            ;[state, name, end, selfClosing, attributes, encoding] = [
+              'tagName',
+              '',
+              true,
+              false,
+              new Set(),
+              '',
+            ]
+          } else if (after === '>') {
+            out.push('</>')
+            i += 3
+          } else {
+            out.push('</')
+            i += 2
+            state = after === undefined ? 'data' : 'bogus'
+          }
+        } else if (next === '!') {
+          const head = buffer.slice(i, i + 9)
+          if (head.startsWith('<!--')) {
+            out.push('<!--')
+            i += 4
+            state = 'commentStart'
+          } else if (lower(head) === '<!doctype' || (head === '<![CDATA[' && inForeign())) {
+            out.push(head)
+            i += 9
+            state = head === '<![CDATA[' ? 'cdata' : 'bogus'
+          } else {
+            out.push('<!')
+            i += 2
+            state = 'bogus'
+          }
+        } else if (next === '?') {
+          out.push('<?')
+          i += 2
+          state = 'bogus'
+        } else {
+          out.push('<')
+          i += 1
+        }
+      } else if (state === 'tagName') {
+        let at = i
+        while (at < n && !space(buffer[at]) && buffer[at] !== '/' && buffer[at] !== '>') at += 1
+        if (name.length < 32) name += lower(buffer.slice(i, Math.min(at, i + 32 - name.length)))
+        out.push(buffer.slice(i, at))
+        i = at
+        if (i < n) [state, attribute] = ['attributes', 'before']
+      } else if (state === 'attributes') {
+        // runs of a name, an unquoted value or spaces in one step: most of a page's tags are attributes
+        const runOf =
+          attribute === 'name'
+            ? NAME_RUN
+            : attribute === 'unquoted'
+              ? VALUE_RUN
+              : attribute === 'before' || attribute === 'after' || attribute === 'beforeValue'
+                ? SPACE_RUN
+                : undefined
+        if (runOf) {
+          runOf.lastIndex = i
+          const found = runOf.exec(buffer)
+          if (found) {
+            const taken = found[0]
+            if (attribute === 'name' && attributeName.length < 32)
+              attributeName += lower(taken.slice(0, 32))
+            else if (
+              attribute === 'unquoted' &&
+              attributeName === 'encoding' &&
+              encoding.length < 32
+            )
+              encoding += taken.slice(0, 32)
+            out.push(taken)
+            i += taken.length
+            continue
+          }
+        }
+        const char = buffer[i]!
+        if (attribute === 'dq' || attribute === 'sq') {
+          const quote = buffer.indexOf(attribute === 'dq' ? '"' : "'", i)
+          const stop = quote < 0 ? n : quote
+          if (attributeName === 'encoding' && encoding.length < 32)
+            encoding += buffer.slice(i, Math.min(stop, i + 32))
+          out.push(buffer.slice(i, quote < 0 ? n : quote + 1))
+          i = quote < 0 ? n : quote + 1
+          if (quote >= 0) attribute = 'afterValue'
+          continue
+        }
+        out.push(char)
+        i += 1
+        if (char === '>') {
+          if (attribute === 'name') attributes.add(attributeName)
+          if (attribute === 'slash') selfClosing = true
+          state = end ? (endTag(), 'data') : startTag()
+          if (state === 'script' || state === 'foreignScript') script = []
+          continue
+        }
+        if (attribute === 'before' || attribute === 'after') {
+          if (space(char)) continue
+          if (char === '/') attribute = 'slash'
+          else if (char === '=' && attribute === 'after') attribute = 'beforeValue'
+          else [attribute, attributeName] = ['name', lower(char)]
+        } else if (attribute === 'name') {
+          if (space(char) || char === '/' || char === '=') {
+            attributes.add(attributeName)
+            attribute = char === '=' ? 'beforeValue' : char === '/' ? 'slash' : 'after'
+          } else if (attributeName.length < 32) attributeName += lower(char)
+        } else if (attribute === 'beforeValue') {
+          if (space(char)) continue
+          if (char === '"') attribute = 'dq'
+          else if (char === "'") attribute = 'sq'
+          else {
+            attribute = 'unquoted'
+            if (attributeName === 'encoding') encoding = char
+          }
+        } else if (attribute === 'unquoted') {
+          if (space(char)) attribute = 'before'
+          else if (attributeName === 'encoding' && encoding.length < 32) encoding += char
+        } else if (attribute === 'afterValue') {
+          if (space(char)) attribute = 'before'
+          else if (char === '/') attribute = 'slash'
+          else [attribute, attributeName] = ['name', lower(char)]
+        } else if (attribute === 'slash') {
+          // a / right before > is self-closing (above); anything else is read again as before an attribute
+          if (char === '/') attribute = 'slash'
+          else if (space(char)) attribute = 'before'
+          else [attribute, attributeName] = ['name', lower(char)]
+        }
+      } else if (state === 'commentStart') {
+        if (short(2)) break
+        // <!--> and <!---> end at once
+        const shut = buffer[i] === '>' ? 1 : buffer.startsWith('->', i) ? 2 : 0
+        out.push(buffer.slice(i, i + shut))
+        i += shut
+        state = shut ? 'data' : 'comment'
+      } else if (state === 'comment') {
+        const dashes = buffer.indexOf('--', i)
+        if (dashes < 0 || (!final && dashes + 4 > n)) {
+          const keep = dashes < 0 ? Math.max(i, n - 1) : dashes
+          out.push(buffer.slice(i, keep))
+          i = keep
+          if (!final) break
+          out.push(buffer.slice(i))
+          i = n
+          break
+        }
+        const close = buffer[dashes + 2] === '>' ? 3 : buffer.startsWith('!>', dashes + 2) ? 4 : 0
+        out.push(buffer.slice(i, close ? dashes + close : dashes + 1))
+        i = close ? dashes + close : dashes + 1
+        if (close) state = 'data'
+      } else if (state === 'bogus' || state === 'cdata') {
+        const stop = buffer.indexOf(state === 'bogus' ? '>' : ']]>', i)
+        const keep =
+          stop >= 0
+            ? stop + (state === 'bogus' ? 1 : 3)
+            : final || state === 'bogus'
+              ? n
+              : Math.max(i, n - 2)
+        out.push(buffer.slice(i, keep))
+        i = keep
+        if (stop >= 0) state = 'data'
+        else if (!final && state === 'cdata') break
+      } else if (state === 'raw') {
+        const close = buffer.indexOf('</', i)
+        if (close < 0) {
+          out.push(buffer.slice(i, Math.max(i, n - 1)))
+          i = Math.max(i, n - 1)
+          if (final) {
+            out.push(buffer.slice(i))
+            i = n
+          }
+          break
+        }
+        out.push(buffer.slice(i, close))
+        i = close
+        if (short(raw.length + 3)) break
+        if (
+          lower(buffer.slice(i + 2, i + 2 + raw.length)) === raw &&
+          /[\t\n\f\r />]/.test(buffer[i + 2 + raw.length] ?? '')
+        )
+          state = 'data'
+        else {
+          out.push('</')
+          i += 2
+        }
+      } else if (state === 'script') {
+        if (dashed) {
+          // right after <!--, more dashes then > (<!-->, <!--->) end the escape it started
+          while (i < n && buffer[i] === '-') script.push(buffer[i++]!)
+          if (i === n && !final) break
+          dashed = false
+          if (buffer[i] === '>') {
+            script.push('>')
+            i += 1
+            escape = 'data'
+          }
+          continue
+        }
+        const pattern =
+          escape === 'data' ? SCRIPT_DATA : escape === 'escaped' ? SCRIPT_ESCAPED : SCRIPT_DOUBLE
+        pattern.lastIndex = i
+        const found = pattern.exec(buffer)
+        // a match may be cut off by the chunk's end, or need the character after it: wait for more
+        if (!final && (!found || found.index > n - LOOKAHEAD)) {
+          const keep = Math.max(i, Math.min(found?.index ?? n, n - LOOKAHEAD))
+          script.push(buffer.slice(i, keep))
+          i = keep
+          break
+        }
+        if (!found) {
+          // the page ended inside the script: what it held is given back as it was
+          script.push(buffer.slice(i))
+          out.push(script.join(''))
+          script = []
+          i = n
+          break
+        }
+        script.push(buffer.slice(i, found.index))
+        i = found.index
+        const match = lower(found[0])
+        if (match === '</script' && escape !== 'double') {
+          ended(out)
+          state = 'data'
+        } else {
+          script.push(found[0])
+          i += found[0].length
+          if (match === '<!--') [escape, dashed] = ['escaped', true]
+          else if (match === '-->') escape = 'data'
+          else escape = match === '<script' ? 'double' : 'escaped'
+        }
+      } else if (state === 'foreignScript') {
+        // an svg or math script's text is read as text: it's a push only if nothing but text comes before its end tag
+        const lt = buffer.indexOf('<', i)
+        if (lt < 0) {
+          script.push(buffer.slice(i))
+          i = n
+          break
+        }
+        script.push(buffer.slice(i, lt))
+        i = lt
+        if (short(LOOKAHEAD)) break
+        if (
+          /^<\/script[\t\n\f\r />]/i.test(buffer.slice(i, i + 9)) ||
+          (final && /^<\/script$/i.test(buffer.slice(i)))
+        )
+          ended(out)
+        else {
+          out.push(script.join(''))
+          script = []
+        }
+        state = 'data'
+      } else {
+        out.push(buffer.slice(i))
+        i = n
+      }
+    }
+    carry = buffer.slice(i)
+    if (final && carry) {
+      out.push(carry)
+      carry = ''
+    }
+    if (final && script.length) {
+      out.push(script.join(''))
+      script = []
+    }
+    return out.join('')
+  }
   return {
-    tree,
-    digests: named ? flightErrors(flight) : [],
+    write: (text: string) => run(text, false),
+    end: () => run('', true),
+    swapped: (): Swapped => ({ nonce, count, ...rows.errors() }),
   }
+}
+
+// why a page's swapped flight data can't be trusted: a nonce that didn't parse as a script's whole text, a push left
+// in a script (a swap the stripper missed), or a push or error row that can't be read
+export class FlightDataError extends Error {
+  readonly reason: 'count' | 'unswapped' | 'push' | 'row'
+  constructor(reason: FlightDataError['reason']) {
+    super(`the page's flight data can't be read (${reason})`)
+    this.name = 'FlightDataError'
+    this.reason = reason
+  }
+}
+// a script's own text: an svg script can hold elements, and another script's text isn't its own
+const scriptText = (script: Element) =>
+  script.children.map((child) => (child.type === 'text' ? child.value : '')).join('')
+const untrusted = (scripts: Element[], swapped: Swapped): FlightDataError['reason'] | undefined => {
+  let count = 0
+  for (const script of scripts) {
+    const text = scriptText(script)
+    if (text === swapped.nonce) count += 1
+    else if (PUSHED.test(text)) return 'unswapped'
+  }
+  if (count !== swapped.count) return 'count'
+  return swapped.unreadable ? 'push' : undefined
 }
 
 // the digests of the error rows (<id>:E{"digest":…}) in a page's flight data, read as react's client reads the stream:
 // next's [1, text] and [3, base64] pushes are its bytes, in order, and each row is an id, a tag, then either a length
 // and that many bytes (a long string, a typed array) or everything to the next newline. a row's bytes are skipped by
-// their length, so a page's own long text (a readme, which react sends raw in a T row) can't pass for a row
+// their length, so a page's own long text (a readme, which react sends raw in a T row) can't pass for a row, and only
+// an error row's are kept, so its memory is one row at most. a push or an error row that can't be read is unreadable
 const LENGTH_TAGS = new Set([...'TAOobUSsLlGgMmV'].map((tag) => tag.charCodeAt(0)))
+const ROW_CAP = 65_536
 const hex = (byte: number) => (byte > 96 ? byte - 87 : byte - 48)
-const flightBytes = (flight: string[]): Uint8Array | undefined => {
-  const parts: Uint8Array[] = []
-  for (const push of flight) {
-    let value: unknown
-    try {
-      value = JSON.parse(push)
-    } catch {
-      return undefined
-    }
-    if (!Array.isArray(value)) return undefined
-    if (value[0] === 1 && typeof value[1] === 'string')
-      parts.push(new TextEncoder().encode(value[1]))
-    else if (value[0] === 3 && typeof value[1] === 'string')
-      parts.push(Uint8Array.from(atob(value[1]), (char) => char.charCodeAt(0)))
-  }
-  const bytes = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0))
-  let at = 0
-  for (const part of parts) {
-    bytes.set(part, at)
-    at += part.length
-  }
+const fromBase64 = (base64: string) => {
+  const decode = (Uint8Array as { fromBase64?: (text: string) => Uint8Array }).fromBase64
+  if (decode) return decode(base64)
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
   return bytes
 }
-const flightErrors = (flight: string[]): string[] => {
+const rowScanner = () => {
   const digests: string[] = []
-  // a push react's client couldn't read either: no rows to trust
-  const bytes = flightBytes(flight)
-  if (!bytes) return digests
-  let i = 0
-  while (i < bytes.length) {
-    // the id, to its colon
-    while (i < bytes.length && bytes[i] !== 58) i += 1
-    i += 1
-    const tag = bytes[i]!
-    if (LENGTH_TAGS.has(tag)) {
-      let length = 0
-      for (i += 1; i < bytes.length && bytes[i] !== 44; i += 1)
-        length = (length << 4) | hex(bytes[i]!)
-      i += 1 + length
-      continue
+  let state: 'id' | 'tag' | 'length' | 'skip' | 'line' = 'id'
+  let size = 0
+  let row: Uint8Array[] | undefined
+  let held = 0
+  let unreadable = false
+  const ended = (complete: boolean) => {
+    if (!row) return
+    const bytes = new Uint8Array(held)
+    let at = 0
+    for (const part of row) {
+      bytes.set(part, at)
+      at += part.length
     }
-    // a capital letter (and #, r, x) is a tag of its own; anything else starts a model row
-    const tagged = (tag > 64 && tag < 91) || tag === 35 || tag === 114 || tag === 120
-    const start = tagged ? i + 1 : i
-    let end = bytes.indexOf(10, start)
-    if (end === -1) end = bytes.length
-    if (tag === 69) {
-      try {
-        const row = JSON.parse(new TextDecoder().decode(bytes.subarray(start, end))) as {
-          digest?: unknown
+    row = undefined
+    // an error row cut off where the page ended is still an error, one that can't say which
+    if (!complete) return void digests.push('')
+    if (held > ROW_CAP) return void (unreadable = true)
+    try {
+      const said = JSON.parse(new TextDecoder().decode(bytes)) as { digest?: unknown }
+      digests.push(typeof said?.digest === 'string' ? said.digest : '')
+    } catch {
+      unreadable = true
+    }
+  }
+  const keep = (bytes: Uint8Array) => {
+    if (!row || held > ROW_CAP) return
+    row.push(bytes.slice())
+    held += bytes.length
+  }
+  // a push's bytes: what's skipped (a long row's bytes, a row that isn't an error) is jumped over, never stepped through
+  const scan = (bytes: Uint8Array) => {
+    for (let i = 0; i < bytes.length;) {
+      if (state === 'id') {
+        const colon = bytes.indexOf(58, i)
+        if (colon < 0) return
+        state = 'tag'
+        i = colon + 1
+      } else if (state === 'tag') {
+        const tag = bytes[i]!
+        i += 1
+        if (LENGTH_TAGS.has(tag)) {
+          state = 'length'
+          size = 0
+          continue
         }
-        if (typeof row.digest === 'string') digests.push(row.digest)
-      } catch {
-        // not an error row react would read either
+        // a capital letter (and #, r, x) is a tag of its own; anything else starts a model row
+        const tagged = (tag > 64 && tag < 91) || tag === 35 || tag === 114 || tag === 120
+        ;[row, held] = [tag === 69 ? [] : undefined, 0]
+        state = !tagged && tag === 10 ? 'id' : 'line'
+      } else if (state === 'length') {
+        const byte = bytes[i]!
+        i += 1
+        if (byte === 44) state = size ? 'skip' : 'id'
+        else size = (size << 4) | hex(byte)
+      } else if (state === 'skip') {
+        const take = Math.min(size, bytes.length - i)
+        size -= take
+        i += take
+        if (!size) state = 'id'
+      } else {
+        const newline = bytes.indexOf(10, i)
+        const end = newline < 0 ? bytes.length : newline
+        keep(bytes.subarray(i, end))
+        if (newline < 0) return
+        ended(true)
+        state = 'id'
+        i = newline + 1
       }
     }
-    i = end + 1
   }
-  return digests
+  return {
+    push: (push: string) => {
+      let value: unknown
+      try {
+        value = JSON.parse(push)
+      } catch {
+        unreadable = true
+        return
+      }
+      if (!Array.isArray(value)) unreadable = true
+      else if (value[0] === 1 && typeof value[1] === 'string')
+        scan(new TextEncoder().encode(value[1]))
+      else if (value[0] === 3 && typeof value[1] === 'string') {
+        try {
+          scan(fromBase64(value[1]))
+        } catch {
+          unreadable = true
+        }
+      }
+    },
+    unreadable: () => void (unreadable = true),
+    errors: () => {
+      if (state === 'line') ended(false)
+      state = 'id'
+      return { errors: digests, unreadable }
+    },
+  }
+}
+
+// a page's html with its flight pushes taken out, parsed: the tree and the error rows' digests, or why they can't be
+// trusted
+const strippedTree = (html: string, swapped: Swapped) => {
+  const tree = fromHtml(html)
+  const streamed = resolveStreamed(tree)
+  const reason = untrusted(streamed.scripts, swapped)
+  return { tree, streamed, reason }
 }
 
 // the part of the page that becomes markdown; prunes the body in place, so read the head first
@@ -673,12 +1265,11 @@ const words = (node: Element | undefined): string =>
     : ''
 
 // the elements an aria-labelledby names, in its order; an id that isn't on the page is skipped
+// the ids an aria-labelledby names, in order; none when it's missing or empty, never ''
+const labelledBy = (node: Element) =>
+  [node.properties.ariaLabelledBy ?? []].flat().join(' ').split(/\s+/).filter(Boolean)
 const idrefs = (node: Element, byId: Map<string, Element>) =>
-  [node.properties.ariaLabelledBy ?? []]
-    .flat()
-    .join(' ')
-    .split(/\s+/)
-    .flatMap((id) => byId.get(id) ?? [])
+  labelledBy(node).flatMap((id) => byId.get(id) ?? [])
 
 // what a screen reader calls an element, in its order: what its aria-labelledby names, its native label (a
 // <label for>, the label around it, a fieldset's legend), its aria-label, its own words for a control named by its
@@ -761,6 +1352,8 @@ const nameWords = (name: string) =>
 const ALWAYS = [
   '[a-z0-9]*(secret|passw(or)?d|pwd|passcode|passphrase|apikey|privatekey|signingkey)s?',
   'cvv|cvc|csc|ssn|social_security|pincode|jwt|csrf|xsrf|dsn|bearer|credentials?|iban',
+  // what a request authenticates with: its authorization header, a cookie, a session id, a signature
+  'authorization|cookies?|sids?|signatures?',
   'cc_(num(ber)?|csc|exp(_month|_year)?|type|name|given_name|additional_name|family_name)',
   'ccnum|card_?num(ber)?|credit_card|one_time_code|account_number|routing_number',
   // any key (api_key, service_role_key, a bare key) but the ones that aren't secrets: a public key, a database's
@@ -788,8 +1381,10 @@ const SECRET = new RegExp(
 // hindi and greek
 const SECRET_WORDS =
   /пароль|密码|密碼|口令|パスワード|暗証番号|비밀번호|암호|كلمة المرور|كلمة السر|סיסמ|รหัสผ่าน|पासवर्ड|κωδικος προσβασης|συνθηματικο/
-// a url with a user and password in it (postgres://user:pass@host) is a secret, whatever its field says
-const CREDENTIALED = /\/\/[^/\s@]*:[^/\s@]*@/
+// a value that is a secret whatever its field says: a url with a user and password in it (postgres://user:pass@host),
+// a bearer token, or a jwt (its header, base64url json, always starts eyJ)
+const CREDENTIALED = /\/\/[^/\s@]*:[^/\s@]*@|^\s*bearer\s+\S/i
+const JWT = /^\s*eyJ[\w-]*\.[\w-]*\.[\w-]*\s*$/
 // by its name, id or autocomplete, or by what it says to people: its label, aria-label or placeholder
 // (<label>API key <input name="k">)
 const secret = (field: Element, label: string) =>
@@ -804,7 +1399,7 @@ const secret = (field: Element, label: string) =>
           SECRET_WORDS.test(form.toLowerCase()),
         ),
     ) ||
-  CREDENTIALED.test(valueOf(field))
+  [CREDENTIALED, JWT].some((shape) => shape.test(valueOf(field)))
 
 // a field's current value as the page rendered it: an input's value, a textarea's text, a select's chosen options
 // (the first, when a single select marks none)
@@ -833,6 +1428,8 @@ const valueOf = (field: Element) => {
 // each field's value and each toggle's state, but never a hidden field's, a password's, or one that looks like a
 // secret
 type Line = [label: string, value?: string]
+// what has a state of its own, given as on, off or mixed
+const TOGGLES = new Set(['switch', 'toggle', 'checkbox', 'radio'])
 const form: Handle = (state, node) => {
   const values = node.properties.dataAffordancesMd === 'values'
   const up = parents(node)
@@ -877,10 +1474,8 @@ const form: Handle = (state, node) => {
     if (!label) continue
     const entry = type === 'text' ? label : `${label} (${type})`
     const on = stateOf(field)
-    if (values && (type === 'switch' || type === 'toggle'))
+    if (values && TOGGLES.has(type))
       lines.set(field, [entry, on === 'true' ? 'on' : on === 'mixed' ? 'mixed' : 'off'])
-    else if (values && type === 'checkbox' && on !== 'false')
-      lines.set(field, [`${label} (${type}, ${on === 'mixed' ? 'mixed' : 'selected'})`])
     else {
       const value = values && !secret(field, label) ? valueOf(field) : ''
       lines.set(field, value ? [entry, value] : [entry])
@@ -984,23 +1579,15 @@ const form: Handle = (state, node) => {
   if (!lines.size) return out as never
 
   // the form's name: its aria-label or aria-labelledby, unless what it names is in the form and says it in place (a
-  // label or legend doesn't: the walk reads those as controls), or a heading before its first field; without either
-  // it's a form
+  // label or legend doesn't: the walk reads those as controls). a form without one has no title: what it says (a
+  // heading, a card's title) is already there
   const named = idrefs(node, byId).some(
     (el) =>
       up.has(el) &&
       !CONTROLS.has(el.tagName) &&
       !ancestors(el, up).some((at) => CONTROLS.has(at.tagName)),
   )
-  const first = parts.findIndex(Array.isArray)
-  const headed = parts
-    .slice(0, first)
-    .some(
-      (part) =>
-        isElement(part) &&
-        (/^h[1-6]$/.test(part.tagName) || select('h1, h2, h3, h4, h5, h6', part) !== undefined),
-    )
-  const title = named ? '' : accessibleName(node, { byId }, false) || (headed ? '' : 'Form')
+  const title = named ? '' : accessibleName(node, { byId }, false)
   return [
     ...(title
       ? [
@@ -1014,11 +1601,10 @@ const form: Handle = (state, node) => {
   ] as never
 }
 
-// a field's line as markdown text: its label, and its value, unescaped where markdown doesn't need it
-const lineText = ([label, value]: Line): PhrasingContent[] =>
-  value
-    ? [{ type: 'text', value: `${label}: ` }, { type: 'fieldValue', value } as never]
-    : [{ type: 'text', value: label }]
+// a field's line as markdown text: its label, and its value
+const lineText = ([label, value]: Line): PhrasingContent[] => [
+  { type: 'text', value: value ? `${label}: ${value}` : label },
+]
 // elements whose shape is their content: a form's fields in one are written where they are, not listed after it
 const SHAPED = new Set(['table', 'dl'])
 // a field's line written in place: a tag name no page can have, since html lowercases tag names
@@ -1201,15 +1787,68 @@ const verbatim =
           node.tagName === 'span' ? 'inline' : 'block',
         ) as never)
 
+// a code block's language: a language-* class on its <code>, or where highlighters put it instead: data-language on
+// the <code> or <pre> (rehype-pretty-code, expressive code), or a language-* class on the <pre> (prism)
+const classLanguage = (el: Element | undefined) =>
+  [el?.properties.className]
+    .flat()
+    .map(String)
+    .find((name) => name.startsWith('language-'))
+    ?.slice('language-'.length)
+const languageOf = (pre: Element) => {
+  const code = pre.children.find((child) => isElement(child) && child.tagName === 'code') as
+    | Element
+    | undefined
+  const said = [code?.properties.dataLanguage, pre.properties.dataLanguage]
+    .map((language) => String(language ?? '').trim())
+    .find(Boolean)
+  return (classLanguage(code) ?? said ?? classLanguage(pre))?.split(/\s/)[0] || null
+}
 // <pre data-title="route.ts"> keeps its title as fence meta: ```ts title="route.ts"
 const pre: Handle = (state, node) => {
   const result = defaultHandlers.pre(state, node) as
-    | { type: string; meta?: string | null }
+    | { type: string; lang?: string | null; meta?: string | null }
     | undefined
+  if (result?.type !== 'code') return result as never
+  result.lang = languageOf(node)
   const title = node.properties.dataTitle
-  if (result?.type === 'code' && title) result.meta = `title=${JSON.stringify(String(title))}`
+  if (title) result.meta = `title=${JSON.stringify(String(title))}`
   return result as never
 }
+// a code block's title where highlighters put it, outside the <pre>: a figcaption before it in its figure
+// (rehype-pretty-code, fumadocs, expressive code) or data-title on what holds it. it's the fence's title, so the
+// figcaption isn't said again; one after the code is a caption, and stays. a fence's title needs its language, so
+// without one it stays where it is (fumadocs gives one with rehype-code's addLanguageClass)
+const titled =
+  (fallback: Handle): Handle =>
+  (state, node, parent) => {
+    // only a figure, or what has a data-title, can title its code; anything else is walked no further
+    if (node.tagName !== 'figure' && node.properties.dataTitle === undefined)
+      return fallback(state, node, parent)
+    const [code, ...more] = selectAll('pre', node)
+    if (!code || more.length || code.properties.dataTitle || !languageOf(code))
+      return fallback(state, node, parent)
+    const order = selectAll('figcaption, pre', node)
+    const caption =
+      node.tagName === 'figure'
+        ? order.slice(0, order.indexOf(code)).find((el) => el.tagName === 'figcaption')
+        : undefined
+    const title = text(caption) || String(node.properties.dataTitle ?? '').trim()
+    if (!title) return fallback(state, node, parent)
+    const swap = (el: Element): Element => ({
+      ...el,
+      children: el.children.flatMap((child): ElementContent[] =>
+        child === caption
+          ? []
+          : child === code
+            ? [{ ...code, properties: { ...code.properties, dataTitle: title } }]
+            : isElement(child)
+              ? [swap(child)]
+              : [child],
+      ),
+    })
+    return fallback(state, swap(node), parent)
+  }
 
 const handlers: Handlers = {
   form,
@@ -1224,7 +1863,8 @@ const handlers: Handlers = {
   sup: wrap('sup'),
   sub: wrap('sub'),
   span: verbatim(defaultHandlers.span),
-  div: verbatim(defaultHandlers.div),
+  div: verbatim(titled(defaultHandlers.div)),
+  figure: titled(defaultHandlers.figure),
   // values and placeholders are the user's, not the page's; task-list checkboxes are read by the li handler
   input: () => undefined,
   select: () => undefined,
@@ -1232,23 +1872,15 @@ const handlers: Handlers = {
   button: () => undefined,
 }
 
-// a field's value, escaped only where markdown needs it: gfm's autolink escapes (support\@acme.dev,
-// https\://github.com) only keep text from becoming the same link, so a value goes without them
+// gfm escapes @, www. and https: (tj\@acme.dev) only so text doesn't become a link to itself, which reads the same, so
+// text goes without them. a heading keeps them: a heading's url shown as itself isn't part of a page's title (headingOf)
 const GFM = gfmToMarkdown()
-const AUTOLINK = new Set(
-  GFM.extensions?.find((extension) =>
-    extension.unsafe?.some((pattern) => pattern.character === '@'),
-  )?.unsafe,
-)
-const fieldValue: ToMarkdownHandle = (node, _, state, info) => {
-  const unsafe = state.unsafe
-  state.unsafe = unsafe.filter((pattern) => !AUTOLINK.has(pattern))
-  try {
-    return state.safe((node as { value: string }).value, info)
-  } finally {
-    state.unsafe = unsafe
-  }
-}
+for (const extension of GFM.extensions ?? [])
+  if (extension.unsafe?.some((pattern) => pattern.character === '@'))
+    extension.unsafe = extension.unsafe.map((pattern) => ({
+      ...pattern,
+      inConstruct: 'headingAtx',
+    }))
 
 // a link's url once it's absolute, then through the link hook; undefined when it can't be resolved
 const resolve = (url: string, base: string, relink: Options['link'], image: boolean) => {
@@ -1473,60 +2105,68 @@ const UNSHOWN = new Set(['resource', 'image', 'autolink', 'literalAutolink'])
 const BRACKETS: Record<string, string> = { '(': ')', '[': ']', '<': '>' }
 // the markdown's first # heading, outside any container and outside code, as markdown parses it: where it starts and
 // ends, and its text as a reader sees it, without a url it shows as itself (an autolink, a bare url) or the brackets
-// right around one. parsed only as far as each line that starts with #, since a page's heading is near its top
+// right around one. a page's heading is near its top, so it's parsed as far as the first line that can be one (# and a
+// space, or # alone); if that isn't one (it's in code or a container), the whole markdown is parsed once
+const H1_LINE = /^ {0,3}#(?=[ \t]|$)/m
 export const headingOf = (markdown: string) => {
-  for (let at = markdown.search(/^ {0,3}#/m); at >= 0;) {
-    const end = markdown.indexOf('\n', at)
-    const prefix = end < 0 ? markdown : markdown.slice(0, end)
-    const events = postprocess(
-      parse(SYNTAX)
-        .document()
-        .write(preprocess()(prefix, undefined, true)),
-    )
-    let depth = 0
-    for (let i = 0; i < events.length; i++) {
-      const [kind, token] = events[i]!
-      if (CONTAINERS.has(token.type)) depth += kind === 'enter' ? 1 : -1
-      if (kind !== 'enter' || token.type !== 'atxHeading' || depth) continue
-      const sequence = events.find(([, t], j) => j > i && t.type === 'atxHeadingSequence')?.[1]
-      if (!sequence || sequence.end.offset - sequence.start.offset !== 1) continue
-      // its text: the data inside, a url shown as itself dropped, with the brackets right around one
-      const pieces: (string | null)[] = []
-      let hidden = 0
-      for (let j = i + 1; j < events.length; j++) {
-        const [k, t] = events[j]!
-        if (t.type === 'atxHeading') break
-        if (UNSHOWN.has(t.type)) {
-          hidden += k === 'enter' ? 1 : -1
-          if (k === 'exit' && !hidden && t.type !== 'resource' && t.type !== 'image')
-            pieces.push(null)
-          continue
-        }
-        if (k !== 'enter' || hidden) continue
-        const written = prefix.slice(t.start.offset, t.end.offset)
-        if (t.type === 'data' || t.type === 'codeTextData' || t.type === 'htmlText')
-          pieces.push(written)
-        else if (t.type === 'characterEscapeValue') pieces.push(written)
-        else if (t.type === 'characterReference') pieces.push(decodeString(written))
-        else if (t.type === 'codeTextPadding' || t.type === 'whitespace') pieces.push(' ')
+  const at = markdown.search(H1_LINE)
+  if (at < 0) return undefined
+  const end = markdown.indexOf('\n', at)
+  return (
+    headingIn(end < 0 ? markdown : markdown.slice(0, end)) ??
+    (end < 0 ? undefined : headingIn(markdown))
+  )
+}
+// the first # heading outside any container in this markdown, parsed whole
+const headingIn = (source: string) => {
+  const events = postprocess(
+    parse(SYNTAX)
+      .document()
+      .write(preprocess()(source, undefined, true)),
+  )
+  let depth = 0
+  for (let i = 0; i < events.length; i++) {
+    const [kind, token] = events[i]!
+    if (CONTAINERS.has(token.type)) depth += kind === 'enter' ? 1 : -1
+    if (kind !== 'enter' || token.type !== 'atxHeading' || depth) continue
+    // its # sequence comes right after it, so the search starts there
+    let sequence: typeof token | undefined
+    for (let j = i + 1; j < events.length && !sequence; j++)
+      if (events[j]![1].type === 'atxHeadingSequence') sequence = events[j]![1]
+    if (!sequence || sequence.end.offset - sequence.start.offset !== 1) continue
+    // its text: the data inside, a url shown as itself dropped, with the brackets right around one
+    const pieces: (string | null)[] = []
+    let hidden = 0
+    for (let j = i + 1; j < events.length; j++) {
+      const [k, t] = events[j]!
+      if (t.type === 'atxHeading') break
+      if (UNSHOWN.has(t.type)) {
+        hidden += k === 'enter' ? 1 : -1
+        if (k === 'exit' && !hidden && t.type !== 'resource' && t.type !== 'image')
+          pieces.push(null)
+        continue
       }
-      pieces.forEach((piece, n) => {
-        if (piece !== null) return
-        const before = pieces[n - 1]
-        const after = pieces[n + 1]
-        const open = typeof before === 'string' ? /[([<]\s*$/.exec(before)?.[0] : undefined
-        const close = typeof after === 'string' ? /^\s*([)\]>])/.exec(after) : undefined
-        if (open && close && close[1] === BRACKETS[open.trim()]) {
-          pieces[n - 1] = before!.slice(0, -open.length)
-          pieces[n + 1] = after!.slice(close[0].length)
-        }
-      })
-      const shown = pieces.join('').replace(/\s+/g, ' ').trim()
-      return { start: token.start.offset, end: token.end.offset, text: shown || undefined }
+      if (k !== 'enter' || hidden) continue
+      const written = source.slice(t.start.offset, t.end.offset)
+      if (t.type === 'data' || t.type === 'codeTextData' || t.type === 'htmlText')
+        pieces.push(written)
+      else if (t.type === 'characterEscapeValue') pieces.push(written)
+      else if (t.type === 'characterReference') pieces.push(decodeString(written))
+      else if (t.type === 'codeTextPadding' || t.type === 'whitespace') pieces.push(' ')
     }
-    // not a heading there (inside code or a container): the next line that starts with #
-    const next = end < 0 ? -1 : markdown.slice(end + 1).search(/^ {0,3}#/m)
-    at = next < 0 ? -1 : end + 1 + next
+    pieces.forEach((piece, n) => {
+      if (piece !== null) return
+      const before = pieces[n - 1]
+      const after = pieces[n + 1]
+      const open = typeof before === 'string' ? /[([<]\s*$/.exec(before)?.[0] : undefined
+      const close = typeof after === 'string' ? /^\s*([)\]>])/.exec(after) : undefined
+      if (open && close && close[1] === BRACKETS[open.trim()]) {
+        pieces[n - 1] = before!.slice(0, -open.length)
+        pieces[n + 1] = after!.slice(close[0].length)
+      }
+    })
+    const shown = pieces.join('').replace(/\s+/g, ' ').trim()
+    return { start: token.start.offset, end: token.end.offset, text: shown || undefined }
   }
   return undefined
 }
@@ -1638,6 +2278,11 @@ export type Page = {
   slots: SlotNames
   redirect?: Redirect
   fallback?: Fallback
+  // the digest of each error row in the page's flight data ('' for one without, or flight data that can't be read):
+  // a boundary that caught an error (error.tsx), next's control flow, or anything else that kept part of the page out.
+  // never react's <!--$!--> or $RX in the html, which a boundary that renders in the browser by design (dynamic with
+  // ssr: false, useSearchParams) writes too
+  errors: string[]
   markdown: (slots?: Record<string, string>) => Result
 }
 // the <AgentSlot> names that reach the markdown, in page order: the ones a fill can go to, and those the page renders
@@ -1647,10 +2292,37 @@ export type Redirect = { status: 307 | 308; location: string }
 export type Fallback = { status: 401 | 403 | 404 }
 
 export const readPage = (html: string, options: Options = {}): Page => {
-  const { tree, digests } = parsed(html)
+  const strip = flightStripper()
+  const lean = strip.write(html) + strip.end()
+  const swapped = strip.swapped()
+  const { tree, streamed, reason } = strippedTree(lean, swapped)
+  if (!reason) {
+    streamed.resolve()
+    return readTree({ tree, errors: swapped.errors }, options)
+  }
+  // swaps that can't be trusted: the page as sent, as parse5 reads it, and an error of its own (private, never a status)
+  const sent = fromHtml(html)
+  resolveStreamed(sent).resolve()
+  return readTree({ tree: sent, errors: [''] }, options)
+}
+
+// a page whose flight pushes flightStripper took out as it streamed. the page as sent is gone, so swaps that can't be
+// trusted throw: the handler answers 502, and a caller that forgets to catch it fails closed too. not part of the
+// package's api: only the handler, which did the stripping, says a page was
+export const readStreamed = (html: string, swapped: Swapped, options: Options = {}): Page => {
+  const { tree, streamed, reason } = strippedTree(html, swapped)
+  if (reason) throw new FlightDataError(reason)
+  streamed.resolve()
+  return readTree({ tree, errors: swapped.errors }, options)
+}
+
+const readTree = (
+  { tree, errors }: { tree: HastRoot; errors: string[] },
+  options: Options,
+): Page => {
   const meta = head(tree, options.url)
   // a redirect() or notFound() next streamed into the page: the first error row that's one of next's control flow
-  const control = digests.map(fromDigest).find((said) => said !== undefined)
+  const control = errors.map(fromDigest).find((said) => said !== undefined)
   const content = contentOf(tree, options.extract)
   // a name rendered twice fills neither copy: one of them may be a forgery in user content, and there's no telling which
   const markers = slotMarkers(content)
@@ -1669,6 +2341,7 @@ export const readPage = (html: string, options: Options = {}): Page => {
       unique: names.flatMap(([name, count]) => (count === 1 ? [name] : [])),
       duplicate: names.flatMap(([name, count]) => (count > 1 ? [name] : [])),
     },
+    errors,
     ...(control &&
       ('location' in control
         ? (control.status === 307 || control.status === 308) && {
@@ -1717,9 +2390,29 @@ const emptied = <T extends HastRoot | Element>(node: T, empty: Set<Element>): T 
   return changed ? { ...node, children } : node
 }
 
+// what a site's title template puts between a page's name and the rest ("Cart · Acme", "Acme | Cart"). a colon isn't
+// one: "Cart: details" says more than "Cart"
+export const TITLE_SEPARATORS = '·|–—-'
+// text as a regular expression that matches it literally
+export const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+// the page's title: its <title>, or its h1 when the <title> is the h1 and the site's name in a template, the h1 on
+// either side, a separator between, with whitespace around it. any other <title> is the page's own, as written
+export const pageTitle = (title: string | undefined, h1: string | undefined) => {
+  const said = title === undefined ? undefined : collapsed(title)
+  if (!said || !h1) return title
+  const name = escapeRegExp(h1)
+  const separator = ` [${TITLE_SEPARATORS}] `
+  return new RegExp(`^${name}${separator}\\S|\\S${separator}${name}$`).test(said) ? h1 : title
+}
+
 // the page's markdown; slots fills its <AgentSlot>s
 export const htmlToMarkdown = (html: string, options: Options = {}): Result =>
   readPage(html, options).markdown(options.slots)
+
+// a node's text as written, and text with its whitespace collapsed
+const textOf = (node: MdastNodes): string =>
+  'value' in node ? node.value : 'children' in node ? node.children.map(textOf).join('') : ''
+const collapsed = (value: string) => value.replace(/\s+/g, ' ').trim()
 
 const finish = (
   mdast: MdastRoot,
@@ -1736,10 +2429,20 @@ const finish = (
       depth: 1,
       children: [{ type: 'text', value: meta.title }],
     })
+  // a page that renders its description under its h1 says it twice, once in the frontmatter: the block right after
+  // the h1 goes when its text is exactly the description
+  const h1 = mdast.children.findIndex((node) => node.type === 'heading' && node.depth === 1)
+  const next = mdast.children[h1 + 1]
+  if (
+    frontmatter &&
+    meta.description &&
+    next &&
+    collapsed(textOf(next)) === collapsed(meta.description)
+  )
+    mdast.children.splice(h1 + 1, 1)
 
   let output = toMarkdown(mdast, {
     extensions: [GFM],
-    handlers: { fieldValue } as never,
     bullet: '-',
     emphasis: '_',
     rule: '-',
@@ -1747,18 +2450,19 @@ const finish = (
   })
     .replace(/\n{3,}/g, '\n\n')
     .trim()
+  const title = hasH1 ? pageTitle(meta.title, headingOf(output)?.text) : meta.title
   if (jsonLd && meta.jsonLd.length)
     output += `\n\n${meta.jsonLd.map((raw) => fenced('json', pretty(raw))).join('\n\n')}`
 
   const markdown =
     (frontmatter
       ? yaml({
-          title: meta.title,
+          title,
           description: meta.description,
           url,
           image: meta.image,
           lang: meta.lang,
         })
       : '') + `${output}\n`
-  return { markdown, title: meta.title, url, tokens: Math.ceil(markdown.length / 4) }
+  return { markdown, title, url, tokens: Math.ceil(markdown.length / 4) }
 }

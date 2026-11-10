@@ -7,6 +7,7 @@ import {
   builtLiteral,
   builtPages,
   compileDestination,
+  isPublicFile,
   perEnv,
   routeSegment,
   sourceParams,
@@ -17,6 +18,9 @@ import {
 export const MD_PATH = '/api/affordances/md'
 // set on the handler's own fetch of the page, so it never gets rewritten back to markdown
 export const RENDER_HEADER = 'x-affordances-md-render'
+// a gate's rewrite or status, adopted by mdProxy for a markdown request: md()'s per-build token, the gate's status,
+// and the page, set on the rewrite's request headers. the handler takes it only with the token
+export const ADOPT_HEADER = 'x-affordances-md-adopt'
 
 export type Has = { type: 'header' | 'query'; key: string; value?: string }
 export type Rewrite = { source: string; destination: string; has?: Has[]; missing?: Has[] }
@@ -127,6 +131,14 @@ export const aliasPath = (pathname: string): string | undefined => {
 
 export const LINK = 'rel="alternate"; type="text/markdown"'
 
+// a page url's .md twin, its query kept. set on the url itself, so a path that starts with //host (/.//evil.test/x
+// resolves to one) stays a path on this site
+export const twinUrl = (url: URL) => {
+  const twin = new URL(url)
+  twin.pathname = mdPath(url.pathname)
+  return twin
+}
+
 // where a redirect answering a markdown request goes: a same-origin target's .md twin, with its search, or undefined
 // for another origin, which is passed on as it is. a twin path that starts with //host (a return-to of /.//evil.test/x
 // is same-origin) gets /. so a client resolves it as a path on this site, never as another site
@@ -234,10 +246,13 @@ export const pageRoute = (
 // whether a url on this site has a markdown twin: a page url (not an api route, next's internals or a .md file, except
 // a literalMd page) that is one of md()'s pages or maps onto one through an alias. without md()'s pages (withMd left
 // out, a test) every page url does
-// a route handler that next routes the url to (/llms.txt) is a route of its own, never a page with a twin
+// a route handler that next routes the url to (/llms.txt), or a file in public/ (/openapi.json), is never a page with a
+// twin
 export const hasTwin = (pathname: string) => {
   const path = pathname.replace(/(.)\/$/, '$1')
   if (!(path === '/' || pageRegex.test(path) || isLiteral(path))) return false
+  // a file in public/, which next serves before a dynamic page could answer for it
+  if (isPublicFile(path)) return false
   if (!builtPages().length) return true
   const found = pageRoute(path, { strict: false })
   return found !== undefined && !found.handler
