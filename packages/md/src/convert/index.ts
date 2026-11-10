@@ -138,8 +138,20 @@ const cells = (row: Element, tags = ['td', 'th']) =>
 const emptyRow = (row: Element) =>
   cells(row).every((cell) => !text(cell) && !described(cell).length)
 const skeleton = (table: Element) => {
-  const rows = selectAll('tr', table)
-  const header = new Set(selectAll('thead tr', table))
+  // its rows, and those in a thead, in one walk
+  const rows: Element[] = []
+  const header = new Set<Element>()
+  const walk = (parent: Element, inHead: boolean) => {
+    for (const child of parent.children) {
+      if (!isElement(child)) continue
+      if (child.tagName === 'tr') {
+        rows.push(child)
+        if (inHead) header.add(child)
+      }
+      walk(child, inHead || child.tagName === 'thead')
+    }
+  }
+  walk(table, false)
   const first = rows[0]
   if (!header.size && first && !cells(first, ['td']).length) header.add(first)
   const body = rows.filter((row) => !header.has(row))
@@ -459,26 +471,32 @@ const resolveStreamed = (tree: HastRoot) => {
   return { scripts, resolve }
 }
 
+// the elements that are, in page order, with none inside another: one walk that stops at each
+const outermost = (root: HastRoot, is: (el: Element) => boolean) => {
+  const found: Element[] = []
+  const walk = (parent: HastRoot | Element) => {
+    for (const child of parent.children)
+      if (isElement(child)) {
+        if (is(child)) found.push(child)
+        else walk(child)
+      }
+  }
+  walk(root)
+  return found
+}
 const extract = (body: HastRoot, how: Options['extract']): HastRoot => {
   if (typeof how === 'function') return how(body)
   if (how === 'none') return body
   // a main inside another main is already part of it
-  const marked = selectAll('affordances-md[data-mode=main]', body)
-  const outer = marked.filter(
-    (m) =>
-      !marked.some(
-        (other) => other !== m && selectAll('affordances-md[data-mode=main]', other).includes(m),
-      ),
+  const outer = outermost(
+    body,
+    (el) => el.tagName === 'affordances-md' && el.properties.dataMode === 'main',
   )
   if (outer.length) return { type: 'root', children: outer }
   // the outermost landmark, so a <main> or role=main in a comment inside it never replaces it; among several, a real
   // <main> before a [role=main], since a role survives sanitizers that keep attributes
-  const landmarks = selectAll('main, [role=main]', body)
-  const outermost = landmarks.filter(
-    (m) =>
-      !landmarks.some((other) => other !== m && selectAll('main, [role=main]', other).includes(m)),
-  )
-  const main = outermost.find((m) => m.tagName === 'main') ?? outermost[0]
+  const landmarks = outermost(body, (el) => el.tagName === 'main' || el.properties.role === 'main')
+  const main = landmarks.find((m) => m.tagName === 'main') ?? landmarks[0]
   if (main) return { type: 'root', children: [main] }
   // the page has no landmark: take the body and drop its chrome, but keep what was marked for agents
   const chrome = new Set(selectAll(CHROME, body).filter((el) => !unhidden(el)))
@@ -1799,6 +1817,9 @@ const pre: Handle = (state, node) => {
 const titled =
   (fallback: Handle): Handle =>
   (state, node, parent) => {
+    // only a figure, or what has a data-title, can title its code; anything else is walked no further
+    if (node.tagName !== 'figure' && node.properties.dataTitle === undefined)
+      return fallback(state, node, parent)
     const [code, ...more] = selectAll('pre', node)
     if (!code || more.length || code.properties.dataTitle || !languageOf(code))
       return fallback(state, node, parent)
