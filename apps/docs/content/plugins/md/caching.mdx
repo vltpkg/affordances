@@ -61,6 +61,19 @@ It applies only to the anonymous view of the `.md` URL. The response is public o
 - the answer is a `200`, the page finished streaming before the timeout, and no boundary in it caught an error;
 - the page didn't set a cookie. A page that sets one for an anonymous visitor (a session, an auth handshake) stays private, and in development the server says which cookie.
 
+When one of them doesn't hold, the response says which in `x-affordances-md-uncached`, in production too, so a gate that sets a cookie for a signed-out visitor shows up in your logs:
+
+| Value         | Why the Markdown stayed private                                                                 |
+| ------------- | ----------------------------------------------------------------------------------------------- |
+| `credentials` | The request carried a `cookie` or `authorization`, or the handler's `headers` option added one. |
+| `set-cookie`  | The page set a cookie for the anonymous visitor.                                                |
+| `status`      | The answer wasn't a `200`: a redirect, a `404`, a `notFound()` after the shell.                 |
+| `partial`     | The page was still streaming at the handler's `timeout`.                                        |
+| `error`       | A boundary on the page caught an error.                                                         |
+| `invalid`     | `publicCache` isn't a `cacheLife` profile or `{ revalidate, expire? }`.                         |
+
+A route without `publicCache` never sends it.
+
 A `Response` your default export returns keeps its own `Cache-Control`, as before. A name that isn't a profile, or an object with another field (`'hourz'`, `{ revalidat: 300 }`), fails `tsc` (and `next build`), named in the route's `markdown.ts` with Next's closest profile, against Next's profiles and your `next.config`'s. In development the server also says which file and what it can be. Until it's fixed, the route isn't cached.
 
 **Only the anonymous view is ever stored.** Credentials make a response `private, no-store`, so no one is served someone else's Markdown. But a CDN that doesn't key on cookies (Vercel's and Cloudflare's don't) may serve that public view to a signed-in agent. If signed-in agents need their own view of a route, don't opt it in, or skip the CDN cache when the session cookie is present (a Cloudflare Cache Rule, say). `publicCache` doesn't send `Vary: Cookie`: Vercel doesn't cache a response that varies on cookies, and Cloudflare ignores it.

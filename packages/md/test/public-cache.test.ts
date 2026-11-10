@@ -536,3 +536,66 @@ test("a boundary that renders in the browser by design isn't an error: an opted-
     ]).toEqual([marker, 200, 's-maxage=3600, stale-while-revalidate=82800', false])
   }
 })
+
+// the page as next sent it: a page, one that sets a cookie, a 404, one still streaming, one with a flight error row
+const sent = {
+  page: () => new Response(page('<h1>express</h1>'), { headers: { 'content-type': 'text/html' } }),
+  cookie: () =>
+    new Response(page('<h1>express</h1>'), {
+      headers: { 'content-type': 'text/html', 'set-cookie': 'handshake=1' },
+    }),
+  gone: () =>
+    new Response(page('<h1>Gone</h1>'), { status: 404, headers: { 'content-type': 'text/html' } }),
+  streaming: () =>
+    new Response(
+      new ReadableStream({
+        start: (controller) =>
+          controller.enqueue(new TextEncoder().encode(page('<h1>express</h1>'))),
+      }),
+      { headers: { 'content-type': 'text/html' } },
+    ),
+  errored: () =>
+    new Response(page('<h1>express</h1>') + flight('5:E{"digest":"1"}\n'), {
+      headers: { 'content-type': 'text/html' },
+    }),
+}
+
+test('a response on an opted-in route that stays private says why, in production too, from a fixed set', async () => {
+  vi.stubEnv('NODE_ENV', 'production')
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const cases: [keyof typeof sent, unknown, RequestInit, Parameters<typeof createMdHandler>[0]][] =
+    [
+      ['page', 'hours', {}, {}],
+      ['page', 'hours', { headers: { cookie: 'sid=1' } }, {}],
+      ['page', 'hours', {}, { headers: { authorization: 'Bearer service' } }],
+      ['cookie', 'hours', {}, {}],
+      ['gone', 'hours', {}, {}],
+      ['streaming', 'hours', {}, { timeout: 30 }],
+      ['errored', 'hours', {}, {}],
+      ['page', 'hourz', {}, {}],
+      // a route that didn't opt in never says
+      ['page', undefined, { headers: { cookie: 'sid=1' } }, {}],
+    ]
+  const reasons: (string | null)[] = []
+  // one at a time: each sets the route and the page
+  for (const [answer, cache, init, options] of cases) {
+    route('converted', cache)
+    upstream = sent[answer]
+    const response = await createMdHandler(options)(new Request(`${site}/x/express.md`, init))
+    reasons.push(response.headers.get('x-affordances-md-uncached'))
+  }
+  expect(reasons).toEqual([
+    null,
+    'credentials',
+    'credentials',
+    'set-cookie',
+    'status',
+    'partial',
+    'error',
+    'invalid',
+    null,
+  ])
+  warn.mockRestore()
+  error.mockRestore()
+})

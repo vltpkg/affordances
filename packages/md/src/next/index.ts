@@ -490,9 +490,41 @@ const pageUrl = (request: Request, options: MdHandlerOptions, path: string) => {
 }
 
 // renders the page as html the normal way (real RSC, Suspense, auth), then converts it
-const convertPage =
+// why markdown on a route opted into publicCache stayed private, for x-affordances-md-uncached
+export type Uncached = 'credentials' | 'set-cookie' | 'status' | 'partial' | 'error' | 'invalid'
+export const UNCACHED_HEADER = 'x-affordances-md-uncached'
+type Seen = { opted?: boolean; why?: Uncached }
+
+// a response on an opted-in route that isn't public says why, in production too, where a gate setting a cookie for a
+// signed-out visitor is otherwise silent: the first reason the render met, or what the answer itself shows
+const sayUncached = (response: Response, why: Uncached | undefined) => {
+  const cache = response.headers.get('cache-control') ?? ''
+  if (/s-maxage/.test(cache) && !/private|no-store/.test(cache)) return response
+  const reason =
+    why ??
+    (response.status !== 200
+      ? 'status'
+      : response.headers.has(PARTIAL_HEADER)
+        ? 'partial'
+        : response.headers.has(ERROR_HEADER)
+          ? 'error'
+          : undefined)
+  if (reason) response.headers.set(UNCACHED_HEADER, reason)
+  return response
+}
+
+const convertPage = (options: MdHandlerOptions) => {
+  const render = renderPage(options)
+  return async (request: Request, pagePath: string, direct: boolean): Promise<Response> => {
+    const seen: Seen = {}
+    const response = await render(request, pagePath, direct, seen)
+    return seen.opted ? sayUncached(response, seen.why) : response
+  }
+}
+
+const renderPage =
   (options: MdHandlerOptions) =>
-  async (request: Request, pagePath: string, direct: boolean): Promise<Response> => {
+  async (request: Request, pagePath: string, direct: boolean, seen: Seen): Promise<Response> => {
     const { timeout = TIMEOUT, maxBytes = 6 * MIB, append } = options
     if (request.headers.has(RENDER_HEADER)) return fail(508, 'Loop detected')
 
@@ -529,6 +561,10 @@ const convertPage =
     // where they go unused, so the rule is the same whichever way the route answers
     const early = shareable ? await extraHeaders(view, options.headers) : undefined
     const oneView = shareable && !credentialed(early!)
+    seen.opted = route?.module.publicCache !== undefined
+    if (seen.opted && (callerCredentials || (shareable && !oneView))) seen.why = 'credentials'
+    else if (seen.opted && publicCacheControl(route!.module.publicCache).problem)
+      seen.why = 'invalid'
     const asked = oneView ? view : request
     const routed = route && oneView ? { ...route, args: { ...route.args, request: asked } } : route
     const authored =
@@ -661,8 +697,10 @@ const convertPage =
     const personal = personalOnly || filled || /private|no-store/.test(cacheControl) || negotiated
     // a route whose markdown.ts says its markdown is public: the anonymous, complete view of its .md url, as a 200,
     // gets that cache time, whatever next sent (private, no-store for a dynamic render) and whatever the fills read
-    if (shareable && upstream.headers.has('set-cookie') && !credentialed(headers))
+    if (shareable && upstream.headers.has('set-cookie') && !credentialed(headers)) {
       warnCookie(route!.route, target, upstream.headers)
+      seen.why ??= 'set-cookie'
+    }
     const varies = /(^|,)\s*accept-language\s*(,|$)/i.test(upstream.headers.get('vary') ?? '')
     if (shareable && varies) warnLanguage(route!.route)
     const shared =
