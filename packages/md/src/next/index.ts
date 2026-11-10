@@ -50,6 +50,7 @@ import {
   RENDER_HEADER,
   rewrites,
   twinLocation,
+  twinUrl,
   type Rewrite,
   type Rewrites,
 } from './rules.ts'
@@ -300,10 +301,7 @@ const twinLinks = (base: URL) => {
     const twinned = twins.get(url.pathname) ?? hasTwin(url.pathname)
     twins.set(url.pathname, twinned)
     if (!twinned) return
-    // set on the url itself, so a path that starts with //host (/.//evil.test/x resolves to one) stays a path here
-    const twin = new URL(url)
-    twin.pathname = mdPath(url.pathname)
-    return twin.href
+    return twinUrl(url).href
   }
 }
 
@@ -598,6 +596,7 @@ const convertPage = (options: MdHandlerOptions) => {
   }
 }
 
+// renders the page as html the normal way (real RSC, Suspense, auth), then converts it
 const renderPage =
   (options: MdHandlerOptions) =>
   async (request: Request, pagePath: string, direct: boolean, seen: Seen): Promise<Response> => {
@@ -686,7 +685,6 @@ const renderPage =
         resolve()
       }, timeout)
     })
-    const slow = () => fail(504, `${target.pathname} took longer than ${timeout}ms to render`)
 
     let upstream: Response
     try {
@@ -730,12 +728,11 @@ const renderPage =
       const limit = whole
         ? `${size(maxBytes * RAW)} in all (${RAW} × maxBytes)`
         : `${size(maxBytes)} (maxBytes)`
-      const named = whole ? limit : `maxBytes (${size(maxBytes)})`
       const fix = `To convert it, raise maxBytes in the md route (app/api/affordances/md/[[...path]]/route.ts): \`export const GET = createMdHandler({ maxBytes: ${Math.ceil((2 * maxBytes) / MIB)} * 1024 * 1024 })\`.`
       // in production too, where a page grows past it, once per page
       once(
         `maxBytes ${target.pathname}`,
-        `[affordances-md] ${target.pathname} is larger than ${named}, so it answers 413. ${fix}`,
+        `[affordances-md] ${target.pathname}'s ${whole ? 'response' : 'HTML'} is larger than ${limit}, so it answers 413. ${fix}`,
         { production: true },
       )
       return fail(
@@ -752,7 +749,7 @@ const renderPage =
     if ('whole' in body) return tooLarge(body.whole === true)
     // a page whose shell arrived is converted as far as it streamed: boundaries still loading keep their fallback
     const partial = !body.complete
-    if (partial && !body.html.trim()) return slow()
+    if (partial && !body.html.trim()) return unreached(target, true, timeout)
     // the page, read once: what it streamed, the slots it rendered, and its markdown
     let read: Page
     try {
@@ -1306,9 +1303,8 @@ const renderPages = async (
       const signal = AbortSignal.any([AbortSignal.timeout(timeout), overall.signal])
       // the page's twin, the url its markdown is cached at; on a literalMd route /x/notes.md may be a page of its own,
       // so there the page's own url asked for with Accept, which is never ambiguous
-      const at = new URL(target)
-      const twin = mdPath(target.pathname)
-      if (!isLiteral(target.pathname) && !isLiteral(twin)) at.pathname = twin
+      const twin = twinUrl(target)
+      const at = isLiteral(target.pathname) || isLiteral(twin.pathname) ? target : twin
       const response = await fetch(at, { headers, redirect: 'manual', signal })
       // a body never read is let go, so no connection is held for it
       const left = (why: string, failed = false) => {

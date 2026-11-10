@@ -203,7 +203,7 @@ test('loop guard, size limit, timeout', async () => {
     `# The page is too large to convert\n\nIts HTML is larger than 10 bytes (maxBytes). ${fix}\n`,
   ])
   expect(warn).toHaveBeenCalledWith(
-    `[affordances-md] /a is larger than maxBytes (10 bytes), so it answers 413. ${fix}`,
+    `[affordances-md] /a's HTML is larger than 10 bytes (maxBytes), so it answers 413. ${fix}`,
   )
   // the default, 16 MiB, suggests twice it. a response past 8 times it, flight data and all, is never read
   upstream = () =>
@@ -1685,7 +1685,8 @@ test('@affordances/md/next/proxy is the same proxy side as @affordances/md/next,
     if (visited.has(file.href)) return
     visited.add(file.href)
     for (const [, spec] of readFileSync(file, 'utf8').matchAll(
-      /^\s*(?:import|export)\b[^'"]*?(?:from\s+)?'([^']+)'/gm,
+      // an import or re-export's module, never a string an export's value holds (export const x = '…')
+      /^\s*(?:import|export)\b(?:[^'"=]*?\bfrom\s+|\s+)'([^']+)'/gm,
     ))
       if (spec!.startsWith('.')) walk(new URL(spec!, file))
       else packages.push(spec!)

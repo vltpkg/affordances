@@ -325,8 +325,7 @@ const errorCode = (error: unknown) =>
   (typeof error === 'object' && error !== null && 'code' in error && String(error.code)) ||
   String(error)
 
-const GENERATED = '.affordances/**/*.ts'
-export { GENERATED }
+export const GENERATED = '.affordances/**/*.ts'
 
 // the index of a comment's last character when one starts at i (// up to its line's end, /* to */), else undefined
 const commentEnd = (text: string, i: number) => {
@@ -409,7 +408,7 @@ const includeArray = (text: string) => {
 
 // tsc skips a folder whose name starts with a dot unless include names it, so with next's default tsconfig the check
 // of each markdown.ts against its route only runs once include names .affordances/. md() never edits tsconfig.json: it
-// says the line, once per process. \`affordances-md init\` adds it, changing only the include array and keeping the
+// says the line, once per process. `affordances-md init` adds it, changing only the include array and keeping the
 // file's comments and formatting
 const hasGenerated = (include: unknown) =>
   Array.isArray(include) &&

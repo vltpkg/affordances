@@ -192,12 +192,16 @@ export const mdProxy = (request: Request): MdProxy => {
       return along(NextResponse.rewrite(handler, gated && { request: { headers: gated } }))
     return personal(response)
   }
+  let built: NextRequest | undefined
   return {
     page,
     markdown: handler !== undefined,
     link: handler ? undefined : pageLink(request, url, () => false),
-    // md's own NextRequest, from the request's parts: next's own can't be another Request's input in its runtime
-    request: new NextRequest(page, { method: request.method, headers: request.headers }),
+    // md's own NextRequest, from the request's parts: next's own can't be another Request's input in its runtime. made
+    // when it's first read, since most gates take the url
+    get request() {
+      return (built ??= new NextRequest(page, { method: request.method, headers: request.headers }))
+    },
     redirect,
     rewrite,
     adopt,

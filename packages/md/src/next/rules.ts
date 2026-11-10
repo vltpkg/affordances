@@ -131,6 +131,14 @@ export const aliasPath = (pathname: string): string | undefined => {
 
 export const LINK = 'rel="alternate"; type="text/markdown"'
 
+// a page url's .md twin, its query kept. set on the url itself, so a path that starts with //host (/.//evil.test/x
+// resolves to one) stays a path on this site
+export const twinUrl = (url: URL) => {
+  const twin = new URL(url)
+  twin.pathname = mdPath(url.pathname)
+  return twin
+}
+
 // where a redirect answering a markdown request goes: a same-origin target's .md twin, with its search, or undefined
 // for another origin, which is passed on as it is. a twin path that starts with //host (a return-to of /.//evil.test/x
 // is same-origin) gets /. so a client resolves it as a path on this site, never as another site
