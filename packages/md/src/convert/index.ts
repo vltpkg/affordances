@@ -2391,14 +2391,15 @@ const emptied = <T extends HastRoot | Element>(node: T, empty: Set<Element>): T 
 
 // what a site's title template puts between a page's name and the rest ("Cart · Acme", "Acme | Cart"). a colon isn't
 // one: "Cart: details" says more than "Cart"
-const TITLE_SEPARATORS = '·|–—-'
-const escapedRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+export const TITLE_SEPARATORS = '·|–—-'
+// text as a regular expression that matches it literally
+export const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 // the page's title: its <title>, or its h1 when the <title> is the h1 and the site's name in a template, the h1 on
 // either side, a separator between, with whitespace around it. any other <title> is the page's own, as written
-const titleOf = (title: string | undefined, h1: string | undefined) => {
-  const said = title?.replace(/\s+/g, ' ').trim()
+export const pageTitle = (title: string | undefined, h1: string | undefined) => {
+  const said = title === undefined ? undefined : collapsed(title)
   if (!said || !h1) return title
-  const name = escapedRegExp(h1)
+  const name = escapeRegExp(h1)
   const separator = ` [${TITLE_SEPARATORS}] `
   return new RegExp(`^${name}${separator}\\S|\\S${separator}${name}$`).test(said) ? h1 : title
 }
@@ -2448,7 +2449,7 @@ const finish = (
   })
     .replace(/\n{3,}/g, '\n\n')
     .trim()
-  const title = hasH1 ? titleOf(meta.title, headingOf(output)?.text) : meta.title
+  const title = hasH1 ? pageTitle(meta.title, headingOf(output)?.text) : meta.title
   if (jsonLd && meta.jsonLd.length)
     output += `\n\n${meta.jsonLd.map((raw) => fenced('json', pretty(raw))).join('\n\n')}`
 
