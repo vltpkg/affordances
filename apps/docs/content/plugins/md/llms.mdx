@@ -65,6 +65,40 @@ export const GET = createLlmsFullHandler({
 })
 ```
 
+### A catch-all page
+
+A docs site often renders every page through one `app/[...slug]/page.tsx`, so `routes` lists none of them. Neither handler reads your sitemap or `generateStaticParams`: on a site with many thousands of pages those lists have no bound, and a file that has to render every one of them would always run out of time. List the pages from your content source instead, in one module both handlers share. With fumadocs:
+
+```ts title="lib/llms.ts"
+import { source } from '@/lib/source'
+
+// every docs page, in the sidebar's order
+export const docsPages = () => source.getPages().map((page) => page.url)
+```
+
+```ts title="app/llms.txt/route.ts"
+import { createLlmsTxtHandler } from '@affordances/md/next'
+import { docsPages } from '@/lib/llms'
+
+export const GET = createLlmsTxtHandler({
+  sections: (request, routes) => [
+    { title: 'Pages', pages: routes },
+    { title: 'Docs', pages: docsPages() },
+  ],
+})
+```
+
+```ts title="app/llms-full.txt/route.ts"
+import { createLlmsFullHandler } from '@affordances/md/next'
+import { docsPages } from '@/lib/llms'
+
+export const GET = createLlmsFullHandler({
+  pages: (request, routes) => [...routes, ...docsPages()],
+})
+```
+
+When `pages` already has each page's Markdown (a content layer that keeps it), give it as `{ url, title, markdown }` and nothing is rendered. Each page given as a path is rendered once per request of the file, so with many of them, cache the files ([`publicCache`](#how-the-files-are-made)) and raise `deadline` with the route's `maxDuration`.
+
 ## Prose sections
 
 A section can say something as well as list pages: its `intro` is Markdown under its heading, before its pages, and a section with an `intro` and no `pages` is prose alone. Links in it, and in the top-level `intro`, are made absolute and point at your pages' Markdown twins, as page links are, since an agent reads `llms.txt` away from your site:
