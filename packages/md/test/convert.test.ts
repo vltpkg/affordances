@@ -380,3 +380,27 @@ test("the title is the page's h1 when the <title> is the h1 in the site's templa
   expect(titled('Sign-in · Acme', 'Sign').title).toBe('Sign-in · Acme')
   expect(titled('Cart items · Acme', 'Cart').title).toBe('Cart items · Acme')
 })
+
+// a page whose meta description is "Sign  in with a token.", with this content under its h1, converted
+const described = (body: string, frontmatter = true) =>
+  htmlToMarkdown(
+    `<html><head><title>Auth</title><meta name="description" content="Sign  in with a token."></head>` +
+      `<body><main><h1>Auth</h1>${body}</main></body></html>`,
+    { url: 'https://shop.test/page', frontmatter },
+  ).markdown
+
+test('the paragraph right after the h1 goes when it says the description the frontmatter already has', () => {
+  const head =
+    '---\ntitle: "Auth"\ndescription: "Sign  in with a token."\nurl: "https://shop.test/page"\n---\n\n'
+  expect(described('<p>Sign in <em>with</em> a\n token.</p><p>Body</p>')).toBe(
+    `${head}# Auth\n\nBody\n`,
+  )
+  // anything else stays: other text, the same text later on, or no frontmatter to say it
+  expect(described('<p>Sign in with a token, or a key.</p>')).toBe(
+    `${head}# Auth\n\nSign in with a token, or a key.\n`,
+  )
+  expect(described('<p>Intro</p><p>Sign in with a token.</p>')).toBe(
+    `${head}# Auth\n\nIntro\n\nSign in with a token.\n`,
+  )
+  expect(described('<p>Sign in with a token.</p>', false)).toBe('# Auth\n\nSign in with a token.\n')
+})

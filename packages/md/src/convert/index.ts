@@ -1827,6 +1827,11 @@ const titleOf = (title: string | undefined, h1: string | undefined) => {
 export const htmlToMarkdown = (html: string, options: Options = {}): Result =>
   readPage(html, options).markdown(options.slots)
 
+// a node's text as written, and text with its whitespace collapsed
+const textOf = (node: MdastNodes): string =>
+  'value' in node ? node.value : 'children' in node ? node.children.map(textOf).join('') : ''
+const collapsed = (value: string) => value.replace(/\s+/g, ' ').trim()
+
 const finish = (
   mdast: MdastRoot,
   meta: ReturnType<typeof head>,
@@ -1842,6 +1847,17 @@ const finish = (
       depth: 1,
       children: [{ type: 'text', value: meta.title }],
     })
+  // a page that renders its description under its h1 says it twice, once in the frontmatter: the block right after
+  // the h1 goes when its text is exactly the description
+  const h1 = mdast.children.findIndex((node) => node.type === 'heading' && node.depth === 1)
+  const next = mdast.children[h1 + 1]
+  if (
+    frontmatter &&
+    meta.description &&
+    next &&
+    collapsed(textOf(next)) === collapsed(meta.description)
+  )
+    mdast.children.splice(h1 + 1, 1)
 
   let output = toMarkdown(mdast, {
     extensions: [GFM],
