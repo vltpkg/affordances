@@ -9,8 +9,8 @@ export type Life = { revalidate?: number; expire?: number }
 const INFINITE_CACHE = 0xfffffffe
 const CACHE_ONE_YEAR_SECONDS = 31_536_000
 
-// next's built-in profiles (server/config-shared.js, the same in 16.3.0 and 16.4.3); next.config's cacheLife adds to
-// them or replaces one
+// next's built-in profiles (server/config-shared.js); next.config's cacheLife adds to them or replaces one. test/server's
+// matrix holds each against the Cache-Control next sends a page cached with it, on every Next 16 md supports
 export const PROFILES: Record<string, Life> = {
   default: { revalidate: 60 * 15, expire: INFINITE_CACHE },
   seconds: { revalidate: 1, expire: 60 },
@@ -71,7 +71,8 @@ export const customProfiles = (cacheLife: unknown) =>
     (name) => !Object.hasOwn(PROFILES, name),
   )
 
-// the Cache-Control next sends for a page whose cache has this life, in next's own steps (16.3.0 and 16.4.3 alike):
+// the Cache-Control next sends for a page whose cache has this life, in next's own steps (held to next's own by the
+// same matrix):
 // app-render.js takes a revalidate of INFINITE_CACHE or more as never (false) and such an expire as none; base-server.js
 // gives a page with no expire next.config's expireTime; server/lib/cache-control.js getCacheControlHeader writes it
 export const cacheControlFor = (

@@ -3,6 +3,27 @@ title: Caching and privacy
 description: The Markdown is the page that caller would see, and it's only cached when the page is public.
 ---
 
+Markdown is `private, no-store` unless it's the anonymous `.md` twin, and either its page is public or its route opts in:
+
+- the page's own caching (a static page, or `'use cache'` with `cacheLife`) flows to its `.md`;
+- `export const publicCache` in the route's [`markdown.ts`](#caching-public-markdown).
+
+When it stays private, [`x-affordances-md-uncached`](#when-its-public) says why.
+
+## The public-cache contract
+
+| What md guarantees                                                                                             | What you must guarantee before you opt a route in, or give its page a long `cacheLife`                                                                                                                                             |
+| -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A `cookie` or `authorization` makes it [private](#what-each-answer-sends).                                     | [Auth by anything else](#other-credentials) (`x-api-key`, `?token=`): don't opt in.                                                                                                                                                |
+| A public copy is [rendered with none of the visitor's headers](#one-view-for-every-visitor).                   | Don't read [the visitor's headers](#one-view-for-every-visitor) on that route: `headers()` from `next/headers` in `markdown.ts`, a fill or `append` still sees the visitor's own.                                                  |
+| The [negotiated URL](#what-each-answer-sends) (the page's own, with `Accept: text/markdown`) is never stored.  | [Signed-in agents](#signed-in-agents): a CDN that doesn't key on cookies (Vercel's, Cloudflare's) can serve them the public copy. If they need their own view, don't opt in, or bypass the CDN when the session cookie is present. |
+| An [error, a partial render or a non-`200`](#when-its-public) is never public.                                 |                                                                                                                                                                                                                                    |
+| An `llms-full.txt` [missing a page that failed](/docs/plugins/md/llms#how-the-files-are-made) is never stored. |                                                                                                                                                                                                                                    |
+
+The right-hand column is the three cases md can't see.
+
+## What each answer sends
+
 The handler forwards the caller's `cookie`, `authorization`, and `accept-language` headers, so a signed-in agent gets the page that person would see. Everything about that response stays personal:
 
 - With a cookie or bearer token, or when the page is `private` or `no-store`, or sets a cookie, the Markdown is sent with `Cache-Control: private, no-store`.
@@ -55,6 +76,8 @@ export const publicCache = { revalidate: 300, expire: 86_400 }
 export const publicCache = 'days'
 ```
 
+### When it's public
+
 It applies only to the anonymous view of the `.md` URL. The response is public only when all of these hold, and otherwise it's exactly what it would be without `publicCache`:
 
 - the request has no `cookie` and no `authorization`, and the handler's `headers` option adds neither;
@@ -80,13 +103,28 @@ Every answer of the Markdown route's own that isn't public sends it, on any rout
 
 A `Response` your default export returns keeps its own `Cache-Control`, as before. A name that isn't a profile, or an object with another field (`'hourz'`, `{ revalidat: 300 }`), fails `tsc` (and `next build`), named in the route's `markdown.ts` with Next's closest profile, against Next's profiles and your `next.config`'s. In development the server also says which file and what it can be. Until it's fixed, the route isn't cached.
 
-**Only the anonymous view is ever stored.** Credentials make a response `private, no-store`, so no one is served someone else's Markdown. But a CDN that doesn't key on cookies (Vercel's and Cloudflare's don't) may serve that public view to a signed-in agent. If signed-in agents need their own view of a route, don't opt it in, or skip the CDN cache when the session cookie is present (a Cloudflare Cache Rule, say). `publicCache` doesn't send `Vary: Cookie`: Vercel doesn't cache a response that varies on cookies, and Cloudflare ignores it.
+### Signed-in agents
 
-**Only `cookie` and `authorization` count as credentials.** A site that authenticates with a header of its own, such as `x-api-key`, or with a token in the query string (`?token=`, `?api_key=`), must not opt in: a request carrying only that would get, and a CDN could store, the view it unlocks. The same goes for any other request header a default export or fill reads (`user-agent`, `x-forwarded-for`): the stored view would depend on something the cache key doesn't include.
+Only the anonymous view is ever stored. Credentials make a response `private, no-store`, so no one is served someone else's Markdown. But a CDN that doesn't key on cookies (Vercel's and Cloudflare's don't) may serve that public view to a signed-in agent. If signed-in agents need their own view of a route, don't opt it in, or skip the CDN cache when the session cookie is present (a Cloudflare Cache Rule, say). `publicCache` doesn't send `Vary: Cookie`: Vercel doesn't cache a response that varies on cookies, and Cloudflare ignores it.
 
-**A public `.md` is one view, the same for every visitor.** A CDN keys it on its URL alone: Cloudflare ignores `Vary`, and Vercel splits its cache on each value. So for a request whose answer can be public (no credentials, the `.md` URL), the handler renders the page with none of the visitor's headers (no language, user agent or country), and your default export, fills and `append` get a `request` of the URL with none of them either; `request.url` and `nextUrl` still carry the host. Next's `headers()` from `next/headers` still sees the visitor's own, so don't read it on an opted-in route. A site in several languages gets one cached view per URL: put the language in the URL (`/fr/…`) to cache each. In development, an opted-in route whose page varies on `Accept-Language` says so. A signed-in or `Accept` request, which stays private, is the visitor's own.
+### Other credentials
 
-**A cached `.md` stays until its time runs out.** A page that becomes private, or a package that's unpublished, is still served from the CDN until its `expire` (its `revalidate` plus the `stale-while-revalidate` after it). Choose lengths with that in mind, or purge your CDN's copy when it changes. The data behind it can stay fresh on its own: `'use cache'` with `cacheLife` and `cacheTag` works in a default export and in a fill, and `revalidateTag` refreshes it on publish:
+Only `cookie` and `authorization` count as credentials. A site that authenticates with a header of its own, such as `x-api-key`, or with a token in the query string (`?token=`, `?api_key=`), must not opt in: a request carrying only that would get, and a CDN could store, the view it unlocks. The same goes for any other request header a default export or fill reads (`user-agent`, `x-forwarded-for`): the stored view would depend on something the cache key doesn't include.
+
+### One view for every visitor
+
+A public `.md` is one view, the same for every visitor. A CDN keys it on its URL alone: Cloudflare ignores `Vary`, and Vercel splits its cache on each value. So for a request whose answer can be public (no credentials, the `.md` URL), the handler renders the page with none of the visitor's headers (no language, user agent or country), and your default export, fills and `append` get a `request` of the URL with none of them either; `request.url` and `nextUrl` still carry the host. Next's `headers()` from `next/headers` still sees the visitor's own, so don't read it on an opted-in route. A site in several languages gets one cached view per URL: put the language in the URL (`/fr/…`) to cache each. In development, an opted-in route whose page varies on `Accept-Language` says so. A signed-in or `Accept` request, which stays private, is the visitor's own.
+
+## When content changes or is withdrawn
+
+A CDN keeps these apart from the page's own HTML, each with its own entry:
+
+- the page's `.md` twin, at `mdPath(path)` from `@affordances/md/next` (`/guide/intro.md`; `/index.md` for `/`);
+- `/llms.txt` and `/llms-full.txt`, which carry titles, descriptions and full text, cached for an hour by default ([`publicCache` on their handlers](/docs/plugins/md/llms#how-the-files-are-made) sets another time).
+
+The `307` an anonymous `Accept: text/markdown` request gets on a `publicCache` route is never stored, so it has nothing to purge.
+
+A cached `.md` stays until its time runs out. A page that becomes private, or a package that's unpublished, is still served from the CDN until its `expire` (its `revalidate` plus the `stale-while-revalidate` after it). Choose lengths with that in mind, or purge your CDN's copy when it changes. The data behind it can stay fresh on its own: `'use cache'` with `cacheLife` and `cacheTag` works in a default export and in a fill, and `revalidateTag` refreshes it on publish:
 
 ```ts title="app/package/[pkg]/markdown.ts"
 import { cacheLife, cacheTag } from 'next/cache'
@@ -107,6 +145,32 @@ export const publicCache = 'hours'
 ```
 
 `revalidateTag` refreshes the data, not a CDN's copy of the `.md`, which lasts its own time.
+
+So in the worst case, a withdrawn page's twin is served until its `expire`. With each of Next's built-in profiles, as a page's `cacheLife` or as `publicCache`:
+
+| Profile                  | Fresh for (`s-maxage`)       | Served at most (`expire`)                                                                                                                                                                                                                       |
+| ------------------------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `'seconds'`              | 1 second                     | 1 minute, as `publicCache` (`s-maxage=1, stale-while-revalidate=59`). A page with `cacheLife('seconds')` is dynamic, since Next never prerenders a cache that expires in under 5 minutes, so its twin is private. That difference is by design. |
+| `'minutes'`              | 1 minute                     | 1 hour                                                                                                                                                                                                                                          |
+| `'hours'`                | 1 hour                       | 24 hours                                                                                                                                                                                                                                        |
+| `'days'`                 | 1 day                        | 7 days                                                                                                                                                                                                                                          |
+| `'weeks'`                | 7 days                       | 30 days                                                                                                                                                                                                                                         |
+| `'max'`                  | 30 days                      | 1 year                                                                                                                                                                                                                                          |
+| `'default'`              | 15 minutes                   | `next.config`'s `expireTime`, a year unless you set it                                                                                                                                                                                          |
+| `{ revalidate, expire }` | `revalidate`                 | `expire`, or `expireTime` with none                                                                                                                                                                                                             |
+| a static page            | a year (`s-maxage=31536000`) | a year                                                                                                                                                                                                                                          |
+
+Choose `publicCache`, or a page's `cacheLife`, for how long withdrawn content may linger, not only for how fresh it should be.
+
+When a page changes or is withdrawn, purge each of these from your CDN:
+
+- the page's URL;
+- `mdPath(url)`, its twin;
+- `/llms.txt` and `/llms-full.txt`.
+
+`revalidateTag` and `revalidatePath` refresh Next's caches, not a CDN's copy of the `.md`.
+
+On Vercel, each deployment has its own CDN cache: the deployment's URL is part of [Vercel's cache key](https://vercel.com/docs/caching/cdn-cache/purge#cache-keys), so a new deployment starts with none of the last one's copies. Vercel purges its CDN by cache tag rather than by URL, and md doesn't tag a twin, so to drop one without a deployment, purge the whole project's CDN cache: in the project's dashboard, CDN, then Caches, with `*` as the tag, or [`vercel cache purge --type cdn`](https://vercel.com/docs/cli/cache). Whether `revalidatePath` purges a twin's CDN entry on Vercel hasn't been tested: don't rely on it. Purge the project's CDN cache, or redeploy.
 
 ## On Vercel
 
