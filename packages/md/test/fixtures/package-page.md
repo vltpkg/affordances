@@ -1,5 +1,5 @@
 ---
-title: "express - vlt"
+title: "express"
 url: "https://shop.test/page"
 ---
 

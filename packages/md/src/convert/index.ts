@@ -1551,60 +1551,68 @@ const UNSHOWN = new Set(['resource', 'image', 'autolink', 'literalAutolink'])
 const BRACKETS: Record<string, string> = { '(': ')', '[': ']', '<': '>' }
 // the markdown's first # heading, outside any container and outside code, as markdown parses it: where it starts and
 // ends, and its text as a reader sees it, without a url it shows as itself (an autolink, a bare url) or the brackets
-// right around one. parsed only as far as each line that starts with #, since a page's heading is near its top
+// right around one. a page's heading is near its top, so it's parsed as far as the first line that can be one (# and a
+// space, or # alone); if that isn't one (it's in code or a container), the whole markdown is parsed once
+const H1_LINE = /^ {0,3}#(?=[ \t]|$)/m
 export const headingOf = (markdown: string) => {
-  for (let at = markdown.search(/^ {0,3}#/m); at >= 0;) {
-    const end = markdown.indexOf('\n', at)
-    const prefix = end < 0 ? markdown : markdown.slice(0, end)
-    const events = postprocess(
-      parse(SYNTAX)
-        .document()
-        .write(preprocess()(prefix, undefined, true)),
-    )
-    let depth = 0
-    for (let i = 0; i < events.length; i++) {
-      const [kind, token] = events[i]!
-      if (CONTAINERS.has(token.type)) depth += kind === 'enter' ? 1 : -1
-      if (kind !== 'enter' || token.type !== 'atxHeading' || depth) continue
-      const sequence = events.find(([, t], j) => j > i && t.type === 'atxHeadingSequence')?.[1]
-      if (!sequence || sequence.end.offset - sequence.start.offset !== 1) continue
-      // its text: the data inside, a url shown as itself dropped, with the brackets right around one
-      const pieces: (string | null)[] = []
-      let hidden = 0
-      for (let j = i + 1; j < events.length; j++) {
-        const [k, t] = events[j]!
-        if (t.type === 'atxHeading') break
-        if (UNSHOWN.has(t.type)) {
-          hidden += k === 'enter' ? 1 : -1
-          if (k === 'exit' && !hidden && t.type !== 'resource' && t.type !== 'image')
-            pieces.push(null)
-          continue
-        }
-        if (k !== 'enter' || hidden) continue
-        const written = prefix.slice(t.start.offset, t.end.offset)
-        if (t.type === 'data' || t.type === 'codeTextData' || t.type === 'htmlText')
-          pieces.push(written)
-        else if (t.type === 'characterEscapeValue') pieces.push(written)
-        else if (t.type === 'characterReference') pieces.push(decodeString(written))
-        else if (t.type === 'codeTextPadding' || t.type === 'whitespace') pieces.push(' ')
+  const at = markdown.search(H1_LINE)
+  if (at < 0) return undefined
+  const end = markdown.indexOf('\n', at)
+  return (
+    headingIn(end < 0 ? markdown : markdown.slice(0, end)) ??
+    (end < 0 ? undefined : headingIn(markdown))
+  )
+}
+// the first # heading outside any container in this markdown, parsed whole
+const headingIn = (source: string) => {
+  const events = postprocess(
+    parse(SYNTAX)
+      .document()
+      .write(preprocess()(source, undefined, true)),
+  )
+  let depth = 0
+  for (let i = 0; i < events.length; i++) {
+    const [kind, token] = events[i]!
+    if (CONTAINERS.has(token.type)) depth += kind === 'enter' ? 1 : -1
+    if (kind !== 'enter' || token.type !== 'atxHeading' || depth) continue
+    // its # sequence comes right after it, so the search starts there
+    let sequence: typeof token | undefined
+    for (let j = i + 1; j < events.length && !sequence; j++)
+      if (events[j]![1].type === 'atxHeadingSequence') sequence = events[j]![1]
+    if (!sequence || sequence.end.offset - sequence.start.offset !== 1) continue
+    // its text: the data inside, a url shown as itself dropped, with the brackets right around one
+    const pieces: (string | null)[] = []
+    let hidden = 0
+    for (let j = i + 1; j < events.length; j++) {
+      const [k, t] = events[j]!
+      if (t.type === 'atxHeading') break
+      if (UNSHOWN.has(t.type)) {
+        hidden += k === 'enter' ? 1 : -1
+        if (k === 'exit' && !hidden && t.type !== 'resource' && t.type !== 'image')
+          pieces.push(null)
+        continue
       }
-      pieces.forEach((piece, n) => {
-        if (piece !== null) return
-        const before = pieces[n - 1]
-        const after = pieces[n + 1]
-        const open = typeof before === 'string' ? /[([<]\s*$/.exec(before)?.[0] : undefined
-        const close = typeof after === 'string' ? /^\s*([)\]>])/.exec(after) : undefined
-        if (open && close && close[1] === BRACKETS[open.trim()]) {
-          pieces[n - 1] = before!.slice(0, -open.length)
-          pieces[n + 1] = after!.slice(close[0].length)
-        }
-      })
-      const shown = pieces.join('').replace(/\s+/g, ' ').trim()
-      return { start: token.start.offset, end: token.end.offset, text: shown || undefined }
+      if (k !== 'enter' || hidden) continue
+      const written = source.slice(t.start.offset, t.end.offset)
+      if (t.type === 'data' || t.type === 'codeTextData' || t.type === 'htmlText')
+        pieces.push(written)
+      else if (t.type === 'characterEscapeValue') pieces.push(written)
+      else if (t.type === 'characterReference') pieces.push(decodeString(written))
+      else if (t.type === 'codeTextPadding' || t.type === 'whitespace') pieces.push(' ')
     }
-    // not a heading there (inside code or a container): the next line that starts with #
-    const next = end < 0 ? -1 : markdown.slice(end + 1).search(/^ {0,3}#/m)
-    at = next < 0 ? -1 : end + 1 + next
+    pieces.forEach((piece, n) => {
+      if (piece !== null) return
+      const before = pieces[n - 1]
+      const after = pieces[n + 1]
+      const open = typeof before === 'string' ? /[([<]\s*$/.exec(before)?.[0] : undefined
+      const close = typeof after === 'string' ? /^\s*([)\]>])/.exec(after) : undefined
+      if (open && close && close[1] === BRACKETS[open.trim()]) {
+        pieces[n - 1] = before!.slice(0, -open.length)
+        pieces[n + 1] = after!.slice(close[0].length)
+      }
+    })
+    const shown = pieces.join('').replace(/\s+/g, ' ').trim()
+    return { start: token.start.offset, end: token.end.offset, text: shown || undefined }
   }
   return undefined
 }
@@ -1801,6 +1809,20 @@ const emptied = <T extends HastRoot | Element>(node: T, empty: Set<Element>): T 
   return changed ? { ...node, children } : node
 }
 
+// what a site's title template puts between a page's name and the rest ("Cart · Acme", "Acme | Cart"). a colon isn't
+// one: "Cart: details" says more than "Cart"
+const TITLE_SEPARATORS = '·|–—-'
+const escapedRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+// the page's title: its <title>, or its h1 when the <title> is the h1 and the site's name in a template, the h1 on
+// either side, a separator between, with whitespace around it. any other <title> is the page's own, as written
+const titleOf = (title: string | undefined, h1: string | undefined) => {
+  const said = title?.replace(/\s+/g, ' ').trim()
+  if (!said || !h1) return title
+  const name = escapedRegExp(h1)
+  const separator = ` [${TITLE_SEPARATORS}] `
+  return new RegExp(`^${name}${separator}\\S|\\S${separator}${name}$`).test(said) ? h1 : title
+}
+
 // the page's markdown; slots fills its <AgentSlot>s
 export const htmlToMarkdown = (html: string, options: Options = {}): Result =>
   readPage(html, options).markdown(options.slots)
@@ -1830,18 +1852,19 @@ const finish = (
   })
     .replace(/\n{3,}/g, '\n\n')
     .trim()
+  const title = hasH1 ? titleOf(meta.title, headingOf(output)?.text) : meta.title
   if (jsonLd && meta.jsonLd.length)
     output += `\n\n${meta.jsonLd.map((raw) => fenced('json', pretty(raw))).join('\n\n')}`
 
   const markdown =
     (frontmatter
       ? yaml({
-          title: meta.title,
+          title,
           description: meta.description,
           url,
           image: meta.image,
           lang: meta.lang,
         })
       : '') + `${output}\n`
-  return { markdown, title: meta.title, url, tokens: Math.ceil(markdown.length / 4) }
+  return { markdown, title, url, tokens: Math.ceil(markdown.length / 4) }
 }

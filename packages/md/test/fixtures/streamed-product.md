@@ -1,5 +1,5 @@
 ---
-title: "Heavyweight Tee · Afford Supply"
+title: "Heavyweight Tee"
 description: "Studio goods in small runs. A demo store that agents can operate."
 url: "https://shop.test/page"
 lang: "en"

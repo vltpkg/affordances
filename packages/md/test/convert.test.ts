@@ -354,3 +354,29 @@ test('a label wrapping a control never carries its value, even on a form that op
   expect(markdown).not.toContain('United States')
   expect(markdown).toContain('- Key (textarea)\n- Region (select)')
 })
+
+// a page with this <title> and h1, converted
+const titled = (said: string, h1: string) =>
+  htmlToMarkdown(
+    `<html><head><title>${said}</title></head><body><main><h1>${h1}</h1><p>Body</p></main></body></html>`,
+    { url: 'https://shop.test/page' },
+  )
+
+test("the title is the page's h1 when the <title> is the h1 in the site's template, and the <title> otherwise", () => {
+  // the h1 on either side of a separator, however it's spaced
+  for (const shape of [
+    'Authentication — Acme Docs',
+    'Acme Docs | Authentication',
+    'Authentication\n  ·  Acme',
+  ])
+    expect(titled(shape, 'Authentication').markdown).toBe(
+      '---\ntitle: "Authentication"\nurl: "https://shop.test/page"\n---\n\n# Authentication\n\nBody\n',
+    )
+  expect(titled('Cart - Acme', 'Cart').title).toBe('Cart')
+  // an h1 that isn't the <title>'s name leaves it as it is: a headline isn't the page's name
+  expect(titled('Benchmarks for 2026', 'Next is 3x faster').title).toBe('Benchmarks for 2026')
+  // nor is a subtitle, a word with a hyphen in it, or the h1 as part of a longer name
+  expect(titled('Cart: details', 'Cart').title).toBe('Cart: details')
+  expect(titled('Sign-in · Acme', 'Sign').title).toBe('Sign-in · Acme')
+  expect(titled('Cart items · Acme', 'Cart').title).toBe('Cart items · Acme')
+})

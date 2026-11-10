@@ -181,4 +181,4 @@ Values appear only on forms marked this way. Even then, hidden inputs, password 
 
 ## The page around it
 
-At the top, YAML frontmatter carries the page's `title`, `description`, canonical `url`, `image`, and `lang`, from its metadata. If the content has no `#` heading, the title becomes one. The canonical `url` is the `<head>`'s `<link rel="canonical">`, if it's an `http` or `https` URL. JSON-LD scripts are appended as fenced JSON.
+At the top, YAML frontmatter carries the page's `title`, `description`, canonical `url`, `image`, and `lang`, from its metadata. The `title` is the `<title>`, or the page's `#` heading when the `<title>` is that heading in the site's template, on either side of a `·`, `|`, `–`, `—` or `-` with spaces around it: `Authentication — Acme Docs` with `<h1>Authentication</h1>` is `Authentication`. Any other `<title>` stays as written. If the content has no `#` heading, the title becomes one. The canonical `url` is the `<head>`'s `<link rel="canonical">`, if it's an `http` or `https` URL. JSON-LD scripts are appended as fenced JSON.
