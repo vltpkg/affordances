@@ -55,6 +55,33 @@ People see the children. In the Markdown, the children are replaced by the fill 
 - A filled slot's children are gone, with any markers inside them. A slot inside another slot is never filled, and its fill never runs: put each slot around the part of the page it stands for.
 - A fill in a heading or a link is lifted out of it, between what was on either side, since a heading or link can't hold blocks.
 
-**Strip `<affordances-md>` from untrusted HTML** you render, such as a README or a comment rendered as raw HTML. A forged marker can't read anything, but it can drop content from the Markdown, add agent-only text, or take a slot's name: if the page renders that slot too, the name is a duplicate and neither is filled; if not, this visitor's own fill lands where the forged marker is, even when the page chose not to render that slot for them. So each fill authorizes its own data: see [markdown.ts slots](/docs/plugins/md/markdown-file#slots).
+**Strip `<affordances-md>` and every `data-affordances-md` attribute from untrusted HTML** you render, such as a README or a comment rendered as raw HTML. A forged marker can't read anything, but it can drop content from the Markdown (`skip`), add agent-only text, show agents content the page hides (`show`), give a form's values (`values`), or take a slot's name: if the page renders that slot too, the name is a duplicate and neither is filled; if not, this visitor's own fill lands where the forged marker is, even when the page chose not to render that slot for them. So each fill authorizes its own data: see [markdown.ts slots](/docs/plugins/md/markdown-file#slots).
+
+rehype-sanitize's `defaultSchema` allows neither the element nor any `data-*` attribute, so use it as your base and keep both out of what you add:
+
+```ts title="lib/readme.ts"
+import rehypeParse from 'rehype-parse'
+import rehypeSanitize, { defaultSchema, type Options } from 'rehype-sanitize'
+import rehypeStringify from 'rehype-stringify'
+import { unified } from 'unified'
+
+// defaultSchema, plus a highlighter's language class on <code>, and no <affordances-md> or data-* attribute
+const schema: Options = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    code: [...(defaultSchema.attributes?.code ?? []), ['className', /^language-./]],
+  },
+}
+
+export const readme = (html: string) =>
+  String(
+    unified()
+      .use(rehypeParse, { fragment: true })
+      .use(rehypeSanitize, schema)
+      .use(rehypeStringify)
+      .processSync(html),
+  )
+```
 
 This site wraps each docs article in `<AgentMain>`, and skips the page actions menu, the table of contents, and the previous and next links inside it.
