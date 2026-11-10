@@ -730,3 +730,34 @@ test("notFoundMarkdown returning undefined keeps the page's own 404, and a direc
   expect((await createMdHandler()(new Request(`${site}/x/express.md`))).status).toBe(200)
   expect(runs).toBe(2)
 })
+
+test('one args.request per twin: the default export and every fill get the same object, so a WeakMap dedupes their data', async () => {
+  for (const publicCache of [undefined, 'hours']) {
+    const requests: Request[] = []
+    authored[ROUTE] = async () =>
+      ({
+        default: ({ request }: { request: Request }) => {
+          requests.push(request)
+          return undefined
+        },
+        slots: {
+          readme: ({ request }: { request: Request }) => {
+            requests.push(request)
+            return 'Readme.'
+          },
+          deps: ({ request }: { request: Request }) => {
+            requests.push(request)
+            return 'Deps.'
+          },
+        },
+        ...(publicCache && { publicCache }),
+      }) as never
+    upstream = () =>
+      new Response(page(`<h1>express</h1>${slot('readme')}${slot('deps')}`), {
+        headers: { 'content-type': 'text/html' },
+      })
+    const response = await createMdHandler()(new Request(`${site}/x/express.md`))
+    expect(await response.text()).toContain('Deps.')
+    expect([publicCache, requests.length, new Set(requests).size]).toEqual([publicCache, 3, 1])
+  }
+})
