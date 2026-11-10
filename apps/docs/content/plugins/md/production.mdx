@@ -25,7 +25,7 @@ So an uncached twin takes about as long as its page's own render and transfer, p
   - `maxBytes`, 16 MiB by default, limits the HTML kept after the Flight data is taken out.
   - The whole response may be up to 8 × `maxBytes`.
 - **`llms.txt` and `llms-full.txt`:**
-  - **Requests:** each listed page is a request to the Markdown route, plus that route's own render. There's one more request for the site index, unless `md()` knows there isn't one.
+  - **Requests:** each listed page is a request to the Markdown route, plus that route's own render. There's one more request for the site index when `withAffordances` wraps the app, whichever of it and `withMd` runs first.
   - **Concurrency and time:** 8 pages render at a time. Each has its own `timeout`, and the whole file has a 25 s `deadline`.
 
 On Vercel, the page request is a second function invocation: see [On Vercel](/docs/plugins/md/caching#on-vercel) for what that costs and how caching avoids it.
@@ -76,7 +76,8 @@ The route's own Markdown answers vary on `Accept`, and a twin also varies on `Ac
 
 `md()` sets the rest in `next.config`'s `env` when Next loads the config, so don't set them yourself:
 
-- `AFFORDANCES_MD_ROUTES`, `_HANDLERS`, `_PUBLIC`, `_CACHE_LIFE`, `_LITERAL`, `_ALIASES` and `_SITE_INDEX` describe your app.
+- `AFFORDANCES_MD_ROUTES`, `_HANDLERS`, `_PUBLIC`, `_CACHE_LIFE`, `_LITERAL` and `_ALIASES` describe your app.
+- `AFFORDANCES_INDEX`, which `withAffordances` sets, is where the site index is. Without it the `llms` handlers never ask for one.
 - `AFFORDANCES_MD_ADOPT` is a random token, new on each build, that `proxy.ts`'s `md.rewrite` and `md.adopt` use to reach the route. Treat it as a secret, and keep it out of logs.
 
 ## Where it fetches from

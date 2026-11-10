@@ -7,6 +7,9 @@ import { API_PATH } from './constants.ts'
 
 export { API_PATH }
 
+// set to the index's path on an app withAffordances wraps
+export const INDEX_ENV = 'AFFORDANCES_INDEX'
+
 export type Rewrite = {
   source: string
   destination: string
@@ -66,7 +69,7 @@ export type AffordancesConfig = {
 
 // the slice of NextConfig withAffordances touches; generic so it accepts whichever copy of next the app has
 // webpack is typed loosely: its context drags in all of NextConfig, which two copies of next don't agree on
-export type Config = Pick<NextConfig, 'rewrites' | 'headers' | 'turbopack'> & {
+export type Config = Pick<NextConfig, 'rewrites' | 'headers' | 'turbopack' | 'env'> & {
   // oxlint-disable-next-line no-explicit-any
   webpack?: ((config: any, context: any) => any) | null
 }
@@ -98,6 +101,9 @@ export const withAffordances = <C extends Config>(
   const manifest = path.join(root, '.affordances', 'manifest.ts')
   const afforded: C = {
     ...nextConfig,
+    // where the app's Affordances index is, for plugins that read it when a request comes in (md's llms handlers):
+    // in env, so it's there whichever wrapper runs first
+    env: { ...nextConfig.env, [INDEX_ENV]: WELL_KNOWN_PATH },
     turbopack: {
       ...nextConfig.turbopack,
       // turbopack takes a path relative to the project, not an absolute one

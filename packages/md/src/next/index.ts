@@ -225,9 +225,6 @@ export const md =
     for (const source of literalMd) sourceRegex(source)
     checkAliases(aliases, pages)
     const aliased = Object.entries(aliases)
-    // withAffordances points its route at the app's manifest before its plugins run: without that, there's no site
-    // index to ask for, and the handlers never fetch /.well-known/affordances.json
-    const afforded = Boolean(config.turbopack?.resolveAlias?.['@affordances/next/manifest'])
     return {
       ...config,
       env: {
@@ -238,7 +235,6 @@ export const md =
         ...(cacheLife && { [CACHE_LIFE_ENV]: cacheLife }),
         ...(literalMd.length && { [LITERAL_ENV]: JSON.stringify(literalMd) }),
         ...(aliased.length && { [ALIASES_ENV]: JSON.stringify(aliased) }),
-        ...(!afforded && { [SITE_INDEX_ENV]: 'none' }),
         // the token mdProxy's adopt and rewrite carry a gate's answer to the handler with: new on each config load, the
         // same in the proxy and the handler of one build
         [ADOPT_ENV]: adoptToken(root, config.distDir),
@@ -1247,14 +1243,15 @@ const adoptedBy = (request: Request) => {
   }
 }
 
-// 'none' when md() found no Affordances graph on the app, so there's no index to fetch
-const SITE_INDEX_ENV = 'AFFORDANCES_MD_SITE_INDEX'
 const siteIndex = async (
   request: Request,
   options: MdHandlerOptions,
 ): Promise<SiteIndex | undefined> => {
-  // spelled out: next inlines process.env.NAME, never process.env[name]
-  if (process.env.AFFORDANCES_MD_SITE_INDEX === 'none') return undefined
+  // an app md() describes serves an index only when withAffordances says so (AFFORDANCES_INDEX), whichever wrapper
+  // ran first; otherwise /.well-known/affordances.json is never asked for. spelled out: next inlines process.env.NAME,
+  // never process.env[name]
+  if (process.env.AFFORDANCES_MD_ROUTES !== undefined && !process.env.AFFORDANCES_INDEX)
+    return undefined
   try {
     const headers = await extraHeaders(request, options.headers)
     headers.set('accept', 'application/json')

@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next'
 import path from 'node:path'
 import { expect, test } from 'vitest'
-import { rewrites, toSource, withAffordances } from '../src/config.ts'
+import { INDEX_ENV, rewrites, toSource, withAffordances } from '../src/config.ts'
 
 test('route patterns become header sources', () => {
   expect(toSource('/products/[slug]')).toBe('/products/:slug')
@@ -58,6 +58,12 @@ test('withAffordances prepends its rewrites and keeps the user config', async ()
     key: 'Link',
     value: '<?affordances=1>; rel="affordances"',
   })
+})
+
+test("the app's env says where its index is, for plugins that read it, and the user's env survives", () => {
+  const root = path.join(import.meta.dirname, 'fixture')
+  const config = withAffordances({ env: { A: '1' } }, { root })
+  expect(config.env).toEqual({ A: '1', [INDEX_ENV]: '/.well-known/affordances.json' })
 })
 
 test('the route handler finds the manifest through an alias, and user aliases survive', () => {

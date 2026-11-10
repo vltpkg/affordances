@@ -1930,6 +1930,7 @@ test('llms defaults to the pages md() found when the site has no Affordances ind
 
 test("llms keeps the site index's order, then adds the pages only md() found", async () => {
   process.env[ROUTES_ENV] = JSON.stringify(['/about', '/concepts'])
+  vi.stubEnv('AFFORDANCES_INDEX', '/.well-known/affordances.json')
   upstream = (url) =>
     url.pathname === '/.well-known/affordances.json'
       ? Response.json({
@@ -2168,22 +2169,23 @@ test('the site index is never followed through a redirect, so the headers option
   expect(asked.every((call) => call.url.startsWith(site) && call.redirect === 'manual')).toBe(true)
 })
 
-// the env name md() sets when there's no Affordances graph: md's own, never public api
-const SITE_INDEX_ENV = 'AFFORDANCES_MD_SITE_INDEX'
-
-test('without the Affordances graph, the llms handlers never ask for a site index', async () => {
+test('the llms handlers ask for the site index only when withAffordances says there is one, whichever wraps first', async () => {
   const project = app(['app/page.tsx', 'app/a/page.tsx'])
   const plain: Config = md({ root: project })({})
-  expect(plain.env?.[SITE_INDEX_ENV]).toBe('none')
-  // withAffordances points its route at the app's manifest before its plugins run
-  const afforded: Config = md({ root: project })({
-    turbopack: { resolveAlias: { '@affordances/next/manifest': './.affordances/manifest.ts' } },
-  })
-  expect(afforded.env).not.toHaveProperty(SITE_INDEX_ENV)
+  expect(plain.env).not.toHaveProperty('AFFORDANCES_INDEX')
   upstream = affordancesSite
-  for (const name of [ROUTES_ENV, SITE_INDEX_ENV]) vi.stubEnv(name, plain.env![name]!)
+  vi.stubEnv(ROUTES_ENV, plain.env![ROUTES_ENV]!)
   await createLlmsFullHandler()(new Request(`${site}/llms-full.txt`))
   expect(seen.map((call) => call.url.pathname)).toEqual(['/', '/a'])
+  // withAffordances' env, set before md() ran (withAffordances(c, { plugins: [md()] })): md() keeps it. set after,
+  // it's withAffordances' own spread. the handlers read it when a request comes in
+  const inner: Config = md({ root: project })({
+    env: { AFFORDANCES_INDEX: '/.well-known/affordances.json' },
+  })
+  vi.stubEnv('AFFORDANCES_INDEX', inner.env!.AFFORDANCES_INDEX!)
+  seen.length = 0
+  await createLlmsFullHandler()(new Request(`${site}/llms-full.txt`))
+  expect(seen[0]!.url.pathname).toBe('/.well-known/affordances.json')
   vi.unstubAllEnvs()
 })
 
@@ -2214,6 +2216,7 @@ test('llms.txt lists each page twin with its title and the route description, an
 test("llms.txt's note replaces the plugin's sentences, or false drops them, and comes before the intro", async () => {
   upstream = affordancesSite
   vi.stubEnv(ROUTES_ENV, JSON.stringify(['/', '/cart']))
+  vi.stubEnv('AFFORDANCES_INDEX', '/.well-known/affordances.json')
   const head = async (options: Parameters<typeof createLlmsTxtHandler>[0]) =>
     (
       await (
