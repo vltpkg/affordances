@@ -188,7 +188,16 @@ export const proxy = (request: NextRequest) => {
 
 The proxy runs once, on the URL that was requested: `/dashboard/1.md`, or `/dashboard/1` with `Accept: text/markdown`. For a page converted from its HTML, the handler's own request for the page goes through the proxy again, but a route with a [`markdown.ts`](/docs/plugins/md/markdown-file) isn't rendered, so that first run is its only gate. With 0.1.0's recipe, which returned early for Markdown requests before its gates, remove that skip before adding a `markdown.ts`.
 
-Your proxy's matcher has to match a page's `.md` URL as well as the page. `'/dashboard/:path*'` covers `/dashboard/123.md`, but `'/dashboard/:id(\\d+)'` doesn't: the `.md` URL slips past the gate. Add `'/dashboard/:id(\\d+).md'` to the matcher, or run the gate-first recipe above with no `matcher` at all. The handler never runs a `markdown.ts` for a request made straight to its own URL (`/api/affordances/md/…`), which a proxy matcher scoped to your pages wouldn't see; that gets the page's HTML render, gated at the page's URL.
+Your proxy's matcher has to match a page's `.md` URL as well as the page, its root included:
+
+```ts title="proxy.ts"
+export const config = {
+  // the dashboard, its pages, and each one's .md twin: /dashboard.md isn't under /dashboard/
+  matcher: ['/dashboard', '/dashboard.md', '/dashboard/:path*'],
+}
+```
+
+`'/dashboard/:path*'` covers `/dashboard/123.md`, but not `/dashboard.md`, the twin of `/dashboard` itself: without `'/dashboard.md'` in the list, `app/dashboard/markdown.ts` runs ungated there. A matcher that names a page's exact shape (`'/dashboard/:id(\\d+)'`) misses its `.md` URL (`/dashboard/123.md`) too; add `'/dashboard/:id(\\d+).md'`. Or run the gate-first recipe above with no `matcher` at all, which covers every shape. The handler never runs a `markdown.ts` for a request made straight to its own URL (`/api/affordances/md/…`), which a proxy matcher scoped to your pages wouldn't see; that gets the page's HTML render, gated at the page's URL.
 
 `mdProxy` is built on two lower-level functions, which stay: `isMdRequest(request)` is `md.markdown`, and `mdRewrite(request)` returns the handler URL a Markdown request goes to, or `undefined`, for a proxy that rewrites it itself. A proxy can't see `public/`, so a real `.md` file there matches too.
 
