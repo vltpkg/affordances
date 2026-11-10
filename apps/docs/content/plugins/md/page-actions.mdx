@@ -31,7 +31,7 @@ export const CopyPage = ({ path }: { path: string }) => {
 - **Preload on hover and focus.** Safari drops a clipboard write that happens too long after the click, so the click should only await a fetch that has already finished.
 - **One fetch per path.** `load` and `preload` share it. A failed fetch is forgotten, so the next hover or click tries again; `load` rejects with the error, and `preload` stays quiet.
 - **Only Markdown.** A response that isn't `text/markdown`, such as a sign-in page, is refused rather than copied.
-- **The page as the person sees it.** It fetches with the browser's default `credentials: 'same-origin'`, which also gets past a protected preview's login. Pass `usePageMarkdown(path, { credentials: 'omit' })` to copy the public page an agent reading the URL would get.
+- **The page as the person sees it.** It fetches with the browser's default `credentials: 'same-origin'`, which also gets past a protected preview's login. Pass `usePageMarkdown(path, { credentials: 'omit' })` to copy the public page an agent reading the URL would get. The options' type is `PageMarkdownOptions`, from the same entry.
 
 ## Open in
 
