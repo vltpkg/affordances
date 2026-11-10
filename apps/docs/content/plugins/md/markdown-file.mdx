@@ -116,7 +116,13 @@ export const slots = {
 - **A fill returns Markdown**, which takes the slot's place as blocks of its own (an inline `<AgentSlot>` splits its paragraph), with its links resolved as the page's are. `undefined` leaves the slot's own content, converted as usual.
 - **A fill runs in the visitor's own request**, as the default export does: `cookies()` and `headers()` work, and it reads data only through fetchers your API authorizes. A page with a filled slot is `private, no-store`. Next's `notFound()` or `redirect()` in a fill answers for the whole page.
 - **A request made straight to `/api/affordances/md/…` runs no fill**, as it runs no `markdown.ts`: each slot converts its own content.
+- **When the page's own error or empty state renders no slot, authorize in the default export and return `undefined`.** A page that shows "This package is private" in place of its README, as a `200`, renders no `readme` slot, so `slots.readme` never runs and its `notFound()` never answers: the `.md` is that error state, as a `200`. Check access in the default export, call `notFound()` or `unauthorized()` there, and return `undefined` to go on to the render and the fills. A fill's `notFound()` answers for the page only when its slot rendered.
 - In development, the handler warns, naming the route's `markdown.ts`, about a fill with no slot on the page, a slot with no fill, a name used twice, and a fill that returned nothing.
+
+> **Security: a fill runs on your server, as the visitor.** It has the visitor's cookies or token, and no browser in between. Code that was safe in the browser because of CORS, or the network it ran on, isn't automatically safe here: a client query function reused in a fill is the usual way in.
+>
+> - Anything a fill fetches from a URL taken from data (a link in a README, a `$ref`, a webhook URL) needs an allowlist: `https:` only, an exact host, and every redirect hop checked against it (fetch with `redirect: 'manual'` and check each `Location`). Otherwise it can reach your server's private network.
+> - Never attach credentials to a host you don't own. An API client that adds the visitor's token to every request sends it to whatever URL the data names.
 
 A slot is a marker in the page's HTML, so HTML from someone else (a README rendered as raw HTML) could carry one. Strip `<affordances-md>` from untrusted HTML, as for [every marker](/docs/plugins/md/markers). A fill only ever runs in this visitor's own request for this page, so with each fill authorizing its own data, a forged slot can make a fill run or move its output on the page, never show anyone data their own credentials don't reach.
 

@@ -45,6 +45,8 @@ export const GET = createMdHandler({ maxBytes: 32 * 1024 * 1024, timeout: 20_000
 
 The rest of its options (`origin`, `headers`, `append`, `linkTwins`) are in [Caching and privacy](/docs/plugins/md/caching).
 
+The handler fetches each page from the request's own origin. `next start` builds that from its own hostname and port, never from the `Host` header, so a caller can't point it at another server. With `experimental.trustHostHeader` (Vercel sets it, behind its own edge) or a custom server, `Host` decides it: behind a proxy of your own that passes `Host` through, set `AFFORDANCES_MD_ORIGIN` to the URL the server reaches itself at, such as `http://localhost:3000`.
+
 ## Routing
 
 The config only adds rewrites and headers, so nothing runs per request until an agent asks:
