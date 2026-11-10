@@ -1,0 +1,103 @@
+---
+title: Running in production
+description: What the Markdown route answers and why, what each header says, what it costs, and what it logs.
+---
+
+The Markdown route renders each page from your own server, converts it, and answers. Everything below is what it does in production, so you can tell an expected answer from one to act on.
+
+## Next.js versions
+
+It needs Next.js 16 or later (`next: >=16`) and React 19, with the App Router. It's tested on Next 16.0.0, 16.0.11, 16.1.7, 16.2.12, 16.3.0, 16.3.8, 16.4.6 and 16.5.0-canary.46.
+
+It reads a few things Next doesn't document: the digests Next streams for `notFound()` and `redirect()`, and the error rows in a page's Flight data. When a Next release changes one of those, md answers with private Markdown or a `502`. It never sends a public page or a wrong one.
+
+## What a twin costs
+
+A twin is the route's request plus one request of its own: the route fetches the page from the same server (`x-affordances-md-render: 1`, uncompressed) and converts its HTML. That fetch goes through your `proxy.ts` like any other page request.
+
+So an uncached twin takes about as long as its page's own render and transfer, plus md's conversion. The conversion is mostly parsing the HTML, so it grows with how much HTML md keeps. On one probe, a 4.6 MB `cacheComponents` + `partialPrefetching` page with three slots, measured warm on Next 16.4.3's `next start`, the page took 0.29–0.31 s and its twin 0.59–0.74 s, about 2.1× the page. About half of that is the page's own render and the request to it, and half is md's parsing and conversion. A page that's cached or static answers faster than it renders, so the conversion's fixed cost makes its twin a larger multiple of it. The answer is to cache the twin. With the route's [`publicCache`](/docs/plugins/md/caching#caching-public-markdown), a CDN keeps it, and an anonymous `Accept: text/markdown` request gets a `307` to the twin, so it's answered from that cache too.
+
+- **No page request at all** when the route's [`markdown.ts`](/docs/plugins/md/markdown-file) default export answers, or when an anonymous `Accept: text/markdown` request gets a `307` to the twin.
+- **Slots:** a page with [slots](/docs/plugins/md/markdown-file#slots) runs the fills it rendered in parallel, after the page.
+- **[`literalMd`](/docs/plugins/md/setup#pages-whose-url-ends-in-md) routes** cost a second render when the exact URL answers `404`.
+- **Limits:**
+  - `timeout`, 10 s by default, covers the whole render.
+  - `maxBytes`, 16 MiB by default, limits the HTML kept after the Flight data is taken out.
+  - The whole response may be up to 8 × `maxBytes`.
+- **`llms.txt` and `llms-full.txt`:**
+  - **Requests:** each listed page is a request to the Markdown route, plus that route's own render. There's one more request for the site index, unless `md()` knows there isn't one.
+  - **Concurrency and time:** 8 pages render at a time. Each has its own `timeout`, and the whole file has a 25 s `deadline`.
+
+On Vercel, the page request is a second function invocation: see [On Vercel](/docs/plugins/md/caching#on-vercel) for what that costs and how caching avoids it.
+
+## Statuses
+
+| Status              | When                                                                                                                                                                                                                                                                                                         | What to do                                                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| The page's own      | The page converted, with its status: `not-found.tsx`'s `404` reads as its Markdown                                                                                                                                                                                                                           | Nothing                                                                                                                                  |
+| `307`               | An anonymous `Accept: text/markdown` request for a page on a `publicCache` route goes to its `.md` twin, `private, no-store`                                                                                                                                                                                 | Nothing: the CDN caches the twin                                                                                                         |
+| `3xx`               | The page redirected, or a `redirect()` ran in it or its `markdown.ts`. A same-site target is sent to its twin                                                                                                                                                                                                | Nothing                                                                                                                                  |
+| `401`, `403`, `404` | `unauthorized()`, `forbidden()` or `notFound()` in the page, its `markdown.ts` or a fill, even after the shell streamed. `notFoundMarkdown` gives the `404`'s body. Always `private, no-store`                                                                                                               | Nothing                                                                                                                                  |
+| `400`               | The path names another origin (`//evil.test/x`), which is never fetched                                                                                                                                                                                                                                      | Nothing                                                                                                                                  |
+| `413`               | The page's HTML is over `maxBytes`, or the whole response is over 8 × `maxBytes`. The body says which, and the line to change                                                                                                                                                                                | Raise `maxBytes` in the route                                                                                                            |
+| `500`               | A request came with an `x-affordances-md-adopt` header that isn't this build's, or `proxy.ts` called `md.rewrite` or `md.adopt` in an app `md()` doesn't wrap, so there's no token. The page is never answered unguarded                                                                                     | Nothing for a caller's own header; otherwise wrap `next.config` with `withMd`                                                            |
+| `502`               | Next streamed a digest this version of md can't read, or Flight data it can't read (a push it can't account for), or the route couldn't reach the page at all (the connection was refused, or the origin is unreachable). That body names only the page's path, never the origin; development adds the cause | Update `@affordances/md`, or check the [origin](/docs/plugins/md/caching#behind-a-proxy)                                                 |
+| `503`               | `llms-full.txt` only: a page failed (a timeout, the `deadline`, a `5xx`, `408` or `429`, a page still loading, or a `markdown()` or `append` that threw), so the file is incomplete. `no-store`, `Retry-After: 30`. A site whose pages can't all render within the `deadline` gets a `503` until it does     | Fix the page, raise the page `timeout`, the file `deadline` and the route's `maxDuration`, or cache the pages' twins so they answer fast |
+| `504`               | Nothing of the page arrived within `timeout`                                                                                                                                                                                                                                                                 | Speed the page up, or raise `timeout`                                                                                                    |
+| `508`               | The route's own page request reached the route again, so a rewrite or `proxy.ts` sends `x-affordances-md-render` requests to it                                                                                                                                                                              | Leave `x-affordances-md-render` requests alone                                                                                           |
+
+A page still streaming at its `timeout` isn't a `504`:
+
+- It's converted as far as it got, with its own status.
+- Unfinished boundaries keep their loading state, and a note says the page was still loading.
+- It's marked `x-affordances-md-partial` and `private, no-store`.
+
+An error that isn't Next's own (`notFound()`, `redirect()` and the like), thrown in `markdown.ts`, a fill or `append`, isn't caught: Next answers it as it does any route handler's.
+
+`llms.txt` stays a `200` when pages fail. It still links each one, by its title when the page got that far and by its path otherwise, and `x-affordances-md-dropped` counts them. A page with a boundary that caught an error is left out of `llms-full.txt` instead, as a private page is: a retry won't change it, so the file stays a cacheable `200`, and development names the page.
+
+## Headers
+
+| Header                                          | Values                                                               | On                                                                                                                                                              |
+| ----------------------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `x-affordances-md-partial` (`PARTIAL_HEADER`)   | `1`                                                                  | Markdown of a page still streaming at its `timeout`                                                                                                             |
+| `x-affordances-md-error` (`ERROR_HEADER`)       | `1`                                                                  | Markdown of a page whose Flight data has an error row: a boundary that caught an error, or an `error.tsx`. It's `private, no-store` and keeps the page's status |
+| `x-affordances-md-uncached` (`UNCACHED_HEADER`) | `credentials`, `set-cookie`, `status`, `partial`, `error`, `invalid` | On a `publicCache` route, Markdown that stayed private, and why (see [Caching](/docs/plugins/md/caching#caching-public-markdown))                               |
+| `x-affordances-md-personal`                     | `1`                                                                  | Markdown rendered with someone's credentials, or answered with a `set-cookie`. `llms` leaves such a page out                                                    |
+| `x-affordances-md-dropped`                      | a count                                                              | `llms.txt`'s `200` and `llms-full.txt`'s `503`, when pages failed                                                                                               |
+| `x-affordances-tokens`                          | a count                                                              | A converted page's Markdown, or a `markdown.ts` or `notFoundMarkdown` answer: its length in tokens, roughly                                                     |
+
+The route's own Markdown answers vary on `Accept`, and a twin also varies on `Accept-Language` when its page does and the request sent one. A file or route handler the route passes through keeps its own `Vary`. [Caching](/docs/plugins/md/caching) covers `Cache-Control`.
+
+`x-affordances-md-render` (`RENDER_HEADER`) is on the route's own page requests, and a route that receives it answers `508`. Leave it to md.
+
+## Environment variables
+
+`AFFORDANCES_MD_ORIGIN` is the only one you set. It's where the route fetches pages from, when the request's own origin isn't your server's (see [Behind a proxy](/docs/plugins/md/caching#behind-a-proxy)). It's read when a request comes in.
+
+`md()` sets the rest in `next.config`'s `env` when Next loads the config, so don't set them yourself:
+
+- `AFFORDANCES_MD_ROUTES`, `_HANDLERS`, `_PUBLIC`, `_CACHE_LIFE`, `_LITERAL`, `_ALIASES` and `_SITE_INDEX` describe your app.
+- `AFFORDANCES_MD_ADOPT` is a random token, new on each build, that `proxy.ts`'s `md.rewrite` and `md.adopt` use to reach the route. Treat it as a secret, and keep it out of logs.
+
+## Where it fetches from
+
+- **The origin:** `origin`, then `AFFORDANCES_MD_ORIGIN`, then the request's own. md never reads `Host` or `X-Forwarded-*` itself. The request's own origin is the one Next gives it: `next start` builds it from its own host and port, and `trustHostHeader` (Vercel sets it) or a custom server builds it from `Host`. [Setup](/docs/plugins/md/setup) says when to set `AFFORDANCES_MD_ORIGIN`.
+- **Caller headers:** the caller's `cookie`, `authorization` and `accept-language` go along, so a signed-in visitor gets their own page. The route's `headers` option adds the rest, such as Vercel's [protection bypass](/docs/plugins/md/caching#on-vercel).
+- **The llms handlers:** they send only their own `headers` option, so they render the public site.
+
+## Logs
+
+In production the route says four things, each once:
+
+- **A page over its size limit:** a warning naming the page and the line that fixes it, once per page.
+- **A Next digest md can't read:** an error, once per process, whichever page streamed it.
+- **Flight data md can't read:** an error, once per process, naming the page and why, whichever page streamed it.
+- **An `llms-full.txt` that answered `503`:** a warning, once per process, naming the pages that failed and why. The response itself only counts them.
+
+The rest says nothing in production, so watch the headers above instead. In development it also warns:
+
+- **About setup:** slots without a fill, a fill without a slot, a `publicCache` that can't apply, and a cookie set for a signed-out visitor.
+- **For each `llms` request:** the pages it couldn't render or left out.
+
+`md()` warns about the app's setup when Next loads the config, in production too, such as a `markdown.ts` without a page or with none of its exports, a missing `include`, or an alias that gets no `Link`.
