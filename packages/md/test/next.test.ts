@@ -35,6 +35,7 @@ import {
   type Rewrites,
   rewrites,
   withMd,
+  SITE_INDEX_ENV,
 } from '../src/next/index.ts'
 import { aliasPath, hasTwin } from '../src/next/rules.ts'
 import {
@@ -2074,6 +2075,22 @@ const affordancesSite = (url: URL) =>
         ),
         { headers: { 'content-type': 'text/html' } },
       )
+
+test('without the Affordances graph, the llms handlers never ask for a site index', async () => {
+  const project = app(['app/page.tsx', 'app/a/page.tsx'])
+  const plain: Config = md({ root: project })({})
+  expect(plain.env?.[SITE_INDEX_ENV]).toBe('none')
+  // withAffordances points its route at the app's manifest before its plugins run
+  const afforded: Config = md({ root: project })({
+    turbopack: { resolveAlias: { '@affordances/next/manifest': './.affordances/manifest.ts' } },
+  })
+  expect(afforded.env).not.toHaveProperty(SITE_INDEX_ENV)
+  upstream = affordancesSite
+  for (const name of [ROUTES_ENV, SITE_INDEX_ENV]) vi.stubEnv(name, plain.env![name]!)
+  await createLlmsFullHandler()(new Request(`${site}/llms-full.txt`))
+  expect(seen.map((call) => call.url.pathname)).toEqual(['/', '/a'])
+  vi.unstubAllEnvs()
+})
 
 test('llms-full defaults to the site index routes that need no params', async () => {
   upstream = affordancesSite

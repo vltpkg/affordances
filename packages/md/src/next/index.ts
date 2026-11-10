@@ -214,6 +214,9 @@ export const md =
     for (const source of literalMd) sourceRegex(source)
     checkAliases(aliases, pages)
     const aliased = Object.entries(aliases)
+    // withAffordances points its route at the app's manifest before its plugins run: without that, there's no site
+    // index to ask for, and the handlers never fetch /.well-known/affordances.json
+    const afforded = Boolean(config.turbopack?.resolveAlias?.['@affordances/next/manifest'])
     return {
       ...config,
       env: {
@@ -224,6 +227,7 @@ export const md =
         ...(cacheLife && { [CACHE_LIFE_ENV]: cacheLife }),
         ...(literalMd.length && { [LITERAL_ENV]: JSON.stringify(literalMd) }),
         ...(aliased.length && { [ALIASES_ENV]: JSON.stringify(aliased) }),
+        ...(!afforded && { [SITE_INDEX_ENV]: 'none' }),
       },
       rewrites: async () => {
         const user = normalize(await config.rewrites?.())
@@ -1077,10 +1081,14 @@ const SITE_INDEX = '/.well-known/affordances.json'
 
 type SiteIndex = { name?: string; routes: { route: string; description?: string }[] }
 
+// 'none' when md() found no Affordances graph on the app, so there's no index to fetch
+export const SITE_INDEX_ENV = 'AFFORDANCES_MD_SITE_INDEX'
 const siteIndex = async (
   request: Request,
   options: MdHandlerOptions,
 ): Promise<SiteIndex | undefined> => {
+  // spelled out: next inlines process.env.NAME, never process.env[name]
+  if (process.env.AFFORDANCES_MD_SITE_INDEX === 'none') return undefined
   try {
     const headers = await extraHeaders(request, options.headers)
     headers.set('accept', 'application/json')
