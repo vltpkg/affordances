@@ -2763,7 +2763,7 @@ test("md() never throws for config-time I/O: app/ it couldn't read, or a tsconfi
   warn.mockClear()
   expect(() => md({ root: dir })({} as Config)).not.toThrow()
   expect(warn.mock.calls.map(([message]) => String(message))).toEqual([
-    `[affordances-md] tsconfig.json couldn't be read, so tsc can't check each markdown.ts against its route. Add ".affordances/**/*.ts" to its "include".`,
+    `[affordances-md] To have tsc check each markdown.ts against its route, add ".affordances/**/*.ts" to "include" in tsconfig.json, or run \`affordances-md init\`, which adds it. md() doesn't edit tsconfig.json.`,
   ])
   warn.mockRestore()
 })

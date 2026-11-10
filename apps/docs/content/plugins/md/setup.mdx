@@ -22,7 +22,7 @@ import { withMd } from '@affordances/md/next'
 export default withMd(nextConfig)
 ```
 
-Then add the route handler. `init` writes it:
+Then add the route handler. `init` writes it, and adds `.affordances/**/*.ts` to your `tsconfig.json`'s `include`, so `tsc` checks each [`markdown.ts`](/docs/plugins/md/markdown-file) against its route (commit both):
 
 <Run cmd="@affordances/md init" />
 

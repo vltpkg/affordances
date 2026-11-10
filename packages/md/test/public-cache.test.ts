@@ -761,3 +761,16 @@ test('one args.request per twin: the default export and every fill get the same 
     expect([publicCache, requests.length, new Set(requests).size]).toEqual([publicCache, 3, 1])
   }
 })
+
+test('a development warning is said once per route per process, never on every request', async () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  authored['/w/[pkg]'] = async () => ({ default: () => undefined }) as never
+  vi.stubEnv(ROUTES_ENV, JSON.stringify([ROUTE, '/w/[pkg]']))
+  upstream = () => new Response(page('<h1>w</h1>'), { headers: { 'content-type': 'text/html' } })
+  for (const pkg of ['a', 'a', 'b']) await createMdHandler()(new Request(`${site}/w/${pkg}.md`))
+  expect(warn.mock.calls.map(([message]) => message)).toEqual([
+    '[affordances-md] /w/[pkg]/markdown.ts returned nothing for /w/a, so its HTML is converted',
+  ])
+  delete authored['/w/[pkg]']
+  warn.mockRestore()
+})

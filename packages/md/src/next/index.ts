@@ -714,8 +714,11 @@ const renderPage =
     const tooLarge = () => {
       const limit = maxBytes % MIB ? `${maxBytes} bytes` : `${maxBytes / MIB} MiB`
       const fix = `To convert it, raise maxBytes in the md route (app/api/affordances/md/[[...path]]/route.ts): \`export const GET = createMdHandler({ maxBytes: ${Math.ceil((2 * maxBytes) / MIB)} * 1024 * 1024 })\`.`
-      console.warn(
+      // in production too, where a page grows past it, once per page
+      once(
+        `maxBytes ${target.pathname}`,
         `[affordances-md] ${target.pathname} is larger than maxBytes (${limit}), so it answers 413. ${fix}`,
+        true,
       )
       return fail(
         413,
@@ -961,10 +964,11 @@ const fillSlots = async (
   { route, module, args }: MarkdownRoute,
 ): Promise<Record<string, string> | Response> => {
   const slots = module.slots!
-  const warn = (message: string) => {
-    if (process.env.NODE_ENV !== 'production')
-      console.warn(`[affordances-md] ${route}/markdown.ts, ${target.pathname}: ${message}`)
-  }
+  const warn = (message: string) =>
+    once(
+      `slots ${route} ${message}`,
+      `[affordances-md] ${route}/markdown.ts, ${target.pathname}: ${message}`,
+    )
   for (const name of duplicate)
     warn(
       `<AgentSlot name="${name}"> is on the page more than once, so no copy is filled and each converts as usual. Give each slot its own name.`,
@@ -1049,12 +1053,21 @@ const publicHeader = (route: string, module: MarkdownModule) => {
   }
   return header
 }
+// a warning said once per what it's about (a route and the thing wrong with it) per process, never on every request a
+// page gets in next dev; in development only, unless production says it too
+const toldOnce = new Set<string>()
+const once = (about: string, message: string, inProduction = false) => {
+  if ((!inProduction && process.env.NODE_ENV === 'production') || toldOnce.has(about)) return
+  toldOnce.add(about)
+  console.warn(message)
+}
+
 // a page that sets a cookie for an anonymous visitor (a session, an auth handshake) is never cached publicly: said in
 // development, since its route asked to be
 const warnCookie = (route: string, target: URL, headers: Headers) => {
-  if (process.env.NODE_ENV === 'production') return
   const names = headers.getSetCookie().map((cookie) => cookie.split('=')[0]!.trim())
-  console.warn(
+  once(
+    `cookie ${route} ${names.join(',')}`,
     `[affordances-md] ${target.pathname} set ${names.length === 1 ? 'a cookie' : 'cookies'} (${names.join(', ')}) for an anonymous visitor, so ${route}/markdown.ts's publicCache doesn't apply: its markdown is private, no-store. Don't set ${names.length === 1 ? 'it' : 'them'} on this page for a visitor who isn't signed in.`,
   )
 }
@@ -1136,8 +1149,9 @@ const authoredMarkdown = async (
   }
   if (result === undefined) {
     // with slots, undefined is how a default export hands the page back to be converted and filled: no mistake to warn of
-    if (process.env.NODE_ENV !== 'production' && !module.slots)
-      console.warn(
+    if (!module.slots)
+      once(
+        `nothing ${route}`,
         `[affordances-md] ${route}/markdown.ts returned nothing for ${target.pathname}, so its HTML is converted`,
       )
     return undefined

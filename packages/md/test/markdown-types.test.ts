@@ -20,6 +20,7 @@ import {
   type RouteParams,
   type Slots,
 } from '../src/next/index.ts'
+import { includesGenerated, withGenerated } from '../src/next/routes.ts'
 
 test("MarkdownArgs<'/route'> gives params their types from the route, as page.tsx's PageProps does", () => {
   expectTypeOf<RouteParams<'/blog/[slug]'>>().toEqualTypeOf<{ slug: string }>()
@@ -181,31 +182,15 @@ export const notFoundMarkdown: NotFoundMarkdown<'/package/[pkg]'> = ({ params })
   TSC,
 )
 
-// what md() says when it can't add the entry itself
-const told = (why: string) =>
-  `[affordances-md] tsconfig.json ${why}, so tsc can't check each markdown.ts against its route. Add ".affordances/**/*.ts" to its "include".`
+// what md() says when tsconfig.json doesn't include .affordances/: the line, never an edit
+const told = `[affordances-md] To have tsc check each markdown.ts against its route, add ".affordances/**/*.ts" to "include" in tsconfig.json, or run \`affordances-md init\`, which adds it. md() doesn't edit tsconfig.json.`
 
 test(
-  "md() adds .affordances/ to tsconfig.json's include, as next adds .next/types, keeping its comments and format",
+  "md() never edits tsconfig.json: it says the line once; init's edit keeps the file's comments and format",
   () => {
     check("export default () => '# x'\n")
     const tsconfig = join(root, 'tsconfig.json')
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const load = (text: string) => {
-      writeFileSync(tsconfig, text)
-      log.mockClear()
-      warn.mockClear()
-      md({ root })({})
-      return {
-        text: readFileSync(tsconfig, 'utf8'),
-        logged: log.mock.calls.map(([message]) => String(message)),
-        warned: warn.mock.calls.map(([message]) => String(message)),
-      }
-    }
-    const added = `[affordances-md] Updated tsconfig.json: added ".affordances/**/*.ts" to "include", so tsc checks each markdown.ts against its route, as Next adds ".next/types/**/*.ts". Commit this change, and add .affordances/ to .gitignore.`
-
-    // a commented file, one entry per line, a comment after the last: only a line is added
     const commented = `{
   // next's own
   "compilerOptions": { "strict": true, /* keep */ "paths": { "@/*": ["./src/*"] } },
@@ -217,35 +202,33 @@ test(
   "exclude": ["node_modules"]
 }
 `
-    expect(load(commented)).toEqual({
+    writeFileSync(tsconfig, commented)
+    md({ root })({})
+    md({ root })({})
+    expect(readFileSync(tsconfig, 'utf8')).toBe(commented)
+    // once per process, however often next dev reloads the config
+    expect(warn.mock.calls.map(([message]) => String(message))).toEqual([told])
+    warn.mockRestore()
+    // init's edit: a commented file, one entry per line, a comment after the last: only a line is added
+    expect(withGenerated(commented)).toEqual({
       text: commented.replace(
         '    "**/*.tsx" // components\n',
         '    "**/*.tsx", // components\n    ".affordances/**/*.ts"\n',
       ),
-      logged: [],
-      warned: [added],
     })
     // a trailing comma stays a trailing comma; one line stays one line
-    expect(load('{ "include": [\n  "a.ts",\n] }\n').text).toBe(
-      '{ "include": [\n  "a.ts",\n  ".affordances/**/*.ts",\n] }\n',
-    )
-    expect(load('{"include":["next-env.d.ts","**/*.ts"]}').text).toBe(
-      '{"include":["next-env.d.ts","**/*.ts", ".affordances/**/*.ts"]}',
-    )
-    // already there: no write, nothing said
-    const present = '{ "include": ["**/*.ts", ".affordances/**/*.ts"] }\n'
-    expect(load(present)).toEqual({ text: present, logged: [], warned: [] })
-    // can't be read, or include is inherited: left as it is, with the line to add
-    const broken = '{ "include": ["**/*.ts", }}'
-    expect(load(broken)).toEqual({ text: broken, logged: [], warned: [told("couldn't be read")] })
-    const inherited = '{ "extends": "../../tsconfig.base.json" }\n'
-    expect(load(inherited)).toEqual({
-      text: inherited,
-      logged: [],
-      warned: [told('has no "include" of its own to add .affordances/ to')],
+    expect(withGenerated('{ "include": [\n  "a.ts",\n] }\n')).toEqual({
+      text: '{ "include": [\n  "a.ts",\n  ".affordances/**/*.ts",\n] }\n',
     })
-    log.mockRestore()
-    warn.mockRestore()
+    expect(withGenerated('{"include":["next-env.d.ts","**/*.ts"]}')).toEqual({
+      text: '{"include":["next-env.d.ts","**/*.ts", ".affordances/**/*.ts"]}',
+    })
+    // can't be read, or include is inherited: left as it is, with why
+    expect(withGenerated('{ "include": ["**/*.ts", }}')).toEqual({ why: "couldn't be read" })
+    expect(withGenerated('{ "extends": "../../tsconfig.base.json" }\n')).toEqual({
+      why: 'has no "include" of its own to add .affordances/ to',
+    })
+    expect(includesGenerated('{ "include": ["**/*.ts", ".affordances/**/*.ts"] }')).toBe(true)
   },
   TSC,
 )
@@ -265,9 +248,7 @@ test.skipIf(process.getuid?.() === 0)(
       chmodSync(tsconfig, 0o444)
       expect(() => md({ root })({})).not.toThrow()
       expect(readFileSync(tsconfig, 'utf8')).toBe(text)
-      expect(warn.mock.calls.map(([message]) => String(message))).toEqual([
-        told("couldn't be written (EACCES)"),
-      ])
+      expect(warn.mock.calls.map(([message]) => String(message))).toEqual([told])
       expect(log).not.toHaveBeenCalled()
 
       // .affordances/ itself read-only, with an md.ts from an earlier build: that one is used

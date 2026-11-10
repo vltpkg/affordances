@@ -311,7 +311,7 @@ ${problems.map(({ message }, i) => `export type Problem${i} = Fix<${JSON.stringi
     )
     if (!stale) return undefined
   }
-  includeGenerated(path.join(root, 'tsconfig.json'))
+  sayInclude(path.join(root, 'tsconfig.json'))
   return out
 }
 
@@ -326,6 +326,7 @@ const errorCode = (error: unknown) =>
   String(error)
 
 const GENERATED = '.affordances/**/*.ts'
+export { GENERATED }
 
 // the index of a comment's last character when one starts at i (// up to its line's end, /* to */), else undefined
 const commentEnd = (text: string, i: number) => {
@@ -400,37 +401,29 @@ const includeArray = (text: string) => {
 }
 
 // tsc skips a folder whose name starts with a dot unless include names it, so with next's default tsconfig the check
-// of each markdown.ts against its route would never run. md() adds the entry, as next adds .next/types, changing only
-// the include array and keeping the file's comments and formatting. when it can't do that safely (the file doesn't
-// parse, include is inherited through extends or missing, or the edit wouldn't read back as just that entry added),
-// it says what to add instead
-const includeGenerated = (tsconfig: string) => {
-  const fs = process.getBuiltinModule?.('node:fs')
-  if (!fs?.existsSync(tsconfig)) return
-  const warn = (why: string) =>
-    console.warn(
-      `[affordances-md] tsconfig.json ${why}, so tsc can't check each markdown.ts against its route. Add "${GENERATED}" to its "include".`,
-    )
-  let text: string
-  try {
-    text = fs.readFileSync(tsconfig, 'utf8')
-  } catch {
-    return warn("couldn't be read")
-  }
+// of each markdown.ts against its route only runs once include names .affordances/. md() never edits tsconfig.json: it
+// says the line, once per process. \`affordances-md init\` adds it, changing only the include array and keeping the
+// file's comments and formatting
+export const includesGenerated = (text: string) => {
+  const config = parseJsonc(text) as { include?: unknown }
+  return (
+    Array.isArray(config.include) &&
+    config.include.some((entry) => typeof entry === 'string' && entry.startsWith('.affordances/'))
+  )
+}
+// tsconfig.json with .affordances/ added to its include, or why that can't be done safely (the file doesn't parse,
+// include is inherited through extends or missing, or the edit wouldn't read back as just that entry added)
+export const withGenerated = (text: string): { text: string } | { why: string } => {
   let before: { include?: unknown }
   try {
     before = parseJsonc(text) as { include?: unknown }
   } catch {
-    return warn("couldn't be read")
+    return { why: "couldn't be read" }
   }
   if (!Array.isArray(before.include))
-    return warn('has no "include" of its own to add .affordances/ to')
-  if (
-    before.include.some((entry) => typeof entry === 'string' && entry.startsWith('.affordances/'))
-  )
-    return
+    return { why: 'has no "include" of its own to add .affordances/ to' }
   const array = includeArray(text)
-  if (!array) return warn('has an "include" md() can\'t edit safely')
+  if (!array) return { why: 'has an "include" that can\'t be edited safely' }
   const entry = JSON.stringify(GENERATED)
   let edited: string
   if (array.last === undefined)
@@ -450,18 +443,23 @@ const includeGenerated = (tsconfig: string) => {
     const after = parseJsonc(edited) as { include: unknown[] }
     const expected = { ...before, include: [...before.include, GENERATED] }
     if (JSON.stringify(after) !== JSON.stringify(expected))
-      return warn('has an "include" md() can\'t edit safely')
+      return { why: 'has an "include" that can\'t be edited safely' }
   } catch {
-    return warn('has an "include" md() can\'t edit safely')
+    return { why: 'has an "include" that can\'t be edited safely' }
   }
+  return { text: edited }
+}
+// said once per tsconfig.json per process, never on each rebuild of next dev
+const includeTold = new Set<string>()
+const sayInclude = (tsconfig: string) => {
+  const fs = process.getBuiltinModule?.('node:fs')
+  if (includeTold.has(tsconfig) || !fs?.existsSync(tsconfig)) return
   try {
-    fs.writeFileSync(tsconfig, edited)
-  } catch (error) {
-    return warn(`couldn't be written (${errorCode(error)})`)
-  }
-  // a tracked file changed by a build: said as a warning, the change first, so it stands out in next's output
+    if (includesGenerated(fs.readFileSync(tsconfig, 'utf8'))) return
+  } catch {}
+  includeTold.add(tsconfig)
   console.warn(
-    `[affordances-md] Updated tsconfig.json: added "${GENERATED}" to "include", so tsc checks each markdown.ts against its route, as Next adds ".next/types/**/*.ts". Commit this change, and add .affordances/ to .gitignore.`,
+    `[affordances-md] To have tsc check each markdown.ts against its route, add "${GENERATED}" to "include" in tsconfig.json, or run \`affordances-md init\`, which adds it. md() doesn't edit tsconfig.json.`,
   )
 }
 
