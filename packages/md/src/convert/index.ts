@@ -1351,6 +1351,8 @@ const nameWords = (name: string) =>
 const ALWAYS = [
   '[a-z0-9]*(secret|passw(or)?d|pwd|passcode|passphrase|apikey|privatekey|signingkey)s?',
   'cvv|cvc|csc|ssn|social_security|pincode|jwt|csrf|xsrf|dsn|bearer|credentials?|iban',
+  // what a request authenticates with: its authorization header, a cookie, a session id, a signature
+  'authorization|cookies?|sids?|signatures?',
   'cc_(num(ber)?|csc|exp(_month|_year)?|type|name|given_name|additional_name|family_name)',
   'ccnum|card_?num(ber)?|credit_card|one_time_code|account_number|routing_number',
   // any key (api_key, service_role_key, a bare key) but the ones that aren't secrets: a public key, a database's
@@ -1378,8 +1380,10 @@ const SECRET = new RegExp(
 // hindi and greek
 const SECRET_WORDS =
   /пароль|密码|密碼|口令|パスワード|暗証番号|비밀번호|암호|كلمة المرور|كلمة السر|סיסמ|รหัสผ่าน|पासवर्ड|κωδικος προσβασης|συνθηματικο/
-// a url with a user and password in it (postgres://user:pass@host) is a secret, whatever its field says
-const CREDENTIALED = /\/\/[^/\s@]*:[^/\s@]*@/
+// a value that is a secret whatever its field says: a url with a user and password in it (postgres://user:pass@host),
+// a bearer token, or a jwt (its header, base64url json, always starts eyJ)
+const CREDENTIALED = /\/\/[^/\s@]*:[^/\s@]*@|^\s*bearer\s+\S/i
+const JWT = /^\s*eyJ[\w-]*\.[\w-]*\.[\w-]*\s*$/
 // by its name, id or autocomplete, or by what it says to people: its label, aria-label or placeholder
 // (<label>API key <input name="k">)
 const secret = (field: Element, label: string) =>
@@ -1394,7 +1398,7 @@ const secret = (field: Element, label: string) =>
           SECRET_WORDS.test(form.toLowerCase()),
         ),
     ) ||
-  CREDENTIALED.test(valueOf(field))
+  [CREDENTIALED, JWT].some((shape) => shape.test(valueOf(field)))
 
 // a field's current value as the page rendered it: an input's value, a textarea's text, a select's chosen options
 // (the first, when a single select marks none)

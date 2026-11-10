@@ -30,6 +30,12 @@ test("an opted-in form never shows a value whose field's name says it's a secret
     'privateKey',
     'stripe_signing_key',
     'signingKey',
+    'authorization',
+    'cookie',
+    'sid',
+    'session_sid',
+    'signature',
+    'webhookSignature',
     'webhook_secret',
     'auth_token',
     'authtoken',
@@ -79,6 +85,8 @@ test("an opted-in form never shows a value whose field's name says it's a secret
     'cc-exp',
   ]
   const plain = [
+    'side',
+    'inside',
     'pinned',
     'spinner',
     'opinion',
@@ -216,13 +224,18 @@ test('a secret is told apart from a field that only shares a word with one', () 
       // a url with a user and password is a secret whatever its field says
       labelled('Endpoint', 200, 'postgres://app:hunter2@db.internal:5432/prod'),
       labelled('Homepage', 201, 'https://shop.test/about'),
+      // and so is a bearer token, or a jwt
+      labelled('Header', 202, 'Bearer hunter3'),
+      labelled('Assertion', 203, 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.hunter4'),
+      labelled('Greeting', 204, 'Bear with us'),
     ].join('')}</form></main>`,
   )
   for (const [i, label] of hidden.entries())
     expect({ label, shown: markdown.includes(`VALUE-${i}\n`) }).toEqual({ label, shown: false })
   for (const [i, label] of shown.entries()) expect(markdown).toContain(`${label}: VALUE-${i + 100}`)
-  expect(markdown).not.toContain('hunter2')
+  expect(markdown).not.toMatch(/hunter[234]/)
   expect(markdown).toContain('Homepage: https://shop.test/about')
+  expect(markdown).toContain('Greeting: Bear with us')
 })
 
 test('never outputs values, tokens, scripts, comments, or data attributes', () => {
