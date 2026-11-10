@@ -904,7 +904,7 @@ const literalPage = async (request: Request, page: string, options: MdHandlerOpt
 
 // a route's params from its folder names, as next gives them to page.tsx: [x] is a string, [...x] a string[], and
 // [[...x]] a string[] or left out. '/blog/[slug]' → { slug: string }; any string → every param a string or string[]
-type SegmentParams<Segment extends string> = Segment extends `[[...${infer Name}]]`
+export type SegmentParams<Segment extends string> = Segment extends `[[...${infer Name}]]`
   ? { [K in Name]?: string[] }
   : Segment extends `[...${infer Name}]`
     ? { [K in Name]: string[] }
@@ -912,7 +912,7 @@ type SegmentParams<Segment extends string> = Segment extends `[[...${infer Name}
       ? { [K in Name]: string }
       : Record<never, never>
 // one branch: a leading / is an empty first segment, which has no params
-type PathParams<Path extends string> = Path extends `${infer Segment}/${infer Rest}`
+export type PathParams<Path extends string> = Path extends `${infer Segment}/${infer Rest}`
   ? SegmentParams<Segment> & PathParams<Rest>
   : SegmentParams<Path>
 export type RouteParams<Route extends string> = string extends Route
@@ -948,7 +948,7 @@ export type Slots<Route extends string = string> = Record<
 >
 // a markdown.ts, as the generated .affordances/md.ts checks it against its route: called with the route itself, so
 // an export typed for any other route string doesn't fit
-type RouteArgs<Route extends string> = MarkdownArgs<Route> & { route: Route }
+export type RouteArgs<Route extends string> = MarkdownArgs<Route> & { route: Route }
 // the generated check passes the app's own cacheLife profiles as Cache, so a custom name is typed and a typo isn't
 export type MarkdownModule<Route extends string = string, Cache = PublicCache> = {
   default?: (args: RouteArgs<Route>) => MarkdownResult | Promise<MarkdownResult>
