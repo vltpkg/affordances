@@ -537,19 +537,25 @@ const notFoundPage = async (response: Response, { module, args }: MarkdownRoute,
     return response
   const result = await module.notFoundMarkdown(args)
   if (result === undefined) return response
-  const given = typeof result === 'string' ? { markdown: result } : result
-  const meta = {
-    title: given.title ?? headingOf(given.markdown)?.text,
-    description: given.description,
-    url: target.href,
-  }
-  const body = `${yaml(meta)}${given.markdown.trim()}\n`
+  const body = authoredBody(result, target)
   return respond(
     body,
     404,
     { personal: response.headers.has(PERSONAL_HEADER) },
     { 'x-affordances-tokens': String(Math.ceil(body.length / 4)) },
   )
+}
+// markdown a route's markdown.ts gave (its default export or notFoundMarkdown), with the frontmatter a converted page
+// gets, and append's after it
+const authoredBody = (result: string | Authored, target: URL, extra?: string) => {
+  const given = typeof result === 'string' ? { markdown: result } : result
+  const meta = {
+    title: given.title ?? headingOf(given.markdown)?.text,
+    description: given.description,
+    url: target.href,
+  }
+  const page = `${yaml(meta)}${given.markdown.trim()}\n`
+  return extra ? `${page}\n${extra.trim()}\n` : page
 }
 // the Responses a default export returned itself, which no other answer replaces
 const authoredResponses = new WeakSet<Response>()
@@ -948,6 +954,8 @@ export type MarkdownResult =
   | { markdown: string; title?: string; description?: string }
   | Response
   | undefined
+// markdown with what its frontmatter says: its title (by default its first heading) and description
+type Authored = Extract<MarkdownResult, { markdown: string }>
 export type Markdown<Route extends string = string> = (
   args: MarkdownArgs<Route>,
 ) => MarkdownResult | Promise<MarkdownResult>
@@ -970,10 +978,7 @@ export type MarkdownModule<Route extends string = string, Cache = PublicCache> =
 }
 // markdown.ts's notFoundMarkdown: the markdown of the route's 404, when its page called notFound(). undefined keeps the
 // page's own: its not-found.tsx converted, or a fixed body when next streamed the 404 after the shell
-export type NotFoundResult =
-  | string
-  | { markdown: string; title?: string; description?: string }
-  | undefined
+export type NotFoundResult = Exclude<MarkdownResult, Response>
 export type NotFoundMarkdown<Route extends string = string> = (
   args: MarkdownArgs<Route>,
 ) => NotFoundResult | Promise<NotFoundResult>
@@ -1191,15 +1196,7 @@ const authoredMarkdown = async (
       )
     return undefined
   }
-  const given = typeof result === 'string' ? { markdown: result } : result
-  const meta = {
-    title: given.title ?? headingOf(given.markdown)?.text,
-    description: given.description,
-    url: target.href,
-  }
-  const page = `${yaml(meta)}${given.markdown.trim()}\n`
-  const extra = await append?.(request)
-  const body = extra ? `${page}\n${extra.trim()}\n` : page
+  const body = authoredBody(result, target, await append?.(request))
   return respond(
     body,
     200,
