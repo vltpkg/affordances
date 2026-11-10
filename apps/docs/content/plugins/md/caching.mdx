@@ -7,6 +7,7 @@ The handler forwards the caller's `cookie`, `authorization`, and `accept-languag
 
 - With a cookie or bearer token, or when the page is `private` or `no-store`, or sets a cookie, the Markdown is sent with `Cache-Control: private, no-store`.
 - Markdown served at a URL that also serves the page's HTML is `private, no-store` too, whatever it is: converted Markdown, a redirect, or what a `markdown.ts` returns. That's the page's own URL asked for with `Accept: text/markdown`, and a `literalMd` page whose own URL ends in `.md`. A cache that ignores `Vary` (Cloudflare's Cache Everything does) would serve one for the other. The `.md` twin URL is its own, so it keeps the page's `Cache-Control`.
+- A page with a boundary that caught an error (its `error.tsx`, or a `<Suspense>` child that threw) is missing that part, so its Markdown is `private, no-store` with `x-affordances-md-error: 1`, whatever the page's own `Cache-Control` or `publicCache` says.
 - Otherwise it keeps the page's own `Cache-Control`.
 - Converted Markdown has `Vary: Accept` (and `Accept-Language` too when the page varies on it, since the handler forwards the caller's language), `X-Affordances-Tokens` with an estimate of its length in tokens, and a `Link` to the canonical page when it has one.
 
@@ -43,7 +44,7 @@ It applies only to the anonymous view of the `.md` URL. The response is public o
 
 - the request has no `cookie` and no `authorization`, and the handler's `headers` option adds neither;
 - it's the `.md` URL, not the page's own URL asked for with `Accept: text/markdown`, which stays private since some CDN modes ignore `Vary`;
-- the answer is a `200`, and the page finished streaming before the timeout;
+- the answer is a `200`, the page finished streaming before the timeout, and no boundary in it caught an error;
 - the page didn't set a cookie. A page that sets one for an anonymous visitor (a session, an auth handshake) stays private, and in development the server says which cookie.
 
 A `Response` your default export returns keeps its own `Cache-Control`, as before. A name that isn't a profile, or an object with another field (`'hourz'`, `{ revalidat: 300 }`), fails `tsc` (and `next build`), named in the route's `markdown.ts` with Next's closest profile, against Next's profiles and your `next.config`'s. In development the server also says which file and what it can be. Until it's fixed, the route isn't cached.

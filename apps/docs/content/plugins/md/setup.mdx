@@ -3,6 +3,8 @@ title: Setup
 description: Add the md plugin to your Next.js config, then the route handler that renders and converts pages.
 ---
 
+It needs Next.js 16 or later, with the App Router. `partialPrefetching` is a Next 16.3 option; the rest, `cacheComponents`, `cacheLife` profiles, `forbidden()` and `unauthorized()`, and `proxy.ts`, works from 16.0.
+
 With the Affordances graph, add `md()` to `withAffordances`'s plugins:
 
 ```ts title="next.config.ts"

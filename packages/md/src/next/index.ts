@@ -304,6 +304,9 @@ const viewRequest = (request: Request) =>
 
 // set on markdown converted from a page that hadn't finished streaming by the timeout
 export const PARTIAL_HEADER = 'x-affordances-md-partial'
+// set on markdown converted from a page whose flight data has an error row: a boundary that caught an error
+// (error.tsx), or a digest of next's this version doesn't know. part of the page is missing, so it's never cached
+export const ERROR_HEADER = 'x-affordances-md-error'
 // set on markdown that's private for a personal reason (credentials, a private page, a cookie set in answer), not just
 // because of where it was served: llms reads it to leave such a page out of its public files
 const PERSONAL_HEADER = 'x-affordances-md-personal'
@@ -395,11 +398,25 @@ const passedHeaders = (upstream: Response) => {
   return headers
 }
 
-// the page's response as it came: status, headers (set-cookie and vary too) and body. undefined when its headers
-// didn't arrive by the timeout; the body then streams on, never cut short
+// the answer when the page's fetch didn't come back: a 504 when its time ran out, a 502 when it failed outright (refused,
+// unreachable). the origin can be an internal host (AFFORDANCES_MD_ORIGIN), so only development says it, and why
+const unreached = (target: URL, timedOut: boolean, timeout: number, error?: unknown) => {
+  if (timedOut) return fail(504, `${target.pathname} took longer than ${timeout}ms to render`)
+  const dev = process.env.NODE_ENV !== 'production'
+  const cause = dev ? ` (${target.origin}: ${String(error)})` : ''
+  if (dev)
+    console.warn(
+      `[affordances-md] couldn't reach ${target.href} to convert it${cause}. Check AFFORDANCES_MD_ORIGIN or the handler's origin option.`,
+    )
+  return fail(502, `Couldn't reach the page to convert it\n\n${target.pathname}${cause}`)
+}
+
+// the page's response as it came: status, headers (set-cookie and vary too) and body; unreached's answer when its
+// headers didn't arrive by the timeout, or the fetch failed. the body then streams on, never cut short
 const passPage = async (request: Request, target: URL, options: MdHandlerOptions) => {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), options.timeout ?? TIMEOUT)
+  const timeout = options.timeout ?? TIMEOUT
+  const timer = setTimeout(() => controller.abort(), timeout)
   try {
     const upstream = await fetch(target, {
       headers: await asIs(request, options),
@@ -411,8 +428,8 @@ const passPage = async (request: Request, target: URL, options: MdHandlerOptions
     // set in answer is the caller's own, and goes out as the page sent it
     if (credentialed(request.headers)) headers.set('cache-control', 'private, no-store')
     return new Response(upstream.body, { status: upstream.status, headers })
-  } catch {
-    return undefined
+  } catch (error) {
+    return unreached(target, controller.signal.aborted, timeout, error)
   } finally {
     clearTimeout(timer)
   }
@@ -478,18 +495,11 @@ const convertPage =
       (!/\.md$/i.test(url.pathname) || pagePath === url.pathname)
     // a client navigation reaches here when a proxy.ts rewrote it (next hides its RSC header from the proxy, then
     // puts it back): it wants the page's RSC payload, so it gets that, never markdown
-    if (request.headers.get('rsc'))
-      return (
-        (await passPage(request, target, options)) ??
-        fail(504, `${target.pathname} took longer than ${timeout}ms to render`)
-      )
+    if (request.headers.get('rsc')) return passPage(request, target, options)
     // a route handler next routes the url to (/llms.txt, or /og/[slug] where no static page beats it), asked for with
     // Accept: its own response, as it is, with the caller's own headers, never a render of ours
     if (pageRoute(target.pathname, { strict: true })?.handler)
-      return (
-        (await passPage(request, target, options)) ??
-        fail(504, `${target.pathname} took longer than ${timeout}ms to render`)
-      )
+      return passPage(request, target, options)
     // the route's own markdown.ts, when it has one and gives something, instead of rendering the page
     // only for a request that came in at the page's own url (/x.md, or /x with Accept), the url proxy.ts gated. one
     // made straight to the handler's url (/api/affordances/md/x) skipped a page-scoped gate, so it gets the html render,
@@ -542,9 +552,9 @@ const convertPage =
     let upstream: Response
     try {
       upstream = await fetch(target, { headers, redirect: 'manual', signal: controller.signal })
-    } catch {
+    } catch (error) {
       clearTimeout(timer)
-      return slow()
+      return unreached(target, controller.signal.aborted, timeout, error)
     }
 
     // the page's own redirect, or one it streamed, is cached as the page would be
@@ -610,6 +620,15 @@ const convertPage =
     // before any slot is filled
     const control = streamedAnswer(read, target, pageCache, personalOnly)
     if (control) return control
+    // a digest of next's this md can't read may be a redirect or an error status it can't tell: never a 200 of the shell
+    const unknown = unknownDigest(read.errors)
+    if (unknown)
+      return fail(
+        502,
+        `The page answered in a way this version of @affordances/md can't read\n\nNext.js streamed ${unknown} into it.`,
+        personalOnly,
+      )
+    const errored = read.errors.length > 0
     // append runs alongside the fills; a fill's notFound() may answer for the page first, so its rejection waits to be
     // awaited below rather than going unhandled
     const appended = Promise.resolve(append?.(asked))
@@ -635,7 +654,7 @@ const convertPage =
     const varies = /(^|,)\s*accept-language\s*(,|$)/i.test(upstream.headers.get('vary') ?? '')
     if (shareable && varies) warnLanguage(route!.route)
     const shared =
-      oneView && !personalOnly && !partial && upstream.status === 200
+      oneView && !personalOnly && !partial && !errored && upstream.status === 200
         ? publicHeader(route!.route, route!.module)
         : undefined
     return respond(markdown, upstream.status, {
@@ -646,10 +665,11 @@ const convertPage =
       // a partial page is never cached, so the next request gets the whole one
       ...(shared
         ? { 'cache-control': shared }
-        : personal || partial
+        : personal || partial || errored
           ? { 'cache-control': 'private, no-store' }
           : cacheControl && { 'cache-control': cacheControl }),
       ...(partial && { [PARTIAL_HEADER]: '1' }),
+      ...(errored && { [ERROR_HEADER]: '1' }),
       ...(personalOnly && { [PERSONAL_HEADER]: '1' }),
     })
   }
@@ -680,11 +700,11 @@ const literalPage = async (request: Request, page: string, options: MdHandlerOpt
   const target = pageUrl(request, options, page + new URL(request.url).search)
   if (!target) return fail(400, 'Not a page on this site')
   const passed = await passPage(request, target, options)
-  if (passed?.status === 404) void passed.body?.cancel().catch(() => {})
+  if (passed.status === 404) void passed.body?.cancel().catch(() => {})
   // its Link, which md()'s rules leave off a url ending in .md, since there it would be a twin's too
-  else if (passed?.ok && passed.headers.get('content-type')?.includes('text/html'))
+  else if (passed.ok && passed.headers.get('content-type')?.includes('text/html'))
     passed.headers.append('link', `<${mdPath(page)}>; ${LINK}`)
-  return passed ?? fail(504, `${page} took longer than ${options.timeout ?? TIMEOUT}ms to render`)
+  return passed
 }
 
 // a route's params from its folder names, as next gives them to page.tsx: [x] is a string, [...x] a string[], and
@@ -830,6 +850,22 @@ const streamedAnswer = (page: Page, target: URL, cache: RedirectCache, personal:
   if (page.redirect) return markdownRedirect(page.redirect, target, cache)
   if (page.fallback) return fail(page.fallback.status, HTTP_ERRORS[page.fallback.status]!, personal)
   return undefined
+}
+
+// the kind of a digest of next's (NEXT_…) that fromDigest can't read, from a next newer than this md, or undefined.
+// only its kind, since the rest can hold a url. said once per process, in production too, since that's where a new
+// next first runs
+let unknownTold = false
+const unknownDigest = (digests: string[]) => {
+  const unknown = digests.find((digest) => digest.startsWith('NEXT_') && !fromDigest(digest))
+  if (!unknown) return undefined
+  const kind = unknown.split(';')[0]!
+  if (!unknownTold)
+    console.error(
+      `[affordances-md] a page streamed a Next.js digest @affordances/md doesn't know (${kind}), so its markdown answers 502, private, no-store. Update @affordances/md, or report it if you're on the latest.`,
+    )
+  unknownTold = true
+  return kind
 }
 
 // the Cache-Control a route's publicCache gives, or undefined when it has none or it isn't one, which development
@@ -1039,9 +1075,12 @@ const renderPages = async (
       if (response.headers.has(PERSONAL_HEADER) || response.headers.has('set-cookie'))
         return { path, left: 'rendered with credentials, or it set a cookie', private: true }
       const markdown = await response.text()
-      // converted as far as it streamed: its title still names it, but it isn't the whole page
+      // converted as far as it streamed, or with a boundary that caught an error: its title still names it, but it
+      // isn't the whole page
       if (response.headers.has(PARTIAL_HEADER))
         return { path, markdown, failed: `still loading after ${timeout}ms` }
+      if (response.headers.has(ERROR_HEADER))
+        return { path, markdown, failed: 'a part of it failed to render' }
       return { path, markdown }
     } catch (error) {
       if (overall.signal.aborted) return { path, failed: late }
@@ -1084,12 +1123,13 @@ const DEADLINE = 25_000
 // in development, each page llms couldn't render or left out, and why: an error for a private one, which an app
 // usually means to be public. the count of those that failed, which the file's header carries everywhere, never a
 // list, since the file is public and could name a private page
-const dropped = (file: string, pages: Rendered[], failing: string) => {
+const dropped = (file: string, pages: Rendered[]) => {
   const failed = pages.filter((page) => page.failed)
   if (process.env.NODE_ENV !== 'production') {
     const list = (some: Rendered[], why: 'failed' | 'left') =>
       `${some.length} ${some.length === 1 ? 'page' : 'pages'}: ${some.map((page) => `${page.path} (${page[why]})`).join(', ')}`
-    if (failed.length) console.warn(`[affordances-md] ${file} ${failing} ${list(failed, 'failed')}`)
+    if (failed.length)
+      console.warn(`[affordances-md] ${file} couldn't render ${list(failed, 'failed')}`)
     const left = pages.filter((page) => page.left && !page.private)
     if (left.length) console.warn(`[affordances-md] ${file} left out ${list(left, 'left')}`)
     for (const { path, left: why } of pages.filter((page) => page.private))
@@ -1218,7 +1258,7 @@ export const createLlmsFullHandler = ({ pages, ...given }: LlmsFullOptions = {})
       return page ? fullPage(page, new URL(path, request.url).href, index?.name, shared) : ''
     })
     // a page that failed is missing, so the file isn't whole: never sent as if it were
-    const failed = dropped('llms-full.txt', rendered, "couldn't render")
+    const failed = dropped('llms-full.txt', rendered)
     if (failed) return incomplete('llms-full.txt', failed)
     return text(`${parts.filter(Boolean).join('\n\n')}\n`, options, 0)
   }
@@ -1368,7 +1408,7 @@ export const createLlmsTxtHandler = ({
       )
     // a page that failed to render is still linked, by its path, so every link is there and right, and the file
     // stays cacheable; its header counts them
-    const failed = dropped('llms.txt', pages, 'has no title or description for')
+    const failed = dropped('llms.txt', pages)
     return text(`${[...head, ...body].filter(Boolean).join('\n\n')}\n`, options, failed)
   }
 }

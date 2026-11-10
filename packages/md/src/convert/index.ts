@@ -474,7 +474,7 @@ const FLIGHT = new RegExp(
 // the page and its flight data: each push's argument, in page order. a page parsed as sent reads it from its own
 // script elements instead, since a match there may not have been one
 const PUSH = new RegExp(String.raw`^${CALL}([\s\S]*)\)\s*;?\s*$`)
-const parsed = (html: string): { tree: HastRoot; digests: string[] } => {
+const parsed = (html: string): { tree: HastRoot; errors: string[] } => {
   // a nonce per page, so nothing in it can pass for a swap
   const nonce = crypto.randomUUID()
   const flight: string[] = []
@@ -495,19 +495,14 @@ const parsed = (html: string): { tree: HastRoot; digests: string[] } => {
     }
   }
   streamed.resolve()
-  // a healthy page's flight data names none of next's control flow, so it's read only when it does, or when a push is
-  // base64 bytes ([3, …]) that could
-  const named = flight.some((push) => push.includes('NEXT_') || /^\s*\[\s*3\s*,/.test(push))
-  return {
-    tree,
-    digests: named ? flightErrors(flight) : [],
-  }
+  return { tree, errors: flight.length ? flightErrors(flight) : [] }
 }
 
-// the digests of the error rows (<id>:E{"digest":…}) in a page's flight data, read as react's client reads the stream:
-// next's [1, text] and [3, base64] pushes are its bytes, in order, and each row is an id, a tag, then either a length
-// and that many bytes (a long string, a typed array) or everything to the next newline. a row's bytes are skipped by
-// their length, so a page's own long text (a readme, which react sends raw in a T row) can't pass for a row
+// the digests of the error rows (<id>:E{"digest":…}) in a page's flight data, '' for one without, read as react's
+// client reads the stream: next's [1, text] and [3, base64] pushes are its bytes, in order, and each row is an id, a
+// tag, then either a length and that many bytes (a long string, a typed array) or everything to the next newline. a
+// row's bytes are skipped by their length, so a page's own long text (a readme, which react sends raw in a T row) can't
+// pass for a row
 const LENGTH_TAGS = new Set([...'TAOobUSsLlGgMmV'].map((tag) => tag.charCodeAt(0)))
 const hex = (byte: number) => (byte > 96 ? byte - 87 : byte - 48)
 const flightBytes = (flight: string[]): Uint8Array | undefined => {
@@ -535,9 +530,9 @@ const flightBytes = (flight: string[]): Uint8Array | undefined => {
 }
 const flightErrors = (flight: string[]): string[] => {
   const digests: string[] = []
-  // a push react's client couldn't read either: no rows to trust
+  // a push react's client couldn't read either: an error of its own, since what's in it can't be told
   const bytes = flightBytes(flight)
-  if (!bytes) return digests
+  if (!bytes) return ['']
   let i = 0
   while (i < bytes.length) {
     // the id, to its colon
@@ -561,9 +556,10 @@ const flightErrors = (flight: string[]): string[] => {
         const row = JSON.parse(new TextDecoder().decode(bytes.subarray(start, end))) as {
           digest?: unknown
         }
-        if (typeof row.digest === 'string') digests.push(row.digest)
+        digests.push(typeof row?.digest === 'string' ? row.digest : '')
       } catch {
-        // not an error row react would read either
+        // an error row react couldn't read either: still an error
+        digests.push('')
       }
     }
     i = end + 1
@@ -1638,6 +1634,11 @@ export type Page = {
   slots: SlotNames
   redirect?: Redirect
   fallback?: Fallback
+  // the digest of each error row in the page's flight data ('' for one without, or flight data that can't be read):
+  // a boundary that caught an error (error.tsx), next's control flow, or anything else that kept part of the page out.
+  // never react's <!--$!--> or $RX in the html, which a boundary that renders in the browser by design (dynamic with
+  // ssr: false, useSearchParams) writes too
+  errors: string[]
   markdown: (slots?: Record<string, string>) => Result
 }
 // the <AgentSlot> names that reach the markdown, in page order: the ones a fill can go to, and those the page renders
@@ -1647,10 +1648,10 @@ export type Redirect = { status: 307 | 308; location: string }
 export type Fallback = { status: 401 | 403 | 404 }
 
 export const readPage = (html: string, options: Options = {}): Page => {
-  const { tree, digests } = parsed(html)
+  const { tree, errors } = parsed(html)
   const meta = head(tree, options.url)
   // a redirect() or notFound() next streamed into the page: the first error row that's one of next's control flow
-  const control = digests.map(fromDigest).find((said) => said !== undefined)
+  const control = errors.map(fromDigest).find((said) => said !== undefined)
   const content = contentOf(tree, options.extract)
   // a name rendered twice fills neither copy: one of them may be a forgery in user content, and there's no telling which
   const markers = slotMarkers(content)
@@ -1669,6 +1670,7 @@ export const readPage = (html: string, options: Options = {}): Page => {
       unique: names.flatMap(([name, count]) => (count === 1 ? [name] : [])),
       duplicate: names.flatMap(([name, count]) => (count > 1 ? [name] : [])),
     },
+    errors,
     ...(control &&
       ('location' in control
         ? (control.status === 307 || control.status === 308) && {

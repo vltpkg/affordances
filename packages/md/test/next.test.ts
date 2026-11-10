@@ -223,6 +223,46 @@ test('loop guard, size limit, timeout', async () => {
   ).toBe(504)
 })
 
+test("a page the handler can't reach answers 502, naming no origin in production; one that's slow is still 504", async () => {
+  // a real fetch, to a port nothing listens on
+  vi.unstubAllGlobals()
+  const { createServer } = await import('node:net')
+  const port = await new Promise<number>((resolve) => {
+    const server = createServer().listen(0, () => {
+      const { port: free } = server.address() as { port: number }
+      server.close(() => resolve(free))
+    })
+  })
+  vi.stubEnv('AFFORDANCES_MD_ORIGIN', `http://127.0.0.1:${port}`)
+  vi.stubEnv('NODE_ENV', 'production')
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  for (const path of ['/a.md', '/a']) {
+    const response = await createMdHandler()(
+      new Request(
+        `${site}${path}`,
+        path === '/a' ? { headers: { accept: 'text/markdown', rsc: '1' } } : {},
+      ),
+    )
+    const body = await response.text()
+    expect([path, response.status, response.headers.get('cache-control')]).toEqual([
+      path,
+      502,
+      'private, no-store',
+    ])
+    expect(body).toBe("# Couldn't reach the page to convert it\n\n/a\n")
+  }
+  expect(warn).not.toHaveBeenCalled()
+  // in development, the cause and the origin, in the body and the server's log
+  vi.stubEnv('NODE_ENV', 'development')
+  const dev = await (await createMdHandler()(new Request(`${site}/a.md`))).text()
+  expect(dev).toContain(`/a (http://127.0.0.1:${port}: TypeError: fetch failed)`)
+  expect(String(warn.mock.calls[0]?.[0])).toContain(
+    `couldn't reach http://127.0.0.1:${port}/a to convert it`,
+  )
+  warn.mockRestore()
+  vi.unstubAllEnvs()
+})
+
 // a page that streams its shell, then never finishes: one boundary resolved, one still on its fallback
 const stalls = (chunks: string[]) => () => {
   const encoder = new TextEncoder()
@@ -2796,6 +2836,7 @@ const failing: Record<string, (signal: AbortSignal) => Response | Promise<Respon
   '/broken': () => new Response('', { status: 500 }),
   '/busy': () => new Response('', { status: 429 }),
   '/partial': () => mdPage('Partial', '# Partial\n\nHalf.', { 'x-affordances-md-partial': '1' }),
+  '/errored': () => mdPage('Errored', '# Errored\n\nLoading…', { 'x-affordances-md-error': '1' }),
   '/refused': () => Promise.reject(new TypeError('fetch failed')),
 }
 
@@ -2822,6 +2863,7 @@ test('llms-full with a page that failed is a 503 no cache keeps, with the count 
     "[affordances-md] llms-full.txt couldn't render 1 page: /broken (answered 500)",
     "[affordances-md] llms-full.txt couldn't render 1 page: /busy (answered 429)",
     "[affordances-md] llms-full.txt couldn't render 1 page: /partial (still loading after 20ms)",
+    "[affordances-md] llms-full.txt couldn't render 1 page: /errored (a part of it failed to render)",
     "[affordances-md] llms-full.txt couldn't render 1 page: /refused (failed: TypeError: fetch failed)",
   ])
   // with a page left out by design as well, only the failed one counts
@@ -2902,12 +2944,13 @@ test('llms.txt with a page that failed links it by its path, stays cacheable, an
     `- [/broken](${site}/broken.md)`,
     `- [/busy](${site}/busy.md)`,
     `- [Partial](${site}/partial.md)`,
+    `- [Errored](${site}/errored.md)`,
     `- [/refused](${site}/refused.md)`,
   ])
   expect(index.headers.get('cache-control')).toBe('public, max-age=0, s-maxage=3600')
-  expect(index.headers.get('x-affordances-md-dropped')).toBe('5')
+  expect(index.headers.get('x-affordances-md-dropped')).toBe('6')
   expect(String(warn.mock.calls[0]?.[0])).toMatch(
-    /^\[affordances-md\] llms\.txt has no title or description for 5 pages: \/slow/,
+    /^\[affordances-md\] llms\.txt couldn't render 6 pages: \/slow/,
   )
   warn.mockRestore()
 })

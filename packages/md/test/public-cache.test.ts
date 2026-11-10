@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module'
+import { readFileSync } from 'node:fs'
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { CACHE_LIFE_ENV, cacheControlFor, PROFILES } from '../src/next/cache.ts'
@@ -429,4 +430,109 @@ test("the one public view carries none of the visitor's headers: no user agent o
   )
   expect(await signedIn.text()).toContain('ua=agent/1 country=FR')
   expect(signedIn.headers.get('cache-control')).toBe('private, no-store')
+})
+
+// a page whose boundary caught an error (error.tsx), as next start sent it: 200, with the error as a flight error row
+// whose digest is a number, and the boundary's fallback in the html
+const errored = (version: string) =>
+  readFileSync(
+    new URL(`./fixtures/streamed-error-boundary-next${version}.html`, import.meta.url),
+    'utf8',
+  )
+const flight = (text: string) => `<script>self.__next_f.push(${JSON.stringify([1, text])})</script>`
+
+test('a page with a flight error row is never public, on an opted-in route or off one, and says so', async () => {
+  for (const version of ['16.3', '16.4'])
+    for (const opted of [true, false]) {
+      route('converted', opted ? 'hours' : undefined)
+      // next's own cache-control, as a static page has it, isn't passed on either
+      upstream = () =>
+        new Response(errored(version), {
+          headers: { 'content-type': 'text/html', 'cache-control': 's-maxage=31536000' },
+        })
+      const response = await createMdHandler()(new Request(`${site}/x/express.md`))
+      expect([version, opted, response.status, response.headers.get('cache-control')]).toEqual([
+        version,
+        opted,
+        200,
+        'private, no-store',
+      ])
+      expect(response.headers.get('x-affordances-md-error')).toBe('1')
+    }
+  // a page without one, opted in, is still public
+  route('converted', 'hours')
+  upstream = () =>
+    new Response(page('<h1>express</h1>'), { headers: { 'content-type': 'text/html' } })
+  const fine = await createMdHandler()(new Request(`${site}/x/express.md`))
+  expect(fine.headers.get('cache-control')).toBe('s-maxage=3600, stale-while-revalidate=82800')
+  expect(fine.headers.has('x-affordances-md-error')).toBe(false)
+})
+
+test("any error row counts, whatever it holds; a next digest md can't read is said once per process", async () => {
+  route('converted', 'hours')
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  vi.stubEnv('NODE_ENV', 'production')
+  const rows = [
+    '5:E{"digest":"1234567"}\n',
+    '5:E{"message":"no digest in development"}\n',
+    '5:E{not json\n',
+    '5:E{"digest":"NEXT_HTTP_ERROR_FALLBACK;418"}\n',
+    '5:E{"digest":"NEXT_SOMETHING_NEW;x"}\n',
+  ]
+  for (const row of rows) {
+    upstream = () =>
+      new Response(page('<h1>express</h1>') + flight(row), {
+        headers: { 'content-type': 'text/html' },
+      })
+    const response = await createMdHandler()(new Request(`${site}/x/express.md`))
+    // a next digest md can't read may be a redirect or a status it can't tell: never a 200 of the shell
+    const status = row.includes('NEXT_') ? 502 : 200
+    // and its body is md's own, never the shell's markdown
+    const shell = (await response.text()).includes('express')
+    expect([row, response.status, response.headers.get('cache-control'), shell]).toEqual([
+      row,
+      status,
+      'private, no-store',
+      status === 200,
+    ])
+  }
+  // flight data react couldn't read is an error too
+  upstream = () =>
+    new Response(
+      `${page('<h1>express</h1>')}<script>self.__next_f.push([1,"x"]</script><script>self.__next_f.push(nope)</script>`,
+      {
+        headers: { 'content-type': 'text/html' },
+      },
+    )
+  expect(
+    (await createMdHandler()(new Request(`${site}/x/express.md`))).headers.get('cache-control'),
+  ).toBe('private, no-store')
+  // once, naming only the digest's kind: the rest can hold a url
+  expect(error.mock.calls.map(([message]) => message)).toEqual([
+    "[affordances-md] a page streamed a Next.js digest @affordances/md doesn't know (NEXT_HTTP_ERROR_FALLBACK), so its markdown answers 502, private, no-store. Update @affordances/md, or report it if you're on the latest.",
+  ])
+  error.mockRestore()
+})
+
+// a boundary that renders in the browser by design, as next start sent it on 16.3 and 16.4: dynamic() with ssr: false,
+// or useSearchParams() in a static page's <Suspense>. react writes <!--$!--> and a template (data-dgst
+// BAILOUT_TO_CLIENT_SIDE_RENDERING on 16.3, empty on 16.4, as a real error's stripped digest is), or $RX in a dynamic
+// render, and no flight error row, since a client component never runs in flight
+test("a boundary that renders in the browser by design isn't an error: an opted-in twin stays public", async () => {
+  route('converted', 'hours')
+  for (const marker of [
+    '<!--$!--><template data-dgst="BAILOUT_TO_CLIENT_SIDE_RENDERING"></template><p>Loading…</p><!--/$-->',
+    '<!--$!--><template data-dgst=""></template><p>Loading…</p><!--/$-->',
+    '<!--$?--><template id="B:0"></template><p>Loading…</p><!--/$--><script>$RX("B:0","BAILOUT_TO_CLIENT_SIDE_RENDERING")</script>',
+  ]) {
+    upstream = () =>
+      new Response(page(`<h1>express</h1>${marker}`), { headers: { 'content-type': 'text/html' } })
+    const response = await createMdHandler()(new Request(`${site}/x/express.md`))
+    expect([
+      marker,
+      response.status,
+      response.headers.get('cache-control'),
+      response.headers.has('x-affordances-md-error'),
+    ]).toEqual([marker, 200, 's-maxage=3600, stale-while-revalidate=82800', false])
+  }
 })
