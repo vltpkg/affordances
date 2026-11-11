@@ -1,276 +1,280 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react'
 import { cn } from 'cn'
+import { Pulse } from '@/components/marketing/connectors'
 
-// three example pages, each as a person sees it and as its graph; the graph's lines are the protocol's
-// shape (entities, an actions array of descriptors, nav links), simplified to fit the stage
+// one page, two readers, drawn: the page a person sees floats on the left, and what an agent reads
+// draws itself beside it, each of its lines tethered to the part of the page it describes. it plays on
+// its own: the person clicks, the agent reads the graph and acts, the same page turns to markdown on the
+// same tethers, then the next page
+
+// the parts of a page the graph reads, top to bottom. the image is read by neither graph nor markdown
+const PARTS = ['count', 'name', 'value', 'pills', 'btn'] as const
+type Part = (typeof PARTS)[number]
+type Lines = Record<Part | 'img', string[]>
+
 type Scenario = {
-  label: string
   head: string
-  path: string
   meta: string
   name: string
   value: string
-  optLabel: string
   pills: [string, string]
-  pillW: number
-  outLabel: string
   btn: string
   msg: string
   icon: 'bag' | 'mail' | 'cal'
   key: string
   action: string
-  marker: string
-  // what the illustration shows, for screen readers
-  art: string
-  lines: (n: number) => string[]
+  base: number
+  // the page as its graph, and as its markdown (@affordances/md)
+  json: (n: number) => Lines
+  md: (n: number) => Lines
 }
 
-const actions = (name: string, input: string, guard: string, nav: string) => [
-  '  "actions": [',
-  `    { "name": "${name}", "expose": "session",`,
-  `      "input": ${input},`,
-  `      "guard": "${guard}",`,
-  '      "available": true }',
-  '  ],',
-  `  "nav": ${nav}`,
-  '}',
-]
+const PIXELS = ['// pixels, not read']
 
-const SC: Record<'store' | 'saas' | 'booking', Scenario> = {
+const SC = {
   store: {
-    label: 'Store',
     head: 'Acme Store',
-    path: '/products/court-runner-2',
-    meta: 'White / Gum',
-    name: 'Court Runner 2',
+    meta: 'Over-ear · Black',
+    name: 'Cove Headphones',
     value: '$160.00',
-    optLabel: 'Size',
-    pills: ['10', '11'],
-    pillW: 44,
-    outLabel: 'Size 11, sold out',
+    pills: ['Black', 'Sand'],
     btn: 'Add to cart',
-    msg: 'Added Court Runner 2 (10) to your cart',
+    msg: 'Added Cove Headphones (Black) to your cart',
     icon: 'bag',
     key: 'cart.count',
     action: 'addToCart',
-    marker: '16000',
-    art: 'Court Runner 2 sneaker in white with a gum sole, side view',
-    lines: (n) => [
-      '{',
-      '  "entities": {',
-      '    "product": {',
-      '      "name": "Court Runner 2",',
-      '      "price": { "amount": 16000, "currency": "USD" },',
-      '      "sizes": { "10": "in_stock", "11": "sold_out" }',
-      '    },',
-      `    "cart": { "count": ${n} }`,
-      '  },',
-      ...actions(
-        'addToCart',
-        '{ "sku": "string", "size": "number" }',
-        'size must be in stock',
-        '[{ "to": "/cart" }, { "to": "/checkout" }]',
-      ),
-    ],
+    base: 2,
+    json: (n) => ({
+      count: [`"cart": { "count": ${n} }`],
+      img: PIXELS,
+      name: ['"name": "Cove Headphones"'],
+      value: ['"price": { "amount": 16000 }'],
+      pills: ['"colors": {', '  "black": "in_stock", "sand": "sold_out" }'],
+      btn: [
+        '"action": "addToCart",',
+        '"input": { "sku", "color" },',
+        '"guard": "color must be in stock",',
+        '"available": true',
+      ],
+    }),
+    md: (n) => ({
+      count: [`[Cart (${n})](/cart)`],
+      img: ['![Cove Headphones](/cove.png)'],
+      name: ['# Cove Headphones'],
+      value: ['**$160.00** · Over-ear, Black'],
+      pills: ['Color: **Black** · ~~Sand~~ sold out'],
+      btn: ['[Add to cart](#addToCart)', '`addToCart(sku, color)`', 'color must be in stock'],
+    }),
   },
   saas: {
-    label: 'SaaS',
     head: 'Acme / Settings',
-    path: '/acme/settings/team',
     meta: 'Pro plan · 4 of 5 seats used',
     name: 'Acme',
     value: '$20 / seat',
-    optLabel: 'Role',
     pills: ['Member', 'Admin'],
-    pillW: 88,
-    outLabel: 'Admin, owners only',
     btn: 'Send invite to sam@acme.dev',
     msg: 'Invite sent to sam@acme.dev as Member',
     icon: 'mail',
     key: 'invites.pending',
     action: 'inviteMember',
-    marker: '2000',
-    art: 'Team seats: four members and one pending invite',
-    lines: (n) => [
-      '{',
-      '  "entities": {',
-      '    "team": {',
-      '      "name": "Acme",',
-      '      "plan": { "name": "Pro", "seat": 2000, "seats": 4 },',
-      '      "roles": { "member": "allowed", "admin": "owner_only" }',
-      '    },',
-      `    "invites": { "pending": ${n} }`,
-      '  },',
-      ...actions(
-        'inviteMember',
-        '{ "email": "string", "role": "string" }',
-        'only owners can invite admins',
-        '[{ "to": "/acme/members" }]',
-      ),
-    ],
+    base: 1,
+    json: (n) => ({
+      count: [`"invites": { "pending": ${n} }`],
+      img: PIXELS,
+      name: ['"team": "Acme"'],
+      value: ['"plan": { "name": "Pro", "seat": 2000 }'],
+      pills: ['"roles": {', '  "member": "open", "admin": "owners" }'],
+      btn: [
+        '"action": "inviteMember",',
+        '"input": { "email", "role" },',
+        '"guard": "owners invite admins",',
+        '"available": true',
+      ],
+    }),
+    md: (n) => ({
+      count: [`[Invites (${n} pending)](/acme/members)`],
+      img: ['![Team seats](/acme/seats.png)'],
+      name: ['# Acme'],
+      value: ['**Pro** · $20 / seat · 4 of 5 seats'],
+      pills: ['Role: **Member** · ~~Admin~~ owners'],
+      btn: ['[Send invite](#inviteMember)', '`inviteMember(email, role)`', 'owners invite admins'],
+    }),
   },
   booking: {
-    label: 'Booking',
     head: 'Lune',
-    path: '/lune/reserve',
     meta: 'Fri 14 Nov · Table 4, by the window',
     name: 'Lune',
     value: 'Fri 20:00',
-    optLabel: 'Party',
     pills: ['2 guests', '6 guests'],
-    pillW: 96,
-    outLabel: '6 guests, waitlist only',
     btn: 'Reserve table',
     msg: 'Reserved Lune for 2, Fri 14 Nov at 20:00',
     icon: 'cal',
     key: 'reservations.count',
     action: 'reserveTable',
-    marker: '"2026',
-    art: 'Floor plan with table 4 by the window highlighted',
-    lines: (n) => [
-      '{',
-      '  "entities": {',
-      '    "restaurant": {',
-      '      "name": "Lune",',
-      '      "slot": { "date": "2026-11-14", "time": "20:00" },',
-      '      "party": { "2": "available", "6": "waitlist" }',
-      '    },',
-      `    "reservations": { "count": ${n} }`,
-      '  },',
-      ...actions(
-        'reserveTable',
-        '{ "time": "string", "party": "number" }',
+    base: 0,
+    json: (n) => ({
+      count: [`"reservations": { "count": ${n} }`],
+      img: PIXELS,
+      name: ['"name": "Lune"'],
+      value: ['"slot": "2026-11-14T20:00"'],
+      pills: ['"party": {', '  "2": "available", "6": "waitlist" }'],
+      btn: [
+        '"action": "reserveTable",',
+        '"input": { "time", "party" },',
+        '"guard": "party needs a free table",',
+        '"available": true',
+      ],
+    }),
+    md: (n) => ({
+      count: [`[Reservations (${n})](/reservations)`],
+      img: ['![Floor plan](/lune/floor.png)'],
+      name: ['# Lune'],
+      value: ['**Fri 14 Nov, 20:00** · Table 4'],
+      pills: ['**2 guests** · ~~6 guests~~ waitlist'],
+      btn: [
+        '[Reserve table](#reserveTable)',
+        '`reserveTable(time, party)`',
         'party needs a free table',
-        '[{ "to": "/reservations" }]',
-      ),
-    ],
+      ],
+    }),
   },
-}
+} satisfies Record<string, Scenario>
 const ORDER = ['store', 'saas', 'booking'] as const
 type Id = (typeof ORDER)[number]
-// the width of one character of the graph's mono type, for lining the page's parts up with its lines
-const CW = 7.5
 
-// a json line, split into keys, strings, literals, and punctuation
-const jtok = (line: string) => {
-  const parts: { t: string; c: string }[] = []
-  const re = /"[^"]*"|\b(?:true|false|null)\b|\b\d+\b/g
-  let last = 0
-  for (let m = re.exec(line); m; m = re.exec(line)) {
-    if (m.index > last) parts.push({ t: line.slice(last, m.index), c: 'gp' })
-    const c = m[0].startsWith('"') ? (/^\s*:/.test(line.slice(re.lastIndex)) ? 'gk' : 'gs') : 'gn'
-    parts.push({ t: m[0], c })
-    last = re.lastIndex
-  }
-  if (last < line.length) parts.push({ t: line.slice(last), c: 'gp' })
-  return parts
+// the board: the page's card on the left, the agent's column on the right
+const W = 570
+const H = 466
+const CARD = { y: 52, w: 250, h: 366 }
+const COL = 300
+const LINE = 18
+// where each part sits on the page (the y its tether leaves from) and where its lines sit in the column
+const AT: Record<Part | 'img', { y: number; top: number }> = {
+  count: { y: 72, top: 63 },
+  img: { y: 152, top: 143 },
+  name: { y: 241, top: 232 },
+  value: { y: 266, top: 257 },
+  pills: { y: 301, top: 292 },
+  btn: { y: 354, top: 345 },
+}
+// a tether from the page to the line that reads it; `back` runs it the other way, for the agent's call
+const tether = (p: Part | 'img', back = false) => {
+  const a: [number, number] = [CARD.w, AT[p].y]
+  const b: [number, number] = [COL - 8, AT[p].top + LINE / 2]
+  const [[x1, y1], [x2, y2]] = back ? [b, a] : [a, b]
+  const c = back ? -24 : 24
+  return `M${x1},${y1} C${x1 + c},${y1} ${x2 - c},${y2} ${x2},${y2}`
 }
 
-// the illustrations are described in text for screen readers; the drawings themselves are decoration
-const Bag = () => (
+// the beats: the person arrives and clicks, the agent reads the graph and acts, the page turns to
+// markdown, then the column retracts and the next page arrives
+type Phase = 'in' | 'human' | 'click' | 'read' | 'act' | 'md' | 'out'
+const PHASES: Phase[] = ['in', 'human', 'click', 'read', 'act', 'md', 'out']
+const BEATS: Record<Phase, number> = {
+  in: 700,
+  human: 900,
+  click: 1300,
+  read: 2800,
+  act: 2400,
+  md: 2800,
+  out: 550,
+}
+
+// a line split into what to light (strings and numbers in json; marks, links and code in markdown) and
+// the rest
+const tokens = (line: string, re: RegExp, lit: string, rest: string) => {
+  const parts: { t: string; c: string }[] = []
+  let last = 0
+  for (let m = re.exec(line); m; m = re.exec(line)) {
+    if (m.index > last) parts.push({ t: line.slice(last, m.index), c: rest })
+    const key = m[0].startsWith('"') && /^\s*:/.test(line.slice(re.lastIndex))
+    parts.push({ t: m[0], c: key ? 'gk' : lit })
+    last = re.lastIndex
+  }
+  if (last < line.length) parts.push({ t: line.slice(last), c: rest })
+  return parts
+}
+const jtok = (line: string) => tokens(line, /"[^"]*"|\b(?:true|false|null)\b|\b\d+\b/g, 'gs', 'gp')
+const mtok = (line: string) =>
+  tokens(line, /\*\*[^*]+\*\*|~~[^~]+~~|!?\[[^\]]+\]\([^)]+\)|`[^`]+`|^#+ .*/g, 'gs', 'gk')
+
+// a picture that is only a picture
+const Placeholder = () => (
   <svg
-    width="300"
-    height="150"
-    viewBox="0 0 240 120"
+    width="26"
+    height="26"
+    viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    strokeWidth="1.2"
-    strokeLinejoin="round"
+    strokeWidth="1.4"
     strokeLinecap="round"
-    aria-hidden
+    strokeLinejoin="round"
+    className="text-(--fg3)"
   >
-    <path d="M14 100h208c6 0 9-3 9-7v-3H12v4c0 4 1 6 2 6z" style={{ fill: 'var(--line2)' }} />
-    <path d="M12 90c-1-5 0-9 4-12h208c4 2 7 6 7 12z" style={{ fill: 'var(--bg)' }} />
-    <path
-      d="M30 94v4M46 94v4M62 94v4M78 94v4M94 94v4M110 94v4M126 94v4M142 94v4M158 94v4M174 94v4M190 94v4M206 94v4"
-      strokeWidth=".8"
-      style={{ stroke: 'var(--fg3)' }}
-    />
-    <path
-      d="M16 78c-4-12-3-26 6-34 7-6 17-7 25-4 8 2 15 0 21-6l16-13c4-3 10-4 14-1l12 7c7 5 14 14 26 22 13 8 34 12 58 16 17 3 27 7 30 13z"
-      style={{ fill: 'var(--bg)' }}
-    />
-    <path d="M16 78c-4-12-3-26 6-34 6-5 14-6 21-5-4 12-5 26-1 39z" style={{ fill: 'var(--bg3)' }} />
-    <path d="M22 44l-4-10c-1-4 2-6 6-4l10 9" />
-    <path d="M172 63c26 3 44 7 52 15h-54c-3-5-2-11 2-15z" style={{ fill: 'var(--bg3)' }} />
-    <path d="M84 21c-2-6 2-12 9-12l10 2c4 2 5 8 1 12" />
-    <path d="M68 34c10 11 26 20 48 24" />
-    <path d="M84 21c10 12 24 22 44 27" />
-    <path d="M76 30l12-4M84 37l13-5M93 43l14-5M103 49l14-4" strokeWidth="1.4" />
-    {[
-      [76, 30],
-      [84, 37],
-      [93, 43],
-      [103, 49],
-    ].map(([cx, cy]) => (
-      <circle key={cx} cx={cx} cy={cy} r="1.4" style={{ fill: 'currentColor' }} />
-    ))}
-    <path d="M46 68c32-8 76-8 120 2" strokeDasharray="2 3" strokeWidth=".8" />
-    <path d="M50 60c22-12 52-14 80-6" strokeWidth=".9" style={{ stroke: 'var(--fg3)' }} />
+    <rect x="3" y="4" width="18" height="16" rx="2.5" />
+    <circle cx="9" cy="10" r="1.6" />
+    <path d="M21 16l-4.5-4.5L8 20" />
   </svg>
 )
 
 const Seats = () => (
-  <div className="flex flex-col items-center gap-3.5" aria-hidden>
-    <div className="flex gap-2.5">
+  <div className="flex flex-col items-center gap-2.5">
+    <div className="flex gap-2">
       {['AK', 'JL', 'MS', 'RT'].map((s) => (
         <span
           key={s}
-          className="flex size-[46px] items-center justify-center rounded-full border border-(--line2) bg-(--bg3) text-[13px] font-medium text-(--fg2)"
+          className="flex size-8 items-center justify-center rounded-full border border-(--line2) bg-(--bg3) text-[10px] font-medium text-(--fg2)"
         >
           {s}
         </span>
       ))}
-      <span className="flex size-[46px] items-center justify-center rounded-full border border-dashed border-(--fg) text-[13px] font-medium">
+      <span className="flex size-8 items-center justify-center rounded-full border border-dashed border-(--fg) text-[11px] font-medium">
         +
       </span>
     </div>
-    <div className="font-mono text-xs text-(--fg3)">sam@acme.dev · pending</div>
+    <div className="font-mono text-[10px] text-(--fg3)">sam@acme.dev · pending</div>
   </div>
 )
 
+// the floor: three round tables with their chairs, the window along the right wall, and table 4, a
+// two-top beside it, taken
+const Table = ({ x, y, seats, on }: { x: number; y: number; seats: 2 | 4; on?: boolean }) => {
+  const chairs =
+    seats === 4
+      ? [
+          [0, -22],
+          [0, 22],
+          [-22, 0],
+          [22, 0],
+        ]
+      : [
+          [0, -22],
+          [0, 22],
+        ]
+  const fill = on ? 'currentColor' : 'var(--bg3)'
+  const stroke = on ? 'currentColor' : 'var(--line2)'
+  return (
+    <g style={{ fill, stroke }}>
+      {chairs.map(([dx, dy]) => (
+        <circle key={`${dx}${dy}`} cx={x + dx!} cy={y + dy!} r="4" />
+      ))}
+      <circle cx={x} cy={y} r="13" />
+    </g>
+  )
+}
 const Floor = () => (
-  <svg
-    width="320"
-    height="140"
-    viewBox="0 0 300 130"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.1"
-    aria-hidden
-  >
-    <rect x="4" y="4" width="292" height="122" rx="6" style={{ stroke: 'var(--line2)' }} />
-    <path d="M40 4h220" strokeWidth="3" />
-    {[70, 130, 190].map((cx) => (
-      <circle
-        key={cx}
-        cx={cx}
-        cy="42"
-        r="13"
-        style={{ fill: 'var(--bg3)', stroke: 'var(--line2)' }}
-      />
-    ))}
-    <circle cx="245" cy="42" r="13" style={{ fill: 'currentColor' }} />
-    <circle cx="245" cy="22" r="3.5" />
-    <circle cx="245" cy="62" r="3.5" />
-    {[44, 116, 188].map((x) => (
-      <rect
-        key={x}
-        x={x}
-        y="84"
-        width="46"
-        height="24"
-        rx="3"
-        style={{ fill: 'var(--bg3)', stroke: 'var(--line2)' }}
-      />
-    ))}
-    <path d="M262 126v-22h30" style={{ stroke: 'var(--line2)' }} />
+  <svg viewBox="0 0 300 120" className="h-auto w-full" fill="none" strokeWidth="1.2">
+    <path d="M276 14v92" strokeWidth="1" style={{ stroke: 'var(--line2)' }} />
+    <path d="M282 14v92" strokeWidth="3" style={{ stroke: 'var(--line2)' }} />
+    <Table x={58} y={56} seats={4} />
+    <Table x={142} y={56} seats={4} />
+    <Table x={226} y={56} seats={2} on />
     <text
-      x="222"
-      y="80"
-      stroke="none"
+      x="226"
+      y="104"
+      textAnchor="middle"
       style={{ fill: 'currentColor', font: '500 10px var(--font-mono)' }}
     >
       T4 · 2
@@ -278,6 +282,7 @@ const Floor = () => (
   </svg>
 )
 
+const art = { bag: <Placeholder />, mail: <Seats />, cal: <Floor /> }
 const icons = {
   bag: <path d="M6 7h12l-1 13H7L6 7zM9 7a3 3 0 0 1 6 0" />,
   mail: (
@@ -288,305 +293,216 @@ const icons = {
   ),
 }
 
-const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches
-const box = (b: { t: number; l: number; w: number; h: number }) => ({
-  top: b.t,
-  left: b.l,
-  width: b.w,
-  height: b.h,
-})
-// a line of text that travels by transform, from where the page sets it (right-aligned when `r`) to the
-// graph line that carries its value
-type At = { t: number; l: number; f: number; r?: boolean }
-const ghost = (human: At, graph: At, agent: boolean) => {
-  const at = agent ? graph : human
-  const x = !agent && human.r ? -100 : 0
-  return {
-    fontSize: human.f,
-    transform: `translate(${at.l}px, ${at.t}px) translateX(${x}%) scale(${at.f / human.f})`,
-  }
-}
-// the graph's first line, under the url bar; each line is 20px
-const line = (i: number) => 60 + i * 20
+const mq = () => matchMedia('(prefers-reduced-motion: reduce)')
+const useReduced = () =>
+  useSyncExternalStore(
+    (cb) => {
+      const m = mq()
+      m.addEventListener('change', cb)
+      return () => m.removeEventListener('change', cb)
+    },
+    () => mq().matches,
+    () => false,
+  )
 
-// one url, two readers: switch the stage between the page a person sees and the graph an agent reads, and
-// watch the page's parts move to where the graph says them
+const mono = 'absolute font-mono text-[11px] leading-[18px] whitespace-pre'
+// a group's stagger: in on the way down, out on the way back up
+const delays = (i: number, j = 0) =>
+  ({ '--d': `${200 + i * 220 + j * 60}ms`, '--o': `${(5 - i) * 60}ms` }) as React.CSSProperties
+
 export const HeroStage = () => {
   const [sc, setSc] = useState<Id>('store')
-  // the tab selects at once; the stage swaps scenario behind a short fade
-  const [tab, setTab] = useState<Id>('store')
-  const [fading, setFading] = useState(false)
-  const [agent, setAgent] = useState(false)
-  const [counts, setCounts] = useState<Record<Id, number>>({ store: 2, saas: 1, booking: 0 })
-  const [added, setAdded] = useState<Partial<Record<Id, boolean>>>({})
-  const [delta, setDelta] = useState('')
-  const [flash, setFlash] = useState(false)
-  const timers = useRef<ReturnType<typeof setTimeout>[]>([])
-  useEffect(() => () => timers.current.forEach(clearTimeout), [])
-  const later = (fn: () => void, ms: number) => timers.current.push(setTimeout(fn, ms))
-  const tabs = useRef<HTMLDivElement>(null)
+  const [phase, setPhase] = useState<Phase>('in')
+  const [seen, setSeen] = useState(false)
+  const root = useRef<HTMLDivElement>(null)
+  const reduced = useReduced()
 
-  const S = SC[sc]
-  const n = counts[sc]
-  const lines = S.lines(n)
-  const P = <T,>(human: T, graph: T) => (agent ? graph : human)
+  // plays only while on screen
+  useEffect(() => {
+    const io = new IntersectionObserver(([e]) => setSeen(e!.isIntersecting), { threshold: 0.4 })
+    io.observe(root.current!)
+    return () => io.disconnect()
+  }, [])
+  const step = useEffectEvent(() => {
+    if (phase === 'out') setSc(ORDER[(ORDER.indexOf(sc) + 1) % ORDER.length]!)
+    setPhase(PHASES[(PHASES.indexOf(phase) + 1) % PHASES.length]!)
+  })
+  useEffect(() => {
+    if (!seen || reduced) return
+    const t = setTimeout(step, BEATS[phase])
+    return () => clearTimeout(t)
+  }, [seen, reduced, phase])
 
-  // where each moving part sits: on the page, or over the graph line that carries its value
-  const l5 = lines[5]!
-  const s1 = l5.indexOf('{ "') + 2
-  const mid = l5.indexOf(', "', s1)
-  const s2 = mid + 2
-  const e2 = l5.lastIndexOf(' }')
-  const col = (c: number) => 20 + c * CW
-  const pw = S.pillW
-  const ms = {
-    img: P({ t: 100, l: 20, w: 480, h: 160 }, { t: line(2) - 2, l: 10, w: 500, h: 104 }),
-    p1: P(
-      { t: 356, l: 20, w: pw, h: 40 },
-      { t: line(5) - 1, l: col(s1) - 4, w: (mid - s1) * CW + 8, h: 22 },
-    ),
-    p2: P(
-      { t: 356, l: 28 + pw, w: pw, h: 40 },
-      { t: line(5) - 1, l: col(s2) - 4, w: (e2 - s2) * CW + 8, h: 22 },
-    ),
-    btn: P({ t: 410, l: 20, w: 480, h: 44 }, { t: line(10) - 2, l: 10, w: 500, h: 104 }),
-  }
-  const gl = 12.5
-  const name = ghost(
-    { t: 290, l: 20, f: 20 },
-    { t: line(3), l: col(lines[3]!.indexOf(': "') + 2), f: gl },
-    agent,
-  )
-  const val = ghost(
-    { t: 294, l: 500, f: 17, r: true },
-    { t: line(4), l: col(lines[4]!.indexOf(S.marker)), f: gl },
-    agent,
-  )
-  const count = ghost(
-    { t: 53, l: 480, f: 13 },
-    { t: line(7), l: col(lines[7]!.lastIndexOf(String(n))), f: gl },
-    agent,
-  )
-
-  const bump = (fromAgent: boolean) => {
-    const next = n + 1
-    setCounts({ ...counts, [sc]: next })
-    setAdded({ ...added, [sc]: true })
-    if (fromAgent) {
-      setFlash(true)
-      setDelta(`← 200 · changed: ${S.key} → ${next}`)
-      later(() => setFlash(false), 900)
-    }
-  }
-
-  // a new scenario starts on the page a person sees
-  const pick = (id: Id) => {
-    if (id === tab) return
-    setTab(id)
-    setAgent(false)
-    if (reduced()) {
-      setSc(id)
-      setDelta('')
-      return
-    }
-    setFading(true)
-    later(() => {
-      setSc(id)
-      setFading(false)
-      setDelta('')
-    }, 150)
-  }
-
-  // tabs move with the arrow keys, and focus follows the selection
-  const onTabKey = (e: React.KeyboardEvent) => {
-    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
-    if (!step) return
-    e.preventDefault()
-    const id = ORDER[(ORDER.indexOf(tab) + step + ORDER.length) % ORDER.length]!
-    pick(id)
-    tabs.current?.querySelector<HTMLElement>(`[data-tab="${id}"]`)?.focus()
-  }
-
-  const seg =
-    'seg-b relative z-[1] h-9 w-[104px] rounded-full text-sm font-medium transition-colors duration-150'
+  // under reduced motion the page sits fully read, nothing moves
+  const p: Phase = reduced ? 'act' : phase
+  const past = (x: Phase) => PHASES.indexOf(p) >= PHASES.indexOf(x)
+  const S: Scenario = SC[sc]
+  const clicked = past('click')
+  const read = past('read') && p !== 'out'
+  const acted = past('act')
+  // the markdown stays through the exit, so its lines fade with the column
+  const md = p === 'md' || p === 'out'
+  const n = S.base + (clicked ? 1 : 0) + (acted ? 1 : 0)
+  const G = md ? S.md(n) : S.json(n)
+  const tok = md ? mtok : jtok
 
   return (
-    <div className="flex min-w-0 flex-[0_1_520px] flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-        <fieldset className="relative m-0 inline-flex min-w-0 rounded-full border border-(--line2) bg-(--bg2) p-[3px]">
-          <legend className="sr-only">Read this page as</legend>
-          <span
-            aria-hidden
-            className={cn(
-              'seg-ind absolute top-[3px] left-[3px] h-[calc(100%-6px)] w-[calc(50%-3px)] rounded-full bg-(--fg)',
-              agent && 'is-agent',
-            )}
-          />
-          <button
-            type="button"
-            aria-pressed={!agent}
-            onClick={() => setAgent(false)}
-            className={cn(seg, agent ? 'text-(--fg2) hover:text-(--fg)' : 'text-(--bg)')}
-          >
-            Human
-          </button>
-          <button
-            type="button"
-            aria-pressed={agent}
-            onClick={() => setAgent(true)}
-            className={cn(seg, agent ? 'text-(--agent-ink)' : 'text-(--fg2) hover:text-(--fg)')}
-          >
-            Agent
-          </button>
-        </fieldset>
-        <div ref={tabs} role="tablist" aria-label="Example page" className="flex gap-1">
-          {ORDER.map((id) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              id={`stage-tab-${id}`}
-              data-tab={id}
-              aria-selected={tab === id}
-              aria-controls="stage"
-              tabIndex={tab === id ? 0 : -1}
-              onClick={() => pick(id)}
-              onKeyDown={onTabKey}
-              className="h-8 rounded-md px-2.5 text-sm font-medium text-(--fg3) transition-colors duration-150 hover:text-(--fg) aria-selected:bg-(--bg3) aria-selected:text-(--fg)"
-            >
-              {SC[id].label}
-            </button>
-          ))}
-        </div>
-      </div>
+    <div ref={root} className="hero-art">
+      <p className="sr-only">
+        A page as a person sees it, with what an agent reads drawn beside it, first as the graph and
+        then as markdown: what is on the page, the action it offers with its input and guard, and a
+        count that changes when either one acts.
+      </p>
+      <div className="art-wrap">
+        <div className="art relative" style={{ width: W, height: H }} aria-hidden>
+          <div className={cn('rd absolute top-0 left-0', !read && 'lit')}>
+            <span className="flex items-center gap-1.5">
+              <span className="dot bg-(--fg)" />
+              Human
+            </span>
+            <span className="type">text/html</span>
+          </div>
+          <div className={cn('rd agent absolute top-0', read && 'lit')} style={{ left: COL }}>
+            <span className="flex items-center gap-1.5">
+              <span className="dot bg-(--agent)" />
+              Agent
+            </span>
+            <span key={md ? 'md' : 'json'} className="type enter">
+              {md ? 'text/markdown' : 'application/vnd.affordances+json'}
+            </span>
+          </div>
 
-      <div
-        id="stage"
-        role="tabpanel"
-        aria-labelledby={`stage-tab-${tab}`}
-        className={cn('stage-wrap w-[520px] max-w-full', fading && 'fading')}
-      >
-        <div
-          className={cn(
-            'stage relative box-border h-[500px] w-[520px] overflow-hidden rounded-[14px] border border-(--line2) bg-(--bg)',
-            agent && 'is-agent',
-          )}
-        >
-          <div className="swap absolute inset-0">
-            {/* the url bar: the one thing that stays put, and the one header that changes */}
-            <div className="absolute inset-x-0 top-0 flex h-10 items-center justify-between gap-3 border-b border-(--line) bg-(--bg2) px-5 font-mono text-xs">
-              <span className="truncate text-(--fg)">
-                <span className="url-m text-(--fg3)">GET</span> {S.path}
-              </span>
-              <span className="whitespace-nowrap text-(--fg3)">
-                Accept:{' '}
-                <span className="url-a text-(--fg2)">
-                  {agent ? 'application/vnd.affordances+json' : 'text/html'}
+          {/* the page: its card stays, and each page's content arrives in it */}
+          <div
+            className="card absolute left-0"
+            style={{ top: CARD.y, width: CARD.w, height: CARD.h }}
+          >
+            <div key={sc} className="arrive absolute inset-0">
+              <div className="absolute inset-x-0 top-0 flex h-10 items-center justify-between border-b border-(--line) px-[18px]">
+                <span className="text-[13px] font-semibold">{S.head}</span>
+                <span className="flex items-center gap-1.5 text-xs text-(--fg2) tabular-nums">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  >
+                    {icons[S.icon]}
+                  </svg>
+                  <span key={n} className="enter inline-block">
+                    {n}
+                  </span>
                 </span>
-              </span>
-            </div>
-
-            <div className="hum absolute inset-x-0 top-10 h-11 border-b border-(--line)">
-              <div className="absolute top-[13px] left-5 text-sm font-semibold">{S.head}</div>
-              <div className="absolute top-[14px] right-11 text-(--fg2)">
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  aria-hidden
-                >
-                  {icons[S.icon]}
-                </svg>
               </div>
-            </div>
-
-            <div className="m box" style={box(ms.img)}>
-              <div className="hf text-(--fg)">
-                {S.icon === 'bag' ? <Bag /> : S.icon === 'mail' ? <Seats /> : <Floor />}
-                <span className="sr-only">{S.art}</span>
+              <div className="absolute top-[52px] left-[18px] flex h-24 w-[214px] items-center justify-center overflow-hidden rounded-lg bg-(--img) px-4 text-(--fg)">
+                {art[S.icon]}
               </div>
-            </div>
-            <div className="hum absolute top-[270px] left-5 text-xs text-(--fg3)">{S.meta}</div>
-            <div className="ghost font-semibold tracking-[-0.01em]" style={name}>
-              {S.name}
-            </div>
-            <div className="ghost tabular-nums" style={val}>
-              {S.value}
-            </div>
-            <div className="ghost text-(--fg2) tabular-nums" style={count}>
-              {n}
-              <span className="sr-only"> in {S.key.split('.')[0]}</span>
-            </div>
-            <div className="hum absolute top-[336px] left-5 text-xs text-(--fg3)">{S.optLabel}</div>
-            {/* the options are shown, not offered: one is picked, the other unavailable */}
-            <span className="m pill sel" style={box(ms.p1)}>
-              <span className="hf">{S.pills[0]}</span>
-            </span>
-            <span className="m pill out" style={box(ms.p2)}>
-              <span className="hf" aria-hidden>
-                {S.pills[1]}
-              </span>
-              <span className="sr-only">{S.outLabel}</span>
-            </span>
-            <button
-              type="button"
-              className="m cta"
-              style={box(ms.btn)}
-              onClick={() => bump(false)}
-              inert={agent}
-            >
-              <span className="hf">{S.btn}</span>
-            </button>
-            <div
-              className="hum absolute top-[466px] left-5 text-xs text-(--fg2)"
-              aria-live="polite"
-            >
-              {added[sc] ? S.msg : ''}
-            </div>
-
-            <div className="absolute inset-x-5 top-[60px]" aria-hidden={!agent}>
-              {lines.map((text, i) => (
-                <div
-                  key={i}
-                  className={cn('gl', i === 7 && flash && 'flash')}
-                  style={{ '--d': `${140 + i * 14}ms` } as React.CSSProperties}
-                >
-                  {jtok(text).map((p, j) => (
-                    <span key={j} className={p.c}>
-                      {p.t}
-                    </span>
-                  ))}
-                </div>
-              ))}
-            </div>
-
-            <div
-              className="agt absolute inset-x-0 bottom-0 flex h-[72px] items-center justify-between gap-3 border-t border-(--line) px-5 font-mono text-xs"
-              inert={!agent}
-            >
-              <span className="text-(--fg2)" aria-live="polite">
-                {delta || 'Call the action. Get back only what changed.'}
-              </span>
-              <button
-                type="button"
-                onClick={() => bump(true)}
-                className="press h-8 rounded-md border border-(--agent-line) bg-(--agent-soft) px-3 font-mono text-xs font-medium whitespace-nowrap text-(--agent) transition-colors duration-150 hover:bg-(--agent)/20"
+              <div className="absolute top-[160px] left-[18px] text-[11px] text-(--fg3)">
+                {S.meta}
+              </div>
+              <div className="absolute top-[178px] left-[18px] text-[18px] leading-[22px] font-semibold tracking-[-0.01em]">
+                {S.name}
+              </div>
+              <div className="absolute top-[204px] left-[18px] text-[15px] leading-5 text-(--fg2) tabular-nums">
+                {S.value}
+              </div>
+              <div className="absolute top-[232px] left-[18px] flex gap-2">
+                <span className="pill sel">{S.pills[0]}</span>
+                <span className="pill out">{S.pills[1]}</span>
+              </div>
+              {/* remounts when the agent acts, so the press plays a second time */}
+              <span
+                key={acted ? 'agent' : 'human'}
+                className={cn(
+                  'cta absolute top-[282px] left-[18px] flex h-10 w-[214px] items-center justify-center',
+                  (p === 'click' || acted) && 'tap',
+                )}
               >
-                POST {S.action}
-              </button>
+                {S.btn}
+              </span>
+              <div className="absolute top-[336px] left-[18px] text-[11px] text-(--fg2)">
+                {clicked ? S.msg : ''}
+              </div>
             </div>
           </div>
+
+          {/* the tethers, drawn as the agent reads; the agent's call runs back down the action's */}
+          <svg
+            className="absolute inset-0"
+            width={W}
+            height={H}
+            viewBox={`0 0 ${W} ${H}`}
+            fill="none"
+          >
+            <g className={cn('tether dim', read && 'on')} style={delays(1)}>
+              <path d={tether('img')} pathLength={1} className="tl" />
+              <circle cx={CARD.w} cy={AT.img.y} r="2.5" className="td" />
+            </g>
+            {PARTS.map((k, i) => (
+              <g key={k} className={cn('tether', read && 'on')} style={delays(i)}>
+                <path d={tether(k)} pathLength={1} className="tl" />
+                <circle cx={CARD.w} cy={AT[k].y} r="2.5" className="td" />
+              </g>
+            ))}
+            {p === 'act' && <Pulse d={tether('btn', true)} className="stroke-(--agent)" />}
+          </svg>
+
+          {/* the column: what the agent got back, in the page's order. the markdown takes the same
+              lines, so each one swaps in place */}
+          <div key={md ? 'md' : 'json'} className="contents">
+            <div className={mono} style={{ left: COL, top: AT.img.top }}>
+              <div className={cn('ln text-(--fg3)', read && 'on')} style={delays(1, 1)}>
+                {G.img[0]}
+              </div>
+            </div>
+            {PARTS.map((k, i) => (
+              <div key={k} className={mono} style={{ left: COL, top: AT[k].top }}>
+                {G[k].map((text, j) => (
+                  <div
+                    key={k === 'count' ? `${j}-${n}` : j}
+                    className={cn('ln', read && 'on')}
+                    style={delays(md ? i / 3 : i, j)}
+                  >
+                    {tok(text).map((t, m) => (
+                      <span key={m} className={t.c}>
+                        {t.t}
+                      </span>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+          {/* the agent's call and its answer: a delta with only what changed */}
+          {acted && (
+            <div
+              className={cn(mono, 'enter text-(--agent)', p === 'out' && 'leave')}
+              style={{ left: COL, top: AT.btn.top + 4 * LINE + 8 }}
+            >
+              <span className="text-(--fg3)">POST </span>
+              {S.action}
+              <span className="text-(--fg3)"> → 200</span>
+              {'\n'}
+              {S.key}: {n}
+            </div>
+          )}
+
+          {/* the person's cursor, on its way to the button */}
+          <span
+            className={cn(
+              'cur',
+              (p === 'human' || p === 'click') && 'on',
+              p === 'click' && 'click',
+            )}
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24">
+              <path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" />
+            </svg>
+          </span>
         </div>
       </div>
-
-      <p className="text-sm text-pretty text-(--fg3)">
-        {agent
-          ? 'The same page, as its graph: what’s on it, and what can be done there.'
-          : 'Same URL, same session. Switch to Agent to read the page as JSON.'}
-      </p>
     </div>
   )
 }

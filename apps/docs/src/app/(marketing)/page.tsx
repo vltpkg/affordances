@@ -10,6 +10,7 @@ import { Approvals } from '@/components/marketing/approvals'
 import { CopyCommand } from '@/components/marketing/copy-command'
 import { Discovery } from '@/components/marketing/discovery'
 import { HeroStage } from '@/components/marketing/hero-stage'
+import { InitCommand } from '@/components/marketing/init-command'
 import { HowItWorks, SOURCE, SURFACES } from '@/components/marketing/how'
 import { Proof } from '@/components/marketing/proof'
 import { benchRuns, modelName, type AgentKey, type BenchAgent, type BenchRun } from '@/lib/bench'
@@ -130,7 +131,7 @@ const ENTRY = [
 ]
 
 const sec = 'relative px-14 py-24 max-[899px]:px-5 max-[899px]:py-[72px]'
-const btn = 'h-11 rounded-lg px-[18px] text-sm active:scale-[0.97]'
+const btn = 'h-11 rounded-full px-5 text-sm active:scale-[0.97]'
 
 const Dot = ({ agent }: { agent?: boolean }) => (
   <span
@@ -147,16 +148,15 @@ const Home = () => {
       <AgentMain>
         <main className="mx-auto max-w-[1200px]" id="main">
           <section
-            className="flex flex-wrap items-center gap-14 px-14 pt-[88px] pb-24 max-[899px]:gap-12 max-[899px]:px-5 max-[899px]:pt-12 max-[899px]:pb-[72px]"
+            className="relative flex flex-wrap items-center gap-14 px-14 pt-[88px] pb-24 min-[900px]:min-h-[640px] max-[899px]:gap-12 max-[899px]:px-5 max-[899px]:pt-12 max-[899px]:pb-[72px]"
             aria-labelledby="h-hero"
           >
-            <div className="min-w-0 flex-[1_1_400px]">
+            <div className="hero-copy min-w-0 flex-[1_1_400px] min-[900px]:max-w-[min(520px,46%)]">
               <h1
                 id="h-hero"
-                className="text-[clamp(46px,6vw,76px)] leading-[0.98] font-semibold tracking-[-0.055em] text-balance"
+                className="text-[clamp(46px,5.2vw,72px)] leading-[0.98] font-semibold tracking-[-0.055em] text-balance"
               >
-                {/* a non-breaking hyphen keeps the compound on one line */}
-                Every page, agent‑operable.
+                Act accordingly.
               </h1>
               <p className="mt-6 max-w-[500px] text-[19px] leading-[1.6] text-pretty text-(--fg2) max-[899px]:text-[17px]">
                 Your UI already knows what it can do. Affordances lets you declare it once. Humans,
@@ -169,14 +169,48 @@ const Home = () => {
                 <Button asChild variant="outline" className={btn}>
                   <a href="#how">How it works</a>
                 </Button>
+                <Button asChild variant="outline" className={btn}>
+                  <Link href="/docs/plugins/md">Markdown plugin</Link>
+                </Button>
               </div>
             </div>
             <AgentText
               block
-              md="**One URL, two readers.** A product page, a team settings page, and a booking page, each shown as a person sees it (`text/html`) and as the graph an agent reads (`application/vnd.affordances+json`) at the same URL: its entities, its action with input, guard, and availability, and its nav. Calling the action returns a delta with only what changed."
+              md="**One URL, two readers.** A product page, a team settings page, and a booking page, each as a person sees it (`text/html`) with what an agent reads drawn beside it, at the same URL: first the graph (`application/vnd.affordances+json`), its entities and its action with input, guard, and availability; then the same page as markdown (`text/markdown`, from the md plugin), heading, price, options, and the action as a link. A person clicks, an agent calls the same action, and each gets back a delta with only what changed."
             >
               <HeroStage />
             </AgentText>
+          </section>
+
+          <section className="px-14 max-[899px]:px-5" aria-labelledby="h-start">
+            <div className="flex flex-wrap items-center justify-between gap-x-12 gap-y-6 border-y border-(--line) py-10">
+              <div className="flex max-w-[460px] flex-col gap-1.5">
+                <p className="font-pixel text-sm text-(--fg3)">Start here</p>
+                <h2
+                  id="h-start"
+                  className="text-[22px] leading-tight font-semibold tracking-[-0.03em] text-balance"
+                >
+                  Add it to a Next.js app in one command.
+                </h2>
+                <p className="text-[15px] leading-relaxed text-pretty text-(--fg2)">
+                  It adds the route handler, wraps your Next config and writes the manifest, and
+                  skips whatever is already there. Then follow the{' '}
+                  <Link
+                    href="/docs/quickstart"
+                    className="text-(--fg) underline decoration-(--line2) underline-offset-4 transition-colors duration-150 hover:decoration-(--fg)"
+                  >
+                    quickstart
+                  </Link>
+                  .
+                </p>
+              </div>
+              <AgentText block md={'```bash\nvlx @affordances/cli init\n```'}>
+                <InitCommand
+                  cmd="@affordances/cli init"
+                  className="max-w-[560px] flex-[1_1_400px]"
+                />
+              </AgentText>
+            </div>
           </section>
 
           <section className={sec} aria-labelledby="h-shift">
