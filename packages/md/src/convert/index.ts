@@ -1,4 +1,4 @@
-import type { Element, ElementContent, Nodes as HastNodes, Root as HastRoot } from 'hast'
+import type { Element, ElementContent, Root as HastRoot } from 'hast'
 import type {
   Html,
   List,
@@ -9,17 +9,19 @@ import type {
   Root as MdastRoot,
   TableCell,
 } from 'mdast'
-import { fromHtml } from 'hast-util-from-html'
+import { fromParse5 } from 'hast-util-from-parse5'
 import { select, selectAll } from 'hast-util-select'
-import { defaultHandlers, toMdast, type Handle } from 'hast-util-to-mdast'
+import { defaultHandlers, defaultNodeHandlers, toMdast, type Handle } from 'hast-util-to-mdast'
 import { toString } from 'hast-util-to-string'
 import { gfmToMarkdown } from 'mdast-util-gfm'
 import { toMarkdown } from 'mdast-util-to-markdown'
 import { parse, postprocess, preprocess } from 'micromark'
+import { parse as parseHtml } from 'parse5'
 import { gfm } from 'micromark-extension-gfm'
 import { decodeString } from 'micromark-util-decode-string'
 import { normalizeIdentifier } from 'micromark-util-normalize-identifier'
 import { visit } from 'unist-util-visit'
+import { minifyWhitespace } from './whitespace.ts'
 
 export type Handlers = Record<string, Handle>
 
@@ -60,10 +62,17 @@ const ALWAYS_DROP = new Set([
   'video',
   'source',
 ])
-const CHROME =
-  'nav, header, footer, aside, dialog, [role=navigation], [role=banner], [role=contentinfo], [role=complementary], [aria-hidden=true], [hidden]'
+const CHROME_TAGS = new Set(['nav', 'header', 'footer', 'aside', 'dialog'])
+const CHROME_ROLES = new Set(['navigation', 'banner', 'contentinfo', 'complementary'])
 
 const isElement = (node: unknown): node is Element => (node as Element)?.type === 'element'
+// asked of every element on a page, so read from its properties: a css selector over a whole page costs as much as
+// parsing it
+const chrome = (el: Element) =>
+  CHROME_TAGS.has(el.tagName) ||
+  CHROME_ROLES.has(String(el.properties.role)) ||
+  String(el.properties.ariaHidden) === 'true' ||
+  (el.properties.hidden != null && el.properties.hidden !== false)
 const mode = (node: Element) =>
   node.tagName === 'affordances-md'
     ? String(node.properties.dataMode ?? '')
@@ -274,10 +283,18 @@ const prune = (parent: HastRoot | Element, literal = false) => {
   let tabs: Set<string> | undefined
   const page: Pruning = {
     byId: () => (byId ??= ids(parent)),
-    tabs: () =>
-      (tabs ??= new Set(selectAll('[data-affordances-md=show]', parent).flatMap(labelledBy))),
+    tabs: () => (tabs ??= new Set(shownPanels(parent).flatMap(labelledBy))),
   }
   pruneWith(parent, page, literal)
+}
+// everything marked data-affordances-md="show", in page order
+const shownPanels = (parent: HastRoot | Element, found: Element[] = []) => {
+  for (const child of parent.children) {
+    if (!isElement(child)) continue
+    if (String(child.properties.dataAffordancesMd) === 'show') found.push(child)
+    shownPanels(child, found)
+  }
+  return found
 }
 // what prune reads from the whole page, once it needs it: its ids, and the tabs that label a shown panel
 type Pruning = { byId: () => Map<string, Element>; tabs: () => Set<string> }
@@ -422,15 +439,22 @@ const resolveStreamed = (tree: HastRoot) => {
   const templates: Element[] = []
   const byId = new Map<string, Element>()
   const parents = new Map<ElementContent, HastRoot | Element>()
-  visit(tree, 'element', (node, _, parent) => {
-    if (parent) parents.set(node, parent as HastRoot | Element)
-    const id = node.properties.id
-    if (id != null) byId.set(String(id), node)
-    if (node.tagName === 'script') scripts.push(node)
-    if (node.tagName !== 'template') return
-    if (id != null) templates.push(node)
-    if (node.properties.dataBid != null || node.properties.dataPid != null) instructions.push(node)
-  })
+  const walk = (parent: HastRoot | Element) => {
+    for (const node of parent.children) {
+      if (!isElement(node)) continue
+      parents.set(node, parent)
+      const id = node.properties.id
+      if (id != null) byId.set(String(id), node)
+      if (node.tagName === 'script') scripts.push(node)
+      if (node.tagName === 'template') {
+        if (id != null) templates.push(node)
+        if (node.properties.dataBid != null || node.properties.dataPid != null)
+          instructions.push(node)
+      }
+      walk(node)
+    }
+  }
+  walk(tree)
   const boundaries = new Map<string, string>()
   const placeholders = new Map<string, string>()
   for (const script of scripts)
@@ -500,10 +524,9 @@ const extract = (body: HastRoot, how: Options['extract']): HastRoot => {
   const main = landmarks.find((m) => m.tagName === 'main') ?? landmarks[0]
   if (main) return { type: 'root', children: [main] }
   // the page has no landmark: take the body and drop its chrome, but keep what was marked for agents
-  const chrome = new Set(selectAll(CHROME, body).filter((el) => !unhidden(el)))
   const strip = (parent: HastRoot | Element) => {
     const kept = (parent.children as ElementContent[]).filter(
-      (child) => !(isElement(child) && chrome.has(child)),
+      (child) => !(isElement(child) && chrome(child) && !unhidden(child)),
     )
     parent.children = kept
     for (const child of kept) if (isElement(child)) strip(child)
@@ -540,7 +563,7 @@ const PUSH = new RegExp(String.raw`^${CALL}([\s\S]*)\)\s*;?\s*$`)
 const PUSHED = new RegExp(String.raw`^${CALL}`)
 
 // the html tokenizer's raw text (rawtext and rcdata) elements: their text runs to their own end tag. noscript isn't
-// one: the page is parsed with scripting off, as hast-util-from-html parses it
+// one: the page is parsed with scripting off (fromHtml)
 const RAW = new Set(['style', 'xmp', 'iframe', 'noembed', 'noframes', 'title', 'textarea'])
 // a start tag that ends foreign content (svg, math) and is an html element again
 const BREAKOUT = new Set(
@@ -1153,6 +1176,11 @@ const rowScanner = () => {
     },
   }
 }
+
+// html as a tree, parsed as hast-util-from-html parses it (scripting off) but without each node's place in the source:
+// nothing reads it, and working it out costs more than the parse (most of a conversion, on a page of many lines)
+const fromHtml = (html: string) =>
+  fromParse5(parseHtml(html, { scriptingEnabled: false })) as HastRoot
 
 // a page's html with its flight pushes taken out, parsed: the tree and the error rows' digests, or why they can't be
 // trusted
@@ -2364,9 +2392,11 @@ const readTree = (
       // so a filled slot's children are left out before converting, which copies and walks all of what it's given:
       // a slot's fallback (a skeleton, last night's table) can be most of a page
       const filled = new Set(markers.filter((node) => fillOf(node) !== undefined))
-      const mdast = toMdast((filled.size ? emptied(content, filled) : content) as HastNodes, {
-        handlers: { ...handlers, 'affordances-md': marker, ...options.handlers },
-      }) as MdastRoot
+      const mdast = converted(filled.size ? emptied(content, filled) : content, {
+        ...handlers,
+        'affordances-md': marker,
+        ...options.handlers,
+      })
       const url = meta.canonical ?? options.url
       if (absolutize(mdast, options.url ?? meta.canonical, options.link)) {
         inCells(mdast)
@@ -2376,6 +2406,46 @@ const readTree = (
     },
   }
 }
+
+// a tree as hast-util-to-mdast converts it, without what it does first: a structured clone of all it's given, so its
+// whitespace pass can change it, then that pass. it does both to an empty root instead, whose handler converts this
+// copy: only what the whitespace pass changes (children, a text's value) is new, and a node's place in the html, which
+// nothing reads, isn't copied at all
+const converted = (tree: HastRoot, elements: Handlers): MdastRoot => {
+  const copy = copied(tree)
+  minifyWhitespace(copy)
+  // the first root it converts is the empty one, or rather its clone
+  let entered = false
+  return toMdast(
+    { type: 'root', children: [] },
+    {
+      handlers: elements,
+      nodeHandlers: {
+        root: (state, node) => {
+          if (entered) return defaultNodeHandlers.root(state, node)
+          entered = true
+          // the page's ids, as toMdast collects them for its own handlers
+          const collect = (parent: HastRoot | Element) => {
+            for (const child of parent.children) {
+              if (!isElement(child)) continue
+              const id = String(child.properties.id || '')
+              if (id && !state.elementById.has(id)) state.elementById.set(id, child)
+              collect(child)
+            }
+          }
+          collect(copy)
+          return defaultNodeHandlers.root(state, copy)
+        },
+      },
+    },
+  ) as MdastRoot
+}
+const copied = <T extends HastRoot | HastRoot['children'][number]>(node: T): T =>
+  (node.type === 'text'
+    ? { type: 'text', value: node.value }
+    : 'children' in node
+      ? { ...node, position: undefined, children: node.children.map(copied) }
+      : node) as T
 
 // a copy of a tree with these elements' children gone, sharing every part that doesn't hold one
 const emptied = <T extends HastRoot | Element>(node: T, empty: Set<Element>): T => {
