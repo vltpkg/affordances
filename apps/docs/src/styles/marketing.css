@@ -1,4 +1,4 @@
-/* the marketing page's illustrations: their moving parts (the hero stage's morph, the scrollytelling
+/* the marketing page's illustrations: their moving parts (the hero's drawing, the scrollytelling
    panels, the approval card) keep the design's own state classes and timing here; layout and type are
    tailwind in the components. every colour is one of our tokens, or the agent accent below */
 
@@ -57,119 +57,99 @@
   transition-duration: 0.08s;
 }
 
-/* hero: the human/agent switch */
-.afd .seg-ind {
-  transition:
-    transform 0.3s var(--ease),
-    background-color 0.2s;
+/* hero: the drawing sits behind the copy, which keeps a radial pool of the background under it, so it
+   reads over the dot grid where the two overlap. under 900px the drawing drops below the copy */
+.afd .hero-copy {
+  position: relative;
+  z-index: 1;
 }
-.afd .seg-ind.is-agent {
-  transform: translateX(100%);
-  background: var(--agent);
+.afd .hero-copy::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: -64px -60px -64px -120px;
+  background: radial-gradient(ellipse at 45% 50%, var(--bg) 45%, transparent 75%);
+}
+.afd .hero-art {
+  min-width: 0;
+  max-width: 100%;
+}
+@media (min-width: 900px) {
+  .afd .hero-art {
+    position: absolute;
+    top: 50%;
+    right: 56px;
+    transform: translateY(-50%);
+  }
+}
+@media (min-width: 900px) and (max-width: 1140px) {
+  .afd .art-wrap {
+    zoom: 0.82;
+  }
 }
 
-/* hero: the stage, where the product page's parts move into the graph's lines. the boxes morph their
-   geometry, so the stage contains its own layout and paint */
-.afd .stage {
-  contain: layout paint;
-  transition: border-color 0.3s;
+/* one page, two readers. the page's card floats over a dot grid; the graph's lines draw on beside it,
+   each tethered to the part of the page it reads; a cursor plays the person */
+.afd .art::before {
+  content: '';
+  position: absolute;
+  inset: -24px;
+  background-image: radial-gradient(var(--line2) 1px, transparent 1.5px);
+  background-size: 16px 16px;
+  background-position: 8px 8px;
+  mask-image: radial-gradient(ellipse 60% 60% at 50% 50%, #000 30%, transparent 100%);
 }
-.afd .stage.is-agent {
-  border-color: var(--agent-line);
+/* a page's content arrives in the card; the call's result leaves with the column */
+.afd .arrive {
+  animation: enter 0.35s var(--out) both;
 }
-.afd .url-m,
-.afd .url-a {
-  transition: color 0.2s;
+.afd .leave {
+  opacity: 0;
+  transition: opacity 0.15s;
 }
-.afd .is-agent .url-m,
-.afd .is-agent .url-a {
+.afd .rd {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font: 11px/1 var(--font-mono);
+  color: var(--fg3);
+  transition: color 0.3s;
+}
+.afd .rd .type {
+  color: var(--fg3);
+}
+.afd .rd .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  opacity: 0.35;
+  transition: opacity 0.3s;
+}
+.afd .rd.lit {
+  color: var(--fg);
+}
+.afd .rd.agent.lit {
   color: var(--agent);
 }
-.afd .swap {
-  transition: opacity 0.15s var(--out);
-}
-.afd .fading .swap {
-  opacity: 0;
-}
-.afd .hum {
-  transition: opacity 0.2s 0.22s;
-}
-.afd .is-agent .hum {
-  opacity: 0;
-  transition-delay: 0s;
-  pointer-events: none;
-}
-.afd .agt {
-  opacity: 0;
-  transition: opacity 0.12s;
-  pointer-events: none;
-}
-.afd .is-agent .agt {
+.afd .rd.lit .dot {
   opacity: 1;
-  transition: opacity 0.25s 0.3s;
-  pointer-events: auto;
 }
-.afd .m {
-  position: absolute;
-  box-sizing: border-box;
-  transition:
-    top 0.5s var(--ease),
-    left 0.5s var(--ease),
-    width 0.5s var(--ease),
-    height 0.5s var(--ease),
-    background-color 0.3s,
-    border-color 0.3s,
-    border-radius 0.5s var(--ease),
-    color 0.3s,
-    opacity 0.2s,
-    transform 0.15s var(--out);
-}
-.afd .ghost {
-  position: absolute;
-  top: 0;
-  left: 0;
-  transform-origin: 0 0;
-  white-space: nowrap;
-  line-height: 1.6;
-  transition:
-    transform 0.5s var(--ease),
-    opacity 0.2s 0.1s;
-}
-.afd .is-agent .ghost {
-  opacity: 0;
-  transition:
-    transform 0.5s var(--ease),
-    opacity 0.2s 0.32s;
-}
-.afd .box {
-  background: var(--img);
+.afd .card {
+  background: var(--bg);
   border: 1px solid var(--line);
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-.afd .is-agent .box {
-  background: var(--agent-soft);
-  border-color: var(--agent-line);
-  border-radius: 6px;
-}
-.afd .hf {
-  transition: opacity 0.2s 0.24s;
-}
-.afd .is-agent .hf {
-  opacity: 0;
-  transition-delay: 0s;
+  border-radius: 16px;
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.04),
+    0 24px 48px -24px rgb(0 0 0 / 0.25);
 }
 .afd .pill {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
+  height: 34px;
+  padding: 0 14px;
   border: 1px solid var(--line2);
   border-radius: 8px;
-  color: var(--fg);
-  font: 500 14px/1 var(--font-sans);
+  font: 500 13px/1 var(--font-sans);
   white-space: nowrap;
 }
 .afd .pill.sel {
@@ -180,48 +160,60 @@
   color: var(--fg3);
   text-decoration: line-through;
 }
-.afd .is-agent .pill {
-  border-style: solid;
-  border-color: var(--agent-line);
-  background: var(--agent-soft);
-  border-radius: 4px;
-}
 .afd .cta {
-  border: 1px solid var(--fg);
   background: var(--fg);
   color: var(--bg);
   border-radius: 8px;
-  font: 500 15px/1 var(--font-sans);
-  cursor: pointer;
-  padding: 0;
+  font: 500 13px/1 var(--font-sans);
 }
-.afd .cta:hover {
-  background: color-mix(in oklch, var(--fg) 86%, var(--bg));
+.afd .tether .tl {
+  stroke: var(--agent-line);
+  stroke-width: 1.25;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 0.3s var(--ease) var(--o, 0s);
 }
-.afd .cta:active {
-  transform: scale(0.985);
-}
-.afd .is-agent .cta {
-  background: var(--agent-soft);
-  border-color: var(--agent-line);
-  border-radius: 6px;
-}
-.afd .gl {
-  height: 20px;
-  white-space: pre;
-  font: 12.5px/20px var(--font-mono);
+.afd .tether .td {
+  fill: var(--agent);
   opacity: 0;
-  transform: translateY(4px);
-  transition:
-    opacity 0.12s,
-    transform 0.12s;
+  transition: opacity 0.15s var(--o, 0s);
 }
-.afd .is-agent .gl {
+.afd .tether.on .tl {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 0.55s var(--out) var(--d);
+}
+.afd .tether.on .td {
+  opacity: 1;
+  transition-delay: var(--d);
+}
+/* the image's tether: dashed, grey, and it fades in rather than draws, since nothing is read there */
+.afd .tether.dim .tl {
+  stroke: var(--line2);
+  stroke-dasharray: 0.03 0.03;
+  stroke-dashoffset: 0;
+  opacity: 0;
+  transition: opacity 0.3s var(--o, 0s);
+}
+.afd .tether.dim.on .tl {
+  opacity: 1;
+  transition-delay: var(--d);
+}
+.afd .tether.dim .td {
+  fill: var(--fg3);
+}
+.afd .ln {
+  opacity: 0;
+  transform: translateX(-4px);
+  transition:
+    opacity 0.15s var(--o, 0s),
+    transform 0.15s var(--o, 0s);
+}
+.afd .ln.on {
   opacity: 1;
   transform: none;
   transition:
-    opacity 0.25s var(--d),
-    transform 0.3s var(--out) var(--d);
+    opacity 0.25s var(--d, 0s),
+    transform 0.3s var(--out) var(--d, 0s);
 }
 .afd .gk {
   color: var(--fg);
@@ -233,13 +225,60 @@
 .afd .gp {
   color: var(--fg3);
 }
-.afd .gl .gn {
-  border-radius: 3px;
-  transition: background-color 0.6s;
+.afd .cur {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(90px, 300px);
+  transition:
+    opacity 0.2s,
+    transform 0.7s var(--ease);
 }
-.afd .gl.flash .gn {
-  background: var(--agent-soft);
-  transition-duration: 0.1s;
+.afd .cur.on {
+  opacity: 1;
+  transform: translate(122px, 356px);
+}
+.afd .cur svg {
+  fill: var(--fg);
+  stroke: var(--bg);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+/* the click's ring, centred on the pointer's tip */
+.afd .cur::after {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1.5px solid var(--fg);
+  opacity: 0;
+}
+.afd .cur.click::after {
+  animation: ring 0.5s var(--out);
+}
+@keyframes ring {
+  from {
+    opacity: 0.6;
+    transform: scale(0.3);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+.afd .tap {
+  animation: tap 0.2s var(--out);
+}
+@keyframes tap {
+  50% {
+    transform: scale(0.97);
+  }
 }
 
 /* before / after: file rows, meters, calls, captions */
@@ -524,13 +563,13 @@
   }
 }
 @media (max-width: 600px) {
-  .afd .stage-wrap {
-    zoom: 0.74;
+  .afd .art-wrap {
+    zoom: 0.72;
   }
 }
 @media (max-width: 420px) {
-  .afd .stage-wrap {
-    zoom: 0.64;
+  .afd .art-wrap {
+    zoom: 0.6;
   }
 }
 

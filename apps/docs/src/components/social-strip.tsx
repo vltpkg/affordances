@@ -6,7 +6,7 @@ import { TwitterX } from '@/components/icons/twitterx'
 import { ThemeSwitcher } from '@/components/theme-switcher'
 
 // from vlt.io's content/marketing/socials.ts
-const socials = [
+export const socials = [
   { href: 'https://github.com/vltpkg/vltpkg', label: 'vltpkg on GitHub', Icon: Github },
   { href: 'https://www.linkedin.com/company/vltpkg/', label: 'vlt on LinkedIn', Icon: Linkedin },
   { href: 'https://x.com/vltpkg', label: 'vlt on X', Icon: TwitterX },
