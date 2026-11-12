@@ -1,0 +1,10 @@
+# real pages for the benchmark corpus, one url per line. bench/fetch.ts saves each to .cache/ under a name derived from
+# its url (every non-alphanumeric character becomes _), so keep these stable or the cache names change
+https://developer.mozilla.org/en-US/docs/Web/HTML/Element/table
+https://docs.npmjs.com/cli/v11/commands/npm-install
+https://en.wikipedia.org/wiki/Markdown
+https://github.com/vercel/next.js
+https://nextjs.org/docs/app/getting-started/installation
+https://react.dev/reference/react/useEffect
+https://tailwindcss.com/docs/flex
+https://www.typescriptlang.org/docs/handbook/2/generics.html

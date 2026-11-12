@@ -1,0 +1,28 @@
+{
+  "name": "@affordances/md-core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Experimental single-pass HTML to markdown converter for @affordances/md",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "bench": "node bench/run.ts",
+    "bench:parity": "node bench/parity.ts",
+    "bench:fetch": "node bench/fetch.ts"
+  },
+  "devDependencies": {
+    "@affordances/md": "workspace:*",
+    "hast-util-from-parse5": "^8.0.3",
+    "mdream": "^2.1.0",
+    "node-html-markdown": "^2.0.0",
+    "parse5": "^7.3.0",
+    "turndown": "^7.2.5",
+    "turndown-plugin-gfm": "^1.0.2"
+  }
+}
