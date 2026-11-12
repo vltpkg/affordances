@@ -1,4 +1,4 @@
-import { convertRoot, startConvert } from './emit-convert.ts'
+import { convertRoot, materialize, startConvert } from './emit-convert.ts'
 import { HEADING, headingText, IMAGE, Md, setext, TEXT, toMarkdown } from './emit-markdown.ts'
 import { begin, findMain, made, setPage } from './emit-prune.ts'
 import type { Document, Options, Result } from './types.ts'
@@ -114,7 +114,7 @@ const finish = (root: Md, meta: Meta, url: string | undefined, options: Options)
     frontmatter &&
     meta.description &&
     next &&
-    collapsed(valueText(next)) === collapsed(meta.description)
+    collapsed(valueText(materialize(next))) === collapsed(meta.description)
   )
     root.kids.splice(h1 + 1, 1)
   let output = toMarkdown(root)
@@ -138,6 +138,7 @@ const finish = (root: Md, meta: Meta, url: string | undefined, options: Options)
 
 // the text of the markdown's first # heading: the first h1 written atx style at the top
 const firstHeading = (root: Md) => {
-  for (const node of root.kids) if (isH1(node) && !setext(node)) return headingText(node)
+  for (const node of root.kids)
+    if (isH1(node) && !setext(node)) return headingText(materialize(node))
   return undefined
 }

@@ -1,10 +1,11 @@
 import { htmlToMarkdown } from '@affordances/md'
 import { describe, expect, test } from 'vitest'
 import { emit } from '../src/emit.ts'
-import { regexSafe, scannedSafe } from '../src/emit-markdown.ts'
+import { attentionAgrees, type Item, regexSafe, scannedSafe } from '../src/emit-markdown.ts'
 import type { Options, Result } from '../src/types.ts'
 import { corpusPages, fixturePages, type Page, similarity } from './emit-pages.ts'
 import { parse } from '../src/parse.ts'
+import { both as fuzzBoth, generator } from './emit-fuzz.ts'
 import { oracle } from './support/oracle.ts'
 
 // emit's result for a page, and @affordances/md's for the same page: the target is the same bytes (and title, url
@@ -460,7 +461,7 @@ describe('escaping by scan', () => {
   const chars = [...ALPHABET, ...MORE]
   test('random texts, every scope and edge', () => {
     let checked = 0
-    for (let round = 0; round < 20000; round++) {
+    for (let round = 0; round < Number(process.env.ESCAPE_FUZZ ?? 20000); round++) {
       const scope = SCOPES[random(SCOPES.length)]!
       const length = 1 + random(8)
       let input = ''
@@ -480,5 +481,79 @@ describe('escaping by scan', () => {
       ])
     }
     expect(checked).toBeGreaterThan(10000)
+  })
+})
+
+// the quick test that emphasis pairs as written must never pass what the full check rejects
+describe('emphasis pairing shortcut', () => {
+  let seed = 11
+  const random = (n: number) => {
+    seed = (seed * 1103515245 + 12345) % 2147483648
+    return seed % n
+  }
+  const TEXTS = [
+    'a',
+    'ab',
+    ' ',
+    ' a',
+    'a ',
+    '.',
+    ',',
+    '(',
+    ')',
+    '*',
+    '_',
+    'a.',
+    '.a',
+    '\\*',
+    '1',
+    'é',
+    '😀',
+    '',
+  ]
+  const SEQUENCES = [
+    ['_', '*'],
+    ['**', '__'],
+    ['~~', '~'],
+  ]
+  const items = (depth: number): Item[] =>
+    Array.from({ length: 1 + random(4) }, (): Item =>
+      depth < 3 && random(3) === 0
+        ? { children: items(depth + 1), sequences: SEQUENCES[random(3)]! }
+        : TEXTS[random(TEXTS.length)]!,
+    )
+  test('random runs of text and emphasis', () => {
+    const count = Number(process.env.ATTENTION_FUZZ ?? 20000)
+    for (let round = 0; round < count; round++) {
+      const list = items(0)
+      const before = TEXTS[random(TEXTS.length)]! || '\n'
+      const after = TEXTS[random(TEXTS.length)]! || '\n'
+      expect([JSON.stringify(list), before, after, attentionAgrees(list, before, after)]).toEqual([
+        JSON.stringify(list),
+        before,
+        after,
+        true,
+      ])
+    }
+  })
+})
+
+// the fast path's gate: with it and without it, the same markdown, for every case above, every page, and pages
+// generated from the shapes it takes and their near misses (test/emit-fuzz.ts runs many more of those)
+const withFast = (html: string, fast: boolean) =>
+  emit(oracle(document(html)), { url, fast } as Options).markdown
+describe('the fast path changes nothing', () => {
+  test.each(collected)('%s', (html) => expect(withFast(html, true)).toBe(withFast(html, false)))
+  test.each([...corpus, ...fixtures].map((page) => [page.name, page] as const))('%s', (_, page) => {
+    const fast = emit(oracle(page.html), { url: page.url, fast: true } as Options).markdown
+    expect(fast).toBe(emit(oracle(page.html), { url: page.url, fast: false } as Options).markdown)
+  })
+  test('generated pages', () => {
+    const next = generator(42)
+    for (let i = 0; i < Number(process.env.FAST_FUZZ ?? 3000); i++) {
+      const html = next()
+      const { fast, slow } = fuzzBoth(html)
+      expect([html, fast]).toEqual([html, slow])
+    }
   })
 })

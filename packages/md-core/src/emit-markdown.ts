@@ -1,3 +1,4 @@
+import type { Element } from './types.ts'
 // markdown from the emitter's lean tree, written the way mdast-util-to-markdown (MIT, Titus Wormer) writes an mdast
 // tree with @affordances/md's options: bullet -, emphasis _, strong *, rule -, fenced code, and gfm (tables, task
 // lists, strikethrough, autolink literals with their escapes kept to headings). its rules are ported one for one, over
@@ -49,6 +50,10 @@ export class Md {
   colSpan: number
   // its kids have been tidied (tidy below), which happens once, just before anything reads them
   clean: boolean
+  // a block the fast path wrote already (emit-convert's fast): its markdown, as handle() would write it in a flow
+  raw: string | null
+  // and the element it was written from, to convert again the slow way if its children are ever asked for
+  el: Element | null
   constructor(type: number, kids: Md[] = LEAF[type] ? NO_KIDS : [], value = '') {
     this.type = type
     this.kids = kids
@@ -65,6 +70,8 @@ export class Md {
     this.rowSpan = 0
     this.colSpan = 0
     this.clean = false
+    this.raw = null
+    this.el = null
   }
 }
 
@@ -462,7 +469,11 @@ const escapeBackslashes = (value: string, after: string) => {
 }
 
 // text made safe to write between before and after in the current constructs: mdast-util-to-markdown's safe()
+// whether what safe() last wrote ends with its input's last character (so that's what follows it), when it isn't
+// the input itself
+let endsAsInput = false
 const safe = (input: string, before: string, after: string, encode = ''): string => {
+  endsAsInput = false
   if (input === '') return escapeBackslashes(input, after)
   const scope = scopeOf(mask)
   // the fast path: nothing a pattern could match, and no line ending beside the text to start a construct
@@ -501,6 +512,34 @@ const scannable = (input: string, before: string, after: string) => {
 const sidesOf = (pattern: Pattern) => (pattern.before ? 1 : 0) | (pattern.after ? 2 : 0)
 // safe() as one pass over the text: each character's patterns asked of its neighbours, then the same rules as
 // slowSafe. only for text no line ending can reach (scannable), in a scope with one-character patterns
+// what the patterns say of the character at i: -1 nothing matches; else 1 if every match there had a before, | 2 if
+// every one had an after
+const matchAt = (
+  byChar: (Pattern[] | undefined)[],
+  input: string,
+  i: number,
+  previous: number,
+  next: number,
+) => {
+  const code = input.charCodeAt(i)
+  if (code >= 128) return -1
+  const list = byChar[code]
+  if (list === undefined) return -1
+  let bits = -1
+  for (let k = 0; k < list.length; k++) {
+    const pattern = list[k]!
+    if (pattern.beforeSet) {
+      const b = i ? input.charCodeAt(i - 1) : previous
+      if (b < 0 || b >= 128 || pattern.beforeSet[b] !== 1) continue
+    }
+    if (pattern.afterSet) {
+      const a = i + 1 < input.length ? input.charCodeAt(i + 1) : next
+      if (a < 0 || a >= 128 || pattern.afterSet[a] !== 1) continue
+    }
+    bits = bits < 0 ? sidesOf(pattern) : bits & sidesOf(pattern)
+  }
+  return bits
+}
 export const scanSafe = (
   byChar: (Pattern[] | undefined)[],
   input: string,
@@ -511,81 +550,54 @@ export const scanSafe = (
   const n = input.length
   const previous = before === '' ? -1 : before.charCodeAt(before.length - 1)
   const next = after === '' ? -1 : after.charCodeAt(0)
-  const positions: number[] = []
-  const infos: number[] = []
-  for (let i = 0; i < n; i++) {
-    const code = input.charCodeAt(i)
-    if (code >= 128) continue
-    const list = byChar[code]
-    if (list === undefined) continue
-    let bits = -1
-    for (const pattern of list) {
-      if (pattern.beforeSet) {
-        const b = i ? input.charCodeAt(i - 1) : previous
-        if (b < 0 || b >= 128 || pattern.beforeSet[b] !== 1) continue
-      }
-      if (pattern.afterSet) {
-        const a = i + 1 < n ? input.charCodeAt(i + 1) : next
-        if (a < 0 || a >= 128 || pattern.afterSet[a] !== 1) continue
-      }
-      bits = bits < 0 ? sidesOf(pattern) : bits & sidesOf(pattern)
-    }
-    if (bits >= 0) {
-      positions.push(i)
-      infos.push(bits)
-    }
-  }
-  if (!positions.length) return escapeBackslashes(input, after)
-  const at = (i: number) => (i < 0 ? previous : i < n ? input.charCodeAt(i) : next)
-  const result: string[] = []
+  // a backslash only needs doubling before punctuation, and only if there is one
+  const slashes = input.indexOf('\\') >= 0
+  let result = ''
   let start = 0
-  for (let index = 0; index < positions.length; index++) {
-    const position = positions[index]!
-    if (position < start) continue
+  for (let i = 0; i < n; i++) {
+    const info = matchAt(byChar, input, i, previous, next)
+    if (info < 0) continue
     // an intraword underscore run (snake_case) needs no escape
-    if (
-      input.charCodeAt(position) === 95 &&
-      (position > 0 || before !== '') &&
-      classify(at(position - 1)) === 0 &&
-      !(position === 1 && (previous === 42 || previous === 95))
-    ) {
-      let sequenceEnd = position + 1
-      while (sequenceEnd < n && input.charCodeAt(sequenceEnd) === 95) sequenceEnd++
-      const skip = sequenceEnd - position - 1
-      if (
-        positions[index + skip] === sequenceEnd - 1 &&
-        (sequenceEnd < n || after !== '') &&
-        classify(at(sequenceEnd)) === 0 &&
-        !(sequenceEnd === n - 1 && (next === 42 || next === 95))
-      ) {
-        index += skip
-        continue
+    if (input.charCodeAt(i) === 95 && (i > 0 || before !== '')) {
+      const back = i ? input.charCodeAt(i - 1) : previous
+      if (classify(back) === 0 && !(i === 1 && (previous === 42 || previous === 95))) {
+        let sequenceEnd = i + 1
+        while (sequenceEnd < n && input.charCodeAt(sequenceEnd) === 95) sequenceEnd++
+        let all = true
+        for (let k = i + 1; k < sequenceEnd && all; k++)
+          all = matchAt(byChar, input, k, previous, next) >= 0
+        if (
+          all &&
+          (sequenceEnd < n || after !== '') &&
+          classify(sequenceEnd < n ? input.charCodeAt(sequenceEnd) : next) === 0 &&
+          !(sequenceEnd === n - 1 && (next === 42 || next === 95))
+        ) {
+          i = sequenceEnd - 1
+          continue
+        }
       }
     }
-    const info = infos[index]!
     // escaping what follows (or precedes) is enough
     if (
-      (position + 1 < n &&
-        positions[index + 1] === position + 1 &&
-        info & 2 &&
-        infos[index + 1] === 0) ||
-      (position - 1 >= 0 &&
-        positions[index - 1] === position - 1 &&
-        info & 1 &&
-        infos[index - 1] === 0)
+      (info & 2 && i + 1 < n && matchAt(byChar, input, i + 1, previous, next) === 0) ||
+      (info & 1 && i > 0 && matchAt(byChar, input, i - 1, previous, next) === 0)
     )
       continue
-    if (start !== position) result.push(escapeBackslashes(input.slice(start, position), '\\'))
-    start = position + 1
-    const char = input.charAt(position)
-    result.push(
+    if (start !== i)
+      result += slashes ? escapeBackslashes(input.slice(start, i), '\\') : input.slice(start, i)
+    start = i + 1
+    const char = input.charAt(i)
+    result +=
       ASCII_PUNCTUATION.test(char) && !encode.includes(char)
         ? '\\' + char
-        : reference(input.charCodeAt(position)),
-    )
+        : reference(input.charCodeAt(i))
   }
-  result.push(escapeBackslashes(input.slice(start), after))
-  return result.join('')
+  const tail = slashes || after.indexOf('\\') >= 0
+  if (start === 0) return tail ? escapeBackslashes(input, after) : input
+  const rest = start < n ? input.slice(start) : ''
+  // the text's own last character ends what's written, unless an escape does
+  endsAsInput = rest !== '' && !tail
+  return result + (tail ? escapeBackslashes(rest, after) : rest)
 }
 // the slow path, for tests: safe() by the regexes, whatever the text
 export const regexSafe = (
@@ -944,6 +956,51 @@ const improve = (
   return undefined
 }
 
+// whether check() would find nothing wrong, answered without its bookkeeping for the usual shape: every attention
+// run a single sequence, properly nested, each opener able to open and each closer to close. false means "ask check"
+const pending: Attention[][] = [[], [], []]
+const stackOf = (marker: number) => pending[marker === 42 ? 0 : marker === 95 ? 1 : 2]!
+const fastValid = (tokens: Token[], before: string, after: string): boolean => {
+  pending[0]!.length = 0
+  pending[1]!.length = 0
+  pending[2]!.length = 0
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index]!
+    if (!token.attention) continue
+    const marker = token.value.charCodeAt(0)
+    const left = index > 0 ? tokens[index - 1]! : undefined
+    const right = index + 1 < tokens.length ? tokens[index + 1]! : undefined
+    // a run of more than one sequence is check's to read
+    if (left?.attention && left.value.charCodeAt(0) === marker) return false
+    if (right?.attention && right.value.charCodeAt(0) === marker) return false
+    const head = left ? left.value : before
+    const previous = classify(head.charCodeAt(head.length - 1))
+    const next = classify((right ? right.value : after).charCodeAt(0))
+    let open = !next || (next === 2 && Boolean(previous))
+    let close = !previous || (previous === 2 && Boolean(next))
+    if (marker === 95) {
+      const opens = open && (Boolean(previous) || !close)
+      close = close && (Boolean(next) || !open)
+      open = opens
+    }
+    const opened = stackOf(marker)
+    if (opened[opened.length - 1] === token.attention) {
+      if (!close) return false
+      opened.pop()
+    } else {
+      if (!open || (close && opened.length)) return false
+      opened.push(token.attention)
+    }
+  }
+  return !pending[0]!.length && !pending[1]!.length && !pending[2]!.length
+}
+// for tests: whether fastValid and check agree on these items
+export const attentionAgrees = (items: Item[], before: string, after: string) => {
+  const tokens = render(items, new Map(), before, after)
+  return !fastValid(tokens, before, after) || check(tokens, before, after) === undefined
+}
+export type { Attention, Item }
+
 const serialize = (items: Item[], before: string, after: string) => {
   let plain = true
   for (const item of items)
@@ -954,6 +1011,11 @@ const serialize = (items: Item[], before: string, after: string) => {
   if (plain) return items.join('')
   let chosen = new Map<Attention, string>()
   const initial = render(items, chosen, before, after)
+  if (fastValid(initial, before, after)) {
+    let joined = ''
+    for (let i = 0; i < initial.length; i++) joined += initial[i]!.value
+    return joined
+  }
   let tokens = initial
   let mistake = check(tokens, before, after)
   while (mistake) {
@@ -1032,7 +1094,9 @@ const phrasing = (parent: Md, before: string, after: string): Item[] => {
             ? ')'
             : child.type === INLINE_CODE
               ? '`'
-              : lastCharacter(value)
+              : child.type === TEXT && (value === child.value || endsAsInput)
+                ? lastCharacter(child.value)
+                : lastCharacter(value)
     }
   }
   indexStack.pop()
@@ -1177,6 +1241,7 @@ const handle = (node: Md, parent: Md | undefined, before: string, after: string)
     case TEXT:
       return safe(node.value, before, after)
     case PARAGRAPH: {
+      if (node.raw !== null) return node.raw
       enter('paragraph')
       enter('phrasing')
       const value = containerPhrasing(node, before, after)
@@ -1185,7 +1250,7 @@ const handle = (node: Md, parent: Md | undefined, before: string, after: string)
       return value
     }
     case HEADING:
-      return heading(node)
+      return node.raw !== null ? node.raw : heading(node)
     case ROOT: {
       if (!tidy(node).some(isPhrasing)) return containerFlow(node)
       enter('phrasing')
@@ -1561,6 +1626,104 @@ const markdownTable = (matrix: string[][], align: (string | null)[]) => {
   return lines.join('\n')
 }
 
+// a paragraph or heading written as a flow writes it (between line endings, in no construct but its own), for the
+// fast path, which writes them as it converts them. the serializer's state is balanced between calls, so this is
+// the same markdown handle() gives it later
+export const renderBlock = (node: Md) => {
+  const written = writeFlat(node)
+  return written === undefined ? handle(node, undefined, '\n', '\n') : written
+}
+
+// a paragraph or heading written in one pass over its children, for the usual shape: text, code, links and
+// emphasis around a single text that starts and ends with a letter where nothing could make the markers mean
+// anything else. that's phrasing() and serialize() when every attention run pairs as written and nothing needs
+// encoding; anything else returns undefined, for the general way
+const writeFlat = (node: Md): string | undefined => {
+  const isHeading = node.type === HEADING
+  const rank = isHeading ? Math.max(Math.min(6, node.depth || 1), 1) : 0
+  const kids = tidy(node)
+  enter(isHeading ? 'headingAtx' : 'paragraph')
+  enter('phrasing')
+  let before = isHeading ? '# ' : '\n'
+  const end = '\n'
+  let out = ''
+  // the marker of the attention just written, when nothing has come after it yet
+  let lastMarker = 0
+  let failed = false
+  for (let i = 0; i < kids.length && !failed; i++) {
+    const child = kids[i]!
+    const next = i + 1 < kids.length ? firstCharacter(peek(kids[i + 1]!, node)) : end
+    switch (child.type) {
+      case TEXT: {
+        const value = safe(child.value, before, next)
+        if (!value) continue
+        out += value
+        before =
+          value === child.value || endsAsInput ? lastCharacter(child.value) : lastCharacter(value)
+        lastMarker = 0
+        break
+      }
+      case STRONG:
+      case EMPHASIS: {
+        const inner = tidy(child)
+        const sequence = child.type === STRONG ? '**' : '_'
+        const marker = sequence.charCodeAt(0)
+        if (inner.length !== 1 || inner[0]!.type !== TEXT || lastMarker === marker) {
+          failed = true
+          break
+        }
+        enter(child.type === STRONG ? 'strong' : 'emphasis')
+        const text = safe(inner[0]!.value, sequence, sequence)
+        exit()
+        // letters at both ends inside; for _, no letter right outside either
+        if (
+          text === '' ||
+          classify(text.charCodeAt(0)) !== 0 ||
+          classify(text.charCodeAt(text.length - 1)) !== 0 ||
+          (marker === 95 &&
+            (classify(before.charCodeAt(before.length - 1)) === 0 ||
+              classify(next.charCodeAt(0)) === 0))
+        ) {
+          failed = true
+          break
+        }
+        out += sequence + text + sequence
+        before = sequence.charAt(sequence.length - 1)
+        lastMarker = marker
+        break
+      }
+      case INLINE_CODE:
+        out += inlineCode(child)
+        before = '`'
+        lastMarker = 0
+        break
+      case LINK:
+        out += link(child, before)
+        before = autolinked(child) ? '>' : ')'
+        lastMarker = 0
+        break
+      case BREAK: {
+        const value = isHeading ? (/[\t ]/.test(before) ? '' : ' ') : '\\\n'
+        if (!value) continue
+        out += value
+        before = lastCharacter(value)
+        lastMarker = 0
+        break
+      }
+      default:
+        failed = true
+    }
+  }
+  exit()
+  exit()
+  if (failed) return undefined
+  if (!isHeading) return out
+  const head = out.charCodeAt(0)
+  if (head === 9 || head === 32) out = reference(head) + out.slice(1)
+  const sequence = '#'.repeat(rank)
+  return out ? sequence + ' ' + out : sequence
+}
+
 // the markdown for a root, as toMarkdown writes it
 export const toMarkdown = (root: Md): string => {
   stack = []
@@ -1569,10 +1732,9 @@ export const toMarkdown = (root: Md): string => {
   indexStack = []
   bulletCurrent = undefined
   bulletLastUsed = undefined
-  let result = handle(root, undefined, '\n', '\n')
-  const last = result.charCodeAt(result.length - 1)
-  if (result && last !== 10 && last !== 13) result += '\n'
-  return result
+  // toMarkdown ends what it writes with a line ending; finish trims it straight off, so it's never added (reading
+  // the last character would copy the whole markdown into one string just for that)
+  return handle(root, undefined, '\n', '\n')
 }
 
 // a heading's text as a reader sees it (headingOf in @affordances/md): what it says, without images or a url shown as

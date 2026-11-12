@@ -8,6 +8,8 @@ import {
   IMAGE,
   INLINE_CODE,
   isPhrasing,
+  renderBlock,
+  setext,
   LINK,
   LIST,
   LIST_ITEM,
@@ -171,6 +173,7 @@ let controls = 0
 let titledCode: Element | undefined
 let titledAs = ''
 export const startConvert = (options: Options, page: string | undefined) => {
+  fast = (options as { fast?: boolean }).fast !== false
   base = page
   relink = options.link
   inTable = false
@@ -206,6 +209,11 @@ const push = (out: Md[], results: Md[]) => {
 // an element's children, converted, appended to out
 export const all = (parent: Element, out: Md[] = []): Md[] => {
   const kids = kidsOf(parent)
+  // whether what's converted here lands in a flow (root, blockquote, list item) as it is: every element between here
+  // and the nearest one is a flow element, or one whose children are its parent's (a span, a custom element). only
+  // there is a block written as a flow writes it
+  const savedFlow = flow
+  flow = flow && (FLOWS.has(parent.tag) || ((INFO.get(parent.tag) ?? 0) & KIND_MASK) === PASS)
   for (let i = 0; i < kids.length; i++) {
     const kid = kids[i]!
     if (typeof kid === 'string') {
@@ -240,7 +248,22 @@ export const all = (parent: Element, out: Md[] = []): Md[] => {
     let result: Md | Md[] | undefined
     if (controls !== 0 && CONTROL_TAGS.has(kid.tag)) result = walkOnly(kid)
     else if (kind === PASS && !(kid.flags & FLAG['data-mdast'])) all(kid, out)
-    else result = one(kid, kind, parent)
+    else if (
+      flow &&
+      fast &&
+      (kind === PARAGRAPH_TAG || kind === HEADING_TAG) &&
+      controls === 0 &&
+      !inTable &&
+      skips.size === 0 &&
+      mode === NORMAL &&
+      (result = fastBlock(kid, kind)) !== DECLINED
+    ) {
+      // written by the fast path (or nothing, for a paragraph with nothing in it)
+    } else {
+      // a block the fast path declined starts again where it started: at a block's edge
+      if (block) before = true
+      result = one(kid, kind, parent)
+    }
     const strip = before || end
     after = savedAfter
     mode = savedMode
@@ -249,6 +272,7 @@ export const all = (parent: Element, out: Md[] = []): Md[] => {
     if (result instanceof Md) pushOne(out, result)
     else push(out, result)
   }
+  flow = savedFlow
   return out
 }
 // the whitespace an element leaves, without what it says
@@ -563,7 +587,17 @@ const DOT_SEGMENT = /\/\.|%2e/i
 const HTTP = /^(https?):\/\/([a-z0-9-]+(?:\.[a-z0-9-]+)*\.?)(?=[/?#]|$)/
 const NUMERIC_LABEL = /(?:^|\.)(?:0x[0-9a-f]*|\d+)\.?$/
 // the shape an href is, when it's one of those: 'fragment', 'path', or an http url's length up to its path
+// the last url shaped: a link's url is shaped twice in a row (its scheme, then its resolution)
+let shapedUrl = ''
+let shaped: 'fragment' | 'path' | number | undefined
 const shape = (url: string): 'fragment' | 'path' | number | undefined => {
+  if (url !== shapedUrl) {
+    shapedUrl = url
+    shaped = shapeOf(url)
+  }
+  return shaped
+}
+const shapeOf = (url: string): 'fragment' | 'path' | number | undefined => {
   const head = url.charCodeAt(0)
   if (head === 35) return PLAIN.test(url) && url.indexOf('#', 1) < 0 ? 'fragment' : undefined
   if (head === 47) {
@@ -1109,6 +1143,19 @@ const collectElement = (
   if (isCell(el) && afterIn(siblings, position, isCell)) piece('\t')
   if (suffix) piece(suffix)
 }
+const BIDI_TEST = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/
+// toText of an inline element holding one text, already collapsed
+const toTextOfOne = (value: string) => {
+  const savedJoined = joined
+  const savedCount = count
+  joined = ''
+  count = undefined
+  collectText(value, false, false)
+  const result = joined
+  joined = savedJoined
+  count = savedCount
+  return result
+}
 const BIDI = /[؜‎‏‪-‮⁦-⁩]/g
 const collectText = (value: string, breakBefore: Break, breakAfter: Break) => {
   const lines: string[] = []
@@ -1160,8 +1207,157 @@ const trimAndCollapse = (value: string, breakBefore: unknown, breakAfter: unknow
 
 // the walk over the content's root, as hast-util-to-mdast's root handler: wrapped when it holds blocks
 export const convertRoot = (root: Element): Md => {
+  flow = true
   before = true
   after = true
   mode = NORMAL
   return node(ROOT, rootKids(all(root)))
+}
+
+// the fast path: a paragraph or heading of plain inline content (text, strong, emphasis, code, links, breaks, spans)
+// is converted by a walk that knows only those, and written straight away. anything else declines it, and it's
+// converted as before. it makes the same tree one() would (finish and the joins read it), so the gate is simply
+// that the markdown is the same with it and without it (emit's second argument takes fast: false)
+let fast = true
+let flow = false
+const FLOWS = new Set([
+  '#root',
+  ...'address article aside body center fieldset figcaption footer header hgroup html legend main multicol nav picture section div figure blockquote li details form'.split(
+    ' ',
+  ),
+])
+const DECLINED = null as unknown as Md
+// how the fast path fared, for the reports: blocks written, and declined by the tag that stopped them
+export const fastStats = { taken: 0, declined: new Map<string, number>() }
+const decline = (why: string) => {
+  fastStats.declined.set(why, (fastStats.declined.get(why) ?? 0) + 1)
+  return false
+}
+const fastBlock = (el: Element, kind: number): Md | undefined => {
+  const out: Md[] = []
+  const savedAfter = after
+  if (!fastInline(el, el, out)) {
+    // what a declined block leaves is set back, so it's converted as if it had never been tried
+    after = savedAfter
+    return DECLINED
+  }
+  const kids = dropBreaks(out)
+  let block: Md
+  if (kind === PARAGRAPH_TAG) {
+    if (!kids.length) return undefined
+    block = node(PARAGRAPH, kids)
+  } else {
+    block = node(HEADING, kids)
+    block.depth = el.tag.charCodeAt(1) - 48
+    // a heading with a line break is written setext style, which joins read from its children: the slow way
+    if (setext(block)) {
+      decline('setext heading')
+      return DECLINED
+    }
+  }
+  block.raw = renderBlock(block)
+  fastStats.taken++
+  // only its markdown is kept: what's built for it goes now, and the element stands in for it if it's ever read
+  block.kids = []
+  block.el = el
+  return block
+}
+// a block the fast path wrote, converted the slow way, for what reads its children (finish: the description and
+// the title read the blocks at the top)
+export const materialize = (block: Md): Md => {
+  if (block.raw === null || block.el === null) return block
+  const savedFast = fast
+  fast = false
+  before = true
+  after = true
+  mode = NORMAL
+  const el = block.el
+  const made = one(el, el.tag === 'p' ? PARAGRAPH_TAG : HEADING_TAG, el.up ?? el)
+  fast = savedFast
+  return made instanceof Md ? made : block
+}
+// an element's inline children into out, as all() converts them, or false at the first thing it doesn't know
+const fastInline = (parent: Element, heading: Element, out: Md[]): boolean => {
+  const kids = kidsOf(parent)
+  for (let i = 0; i < kids.length; i++) {
+    const kid = kids[i]!
+    if (typeof kid === 'string') {
+      const value = minified(kid, kids, i)
+      if (value === undefined) continue
+      const last = out[out.length - 1]
+      if (last !== undefined && last.type === TEXT) last.value += value
+      else out.push(new Md(TEXT, undefined, value))
+      continue
+    }
+    const tag = kid.tag
+    if (kid.flags & FLAG['data-mdast']) return decline('data-mdast')
+    const isBreak = tag === 'br'
+    const savedAfter = after
+    const end = isBreak ? true : collapsableAfter(kids, i, after)
+    if (isBreak) before = true
+    after = end
+    let ok = true
+    switch (tag) {
+      case 'span':
+        ok = fastInline(kid, heading, out)
+        break
+      case 'strong':
+      case 'b':
+      case 'em':
+      case 'i': {
+        const inner: Md[] = []
+        ok = fastInline(kid, heading, inner)
+        if (ok) out.push(node(tag === 'strong' || tag === 'b' ? STRONG : EMPHASIS, inner))
+        break
+      }
+      case 'code': {
+        // code of one text is that text as whitespace leaves it (toText's trims are already done), unless it has
+        // bidi controls, which toText strips
+        const inner = kidsOf(kid)
+        let value: string
+        if (inner.length === 1 && typeof inner[0] === 'string') {
+          value = minified(inner[0], inner, 0) ?? ''
+          if (BIDI_TEST.test(value)) value = toTextOfOne(value)
+        } else value = toText(kid)
+        out.push(node(INLINE_CODE, undefined, value))
+        break
+      }
+      case 'br':
+        out.push(node(BREAK))
+        break
+      case 'a':
+        ok = fastLink(kid, parent === heading && HEADINGS.has(heading.tag), out)
+        break
+      default:
+        ok = decline(`<${tag}>`)
+    }
+    if (!ok) return false
+    const strip = before || end
+    after = savedAfter
+    before = Boolean(strip)
+  }
+  return true
+}
+// a link as link() converts it: unwrapped when it goes nowhere (or to its heading's own anchor)
+const fastLink = (el: Element, inHeading: boolean, out: Md[]): boolean => {
+  const href = (attr(el, 'href') ?? '').trim()
+  const children: Md[] = []
+  if (!fastInline(el, el, children)) return false
+  if (
+    !href ||
+    href === '#' ||
+    !allowed(href, LINK_SCHEMES) ||
+    (href.startsWith('#') && inHeading)
+  ) {
+    push(out, children)
+    return true
+  }
+  // a link with nothing to read is named by its label: the slow way
+  if (!children.some((child) => child.type !== TEXT || child.value.trim()))
+    return decline('link named by its label')
+  const result = node(LINK, children)
+  result.url = resolve(href, false)
+  result.title = el.flags & FLAG.title ? (attr(el, 'title') ?? null) : null
+  out.push(result)
+  return true
 }

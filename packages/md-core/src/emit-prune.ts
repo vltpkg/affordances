@@ -104,9 +104,21 @@ const editor = (el: Element) => {
 
 // what prune leaves out, with everything in it: what's hidden from people (unless marked for agents), what's marked
 // skip, and editors, whose text is what someone typed
+// what an attribute source says about being dropped, remembered: highlighted code repeats a few style="color:…"
+// sources thousands of times. kept small, and only for what the source alone decides (not affordances-md's tag)
+const droppedBy = new Map<string, boolean>()
 const dropped = (el: Element): boolean => {
+  if ((el.flags & PRUNES) === 0) return false
+  if (el.tag === 'affordances-md') return droppedNow(el)
+  let known = droppedBy.get(el.attrs)
+  if (known === undefined) {
+    if (droppedBy.size > 1024) droppedBy.clear()
+    droppedBy.set(el.attrs, (known = droppedNow(el)))
+  }
+  return known
+}
+const droppedNow = (el: Element): boolean => {
   const found = flags(el)
-  if ((found & PRUNES) === 0) return false
   const mode = found & MARKED ? marked(el) : undefined
   if (mode === 'skip') return true
   if (found & (ROLE | EDITABLE) && editor(el)) return true
@@ -429,6 +441,23 @@ const spaced = (parent: Element, kids: Node[]): Node[] => {
     if (!leftInline && !rightInline) continue
     if ((!leftInline && typeof left !== 'string') || (!rightInline && typeof right !== 'string'))
       continue
+    // text beside an element: no gap unless a letter or digit meets one, or the element is a box. both are cheap to
+    // rule out before reading the element's text: the text's own edge isn't a letter, the element has no class or style
+    if (!leftInline || !rightInline) {
+      const beside = (leftInline ? right : left) as string
+      const edge = beside.charCodeAt(leftInline ? 0 : beside.length - 1)
+      const element = (leftInline ? left : right) as Element
+      if (
+        edge < 128 &&
+        !(
+          (edge >= 48 && edge <= 57) ||
+          (edge >= 65 && edge <= 90) ||
+          (edge >= 97 && edge <= 122)
+        ) &&
+        !(element.flags & (FLAG.class | FLAG.style))
+      )
+        continue
+    }
     let gap: boolean
     if (leftInline && rightInline && edgeLink(left, true) && edgeLink(right, false)) gap = true
     else {
