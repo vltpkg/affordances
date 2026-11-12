@@ -20,7 +20,7 @@ for (let run = 0; run < runs; run++) {
     let at = performance.now()
     begin(false)
     setPage(doc.root)
-    const main = findMain(doc.root)
+    const main = findMain(doc.mains)
     if (!main) begin(true)
     totals.main += performance.now() - at
     at = performance.now()

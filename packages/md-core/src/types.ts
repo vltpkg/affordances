@@ -7,14 +7,42 @@ export type Node = Element | string
 export interface Element {
   // lowercase tag name; the root is '#root'
   tag: string
-  // the tag's attributes exactly as written, from after the tag name to before the closing '>' ('' when none). read
-  // them with attr(), which parses on first use: most elements' attributes are never read
+  // the tag's attributes as written, from after the tag name to before the closing '>' ('' when none), in any syntax
+  // html allows (unquoted, single-quoted, any case, repeated names); re-serialised only where the parser had to merge
+  // or rename them. never scan it by hand: read values with attr(), which parses on first use, and presence with flags
   attrs: string
+  // which of the attributes in FLAG the tag has, whatever their values: one bit each, set by the parser as it reads
+  // the tag, so asking "could this be hidden?" of every element never touches its source
+  flags: number
   kids: Node[]
   up: Element | null
   // attr()'s cache
   map?: Map<string, string> | undefined
 }
+
+// the attributes an element's flags record, by name (ascii case-insensitive, as html matches them)
+export const FLAG = {
+  hidden: 1 << 0,
+  'aria-hidden': 1 << 1,
+  style: 1 << 2,
+  role: 1 << 3,
+  contenteditable: 1 << 4,
+  'data-affordances-md': 1 << 5,
+  'data-mode': 1 << 6,
+  'data-mdast': 1 << 7,
+  'data-title': 1 << 8,
+  title: 1 << 9,
+  nowrap: 1 << 10,
+  rowspan: 1 << 11,
+  colspan: 1 << 12,
+  align: 1 << 13,
+  class: 1 << 14,
+  id: 1 << 15,
+  'aria-label': 1 << 16,
+  'aria-labelledby': 1 << 17,
+  'data-language': 1 << 18,
+} as const
+export const flagOf = (name: string): number => (FLAG as Record<string, number>)[name] ?? 0
 
 // what the page's <head> says, read during the one scan; the head's elements are not in the tree
 export interface Head {
@@ -35,6 +63,9 @@ export interface Document {
   // children are the <body>'s children (or, without a body, the page's own)
   root: Element
   head: Head
+  // every <main> and every element whose role attribute is exactly 'main', in tree order, wherever it is in the
+  // root's tree (hidden or not: the emitter decides which one counts)
+  mains: Element[]
 }
 
 // what the parser never builds, with everything inside: never content, whatever the page says. the same set as

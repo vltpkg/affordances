@@ -31,7 +31,7 @@ const TAGS = (
   'foreignObject path g html head body br img hr wbr image keygen object applet marquee canvas video audio source ' +
   'meta link base rt rp rb rtc ruby section article header footer nav main aside blockquote figure figcaption ' +
   'details summary dialog address center fieldset menu dir search hgroup frameset frame param track embed area ' +
-  'sub sup var my-element x'
+  'sub sup var my-element x main'
 ).split(' ')
 const RARE_TAGS = ['plaintext']
 const ATTRS = [
@@ -54,6 +54,28 @@ const ATTRS = [
   'title',
   'data-x',
   'CLASS',
+  'hidden',
+  'HIDDEN',
+  'aria-hidden',
+  'Aria-Hidden',
+  'style',
+  'role',
+  'ROLE',
+  'contenteditable',
+  'data-affordances-md',
+  'data-mode',
+  'data-mdast',
+  'data-title',
+  'nowrap',
+  'rowspan',
+  'colspan',
+  'align',
+  'aria-label',
+  'aria-labelledby',
+  'data-language',
+  'xlink:title',
+  'hiddenx',
+  'rol',
 ]
 const VALUES = [
   'x',
@@ -80,6 +102,10 @@ const VALUES = [
   'red',
   'en',
   'og:title',
+  'main',
+  'Main',
+  'main ',
+  'ma&#105;n',
 ]
 const WORDS = [
   'a',
@@ -172,7 +198,7 @@ const RAW_BITS = [
 // what gets fostered out of them, select, and foreign content with its integration points and breakouts
 const DENSE = (
   'a b i nobr font p div li dd table caption tr td th tbody colgroup col select option optgroup svg math mi ' +
-  'annotation-xml desc foreignObject title template button form h1 pre textarea script style noscript object br'
+  'annotation-xml desc foreignObject title template button form h1 pre textarea script style noscript object br main'
 ).split(' ')
 
 export const generate = (seed: number) => {

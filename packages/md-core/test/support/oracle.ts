@@ -1,5 +1,12 @@
 import { parse } from 'parse5'
-import { NEVER, type Document, type Element, type Head, type Node } from '../../src/types.ts'
+import {
+  flagOf,
+  NEVER,
+  type Document,
+  type Element,
+  type Head,
+  type Node,
+} from '../../src/types.ts'
 
 // the Document parse.ts must build, made the slow way: parse5 reads the page as a browser does, and this walks its
 // tree into the contract's shape. the parser is tested against it, and the emitter can be written against it before
@@ -56,8 +63,11 @@ export const oracle = (html: string): Document => {
   }
   scan(document, false, false)
   head.title = (headTitle ?? anyTitle)?.trim() || undefined
+  const mains: Element[] = []
   const build = (from: P5, up: Element | null, tag: string): Element => {
-    const el: Element = { tag, attrs: source(from.attrs), kids: [], up }
+    const flags = (from.attrs ?? []).reduce((bits, { name }) => bits | flagOf(name), 0)
+    const el: Element = { tag, attrs: source(from.attrs), flags, kids: [], up }
+    if (up && (tag === 'main' || get(from, 'role') === 'main')) mains.push(el)
     for (const child of from.childNodes ?? []) {
       let kid: Node | undefined
       if (child.nodeName === '#text') kid = child.value ?? ''
@@ -71,15 +81,20 @@ export const oracle = (html: string): Document => {
     }
     return el
   }
-  return { root: build(body ?? document, null, '#root'), head }
+  return { root: build(body ?? document, null, '#root'), head, mains }
 }
 
 // a Document as plain data, for comparing two of them: attributes parsed, parents left out
 export const plain = (doc: Document, attrs: (el: Element) => Record<string, string>) => {
   const node = (n: Node): unknown =>
-    typeof n === 'string' ? n : { tag: n.tag, attrs: attrs(n), kids: n.kids.map(node) }
+    typeof n === 'string'
+      ? n
+      : { tag: n.tag, attrs: attrs(n), flags: n.flags, kids: n.kids.map(node) }
+  const path = (el: Element): number[] => (el.up ? [...path(el.up), el.up.kids.indexOf(el)] : [])
   return {
     root: node(doc.root),
+    // each main by where it is in the tree
+    mains: doc.mains.map(path),
     head: { ...doc.head, meta: Object.fromEntries(doc.head.meta) },
   }
 }

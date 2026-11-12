@@ -28,6 +28,8 @@ describe('text and character references', () => {
     '<3',
     'a\r\nb\rc\n',
     'a\0b\0\0c',
+    '<math>\0</>\0</>\0</ >\0</math>',
+    '\0</>\0x',
     '\0',
     'tab\there',
   ])('%j', (html) => expect(difference(html)).toBeUndefined())
@@ -398,6 +400,27 @@ describe('foreign content: math', () => {
     '<math>a\0\0b</math>',
     '<math><mo>\0</mo></math>',
     '<math><html lang=xx></math>',
+  ])('%j', (html) => expect(difference(html)).toBeUndefined())
+})
+
+describe('flags and mains', () => {
+  test.each([
+    '<div hidden HIDDEN=x aria-hidden="true" Style="a" role=button>x</div>',
+    '<p class=a id=b title=c nowrap align=left>x</p><td rowspan=2 colspan=3>y',
+    '<div data-affordances-md data-mode=x data-mdast data-title=t data-language=ts>x</div>',
+    '<div contenteditable aria-label=a aria-labelledby=b>x</div>',
+    '<div hiddenx rol stylex classy data-modes>x</div>',
+    '<div a=hidden b="role">x</div>',
+    '<div/hidden/>x</div><div hidden=>y</div><div hidden="a>b" role>z</div>',
+    '<math><mi xlink:title=t xml:lang=en>x</mi></math>',
+    '<html hidden><body class=a><body id=b role=main>x',
+    '<main>a</main><div role=main>b</div><div role=MAIN>c</div><div role="main ">d</div>',
+    '<div role="ma&#105;n">x</div><main><main>nested</main></main>',
+    '<b role=main>a<p>b</b>c',
+    '<table><tr><td>x</td></tr><main>fostered</main></table>',
+    '<script role=main></script><svg><main>in svg</main></svg><noscript><main>n</main></noscript>after',
+    '<template><main>t</main></template><head><main>h',
+    '<math><main>math main</main></math>',
   ])('%j', (html) => expect(difference(html)).toBeUndefined())
 })
 

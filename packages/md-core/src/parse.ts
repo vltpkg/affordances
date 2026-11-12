@@ -1,6 +1,6 @@
 import { attr, parseAttrs } from './attr.ts'
 import { decode } from './entities.ts'
-import { NEVER, type Document, type Element, type Head, type Node } from './types.ts'
+import { FLAG, flagOf, NEVER, type Document, type Element, type Head, type Node } from './types.ts'
 
 // html to a Document in one scan, as a browser with scripting off reads it. the tokenizer jumps between '<' with
 // indexOf, takes raw text (script, style) and attribute values whole, and never builds comments or the doctype. the
@@ -19,8 +19,6 @@ interface El extends Element {
   // ever leave). every element but inside svg keeps its children, dropped ones too, until the parse ends: the
   // adoption agency and foster parenting place nodes by them, and the Head is read in their order
   rec: number
-  // whether a dropped child is among its kids, to take out at the end
-  drops: boolean
 }
 
 const HTML = 0
@@ -291,7 +289,9 @@ let bodyGone = false
 let pending: string[] = []
 let pendingText = false
 let watched: El[] = []
-let pruned: El[] = []
+let mains: El[] = []
+// the elements with a dropped child among their kids, to take out at the end
+let pruned = new Set<El>()
 // whether a node was put anywhere but after everything before it: then the Head's elements are sorted into tree order
 let reordered = false
 
@@ -300,6 +300,8 @@ let tag = ''
 let tid = 0
 let tattrs = ''
 let tself = false
+// the start tag's FLAG bits, read with its attribute names
+let tflags = 0
 let ttext = ''
 
 interface Entry {
@@ -307,6 +309,7 @@ interface Entry {
   tag: string
   id: number
   attrs: string
+  flags: number
 }
 
 const lowerAscii = (text: string) =>
@@ -329,18 +332,21 @@ const serialize = (map: Map<string, string>) => {
 
 // tree
 
-const make = (name: string, id: number, ns: number, attrs: string): El => {
+const make = (name: string, id: number, ns: number, attrs: string, flags: number): El => {
   const el: El = {
     tag: name,
     attrs,
+    flags,
     kids: [],
     up: null,
     map: undefined,
     id,
     ns,
     rec: ns === SVG ? 0 : DROP[id] ? 1 : 2,
-    drops: false,
   }
+  // a main, by tag or by role; which of them end up in the tree is settled at the end
+  if (id === MAIN || (flags & FLAG.role && maybe(attrs, 'main') && attr(el, 'role') === 'main'))
+    mains.push(el)
   // the Head's elements; of the scripts and links, only those that could be json-ld or the canonical link
   if (WATCH[id]) {
     if (id === SCRIPT) {
@@ -370,24 +376,31 @@ const settle = () => {
 
 const adopted = (parent: El, el: El) => {
   if (parent.rec === 3 && el.rec !== 3) keepAll(el)
-  if (DROP[el.id] && !parent.drops) dropsIn(parent)
+  if (DROP[el.id]) pruned.add(parent)
 }
-const dropsIn = (parent: El) => {
-  parent.drops = true
-  pruned.push(parent)
+// a node's first few children go in arrays made to their size: an empty array grown by push takes room for 16
+const addKid = (parent: El, kid: Node) => {
+  const kids = parent.kids
+  switch (kids.length) {
+    case 0:
+      parent.kids = [kid]
+      return
+    default:
+      kids.push(kid)
+  }
 }
 const appendChild = (parent: El, el: El) => {
   el.up = parent
   if (parent.rec === 0) return
   adopted(parent, el)
-  parent.kids.push(el)
+  addKid(parent, el)
 }
 const appendText = (parent: El, text: string) => {
   if (parent.rec < 2) return
   const kids = parent.kids
   const last = kids.length - 1
   if (last >= 0 && typeof kids[last] === 'string') kids[last] += text
-  else kids.push(text)
+  else addKid(parent, text)
 }
 const insertBefore = (parent: El, el: El, ref: El) => {
   el.up = parent
@@ -395,7 +408,7 @@ const insertBefore = (parent: El, el: El, ref: El) => {
   adopted(parent, el)
   reordered = true
   const at = parent.kids.lastIndexOf(ref)
-  if (at < 0) parent.kids.push(el)
+  if (at < 0) addKid(parent, el)
   else parent.kids.splice(at, 0, el)
 }
 const insertTextBefore = (parent: El, text: string, ref: El) => {
@@ -479,15 +492,15 @@ const removeEl = (el: El) => {
   settle()
 }
 
-const insert = (name: string, id: number, ns: number, attrs: string) => {
-  const el = make(name, id, ns, attrs)
+const insert = (name: string, id: number, ns: number, attrs: string, flags: number) => {
+  const el = make(name, id, ns, attrs, flags)
   attach(el)
   push(el)
   return el
 }
-const insertTok = () => insert(tag, tid, HTML, tattrs)
-const appendTok = () => attach(make(tag, tid, HTML, tattrs))
-const insertFake = (name: string, id: number) => insert(name, id, HTML, '')
+const insertTok = () => insert(tag, tid, HTML, tattrs, tflags)
+const appendTok = () => attach(make(tag, tid, HTML, tattrs, tflags))
+const insertFake = (name: string, id: number) => insert(name, id, HTML, '', 0)
 
 const special = (el: El) =>
   (el.ns === HTML ? SPECIAL_HTML : el.ns === MATH ? SPECIAL_MATH : SPECIAL_SVG)[el.id] === 1
@@ -600,6 +613,13 @@ const EMPTY = new Map<string, string>()
 // recent first, removing by indexes taken before any removal), since that is the oracle
 const noah = (el: El) => {
   if (afe.length < 3) return
+  let same = 0
+  for (let i = afe.length - 1; i >= 0 && same < 3; i--) {
+    const entry = afe[i]!
+    if (entry === null) break
+    if (entry.el.tag === el.tag && entry.el.ns === el.ns) same++
+  }
+  if (same < 3) return
   const own = attrsOf(el)
   const list = afe.toReversed()
   const candidates: number[] = []
@@ -613,32 +633,42 @@ const noah = (el: El) => {
   const lists = candidates.map((i) => attrsOf(list[i]!.el))
   let valid = 0
   for (let c = 0; c < candidates.length; c++) {
-    let same = true
-    for (const [name, value] of lists[c]!) if (own.get(name) !== value) same = false
-    if (same && ++valid >= 3) list.splice(candidates[c]!, 1)
+    let equal = true
+    for (const [name, value] of lists[c]!) if (own.get(name) !== value) equal = false
+    if (equal && ++valid >= 3) list.splice(candidates[c]!, 1)
   }
   afe = list.toReversed()
 }
 const afePush = (el: El) => {
   noah(el)
-  afe.push({ el, tag: el.tag, id: el.id, attrs: el.attrs })
+  afe.push({ el, tag: el.tag, id: el.id, attrs: el.attrs, flags: el.flags })
 }
 const reconstruct = () => {
   if (afe.length !== 0) rebuild()
+}
+// whether an element is open: nearly always one of the top few, so those first
+const isOpen = (el: El) => {
+  const top = stack.length - 1
+  return (
+    stack[top] === el ||
+    stack[top - 1] === el ||
+    stack[top - 2] === el ||
+    stack.lastIndexOf(el) >= 0
+  )
 }
 const rebuild = () => {
   const length = afe.length
   let i = length - 1
   const last = afe[i]!
-  if (last === null || stack.lastIndexOf(last.el) >= 0) return
+  if (last === null || isOpen(last.el)) return
   while (i > 0) {
     const entry = afe[i - 1]!
-    if (entry === null || stack.lastIndexOf(entry.el) >= 0) break
+    if (entry === null || isOpen(entry.el)) break
     i--
   }
   for (; i < length; i++) {
     const entry = afe[i]!
-    entry.el = insert(entry.tag, entry.id, entry.el.ns, entry.attrs)
+    entry.el = insert(entry.tag, entry.id, entry.el.ns, entry.attrs, entry.flags)
   }
 }
 
@@ -679,7 +709,13 @@ const adoption = () => {
         if (overflow) afeRemove(nodeEntry)
         removeEl(node!)
       } else {
-        const clone = make(nodeEntry.tag, nodeEntry.id, nodeEntry.el.ns, nodeEntry.attrs)
+        const clone = make(
+          nodeEntry.tag,
+          nodeEntry.id,
+          nodeEntry.el.ns,
+          nodeEntry.attrs,
+          nodeEntry.flags,
+        )
         stack[stack.lastIndexOf(node!)] = clone
         settle()
         nodeEntry.el = clone
@@ -695,16 +731,22 @@ const adoption = () => {
       if (FOSTERING[common.id]) fosterElement(last)
       else appendChild(common, last)
     }
-    const clone = make(entry.tag, entry.id, formatting.ns, entry.attrs)
+    const clone = make(entry.tag, entry.id, formatting.ns, entry.attrs, entry.flags)
     // the furthest block's children move into the new formatting element
     reordered = true
     clone.kids = furthest.kids
     for (const kid of clone.kids) if (typeof kid !== 'string') kid.up = clone
-    if (furthest.drops) dropsIn(clone)
+    if (pruned.has(furthest)) pruned.add(clone)
     furthest.kids = []
     appendChild(furthest, clone)
     const mark = afe.lastIndexOf(bookmark)
-    afe.splice(mark + 1, 0, { el: clone, tag: entry.tag, id: entry.id, attrs: entry.attrs })
+    afe.splice(mark + 1, 0, {
+      el: clone,
+      tag: entry.tag,
+      id: entry.id,
+      attrs: entry.attrs,
+      flags: entry.flags,
+    })
     afeRemove(entry)
     removeEl(formatting)
     stack.splice(stack.lastIndexOf(furthest) + 1, 0, clone)
@@ -803,6 +845,13 @@ const mathAttrs = (source: string) => {
   for (const [name, value] of map) out += ` ${XML_ATTRS.get(name) ?? name}="${quote(value)}"`
   return out
 }
+// the token's flags, or a renamed source's (xlink:title is title)
+const flagsOf = (attrs: string) => {
+  if (attrs === tattrs) return tflags
+  let flags = 0
+  for (const name of parseAttrs(attrs).keys()) flags |= flagOf(name)
+  return flags
+}
 const startInForeign = () => {
   if (
     EXITS_FOREIGN[tid] ||
@@ -820,9 +869,10 @@ const startInForeign = () => {
     name = SVG_TAGS.get(tag) ?? tag
     if (name === 'foreignObject') id = FOREIGN_OBJECT
   } else if (attrs !== '') attrs = mathAttrs(attrs)
-  if (!tself) insert(name, id, ns, attrs)
+  if (!tself) insert(name, id, ns, attrs, flagsOf(attrs))
   // a self-closed svg child is nothing anyone will read, unless the Head reads it
-  else if (ns !== SVG || WATCH[id] || cur().rec !== 0) attach(make(name, id, ns, attrs))
+  else if (ns !== SVG || WATCH[id] || cur().rec !== 0)
+    attach(make(name, id, ns, attrs, flagsOf(attrs)))
 }
 const fontExits = () => {
   const map = parseAttrs(tattrs)
@@ -1257,7 +1307,7 @@ const initialAnything = () => {
   dispatch()
 }
 const beforeHtmlAnything = () => {
-  htmlEl = make('html', HTML_TAG, HTML, '')
+  htmlEl = make('html', HTML_TAG, HTML, '', 0)
   appendChild(doc, htmlEl)
   push(htmlEl)
   mode = BEFORE_HEAD
@@ -1412,6 +1462,7 @@ const adopt = (el: El) => {
   if (!added) return
   el.attrs = serialize(own)
   el.map = own
+  el.flags |= tflags
 }
 const hiddenInput = () =>
   tattrs !== '' && parseAttrs(tattrs).get('type')?.toLowerCase() === 'hidden'
@@ -1432,6 +1483,10 @@ const BLOCK_END = set(
 const SWITCH_END = set(
   'a b i s u em tt big code font nobr small strike strong p li dd dt h1 h2 h3 h4 h5 h6 br body html form applet ' +
     'object marquee template',
+)
+// end tags in body that do more than pop the current node, even when they name it
+const POP_SPECIAL = set(
+  'a b i s u em tt big code font nobr small strike strong br body html form applet object marquee template',
 )
 const startInBody = (): void => {
   if (tid === 0 || PLAIN_START[tid]) {
@@ -1565,8 +1620,8 @@ const startInBody = (): void => {
       return textParsing(RAWTEXT)
     case SVG_TAG:
       reconstruct()
-      if (tself) attach(make(tag, tid, SVG, tattrs))
-      else insert(tag, tid, SVG, tattrs)
+      if (tself) attach(make(tag, tid, SVG, tattrs, tflags))
+      else insert(tag, tid, SVG, tattrs, tflags)
       return
     case HTML_TAG:
       if (tmplCount === 0) adopt(stack[0]!)
@@ -1609,8 +1664,8 @@ const startInBody = (): void => {
     case MATH_TAG: {
       reconstruct()
       const attrs = tattrs === '' ? '' : mathAttrs(tattrs)
-      if (tself) attach(make(tag, tid, MATH, attrs))
-      else insert(tag, tid, MATH, attrs)
+      if (tself) attach(make(tag, tid, MATH, attrs, flagsOf(attrs)))
+      else insert(tag, tid, MATH, attrs, flagsOf(attrs))
       return
     }
     case TABLE:
@@ -2359,7 +2414,9 @@ const readName = (from: number) => {
   const size = i - from
   const key = (first * 7 + size * 31 + h.charCodeAt(i - 1)) & 255
   const cached = NAME_CACHE[key]!
-  if (cached.length === size && h.startsWith(cached, from)) {
+  let k = cached.length === size ? 1 : size
+  while (k < size && h.charCodeAt(from + k) === cached.charCodeAt(k)) k++
+  if (k === size && cached.length === size && cached.charCodeAt(0) === first) {
     tag = cached
     tid = ID_CACHE[key]!
     return i
@@ -2376,11 +2433,35 @@ const readName = (from: number) => {
 // whether any attribute started
 let attrsEnd = 0
 let named = false
+// FLAG's names by a hash the attribute loop keeps as it reads a name (each character lowered with |32, which leaves
+// '-'; a cr, which it would also make '-', is gone by now): 10 is a multiplier that gives each of them its own slot
+// of 64, and a hit is then checked letter by letter, so any name can land anywhere without a false flag
+const FLAG_NAMES: string[] = []
+const FLAG_BITS: number[] = []
+const FLAG_SLOT = new Int8Array(64).fill(-1)
+for (const [name, bit] of Object.entries(FLAG)) {
+  let hash = 0
+  for (let k = 0; k < name.length; k++) hash = (hash * 10 + name.charCodeAt(k)) | 0
+  const slot = (hash ^ name.length) & 63
+  if (FLAG_SLOT[slot] !== -1) throw new Error(`flag hash collides: ${name}`)
+  FLAG_SLOT[slot] = FLAG_NAMES.length
+  FLAG_NAMES.push(name)
+  FLAG_BITS.push(bit)
+}
+const flagMatch = (at: number, from: number, to: number) => {
+  const name = FLAG_NAMES[at]!
+  if (name.length !== to - from) return 0
+  const h = html
+  for (let k = 0; k < name.length; k++)
+    if ((h.charCodeAt(from + k) | 32) !== name.charCodeAt(k)) return 0
+  return FLAG_BITS[at]!
+}
 const tagEnd = (from: number): number => {
   const h = html
   const length = n
   const stops = STOPS
   named = false
+  tflags = 0
   let i = from
   let c = h.charCodeAt(i)
   for (;;) {
@@ -2404,9 +2485,16 @@ const tagEnd = (from: number): number => {
     if (i >= length) return -1
     // a name, whose first character may be '='
     named = true
+    const name = i
+    let hash = c | 32
     c = h.charCodeAt(++i)
-    while (i < length && (stops[c]! & 15) === 0) c = h.charCodeAt(++i)
+    while (i < length && (stops[c]! & 15) === 0) {
+      hash = (hash * 10 + (c | 32)) | 0
+      c = h.charCodeAt(++i)
+    }
     if (i >= length) return -1
+    const flag = FLAG_SLOT[(hash ^ (i - name)) & 63]!
+    if (flag >= 0) tflags |= flagMatch(flag, name, i)
     while (stops[c] === 1) c = h.charCodeAt(++i)
     // no '=': what follows reads the same as before a name
     if (c !== 61) continue
@@ -2435,7 +2523,21 @@ const hasNul = (from: number, to: number) => {
   return false
 }
 // text in the data state: references decoded, and nuls (rare) handed on one by one
+// whether the page has this name at `at` (short names: by hand beats a startsWith call)
+const same = (name: string, at: number) => {
+  const h = html
+  for (let k = 0; k < name.length; k++)
+    if (h.charCodeAt(at + k) !== name.charCodeAt(k)) return false
+  return true
+}
+// the range of the page the tokenizer just read whole on its way to a '<', finding no nul
+let cleanFrom = -1
+let clean = -1
+// whether the text before the last </> ended in a nul, whose run goes on into the next text
+let nulJoin = false
 const dataText = (from: number, to: number) => {
+  const join = nulJoin
+  nulJoin = false
   if (to <= from) return
   // inside svg text goes nowhere, and only could say the page has content (framesetOk)
   if (current.rec === 0 && !framesetOk && !integration(current)) return
@@ -2443,6 +2545,7 @@ const dataText = (from: number, to: number) => {
   if (amp < from) amp = html.indexOf('&', from) >>> 0
   if (amp < to) text = decode(text)
   if (
+    !(clean === to && cleanFrom === from) &&
     (to - from > 24 ? text.indexOf('\0') >= 0 : hasNul(from, to)) &&
     !(current.rec === 0 && !framesetOk)
   ) {
@@ -2451,7 +2554,7 @@ const dataText = (from: number, to: number) => {
       let j = i
       if (text.charCodeAt(i) === 0) {
         while (text.charCodeAt(j) === 0) j++
-        onNul()
+        if (i > 0 || !join) onNul()
       } else {
         while (j < text.length && text.charCodeAt(j) !== 0) j++
         chars(text.slice(i, j))
@@ -2473,15 +2576,41 @@ const rawText = (from: number, to: number, refs: boolean) => {
   chars(text)
 }
 
+// the common case first: in body, with an html current node, an ordinary element is reconstructed into and inserted,
+// and an end tag that names the current node (and isn't one in body treats specially) pops it. both are what the
+// general dispatch would do, minus the dispatch
 const emitStart = (from: number, to: number) => {
   tattrs = named ? html.slice(from, to) : ''
   tok = START
   skipNL = false
+  if (mode === IN_BODY && current.ns === HTML) {
+    if (tid === 0 || PLAIN_START[tid]) {
+      if (afe.length !== 0) rebuild()
+      insertTok()
+      return
+    }
+    if (BLOCK_START[tid]) {
+      if (pInButtonScope()) closeP()
+      insertTok()
+      return
+    }
+  }
   processStart()
 }
 const emitEnd = () => {
   tok = END
   skipNL = false
+  const open = current
+  if (
+    mode === IN_BODY &&
+    open.ns === HTML &&
+    open.id === tid &&
+    open.tag === tag &&
+    !POP_SPECIAL[tid]
+  ) {
+    pop()
+    return
+  }
   processEnd()
 }
 
@@ -2698,12 +2827,20 @@ const tokenize = () => {
       continue
     }
     // the next '<' is often a few characters on: by hand that far, then indexOf
+    // (a text read whole on the way, with no nul, needn't be read for one again)
     let lt = pos
+    let c = 0
     const stop = pos + 8 < length ? pos + 8 : length
-    while (lt < stop && h.charCodeAt(lt) !== 60) lt++
-    if (lt === stop) lt = h.indexOf('<', lt)
+    while (lt < stop && (c = h.charCodeAt(lt)) !== 60 && c !== 0) lt++
+    if (lt < stop && c === 60) {
+      cleanFrom = pos
+      clean = lt
+    } else {
+      clean = -1
+      lt = h.indexOf('<', lt)
+    }
     if (lt < 0) break
-    const c = h.charCodeAt(lt + 1)
+    c = h.charCodeAt(lt + 1)
     if (alpha(c)) {
       const to = readName(lt + 1)
       const end = tagEnd(to)
@@ -2726,7 +2863,7 @@ const tokenize = () => {
             after === 10 ||
             after === 9 ||
             after === 12) &&
-          h.startsWith(open, lt + 2)
+          same(open, lt + 2)
         ) {
           tag = open
           tid = current.id
@@ -2737,8 +2874,10 @@ const tokenize = () => {
         emitEnd()
         pos = from = end
       } else if (next === 62) {
-        // </> is nothing at all
+        // </> is nothing at all: not even the end of a run of nuls either side of it
+        const join = lt > from ? h.charCodeAt(lt - 1) === 0 : nulJoin
         dataText(from, lt)
+        nulJoin = join
         pos = from = lt + 3
       } else if (lt + 2 >= length) pos = length
       else {
@@ -2827,12 +2966,25 @@ const readHead = (): Head => {
   return head
 }
 
+// the mains in the root's tree (under it, and in nothing dropped), in tree order
+const readMains = (root: El) => {
+  const found: El[] = []
+  for (const el of mains) {
+    let up: El | null = el
+    while (up && up !== root && !DROP[up.id]) up = up.up
+    if (up === root && el !== root) found.push(el)
+  }
+  if (!reordered || found.length < 2) return found
+  const places = new Map(found.map((el) => [el, position(el)]))
+  return found.toSorted((a, b) => treeOrder(places.get(a)!, places.get(b)!))
+}
+
 export const parse = (input: string): Document => {
   html = input.indexOf('\r') < 0 ? input : input.replace(/\r\n?/g, '\n')
   n = html.length
   tstate = DATA
   rawTag = ''
-  doc = make('#root', 0, HTML, '')
+  doc = make('#root', 0, HTML, '', 0)
   stack = []
   current = doc
   pCount = 0
@@ -2850,7 +3002,8 @@ export const parse = (input: string): Document => {
   pending = []
   pendingText = false
   watched = []
-  pruned = []
+  mains = []
+  pruned.clear()
   reordered = false
   tok = 0
   // found when first needed
@@ -2870,16 +3023,17 @@ export const parse = (input: string): Document => {
     el.kids = kids
   }
   const root = bodyEl && !bodyGone ? bodyEl : doc
+  const document: Document = { root, head, mains: readMains(root) }
   root.tag = '#root'
   root.up = null
-  const document: Document = { root, head }
   // let the page go: the tree holds slices of it, not the parse's state
   html = tag = tattrs = ttext = ''
   NAME_CACHE.fill('')
   stack = []
   afe = []
   watched = []
-  pruned = []
+  mains = []
+  pruned.clear()
   pending = []
   current = doc = headEl = formEl = htmlEl = bodyEl = null as unknown as El
   return document

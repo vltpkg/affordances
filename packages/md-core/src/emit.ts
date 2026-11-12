@@ -17,7 +17,7 @@ export const emit = (doc: Document, options: Options = {}): Result => {
   const auto = (options.extract ?? 'auto') === 'auto'
   begin(false)
   setPage(doc.root)
-  const main = auto ? findMain(doc.root) : undefined
+  const main = auto ? findMain(doc.mains) : undefined
   if (auto && !main) begin(true)
   startConvert(options, base)
   const root = convertRoot(main ? made(doc.root, [main], '#root') : doc.root)

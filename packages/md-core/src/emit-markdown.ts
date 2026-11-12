@@ -25,6 +25,10 @@ export const BREAK = 17
 export const LINK = 18
 export const IMAGE = 19
 
+// what never has children shares one empty list (never pushed to), so a text costs no array
+const NO_KIDS: Md[] = []
+const LEAF: boolean[] = []
+for (const type of [TEXT, INLINE_CODE, BREAK, IMAGE, HTML, CODE, THEMATIC_BREAK]) LEAF[type] = true
 // one shape for every node, so the walks over them stay monomorphic
 export class Md {
   type: number
@@ -43,7 +47,7 @@ export class Md {
   align: (string | null)[] | null
   rowSpan: number
   colSpan: number
-  constructor(type: number, kids: Md[] = [], value = '') {
+  constructor(type: number, kids: Md[] = LEAF[type] ? NO_KIDS : [], value = '') {
     this.type = type
     this.kids = kids
     this.value = value
@@ -253,6 +257,21 @@ type Pattern = {
   before: boolean
   after: boolean
   regex: RegExp
+  // the before and after as sets of ascii codes, when each is one character of a class (null: none, or not that)
+  beforeSet: Uint8Array | null
+  afterSet: Uint8Array | null
+  simple: boolean
+}
+// a pattern's one-character class as a set of ascii codes; undefined when it isn't one (\d+, $, …). nothing past
+// ascii is in any of them, as the regexes have no u flag and name ascii classes only
+const charSet = (source: string | undefined): Uint8Array | null | undefined => {
+  if (source === undefined) return null
+  if (/[+*$|]/.test(source.replace(/\\./g, ''))) return undefined
+  const regex = new RegExp(`^(?:${source})$`)
+  if (regex.test('é') || regex.test('ab')) return undefined
+  const set = new Uint8Array(128)
+  for (let code = 0; code < 128; code++) if (regex.test(String.fromCharCode(code))) set[code] = 1
+  return set
 }
 const NEWLINE_ONLY = new Set(['[\\r\\n]', '\\n', '\\r'])
 const PATTERNS: Pattern[] = UNSAFE.map((pattern) => {
@@ -269,6 +288,12 @@ const PATTERNS: Pattern[] = UNSAFE.map((pattern) => {
       NEWLINE_ONLY.has(pattern.after ?? ''),
     before: 'before' in pattern || Boolean(pattern.atBreak),
     after: 'after' in pattern,
+    beforeSet: charSet(pattern.before) ?? null,
+    afterSet: charSet(pattern.after) ?? null,
+    simple:
+      !pattern.atBreak &&
+      charSet(pattern.before) !== undefined &&
+      charSet(pattern.after) !== undefined,
     regex: new RegExp(
       (before ? `(${before})` : '') +
         (/[$()*+.?[\\\]^{|}]/.test(pattern.character) ? '\\' : '') +
@@ -280,7 +305,14 @@ const PATTERNS: Pattern[] = UNSAFE.map((pattern) => {
 })
 
 // the patterns in scope for a set of constructs, and a test for text that none of them (or a backslash) can touch
-type Scope = { patterns: Pattern[]; special: RegExp; bareNewline: boolean }
+type Scope = {
+  patterns: Pattern[]
+  special: RegExp
+  bareNewline: boolean
+  // for the scan: each ascii character's patterns (those that need no line ending), when all are one character on
+  // either side; undefined where a pattern's regex could swallow a neighbour another match needs (headings)
+  byChar: (Pattern[] | undefined)[] | undefined
+}
 const scopes = new Map<number, Scope>()
 const scopeOf = (mask: number): Scope => {
   let scope = scopes.get(mask)
@@ -293,8 +325,17 @@ const scopeOf = (mask: number): Scope => {
   const set = [...chars]
     .map((char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`)
     .join('')
+  let byChar: (Pattern[] | undefined)[] | undefined = []
+  if ((mask & HEADING_ATX) !== 0) byChar = undefined
+  for (const pattern of patterns) {
+    if (pattern.newline || !byChar) continue
+    const code = pattern.character.charCodeAt(0)
+    if (!pattern.simple || code >= 128) byChar = undefined
+    else (byChar[code] ??= []).push(pattern)
+  }
   scope = {
     patterns,
+    byChar,
     special: new RegExp(`[${set}\\r\\n]`),
     bareNewline: patterns.some(
       (pattern) => pattern.character === '\n' && !pattern.before && !pattern.after,
@@ -384,7 +425,134 @@ const safe = (input: string, before: string, after: string, encode = ''): string
     )
       return input
   }
-  return slowSafe(scope, input, before, after, encode)
+  return scope.byChar && scannable(input, before, after)
+    ? scanSafe(scope.byChar, input, before, after, encode)
+    : slowSafe(scope, input, before, after, encode)
+}
+// whether no pattern that needs a line ending can match: none in the text, and none beside it that the text's
+// edges could use
+const scannable = (input: string, before: string, after: string) => {
+  if (/[\r\n]/.test(input)) return false
+  if (
+    before !== '' &&
+    isNewline(before.charCodeAt(before.length - 1)) &&
+    atLineStart(input, input.charCodeAt(0))
+  )
+    return false
+  if (after !== '' && isNewline(after.charCodeAt(0))) {
+    const tail = input.charCodeAt(input.length - 1)
+    if (tail === 32 || tail === 9 || tail === 92) return false
+  }
+  return true
+}
+const sidesOf = (pattern: Pattern) => (pattern.before ? 1 : 0) | (pattern.after ? 2 : 0)
+// safe() as one pass over the text: each character's patterns asked of its neighbours, then the same rules as
+// slowSafe. only for text no line ending can reach (scannable), in a scope with one-character patterns
+export const scanSafe = (
+  byChar: (Pattern[] | undefined)[],
+  input: string,
+  before: string,
+  after: string,
+  encode: string,
+) => {
+  const n = input.length
+  const previous = before === '' ? -1 : before.charCodeAt(before.length - 1)
+  const next = after === '' ? -1 : after.charCodeAt(0)
+  const positions: number[] = []
+  const infos: number[] = []
+  for (let i = 0; i < n; i++) {
+    const code = input.charCodeAt(i)
+    if (code >= 128) continue
+    const list = byChar[code]
+    if (list === undefined) continue
+    let bits = -1
+    for (const pattern of list) {
+      if (pattern.beforeSet) {
+        const b = i ? input.charCodeAt(i - 1) : previous
+        if (b < 0 || b >= 128 || pattern.beforeSet[b] !== 1) continue
+      }
+      if (pattern.afterSet) {
+        const a = i + 1 < n ? input.charCodeAt(i + 1) : next
+        if (a < 0 || a >= 128 || pattern.afterSet[a] !== 1) continue
+      }
+      bits = bits < 0 ? sidesOf(pattern) : bits & sidesOf(pattern)
+    }
+    if (bits >= 0) {
+      positions.push(i)
+      infos.push(bits)
+    }
+  }
+  if (!positions.length) return escapeBackslashes(input, after)
+  const at = (i: number) => (i < 0 ? previous : i < n ? input.charCodeAt(i) : next)
+  const result: string[] = []
+  let start = 0
+  for (let index = 0; index < positions.length; index++) {
+    const position = positions[index]!
+    if (position < start) continue
+    // an intraword underscore run (snake_case) needs no escape
+    if (
+      input.charCodeAt(position) === 95 &&
+      (position > 0 || before !== '') &&
+      classify(at(position - 1)) === 0 &&
+      !(position === 1 && (previous === 42 || previous === 95))
+    ) {
+      let sequenceEnd = position + 1
+      while (sequenceEnd < n && input.charCodeAt(sequenceEnd) === 95) sequenceEnd++
+      const skip = sequenceEnd - position - 1
+      if (
+        positions[index + skip] === sequenceEnd - 1 &&
+        (sequenceEnd < n || after !== '') &&
+        classify(at(sequenceEnd)) === 0 &&
+        !(sequenceEnd === n - 1 && (next === 42 || next === 95))
+      ) {
+        index += skip
+        continue
+      }
+    }
+    const info = infos[index]!
+    // escaping what follows (or precedes) is enough
+    if (
+      (position + 1 < n &&
+        positions[index + 1] === position + 1 &&
+        info & 2 &&
+        infos[index + 1] === 0) ||
+      (position - 1 >= 0 &&
+        positions[index - 1] === position - 1 &&
+        info & 1 &&
+        infos[index - 1] === 0)
+    )
+      continue
+    if (start !== position) result.push(escapeBackslashes(input.slice(start, position), '\\'))
+    start = position + 1
+    const char = input.charAt(position)
+    result.push(
+      ASCII_PUNCTUATION.test(char) && !encode.includes(char)
+        ? '\\' + char
+        : reference(input.charCodeAt(position)),
+    )
+  }
+  result.push(escapeBackslashes(input.slice(start), after))
+  return result.join('')
+}
+// the slow path, for tests: safe() by the regexes, whatever the text
+export const regexSafe = (
+  names: string[],
+  input: string,
+  before: string,
+  after: string,
+  encode = '',
+) => slowSafe(scopeOf(maskOf(names)), input, before, after, encode)
+export const scannedSafe = (
+  names: string[],
+  input: string,
+  before: string,
+  after: string,
+  encode = '',
+) => {
+  const scope = scopeOf(maskOf(names))
+  return scope.byChar && scannable(input, before, after)
+    ? scanSafe(scope.byChar, input, before, after, encode)
+    : undefined
 }
 // what can start a construct at the start of a line: an atBreak pattern's character, a digit (an ordered list), or
 // whitespace

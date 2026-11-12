@@ -22,21 +22,9 @@ import {
   THEMATIC_BREAK,
   BLOCKQUOTE,
 } from './emit-markdown.ts'
-import {
-  classes,
-  DATA_TITLE,
-  flags,
-  kidsOf,
-  linkLabel,
-  MDAST,
-  NOWRAP as NOWRAP_ATTR,
-  read,
-  SPAN,
-  ALIGN,
-  text,
-  TITLE,
-} from './emit-prune.ts'
-import type { Element, Node, Options } from './types.ts'
+import { attr } from './attr.ts'
+import { classes, kidsOf, linkLabel, text } from './emit-prune.ts'
+import { FLAG, type Element, type Node, type Options } from './types.ts'
 
 // the page's content as the emitter's tree, as hast-util-to-mdast (MIT, Titus Wormer) converts it with
 // @affordances/md's handlers. whitespace is collapsed on the way, as hast-util-minify-whitespace would before: the
@@ -81,7 +69,7 @@ const whitespaceOf = (el: Element, current: number) => {
       return PRE
     case 'td':
     case 'th':
-      return flags(el) & NOWRAP_ATTR ? NOWRAP : current
+      return el.flags & FLAG.nowrap ? NOWRAP : current
     case 'textarea':
       return PRE
   }
@@ -251,7 +239,7 @@ export const all = (parent: Element, out: Md[] = []): Md[] => {
     if (info & IS_SPACED) mode = whitespaceOf(kid, mode)
     let result: Md | Md[] | undefined
     if (controls !== 0 && CONTROL_TAGS.has(kid.tag)) result = walkOnly(kid)
-    else if (kind === PASS && !(flags(kid) & MDAST)) all(kid, out)
+    else if (kind === PASS && !(kid.flags & FLAG['data-mdast'])) all(kid, out)
     else result = one(kid, kind, parent)
     const strip = before || end
     after = savedAfter
@@ -362,8 +350,7 @@ for (const tag of new Set([...KIND.keys(), ...BLOCKS, ...CONTENT, 'nobr', 'texta
   )
 
 const one = (el: Element, kind: number, parent: Element): Md | Md[] | undefined => {
-  if (el.attrs !== '' && flags(el) & MDAST && read(el, 'data-mdast') === 'ignore')
-    return walkOnly(el)
+  if (el.flags & FLAG['data-mdast'] && attr(el, 'data-mdast') === 'ignore') return walkOnly(el)
   switch (kind) {
     case PASS:
       return all(el)
@@ -643,14 +630,14 @@ const resolve = (url: string, image: boolean) => {
 
 const HEADINGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
 const link = (el: Element, parent: Element) => {
-  const href = (read(el, 'href') ?? '').trim()
+  const href = (attr(el, 'href') ?? '').trim()
   const children = all(el)
   if (!href || href === '#' || !allowed(href, LINK_SCHEMES)) return children
   // a heading's link to its own anchor is the heading
   if (href.startsWith('#') && HEADINGS.has(parent.tag)) return children
   const result = node(LINK, children)
   result.url = resolve(href, false)
-  result.title = flags(el) & TITLE ? (read(el, 'title') ?? null) : null
+  result.title = el.flags & FLAG.title ? (attr(el, 'title') ?? null) : null
   // an icon or avatar link reads as its label
   if (!children.some((child) => child.type !== TEXT || child.value.trim())) {
     const name = linkLabel(el)
@@ -661,12 +648,12 @@ const link = (el: Element, parent: Element) => {
 }
 
 const image = (el: Element) => {
-  const alt = (read(el, 'alt') ?? '').trim()
-  const src = read(el, 'src')
+  const alt = (attr(el, 'alt') ?? '').trim()
+  const src = attr(el, 'src')
   if (!alt || !src || !allowed(src, IMAGE_SCHEMES)) return undefined
   const result = node(IMAGE, undefined, alt)
   result.url = resolve(src, true)
-  result.title = flags(el) & TITLE ? (read(el, 'title') ?? null) : null
+  result.title = el.flags & FLAG.title ? (attr(el, 'title') ?? null) : null
   return result
 }
 
@@ -679,7 +666,7 @@ const firstKid = (el: Element): Node | undefined => {
 const checkbox = (kid: Node | undefined): Element | undefined => {
   if (kid === undefined || typeof kid === 'string') return undefined
   if (kid.tag === 'input') {
-    const type = read(kid, 'type')
+    const type = attr(kid, 'type')
     return type === 'checkbox' || type === 'radio' ? kid : undefined
   }
   return kid.tag === 'p' ? checkbox(firstKid(kid)) : undefined
@@ -703,7 +690,7 @@ const spreadOut = (el: Element): boolean => {
 const listItem = (el: Element) => {
   const box = checkbox(firstKid(el))
   const item = node(LIST_ITEM)
-  item.checked = box ? read(box, 'checked') !== undefined : null
+  item.checked = box ? attr(box, 'checked') !== undefined : null
   item.spread = spreadOut(el)
   item.kids = toFlow(all(el))
   return item
@@ -712,7 +699,7 @@ const list = (el: Element) => {
   const result = node(LIST, specific(all(el), LIST_ITEM))
   result.ordered = el.tag === 'ol'
   if (result.ordered) {
-    const start = read(el, 'start')
+    const start = attr(el, 'start')
     // as hast reads it: a number when it is one, and 0 is no start
     const value =
       start !== undefined && start !== '' && !Number.isNaN(Number(start)) ? Number(start) : start
@@ -805,7 +792,7 @@ const codeOf = (pre: Element) =>
   kidsOf(pre).find((kid): kid is Element => typeof kid !== 'string' && kid.tag === 'code')
 const languageOf = (pre: Element) => {
   const inner = codeOf(pre)
-  const said = [inner && read(inner, 'data-language'), read(pre, 'data-language')]
+  const said = [inner && attr(inner, 'data-language'), attr(pre, 'data-language')]
     .map((language) => (language ?? '').trim())
     .find(Boolean)
   return (classLanguage(inner) ?? said ?? classLanguage(pre))?.split(/\s/)[0] || null
@@ -814,7 +801,7 @@ const code = (el: Element) => {
   const result = node(CODE, undefined, toText(el).replace(/[\r\n]+$/, ''))
   if (el.tag !== 'pre') return result
   result.lang = languageOf(el)
-  const title = el === titledCode ? titledAs : read(el, 'data-title')
+  const title = el === titledCode ? titledAs : attr(el, 'data-title')
   if (title) result.meta = `title=${JSON.stringify(title)}`
   return result
 }
@@ -831,16 +818,17 @@ const PRE_TAGS = new Set(['pre'])
 const CAPTION_OR_PRE = new Set(['figcaption', 'pre'])
 const titled = (el: Element) => {
   const flow = () => toFlow(all(el))
-  if (el.tag !== 'figure' && !(flags(el) & DATA_TITLE)) return flow()
-  const [pre, ...more] = descendants(el, [], PRE_TAGS)
-  if (!pre || more.length || read(pre, 'data-title') || pre === titledCode || !languageOf(pre))
+  if (el.tag !== 'figure' && !(el.flags & FLAG['data-title'])) return flow()
+  // one walk: the code blocks, and the captions among them in order
+  const order = descendants(el, [], el.tag === 'figure' ? CAPTION_OR_PRE : PRE_TAGS)
+  const [pre, ...more] = order.filter((at) => at.tag === 'pre')
+  if (!pre || more.length || attr(pre, 'data-title') || pre === titledCode || !languageOf(pre))
     return flow()
-  let caption: Element | undefined
-  if (el.tag === 'figure') {
-    const order = descendants(el, [], CAPTION_OR_PRE)
-    caption = order.slice(0, order.indexOf(pre)).find((at) => at.tag === 'figcaption')
-  }
-  const title = text(caption) || (read(el, 'data-title') ?? '').trim()
+  const caption =
+    el.tag === 'figure'
+      ? order.slice(0, order.indexOf(pre)).find((at) => at.tag === 'figcaption')
+      : undefined
+  const title = text(caption) || (attr(el, 'data-title') ?? '').trim()
   if (!title) return flow()
   const saved = titledCode
   const savedAs = titledAs
@@ -857,9 +845,9 @@ const titled = (el: Element) => {
 // a cell is one line: blocks in it are separated by a space
 const cell = (el: Element) => {
   const result = node(TABLE_CELL, all(el))
-  if (flags(el) & SPAN) {
-    const rowSpan = read(el, 'rowspan')
-    const colSpan = read(el, 'colspan')
+  if (el.flags & (FLAG.rowspan | FLAG.colspan)) {
+    const rowSpan = attr(el, 'rowspan')
+    const colSpan = attr(el, 'colspan')
     if (rowSpan) result.rowSpan = Number.parseInt(rowSpan, 10) || 1
     if (colSpan) result.colSpan = Number.parseInt(colSpan, 10) || 1
   }
@@ -932,7 +920,7 @@ const inspect = (el: Element) => {
       if (kid.tag === 'table') continue
       if (kid.tag === 'th' || kid.tag === 'td') {
         if (!align[cellIndex]) {
-          const value = (flags(kid) & ALIGN && read(kid, 'align')) || null
+          const value = (kid.flags & FLAG.align && attr(kid, 'align')) || null
           if (value === 'center' || value === 'left' || value === 'right' || value === null)
             align[cellIndex] = value
         }
@@ -1071,7 +1059,7 @@ const collectElement = (
   out: Piece[],
 ) => {
   const normal = info.normal && whitespaceOf(el, NORMAL) === NORMAL
-  if (NOT_RENDERED.has(el.tag) || (el.tag === 'dialog' && read(el, 'open') === undefined)) {
+  if (NOT_RENDERED.has(el.tag) || (el.tag === 'dialog' && attr(el, 'open') === undefined)) {
     walkOnly(el)
     return
   }
@@ -1168,12 +1156,12 @@ export const convertRoot = (root: Element): Md => {
 
 // what hast-util-to-mdast does last: adjacent texts as one, the line ending's spaces, a paragraph's (heading's,
 // root's) outer spaces, and empty texts gone
-const TRIMMED = new Set([PARAGRAPH, HEADING, ROOT])
 const edgeSpace = (char: number) => char === 32 || char === 9
 
 const tidy = (parent: Md) => {
   const kids = parent.kids
-  const trims = TRIMMED.has(parent.type)
+  const type = parent.type
+  const trims = type === PARAGRAPH || type === HEADING || type === ROOT
   for (let index = 0; index < kids.length; index++) {
     const item = kids[index]!
     if (item.type !== TEXT) {

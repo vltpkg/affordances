@@ -1,36 +1,20 @@
-import { decode } from './entities.ts'
-import type { Element, Node } from './types.ts'
+import { attr } from './attr.ts'
+import { FLAG, type Element, type Node } from './types.ts'
 
 // what @affordances/md's prune and extract leave of the page, read lazily: kidsOf(el) is an element's children as
-// prune leaves them (hidden things gone, empty links named or gone, inline boxes spaced, repeated links once), cached
-// on the element for the emit call that asked. nothing is copied unless it changes
+// prune leaves them (hidden things gone, empty links named or gone, inline boxes spaced, repeated links once), kept
+// for the emit call that asked. nothing is copied unless it changes; an element of text alone isn't kept at all
 
-// the cache, on the element itself: the pruned children and the emit call they're for
-// pk, pe: the pruned children and the emit call they're for; lv, le: whether it's code, and for which call; pf: the
-// attribute names it has that anything here reads (-1 before they're read)
-type Pruned = Element & {
-  pk?: Node[] | undefined
-  pe?: number
-  lv?: boolean
-  le?: number
-  pf?: number
-}
-// the cache's fields, added at once and in one order, so every element the parser made has one shape after
-const touch = (el: Pruned) => {
-  if (el.pe === undefined) {
-    el.pk = undefined
-    el.pe = -1
-    el.lv = false
-    el.le = -1
-    el.pf = -1
-  }
-}
-let epoch = 0
+// the emitter's state for one emit call, kept off the parser's elements: each element's pruned children, and
+// whether it's code (no spacing there)
+let cache = new Map<Element, Node[]>()
+let literals = new Map<Element, boolean>()
 // chrome (nav, header, footer, …) is stripped too: the page has no <main>
 let stripChrome = false
 export const begin = (strip: boolean) => {
-  epoch++
   stripChrome = strip
+  cache = new Map()
+  literals = new Map()
   byId = undefined
 }
 let page: Element | undefined
@@ -41,167 +25,33 @@ export const setPage = (root: Element) => {
 
 // an element prune made, already pruned
 export const made = (from: Element, kids: Node[], tag = from.tag): Element => {
-  const el: Pruned = {
+  const el: Element = {
     tag,
     attrs: from.attrs,
+    flags: from.flags,
     kids,
     up: from.up,
     map: from.map,
-    pk: kids,
-    pe: epoch,
-    lv: false,
-    le: -1,
-    pf: (from as Pruned).pf ?? -1,
   }
+  cache.set(el, kids)
   return el
 }
 
 const CHROME_TAGS = new Set(['nav', 'header', 'footer', 'aside', 'dialog'])
 const CHROME_ROLES = new Set(['navigation', 'banner', 'contentinfo', 'complementary'])
 
-// the attribute names an element has, of those read here: one scan of its attributes, ever. most elements have
-// none of them, and the scan is far cheaper than parsing every element's attributes
-const HIDDEN = 1
-const ARIA_HIDDEN = 2
-const STYLE = 4
-const ROLE = 8
-const EDITABLE = 16
-const MARKED = 32
-export const MDAST = 64
-export const DATA_TITLE = 128
-export const NOWRAP = 256
-export const TITLE = 512
-export const SPAN = 1024
-export const ALIGN = 2048
+// the attributes prune reads, by their flags
+const HIDDEN = FLAG.hidden
+const ARIA_HIDDEN = FLAG['aria-hidden']
+const STYLE = FLAG.style
+const ROLE = FLAG.role
+const EDITABLE = FLAG.contenteditable
+const MARKED = FLAG['data-affordances-md'] | FLAG['data-mode']
 const PRUNES = HIDDEN | ARIA_HIDDEN | STYLE | ROLE | EDITABLE | MARKED
-const space = (code: number) =>
-  code === 32 || code === 9 || code === 10 || code === 12 || code === 13
-// whether the name at start is this word: compared by hand, first character first (most names aren't ours)
-const is = (s: string, start: number, word: string) => {
-  for (let k = 0; k < word.length; k++)
-    if (s.charCodeAt(start + k) !== word.charCodeAt(k)) return false
-  return true
-}
-const named = (s: string, start: number, length: number) => {
-  const head = s.charCodeAt(start)
-  switch (length) {
-    case 4:
-      return head === 114 && is(s, start, 'role') ? ROLE : 0
-    case 5:
-      return head === 115 && is(s, start, 'style')
-        ? STYLE
-        : head === 116 && is(s, start, 'title')
-          ? TITLE
-          : head === 97 && is(s, start, 'align')
-            ? ALIGN
-            : 0
-    case 7:
-      return (head === 114 && is(s, start, 'rowspan')) || (head === 99 && is(s, start, 'colspan'))
-        ? SPAN
-        : 0
-    case 6:
-      return head === 104 && is(s, start, 'hidden')
-        ? HIDDEN
-        : head === 110 && is(s, start, 'nowrap')
-          ? NOWRAP
-          : 0
-    case 9:
-      return head === 100 && is(s, start, 'data-mode') ? MARKED : 0
-    case 10:
-      return head !== 100
-        ? 0
-        : is(s, start, 'data-mdast')
-          ? MDAST
-          : is(s, start, 'data-title')
-            ? DATA_TITLE
-            : 0
-    case 11:
-      return head === 97 && is(s, start, 'aria-hidden') ? ARIA_HIDDEN : 0
-    case 15:
-      return head === 99 && is(s, start, 'contenteditable') ? EDITABLE : 0
-    case 19:
-      return head === 100 && is(s, start, 'data-affordances-md') ? MARKED : 0
-  }
-  return 0
-}
-// the attribute names, as the tokenizer reads them, jumping over quoted values (most of the string); names as
-// written in lowercase, as pages write them
-const scan = (s: string) => {
-  const n = s.length
-  let found = 0
-  let i = 0
-  while (i < n) {
-    let c = s.charCodeAt(i)
-    while (space(c) || c === 47) c = s.charCodeAt(++i)
-    if (i >= n) break
-    const start = i
-    if (c === 61) i++
-    while (i < n) {
-      c = s.charCodeAt(i)
-      if (space(c) || c === 47 || c === 61) break
-      i++
-    }
-    found |= named(s, start, i - start)
-    while (space(c)) c = s.charCodeAt(++i)
-    if (c === 61) {
-      c = s.charCodeAt(++i)
-      while (space(c)) c = s.charCodeAt(++i)
-      if (c === 34 || c === 39) {
-        const end = s.indexOf(c === 34 ? '"' : "'", i + 1)
-        i = end < 0 ? n : end + 1
-      } else while (i < n && !space(s.charCodeAt(i))) i++
-    }
-  }
-  return found
-}
-// one attribute's value, as read() reads it (decoded; '' without a value; the first of a repeated name), without
-// parsing the rest: a scan to its name. names as written in lowercase, as with the scan above
-export const read = (el: Element, name: string): string | undefined => {
-  if (el.map !== undefined) return el.map.get(name)
-  const s = el.attrs
-  const n = s.length
-  let i = 0
-  while (i < n) {
-    let c = s.charCodeAt(i)
-    while (space(c) || c === 47) c = s.charCodeAt(++i)
-    if (i >= n) break
-    const start = i
-    if (c === 61) i++
-    while (i < n) {
-      c = s.charCodeAt(i)
-      if (space(c) || c === 47 || c === 61) break
-      i++
-    }
-    const match = i - start === name.length && is(s, start, name)
-    while (space(c)) c = s.charCodeAt(++i)
-    let value = ''
-    if (c === 61) {
-      c = s.charCodeAt(++i)
-      while (space(c)) c = s.charCodeAt(++i)
-      if (c === 34 || c === 39) {
-        const end = s.indexOf(c === 34 ? '"' : "'", i + 1)
-        if (match) value = s.slice(i + 1, end < 0 ? n : end)
-        i = end < 0 ? n : end + 1
-      } else {
-        const from = i
-        while (i < n && !space(s.charCodeAt(i))) i++
-        if (match) value = s.slice(from, i)
-      }
-    }
-    if (match) return decode(value, true)
-  }
-  return undefined
-}
-export const flags = (el: Element): number => {
-  if (el.attrs === '') return 0
-  const cached = el as Pruned
-  touch(cached)
-  if (cached.pf! < 0) cached.pf = scan(el.attrs)
-  return cached.pf!
-}
-const mentions = (el: Element) => (flags(el) & PRUNES) !== 0
+const flags = (el: Element): number => el.flags
+const mentions = (el: Element) => (el.flags & PRUNES) !== 0
 const marked = (el: Element) =>
-  el.tag === 'affordances-md' ? read(el, 'data-mode') : read(el, 'data-affordances-md')
+  el.tag === 'affordances-md' ? attr(el, 'data-mode') : attr(el, 'data-affordances-md')
 const unhidden = (el: Element) => {
   const mode = flags(el) & MARKED ? marked(el) : undefined
   return mode === 'only' || mode === 'show'
@@ -248,11 +98,11 @@ const styleDisplays = (style: string | undefined, display: RegExp) =>
   style !== undefined &&
   DISPLAY.test(style) &&
   declarations(style).some(([property, value]) => property === 'display' && display.test(value))
-export const role = (el: Element) => read(el, 'role') ?? ''
+export const role = (el: Element) => attr(el, 'role') ?? ''
 const editor = (el: Element) => {
   const r = role(el)
   if (r === 'textbox' || r === 'searchbox') return true
-  const editable = read(el, 'contenteditable')
+  const editable = attr(el, 'contenteditable')
   return editable !== undefined && editable !== 'false'
 }
 
@@ -267,8 +117,8 @@ const dropped = (el: Element): boolean => {
   if (mode === 'only' || mode === 'show') return false
   return (
     (found & HIDDEN) !== 0 ||
-    ((found & ARIA_HIDDEN) !== 0 && read(el, 'aria-hidden') === 'true') ||
-    ((found & STYLE) !== 0 && styleHidden(read(el, 'style')))
+    ((found & ARIA_HIDDEN) !== 0 && attr(el, 'aria-hidden') === 'true') ||
+    ((found & STYLE) !== 0 && styleHidden(attr(el, 'style')))
   )
 }
 const chrome = (el: Element) => {
@@ -283,32 +133,16 @@ const hiddenAbove = (el: Element) => {
   for (let at: Element | null = el; at; at = at.up) if (dropped(at)) return true
   return false
 }
-// the page's <main>: the outermost, a real <main> before a role=main, among what prune keeps. the walk reads tags
-// alone, and asks whether a landmark it finds is hidden only then
-export const findMain = (root: Element): Element | undefined => {
-  let byRole: Element | undefined
-  const walk = (parent: Element): Element | undefined => {
-    for (const kid of parent.kids) {
-      if (typeof kid === 'string') continue
-      if (kid.tag === 'main') {
-        if (!hiddenAbove(kid)) return kid
-        continue
-      }
-      if (
-        kid.attrs !== '' &&
-        kid.attrs.indexOf('main') >= 0 &&
-        flags(kid) & ROLE &&
-        role(kid) === 'main'
-      ) {
-        if (!hiddenAbove(kid)) byRole ??= kid
-        continue
-      }
-      const found = walk(kid)
-      if (found) return found
-    }
-    return undefined
-  }
-  return walk(root) ?? byRole
+// the page's <main>: of the landmarks the parser found, the outermost among what prune keeps, a real <main> before a
+// role=main
+export const findMain = (mains: Element[]): Element | undefined => {
+  const kept = mains.filter((el) => !hiddenAbove(el))
+  const inside = new Set(kept)
+  const outermost = kept.filter((el) => {
+    for (let at = el.up; at; at = at.up) if (inside.has(at)) return false
+    return true
+  })
+  return outermost.find((el) => el.tag === 'main') ?? outermost[0]
 }
 
 // the page's ids, among what prune keeps, once a link's label needs them
@@ -319,7 +153,7 @@ const ids = () => {
   const walk = (parent: Element) => {
     for (const kid of parent.kids) {
       if (typeof kid === 'string' || dropped(kid)) continue
-      const id = read(kid, 'id')
+      const id = attr(kid, 'id')
       if (id !== undefined && !byId!.has(id)) byId!.set(id, kid)
       walk(kid)
     }
@@ -330,7 +164,7 @@ const ids = () => {
 
 const ASCII_SPACE = /[\t\n\f\r ]+/
 export const classes = (el: Element): string[] => {
-  const value = read(el, 'class')
+  const value = attr(el, 'class')
   return value ? value.split(ASCII_SPACE).filter(Boolean) : []
 }
 
@@ -405,7 +239,7 @@ const words = (el: Element | undefined): string =>
 // what an icon or avatar link is called without content: its aria-labelledby, aria-label or title
 export const linkLabel = (a: Element): string => {
   if (a.attrs === '') return ''
-  const labelledBy = read(a, 'aria-labelledby')
+  const labelledBy = attr(a, 'aria-labelledby')
   if (labelledBy) {
     const names = labelledBy
       .split(/\s+/)
@@ -416,7 +250,7 @@ export const linkLabel = (a: Element): string => {
       .join(' ')
     if (names) return names
   }
-  return (read(a, 'aria-label') ?? '').trim() || (read(a, 'title') ?? '').trim()
+  return (attr(a, 'aria-label') ?? '').trim() || (attr(a, 'title') ?? '').trim()
 }
 
 // images with a description, which an agent can read
@@ -425,7 +259,7 @@ const described = (node: Node): Element[] => {
   const walk = (el: Element) => {
     for (const kid of kidsOf(el)) {
       if (typeof kid === 'string') continue
-      if (kid.tag === 'img' && read(kid, 'alt')) found.push(kid)
+      if (kid.tag === 'img' && attr(kid, 'alt')) found.push(kid)
       walk(kid)
     }
   }
@@ -436,7 +270,7 @@ const hasDescribed = (node: Node): boolean => {
   if (typeof node === 'string') return false
   for (const kid of kidsOf(node)) {
     if (typeof kid === 'string') continue
-    if ((kid.tag === 'img' && read(kid, 'alt')) || hasDescribed(kid)) return true
+    if ((kid.tag === 'img' && attr(kid, 'alt')) || hasDescribed(kid)) return true
   }
   return false
 }
@@ -454,7 +288,7 @@ const linkDrop = (el: Element) => valueBearing(el) || emptyBlock(el)
 const linkText = (a: Element) =>
   text(a) ||
   described(a)
-    .map((img) => `${read(img, 'alt')} ${read(img, 'src')}`)
+    .map((img) => `${attr(img, 'alt')} ${attr(img, 'src')}`)
     .join(' ') ||
   linkLabel(a)
 
@@ -530,14 +364,13 @@ const pruned = (kid: Element): Element | undefined => {
   return kid
 }
 
-// whether text in an element is code, as written: no spacing there. cached with the children, 1 or 2
+// whether text in an element is code, as written: no spacing there
 const literal = (el: Element): boolean => {
-  const cached = el as Pruned
-  touch(cached)
-  if (cached.le === epoch) return cached.lv!
-  const value = el.tag === 'pre' || el.tag === 'code' || (el.up !== null && literal(el.up))
-  cached.le = epoch
-  cached.lv = value
+  let value = literals.get(el)
+  if (value === undefined) {
+    value = el.tag === 'pre' || el.tag === 'code' || (el.up !== null && literal(el.up))
+    literals.set(el, value)
+  }
   return value
 }
 
@@ -546,7 +379,7 @@ const LAID_OUT = /^([\w-]+:)*(inline-)?(flex|grid)$/
 const BOXED = /^([\w-]+:)*(block|flex|grid)$/
 const displays = (el: Element, display: RegExp) =>
   el.attrs !== '' &&
-  (classes(el).some((name) => display.test(name)) || styleDisplays(read(el, 'style'), display))
+  (classes(el).some((name) => display.test(name)) || styleDisplays(attr(el, 'style'), display))
 const BOXISH = /block|flex|grid|display|\\/
 const boxed = (node: Node | undefined) =>
   isInline(node) && BOXISH.test(node.attrs) && displays(node, BOXED)
@@ -631,7 +464,7 @@ const spaced = (parent: Element, kids: Node[]): Node[] => {
       const previous = soleLink(list[at - 1])
       if (
         previous &&
-        (read(previous, 'href') ?? '').trim() === (read(current, 'href') ?? '').trim() &&
+        (attr(previous, 'href') ?? '').trim() === (attr(current, 'href') ?? '').trim() &&
         linkText(previous) === linkText(current)
       ) {
         kept ??= result.slice(0, i)
@@ -647,10 +480,11 @@ const spaced = (parent: Element, kids: Node[]): Node[] => {
 
 // an element's children as prune leaves them
 export const kidsOf = (el: Element): Node[] => {
-  const cached = el as Pruned
-  if (cached.pe === epoch) return cached.pk!
-  touch(cached)
   const raw = el.kids
+  // only text in it (most elements: a span of code, a link's words): nothing for prune to do, nothing to keep
+  if (raw.length === 0 || (raw.length === 1 && typeof raw[0] === 'string')) return raw
+  const cached = cache.get(el)
+  if (cached !== undefined) return cached
   let out: Node[] | undefined
   for (let i = 0; i < raw.length; i++) {
     const kid = raw[i]!
@@ -664,7 +498,6 @@ export const kidsOf = (el: Element): Node[] => {
   }
   let kids = out ?? raw
   if (kids.length > 1 && !literal(el)) kids = spaced(el, kids)
-  cached.pk = kids
-  cached.pe = epoch
+  cache.set(el, kids)
   return kids
 }
