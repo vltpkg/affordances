@@ -80,13 +80,15 @@ const emit =
     : undefined
 if (parse) add({ name: 'md-core parse', setup: (html) => () => parse(html) })
 if (parse && emit) {
-  // the tree is parsed once, outside the clock. emit runs on the same tree each time, so anything it caches on the
-  // tree (attr maps) is warm after the first run
+  // emit owns the tree it's given and may change it, so every call gets a tree of its own, parsed outside the clock.
+  // a pool rather than one per call, to bound memory; a call past the pool parses on the clock, which shows as an
+  // outlier the median ignores
+  const POOL = 40
   add({
     name: 'md-core emit',
     setup: (html) => {
-      const doc = parse(html)
-      return () => emit(doc, { url })
+      const docs = Array.from({ length: POOL }, () => parse(html))
+      return () => emit(docs.pop() ?? parse(html), { url })
     },
   })
 }

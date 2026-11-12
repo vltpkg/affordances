@@ -200,7 +200,7 @@ const pushOne = (out: Md[], result: Md) => {
   } else out.push(result)
 }
 const push = (out: Md[], results: Md[]) => {
-  for (const result of results) pushOne(out, result)
+  for (let i = 0; i < results.length; i++) pushOne(out, results[i]!)
 }
 
 // an element's children, converted, appended to out
@@ -490,18 +490,23 @@ const split = (parent: Md): Md[] =>
 const runs = (nodes: Md[], onPhrasing: (run: Md[]) => Md[], onOther: (item: Md) => Md): Md[] => {
   const flat = flatten(nodes)
   const result: Md[] = []
-  let queue: Md[] = []
-  for (const item of flat) {
-    if (isPhrasing(item)) queue.push(item)
-    else {
-      if (queue.length) {
-        result.push(...onPhrasing(queue))
-        queue = []
-      }
+  // a run of phrasing is a slice of what's given, from start to the block after it
+  let start = -1
+  const close = (end: number) => {
+    const made = onPhrasing(start === 0 && end === flat.length ? flat : flat.slice(start, end))
+    for (let k = 0; k < made.length; k++) result.push(made[k]!)
+    start = -1
+  }
+  for (let i = 0; i < flat.length; i++) {
+    const item = flat[i]!
+    if (isPhrasing(item)) {
+      if (start < 0) start = i
+    } else {
+      if (start >= 0) close(i)
       result.push(onOther(item))
     }
   }
-  if (queue.length) result.push(...onPhrasing(queue))
+  if (start >= 0) close(flat.length)
   return result
 }
 const whitespaceOnly = (value: string) => /^[ \t\n\f\r]*$/.test(value)
@@ -969,12 +974,6 @@ const TABLE_PARTS = new Set([
   'tr',
 ])
 const ROW_GROUPS = new Set(['tbody', 'tfoot', 'thead'])
-type Info = {
-  breakBefore: boolean | number | string | undefined
-  breakAfter: boolean | number | string | undefined
-  rowAfter: boolean | undefined
-  normal: boolean
-}
 type Piece = string | number
 const isBr = (kid: Node | undefined) =>
   kid !== undefined && typeof kid !== 'string' && kid.tag === 'br'
@@ -990,37 +989,55 @@ const afterIn = (kids: Node[], index: number, test: (kid: Node) => boolean) => {
 const inTableTag = (tag: string) => tag === 'table' || ROW_GROUPS.has(tag)
 
 export const toText = (el: Element): string => {
+  // the pieces are joined as they come (hast-util-to-text joins them after): what's joined so far, and the most line
+  // endings asked for since the last text (-1: none yet since one; undefined: no text yet)
+  const savedJoined = joined
+  const savedCount = count
+  joined = ''
+  count = undefined
   const block = BLOCK_OR_CAPTION.has(el.tag)
-  const tableish = inTableTag(el.tag)
   const normal = whitespaceOf(el, NORMAL) === NORMAL
   const kids = kidsOf(el)
-  const results: Piece[] = []
+  const isTable = el.tag === 'table'
   for (let i = 0; i < kids.length; i++) {
     const next = kids[i + 1]
-    collect(kids, i, el, results, {
-      breakAfter: next ? isBr(next) : block,
-      breakBefore: i ? undefined : block,
-      rowAfter: tableish && el.tag === 'table' ? afterIn(kids, i, rowOrGroupWithRow) : undefined,
+    collect(
+      kids,
+      i,
+      el,
+      i ? undefined : block,
+      next ? isBr(next) : block,
+      isTable ? afterIn(kids, i, rowOrGroupWithRow) : undefined,
       normal,
-    })
+    )
   }
-  return joinPieces(results)
-}
-const joinPieces = (results: Piece[]) => {
-  let result = ''
-  let count: number | undefined
-  for (const value of results) {
-    if (typeof value === 'number') {
-      if (count !== undefined && value > count) count = value
-    } else if (value) {
-      if (count !== undefined && count > -1) result += '\n'.repeat(count) || ' '
-      count = -1
-      result += value
-    }
-  }
+  const result = joined
+  joined = savedJoined
+  count = savedCount
   return result
 }
-const collect = (kids: Node[], index: number, parent: Element, out: Piece[], info: Info) => {
+let joined = ''
+let count: number | undefined
+// one piece of the text: a number asks for that many line endings before the next text
+const piece = (value: Piece) => {
+  if (typeof value === 'number') {
+    if (count !== undefined && value > count) count = value
+  } else if (value) {
+    if (count !== undefined && count > -1) joined += '\n'.repeat(count) || ' '
+    count = -1
+    joined += value
+  }
+}
+type Break = boolean | number | string | undefined
+const collect = (
+  kids: Node[],
+  index: number,
+  parent: Element,
+  breakBefore: Break,
+  breakAfter: Break,
+  rowAfter: boolean | undefined,
+  normal: boolean,
+) => {
   const kid = kids[index]!
   if (typeof kid === 'string') {
     // preformatted text is as written, and what's beside it doesn't matter
@@ -1038,27 +1055,26 @@ const collect = (kids: Node[], index: number, parent: Element, out: Piece[], inf
       )
         return
     }
-    if (info.normal) collectText(value, info, out)
-    else out.push(value)
+    if (normal) collectText(value, breakBefore, breakAfter)
+    else piece(value)
     return
   }
   if (mode === PRE) {
-    collectElement(kid, index, kids, parent, info, out)
+    collectElement(kid, index, kids, rowAfter, normal)
     return
   }
   const saved = enterElement(kid, kids, index)
-  collectElement(kid, index, kids, parent, info, out)
+  collectElement(kid, index, kids, rowAfter, normal)
   exitElement(kid, saved)
 }
 const collectElement = (
   el: Element,
   position: number,
   siblings: Node[],
-  _parent: Element,
-  info: Info,
-  out: Piece[],
+  rowAfter: boolean | undefined,
+  inherited: boolean,
 ) => {
-  const normal = info.normal && whitespaceOf(el, NORMAL) === NORMAL
+  const normal = inherited && whitespaceOf(el, NORMAL) === NORMAL
   if (NOT_RENDERED.has(el.tag) || (el.tag === 'dialog' && attr(el, 'open') === undefined)) {
     walkOnly(el)
     return
@@ -1066,7 +1082,7 @@ const collectElement = (
   let prefix: number | undefined
   let suffix: number | string | undefined
   if (el.tag === 'br') suffix = '\n'
-  else if (el.tag === 'tr' && (info.rowAfter || afterIn(siblings, position, isRow))) suffix = '\n'
+  else if (el.tag === 'tr' && (rowAfter || afterIn(siblings, position, isRow))) suffix = '\n'
   else if (el.tag === 'p') {
     prefix = 2
     suffix = 2
@@ -1074,29 +1090,27 @@ const collectElement = (
     prefix = 1
     suffix = 1
   }
+  if (prefix) piece(prefix)
   const kids = kidsOf(el)
   const tableish = inTableTag(el.tag)
-  const items: Piece[] = []
+  const isTable = el.tag === 'table'
   for (let i = 0; i < kids.length; i++) {
     const next = kids[i + 1]
-    collect(kids, i, el, items, {
-      breakAfter: next ? isBr(next) : suffix,
-      breakBefore: i ? undefined : prefix,
-      rowAfter: tableish
-        ? el.tag === 'table'
-          ? afterIn(kids, i, rowOrGroupWithRow)
-          : info.rowAfter
-        : undefined,
+    collect(
+      kids,
+      i,
+      el,
+      i ? undefined : prefix,
+      next ? isBr(next) : suffix,
+      tableish ? (isTable ? afterIn(kids, i, rowOrGroupWithRow) : rowAfter) : undefined,
       normal,
-    })
+    )
   }
-  if (isCell(el) && afterIn(siblings, position, isCell)) items.push('\t')
-  if (prefix) out.push(prefix)
-  out.push(...items)
-  if (suffix) out.push(suffix)
+  if (isCell(el) && afterIn(siblings, position, isCell)) piece('\t')
+  if (suffix) piece(suffix)
 }
 const BIDI = /[؜‎‏‪-‮⁦-⁩]/g
-const collectText = (value: string, info: Info, out: Piece[]) => {
+const collectText = (value: string, breakBefore: Break, breakAfter: Break) => {
   const lines: string[] = []
   let start = 0
   while (start <= value.length) {
@@ -1105,8 +1119,8 @@ const collectText = (value: string, info: Info, out: Piece[]) => {
     lines.push(
       trimAndCollapse(
         value.slice(start, end).replace(BIDI, ''),
-        start === 0 ? info.breakBefore : true,
-        end === value.length ? info.breakAfter : true,
+        start === 0 ? breakBefore : true,
+        end === value.length ? breakAfter : true,
       ),
     )
     start = end + 1
@@ -1118,13 +1132,13 @@ const collectText = (value: string, info: Info, out: Piece[]) => {
       line.charCodeAt(line.length - 1) === 0x200b ||
       (index < lines.length - 1 && lines[index + 1]!.charCodeAt(0) === 0x200b)
     ) {
-      out.push(line)
+      piece(line)
       join = undefined
     } else if (line) {
-      if (typeof join === 'number') out.push(join)
-      out.push(line)
+      if (typeof join === 'number') piece(join)
+      piece(line)
       join = 0
-    } else if (index === 0 || index === lines.length - 1) out.push(0)
+    } else if (index === 0 || index === lines.length - 1) piece(0)
   }
 }
 const trimAndCollapse = (value: string, breakBefore: unknown, breakAfter: unknown) => {
@@ -1149,45 +1163,5 @@ export const convertRoot = (root: Element): Md => {
   before = true
   after = true
   mode = NORMAL
-  const result = node(ROOT, rootKids(all(root)))
-  tidy(result)
-  return result
-}
-
-// what hast-util-to-mdast does last: adjacent texts as one, the line ending's spaces, a paragraph's (heading's,
-// root's) outer spaces, and empty texts gone
-const edgeSpace = (char: number) => char === 32 || char === 9
-
-const tidy = (parent: Md) => {
-  const kids = parent.kids
-  const type = parent.type
-  const trims = type === PARAGRAPH || type === HEADING || type === ROOT
-  for (let index = 0; index < kids.length; index++) {
-    const item = kids[index]!
-    if (item.type !== TEXT) {
-      if (item.kids.length) tidy(item)
-      continue
-    }
-    const previous = kids[index - 1]
-    if (previous?.type === TEXT) {
-      previous.value += item.value
-      previous.depth |= item.depth
-      kids.splice(index, 1)
-      index -= 2
-      continue
-    }
-    let value = item.value
-    if (item.depth !== 0 && (value.includes('\n') || value.includes('\r')))
-      value = value.replace(/[\t ]*(\r?\n|\r)[\t ]*/, '$1')
-    if (trims) {
-      if (index === 0 && edgeSpace(value.charCodeAt(0))) value = value.replace(/^[\t ]+/, '')
-      if (index === kids.length - 1 && edgeSpace(value.charCodeAt(value.length - 1)))
-        value = value.replace(/[\t ]+$/, '')
-    }
-    item.value = value
-    if (!value) {
-      kids.splice(index, 1)
-      index--
-    }
-  }
+  return node(ROOT, rootKids(all(root)))
 }

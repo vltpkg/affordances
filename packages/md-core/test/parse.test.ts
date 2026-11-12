@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, test } from 'vitest'
+import { attr, parseAttrs, scanAttr } from '../src/attr.ts'
 import { ENTITIES } from '../src/entities-table.ts'
 import { parse } from '../src/parse.ts'
 import { NEVER, type Element, type Node } from '../src/types.ts'
@@ -403,6 +404,59 @@ describe('foreign content: math', () => {
   ])('%j', (html) => expect(difference(html)).toBeUndefined())
 })
 
+describe('one attribute read alone agrees with them all parsed', () => {
+  const NAMES = [
+    'class',
+    'id',
+    'href',
+    'style',
+    'role',
+    'hidden',
+    'title',
+    'type',
+    'xlink:href',
+    'x',
+    '=',
+    '\uFFFD',
+  ]
+  const agree = (source: string) => {
+    const map = parseAttrs(source)
+    const problems: string[] = []
+    for (const name of new Set([...map.keys(), ...NAMES]))
+      if (scanAttr(source, name) !== map.get(name))
+        problems.push(`${JSON.stringify(source)} ${name}`)
+    return problems
+  }
+  test.each([
+    ' a=1 A=2 a=3',
+    ' STYLE="color:red" style=x',
+    ' a b=c d = "e" f=\'g\' h=i/ j',
+    '/a/b=c//d',
+    ' =x ==y',
+    ' a="&amp;&notit;&not=&amp=x&ampx" b=&lt',
+    ' a="\0" \0b=c',
+    ' a="never closed',
+    ' a=',
+    ' a"b=c \'d=e',
+    '',
+  ])('%j', (source) => expect(agree(source)).toEqual([]))
+  test('on every element of generated pages, and attr() in any order of questions', () => {
+    const problems: string[] = []
+    const walk = (el: Element) => {
+      problems.push(...agree(el.attrs))
+      const map = parseAttrs(el.attrs)
+      for (const name of [...NAMES, ...map.keys()]) {
+        const fresh = { ...el, map: undefined } as Element
+        if (attr(fresh, name) !== map.get(name) || attr(fresh, name) !== map.get(name))
+          problems.push(`attr ${JSON.stringify(el.attrs)} ${name}`)
+      }
+      for (const kid of el.kids) if (typeof kid !== 'string') walk(kid)
+    }
+    for (let seed = 1; seed <= 1500; seed++) walk(parse(generate(seed)).root)
+    expect(problems.slice(0, 5)).toEqual([])
+  })
+})
+
 describe('flags and mains', () => {
   test.each([
     '<div hidden HIDDEN=x aria-hidden="true" Style="a" role=button>x</div>',
@@ -421,6 +475,8 @@ describe('flags and mains', () => {
     '<script role=main></script><svg><main>in svg</main></svg><noscript><main>n</main></noscript>after',
     '<template><main>t</main></template><head><main>h',
     '<math><main>math main</main></math>',
+    '</><frameset/><html/role="ma&#105n">',
+    '<main>a</main><frameset><html role=main>',
   ])('%j', (html) => expect(difference(html)).toBeUndefined())
 })
 

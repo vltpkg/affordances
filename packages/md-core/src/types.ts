@@ -18,6 +18,10 @@ export interface Element {
   up: Element | null
   // attr()'s cache
   map?: Map<string, string> | undefined
+  // the emitter's own, on a document it owns (it emits each once and prunes it in place): kids are already as prune
+  // leaves them; and whether the element is code or inside it (undefined until asked)
+  pruned?: boolean | undefined
+  code?: boolean | undefined
 }
 
 // the attributes an element's flags record, by name (ascii case-insensitive, as html matches them)
@@ -59,6 +63,7 @@ export interface Head {
   jsonLd: string[]
 }
 
+// a Document is emitted once: emit owns the tree it's given and may prune or annotate it in place
 export interface Document {
   // children are the <body>'s children (or, without a body, the page's own)
   root: Element

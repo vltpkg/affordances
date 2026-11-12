@@ -5,16 +5,11 @@ import { FLAG, type Element, type Node } from './types.ts'
 // prune leaves them (hidden things gone, empty links named or gone, inline boxes spaced, repeated links once), kept
 // for the emit call that asked. nothing is copied unless it changes; an element of text alone isn't kept at all
 
-// the emitter's state for one emit call, kept off the parser's elements: each element's pruned children, and
-// whether it's code (no spacing there)
-let cache = new Map<Element, Node[]>()
-let literals = new Map<Element, boolean>()
+// emit owns its document and prunes it in place: an element's kids become what prune leaves, once, and pruned says so
 // chrome (nav, header, footer, …) is stripped too: the page has no <main>
 let stripChrome = false
 export const begin = (strip: boolean) => {
   stripChrome = strip
-  cache = new Map()
-  literals = new Map()
   byId = undefined
 }
 let page: Element | undefined
@@ -32,8 +27,9 @@ export const made = (from: Element, kids: Node[], tag = from.tag): Element => {
     kids,
     up: from.up,
     map: from.map,
+    pruned: true,
+    code: from.code,
   }
-  cache.set(el, kids)
   return el
 }
 
@@ -366,11 +362,9 @@ const pruned = (kid: Element): Element | undefined => {
 
 // whether text in an element is code, as written: no spacing there
 const literal = (el: Element): boolean => {
-  let value = literals.get(el)
-  if (value === undefined) {
-    value = el.tag === 'pre' || el.tag === 'code' || (el.up !== null && literal(el.up))
-    literals.set(el, value)
-  }
+  let value = el.code
+  if (value === undefined)
+    el.code = value = el.tag === 'pre' || el.tag === 'code' || (el.up !== null && literal(el.up))
   return value
 }
 
@@ -416,10 +410,13 @@ const LETTER_START = /^[\p{L}\p{N}]/u
 const spaced = (parent: Element, kids: Node[]): Node[] => {
   let out: Node[] | undefined
   let items: boolean | undefined
-  const said: (string | undefined)[] = []
-  const boxes: (boolean | undefined)[] = []
-  const wordAt = (i: number) => (said[i] ??= word(kids[i]))
-  const boxedAt = (i: number) => (boxes[i] ??= boxed(kids[i]))
+  // each child's word and box, worked out at most once (one pair's right is the next one's left)
+  let lastWord = -1
+  let leftSaid = ''
+  let rightSaid = ''
+  let lastBox = -1
+  let leftBox = false
+  let rightBox = false
   let inlines = 0
   for (let i = 0; i < kids.length; i++) {
     const left = kids[i]!
@@ -435,12 +432,18 @@ const spaced = (parent: Element, kids: Node[]): Node[] => {
     let gap: boolean
     if (leftInline && rightInline && edgeLink(left, true) && edgeLink(right, false)) gap = true
     else {
-      const leftWord = wordAt(i)
-      const rightWord = wordAt(i + 1)
+      leftSaid = i > 0 && lastWord === i - 1 ? rightSaid : word(left)
+      rightSaid = word(right)
+      lastWord = i
+      const leftWord = leftSaid
+      const rightWord = rightSaid
       const letters = LETTER_END.test(leftWord) && LETTER_START.test(rightWord)
       const both = leftWord !== '' && rightWord !== ''
       if (!letters && !both) continue
-      const box = boxedAt(i) || boxedAt(i + 1)
+      leftBox = i > 0 && lastBox === i - 1 ? rightBox : boxed(left)
+      rightBox = boxed(right)
+      lastBox = i
+      const box = leftBox || rightBox
       gap = letters || (box && both)
       // text beside an element is a box of its own only in a flex or grid container, or beside a box
       if (gap && !(leftInline && rightInline)) gap = box || (items ??= displays(parent, LAID_OUT))
@@ -483,21 +486,15 @@ export const kidsOf = (el: Element): Node[] => {
   const raw = el.kids
   // only text in it (most elements: a span of code, a link's words): nothing for prune to do, nothing to keep
   if (raw.length === 0 || (raw.length === 1 && typeof raw[0] === 'string')) return raw
-  const cached = cache.get(el)
-  if (cached !== undefined) return cached
-  let out: Node[] | undefined
+  if (el.pruned) return raw
+  el.pruned = true
+  // in place: what's kept moves down over what's dropped
+  let at = 0
   for (let i = 0; i < raw.length; i++) {
     const kid = raw[i]!
-    if (typeof kid === 'string') {
-      out?.push(kid)
-      continue
-    }
-    const kept = pruned(kid)
-    if (kept !== kid) out ??= raw.slice(0, i)
-    if (out && kept) out.push(kept)
+    const kept = typeof kid === 'string' ? kid : pruned(kid)
+    if (kept !== undefined) raw[at++] = kept
   }
-  let kids = out ?? raw
-  if (kids.length > 1 && !literal(el)) kids = spaced(el, kids)
-  cache.set(el, kids)
-  return kids
+  raw.length = at
+  return at > 1 && !literal(el) ? (el.kids = spaced(el, raw)) : raw
 }

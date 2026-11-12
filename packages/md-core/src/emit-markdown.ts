@@ -47,6 +47,8 @@ export class Md {
   align: (string | null)[] | null
   rowSpan: number
   colSpan: number
+  // its kids have been tidied (tidy below), which happens once, just before anything reads them
+  clean: boolean
   constructor(type: number, kids: Md[] = LEAF[type] ? NO_KIDS : [], value = '') {
     this.type = type
     this.kids = kids
@@ -62,10 +64,53 @@ export class Md {
     this.align = null
     this.rowSpan = 0
     this.colSpan = 0
+    this.clean = false
   }
 }
 
 export const isPhrasing = (node: Md) => node.type >= TEXT
+
+// what hast-util-to-mdast does last, to each node's children: adjacent texts as one, the line ending's spaces, a
+// paragraph's (heading's, root's) outer spaces, and empty texts gone. it depends on nothing but the node's own
+// children, so it's done to each node when its children are first read, while they're at hand, not in a pass of its own
+const edgeSpace = (char: number) => char === 32 || char === 9
+export const tidy = (parent: Md): Md[] => {
+  const kids = parent.kids
+  if (parent.clean) return kids
+  parent.clean = true
+  const type = parent.type
+  const trims = type === PARAGRAPH || type === HEADING || type === ROOT
+  for (let index = 0; index < kids.length; index++) {
+    const item = kids[index]!
+    if (item.type !== TEXT) continue
+    const previous = kids[index - 1]
+    if (previous?.type === TEXT) {
+      previous.value += item.value
+      previous.depth |= item.depth
+      kids.splice(index, 1)
+      index -= 2
+      continue
+    }
+    let value = item.value
+    if (item.depth !== 0 && (value.includes('\n') || value.includes('\r')))
+      value = value.replace(/[\t ]*(\r?\n|\r)[\t ]*/, '$1')
+    if (trims) {
+      if (index === 0 && edgeSpace(value.charCodeAt(0))) value = value.replace(/^[\t ]+/, '')
+      if (index === kids.length - 1 && edgeSpace(value.charCodeAt(value.length - 1)))
+        value = value.replace(/[\t ]+$/, '')
+    }
+    item.value = value
+    if (!value) {
+      kids.splice(index, 1)
+      index--
+    }
+  }
+  return kids
+}
+// a node tidied all the way down, for what reads a whole subtree before it's written (a heading's setext test)
+const tidyDeep = (node: Md) => {
+  for (const kid of tidy(node)) if (kid.kids.length) tidyDeep(kid)
+}
 
 // constructs, as bits
 const PHRASING = 1
@@ -314,9 +359,17 @@ type Scope = {
   byChar: (Pattern[] | undefined)[] | undefined
 }
 const scopes = new Map<number, Scope>()
+// the last scope asked for: text after text is usually in the same constructs
+let lastMask = -1
+let lastScope: Scope | undefined
 const scopeOf = (mask: number): Scope => {
+  if (mask === lastMask) return lastScope!
   let scope = scopes.get(mask)
-  if (scope) return scope
+  if (scope) {
+    lastMask = mask
+    lastScope = scope
+    return scope
+  }
   const patterns = PATTERNS.filter(
     (pattern) => (pattern.in === -1 || (pattern.in & mask) !== 0) && (pattern.notIn & mask) === 0,
   )
@@ -954,7 +1007,7 @@ const peek = (node: Md, parent: Md): string => {
 }
 
 const phrasing = (parent: Md, before: string, after: string): Item[] => {
-  const kids = parent.kids
+  const kids = tidy(parent)
   const results: Item[] = []
   indexStack.push(-1)
   for (let index = 0; index < kids.length; index++) {
@@ -989,7 +1042,7 @@ const containerPhrasing = (parent: Md, before: string, after: string) =>
   serialize(phrasing(parent, before, after), before, after)
 
 const containerFlow = (parent: Md): string => {
-  const kids = parent.kids
+  const kids = tidy(parent)
   let result = ''
   indexStack.push(-1)
   for (let index = 0; index < kids.length; index++) {
@@ -1016,7 +1069,7 @@ const between = (left: Md, right: Md, parent: Md) => {
     left.type === PARAGRAPH &&
     right.type === LIST &&
     ((right.ordered && right.depth !== 1) ||
-      (right.kids.length > 0 && right.kids[0]!.kids.length === 0))
+      (tidy(right).length > 0 && tidy(right.kids[0]!).length === 0))
   )
     return '\n\n'
   if (left.type === PARAGRAPH && right.type === THEMATIC_BREAK) return '\n\n'
@@ -1076,7 +1129,11 @@ const hasBreak = (node: Md): boolean => {
   return false
 }
 // a heading written setext style: an h1 or h2 that holds a line break
-export const setext = (node: Md) => node.depth < 3 && toText(node) !== '' && hasBreak(node)
+export const setext = (node: Md) => {
+  if (node.depth >= 3) return false
+  tidyDeep(node)
+  return toText(node) !== '' && hasBreak(node)
+}
 
 // a link written <like this>: its text is its url. worked out once, kept in its depth (1 no, 2 yes)
 const autolinked = (node: Md) => {
@@ -1084,6 +1141,7 @@ const autolinked = (node: Md) => {
   return node.depth === 2
 }
 const isAutolink = (node: Md) => {
+  tidy(node)
   if (node.title || !node.url || node.kids.length !== 1 || node.kids[0]!.type !== TEXT) return false
   const raw = node.kids[0]!.value
   return (
@@ -1129,7 +1187,7 @@ const handle = (node: Md, parent: Md | undefined, before: string, after: string)
     case HEADING:
       return heading(node)
     case ROOT: {
-      if (!node.kids.some(isPhrasing)) return containerFlow(node)
+      if (!tidy(node).some(isPhrasing)) return containerFlow(node)
       enter('phrasing')
       const value = containerPhrasing(node, before, after)
       exit()
@@ -1214,6 +1272,7 @@ const heading = (node: Md) => {
 }
 
 const list = (node: Md, parent: Md | undefined) => {
+  for (const item of tidy(node)) tidy(item)
   enter('list')
   const saved = bulletCurrent
   let bullet = node.ordered ? '.' : '-'

@@ -340,6 +340,9 @@ const make = (name: string, id: number, ns: number, attrs: string, flags: number
     kids: [],
     up: null,
     map: undefined,
+    // the emitter's fields, here so every element has one shape from the start
+    pruned: false,
+    code: undefined,
     id,
     ns,
     rec: ns === SVG ? 0 : DROP[id] ? 1 : 2,
@@ -1463,6 +1466,8 @@ const adopt = (el: El) => {
   el.attrs = serialize(own)
   el.map = own
   el.flags |= tflags
+  // a role it gains can make it a main (an html element is in the tree when a frameset put the page's own in it)
+  if (own.get('role') === 'main' && !mains.includes(el)) mains.push(el)
 }
 const hiddenInput = () =>
   tattrs !== '' && parseAttrs(tattrs).get('type')?.toLowerCase() === 'hidden'
@@ -2563,6 +2568,13 @@ const dataText = (from: number, to: number) => {
     }
     return
   }
+  // the common case: text in body, into an html element (what chars would do, minus its dispatch)
+  if (mode === IN_BODY && current.ns === HTML && !skipNL && !foster) {
+    if (afe.length !== 0) rebuild()
+    appendText(current, text)
+    if (framesetOk && !allSpace(text)) framesetOk = false
+    return
+  }
   chars(text)
 }
 // text in raw text, rcdata, script data and plaintext: nuls are U+FFFD
@@ -2974,7 +2986,7 @@ const readMains = (root: El) => {
     while (up && up !== root && !DROP[up.id]) up = up.up
     if (up === root && el !== root) found.push(el)
   }
-  if (!reordered || found.length < 2) return found
+  if (found.length < 2) return found
   const places = new Map(found.map((el) => [el, position(el)]))
   return found.toSorted((a, b) => treeOrder(places.get(a)!, places.get(b)!))
 }

@@ -23,6 +23,24 @@ const numeric = (code: number) => {
   return String.fromCodePoint(code)
 }
 
+// the few references most pages are made of, matched without a slice and a lookup: the letters from..to, before a ';'
+const common = (text: string, from: number, to: number) => {
+  const c = text.charCodeAt(from)
+  switch (to - from) {
+    case 2:
+      if (text.charCodeAt(from + 1) !== 116) return undefined
+      return c === 108 ? '<' : c === 103 ? '>' : undefined
+    case 3:
+      return c === 97 && text.charCodeAt(from + 1) === 109 && text.charCodeAt(from + 2) === 112
+        ? '&'
+        : undefined
+    case 4:
+      if (c === 113 && text.startsWith('uot', from + 1)) return '"'
+      if (c === 110 && text.startsWith('bsp', from + 1)) return '\u00a0'
+      if (c === 97 && text.startsWith('pos', from + 1)) return "'"
+  }
+  return undefined
+}
 const alnum = (c: number) => (c >= 48 && c <= 57) || ((c | 32) >= 97 && (c | 32) <= 122)
 
 // attribute: decoding an attribute's value, where a legacy name followed by '=' or an alphanumeric isn't a reference
@@ -60,7 +78,7 @@ export const decode = (text: string, attribute = false): string => {
       let j = i
       while (j < n && j - i <= NAME_MAX && alnum(text.charCodeAt(j))) j++
       if (j > i) {
-        if (text.charCodeAt(j) === 59) value = NAMED.get(text.slice(i, j + 1))
+        if (text.charCodeAt(j) === 59) value = common(text, i, j) ?? NAMED.get(text.slice(i, j + 1))
         if (value !== undefined) end = j + 1
         else
           // without its ';', the longest legacy name the letters start with
