@@ -24,7 +24,12 @@ import { visit } from 'unist-util-visit'
 import { minifyWhitespace } from './whitespace.ts'
 import { emit as emitCore, readSlots } from './core/emit.ts'
 import { parse as parseCore } from './core/parse.ts'
-import type { Document as CoreDocument, Options as CoreOptions } from './core/types.ts'
+import type {
+  Document as CoreDocument,
+  FormNode,
+  MdastNode,
+  Options as CoreOptions,
+} from './core/types.ts'
 import { declined, forcedPath } from './path.ts'
 
 export type Handlers = Record<string, Handle>
@@ -2459,7 +2464,7 @@ const readCore = (
   // the first call converts the tree read here; md-core's emit prunes a tree in place, so another parses again
   let doc: CoreDocument | undefined = parseCore(html)
   const reason = untrusted(doc.scripts, swapped)
-  const coreOptions: CoreOptions = { ...(options as CoreOptions), relinkMarkdown }
+  const coreOptions: CoreOptions = { ...(options as CoreOptions), relinkMarkdown, convertForm }
   // a marked page whose markers md-core can't read as prune does
   const slots = readSlots(doc, coreOptions)
   if ('decline' in slots) {
@@ -2476,6 +2481,74 @@ const readCore = (
     },
   }
   return { page, reason }
+}
+
+// a form on md-core's path, converted as the tree pipeline converts it: md-core hands over the form as parse5 would
+// have made it (the elements prune left, attributes as written), the elements the page's content names by id, and
+// its filled slots. the whitespace pass, the form summary and every handler are this pipeline's own, so what a form
+// says (its fields' names, which values show and which are secrets) is the same on both paths
+type Parse5Node = Parameters<typeof fromParse5>[0]
+const hastOf = (node: FormNode) => fromParse5(node as unknown as Parse5Node) as Element
+export const convertForm: NonNullable<CoreOptions['convertForm']> = (
+  handed,
+  byIds,
+  fills,
+  whitespace,
+) => {
+  const hast = hastOf(handed)
+  // each node handed over and the element made of it
+  const made = new Map<FormNode, Element>()
+  const pair = (from: FormNode, to: ElementContent) => {
+    if (to.type !== 'element') return
+    made.set(from, to)
+    const kids = from.childNodes ?? []
+    for (let i = 0; i < kids.length; i++) pair(kids[i]!, to.children[i]!)
+  }
+  pair(handed, hast)
+  // a filled slot says so by a property no attribute parses to, which survives the copies the form summary makes
+  const filled = new Map<string, string>()
+  for (const [node, md] of fills) {
+    const el = made.get(node)
+    if (!el) continue
+    const key = String(filled.size)
+    el.properties[FILLABLE] = key
+    filled.set(key, md)
+  }
+  minifyWhitespace({ type: 'root', children: [hast] }, whitespace)
+  // the content's ids: an element in the form is the form's own, any other is made when it's first asked for
+  class ById extends Map<string, Element> {
+    override get(id: string) {
+      if (!super.has(id)) {
+        const named = byIds.get(id)
+        if (named) super.set(id, made.get(named) ?? hastOf(named))
+      }
+      return super.get(id)
+    }
+    override has(id: string) {
+      return this.get(id) !== undefined
+    }
+  }
+  const marker: Handle = (state, node) => {
+    const key = node.properties[FILLABLE]
+    const md = typeof key === 'string' ? filled.get(key) : undefined
+    return (md === undefined ? state.all(node) : markerMarkdown(md, 'block')) as never
+  }
+  let entered = false
+  const mdast = toMdast(
+    { type: 'root', children: [] },
+    {
+      handlers: { ...handlers, 'affordances-md': marker },
+      nodeHandlers: {
+        root: (state, node) => {
+          if (entered) return defaultNodeHandlers.root(state, node)
+          entered = true
+          state.elementById = new ById()
+          return defaultNodeHandlers.root(state, { type: 'root', children: [hast] })
+        },
+      },
+    },
+  ) as MdastRoot
+  return mdast.children as MdastNode[]
 }
 
 // a tree as hast-util-to-mdast converts it, without what it does first: a structured clone of all it's given, so its

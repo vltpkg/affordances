@@ -114,6 +114,44 @@ export type Options = {
   relinkMarkdown?: (markdown: string, base: string, link: Options['link']) => string
   // markdown for each <AgentSlot name>, in place of its children; a name the page renders more than once fills nothing
   fills?: Record<string, string>
+  // @affordances/md's own conversion of a form (its field summary, which values show and which are secrets), given
+  // the form as parse5 would have made it, the content's elements by id, and its filled slots. internal: md passes
+  // its own; without it a form says what it says, without its fields
+  convertForm?: (
+    form: FormNode,
+    ids: { get: (id: string) => FormNode | undefined },
+    fills: Map<FormNode, string>,
+    // the whitespace the form is in: a <nobr> doesn't wrap, a <pre> keeps it as written
+    whitespace: 'normal' | 'nowrap' | 'pre',
+  ) => MdastNode[]
+}
+
+// a node as parse5 makes it, as much of it as hast-util-from-parse5 reads
+export type FormNode = {
+  nodeName: string
+  tagName?: string
+  value?: string
+  attrs?: { name: string; value: string }[]
+  namespaceURI?: string
+  childNodes?: FormNode[]
+}
+// an mdast node, as much of it as md-core reads
+export type MdastNode = {
+  type: string
+  children?: MdastNode[]
+  value?: string
+  depth?: number
+  ordered?: boolean | null
+  start?: number | null
+  spread?: boolean | null
+  checked?: boolean | null
+  lang?: string | null
+  meta?: string | null
+  url?: string
+  title?: string | null
+  alt?: string | null
+  align?: (string | null)[] | null
+  data?: { affordancesMd?: 'inline' | 'block' }
 }
 
 export type Result = { markdown: string; title?: string; url?: string; tokens: number }

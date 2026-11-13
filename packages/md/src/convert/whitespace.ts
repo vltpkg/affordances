@@ -115,8 +115,9 @@ const blank = (value: string) => !/[^ \t\n\f\r]/.test(value)
 const collapse = (value: string) => String(value).replace(/[\t\n\v\f\r ]+/g, ' ')
 const removable = (character: string) => character === ' ' || character === '\n'
 
-export const minifyWhitespace = (tree: Nodes) => {
-  minify(tree, { whitespace: 'normal', before: undefined, after: undefined })
+// whitespace: what the tree is in, for one taken from a page (md-core's form, in a <nobr> or a <pre>)
+export const minifyWhitespace = (tree: Nodes, whitespace: Whitespace = 'normal') => {
+  minify(tree, { whitespace, before: undefined, after: undefined })
 }
 
 const minify = (node: Nodes, state: State): Result => {

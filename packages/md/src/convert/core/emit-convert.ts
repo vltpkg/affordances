@@ -29,15 +29,22 @@ import {
   THEMATIC_BREAK,
   BLOCKQUOTE,
 } from './emit-markdown.ts'
-import { attr } from './attr.ts'
-import { classes, kidsOf as prunedKids, linkLabel, text } from './emit-prune.ts'
+import { attr, parseAttrs } from './attr.ts'
+import { classes, kidsOf as prunedKids, linkLabel, text, unhidden } from './emit-prune.ts'
 
 // an element's children as conversion reads them: prune's, except a filled slot's, which never convert (prune still
 // reads them, as @affordances/md's does before it empties the slot)
 const NONE: Node[] = []
 const kidsOf = (el: Element): Node[] =>
   el.verbatim !== undefined && el.tag === 'affordances-md' ? NONE : prunedKids(el)
-import { FLAG, type Element, type Node, type Options } from './types.ts'
+import {
+  FLAG,
+  type Element,
+  type FormNode,
+  type MdastNode,
+  type Node,
+  type Options,
+} from './types.ts'
 
 // the page's content as the emitter's tree, as hast-util-to-mdast (MIT, Titus Wormer) converts it with
 // @affordances/md's handlers. whitespace is collapsed on the way, as hast-util-minify-whitespace would before: the
@@ -187,6 +194,9 @@ export const startConvert = (options: Options, page: string | undefined) => {
   fast = (options as { fast?: boolean }).fast !== false
   base = page
   relink = options.link
+  convertForm = options.convertForm
+  contentRoot = undefined
+  contentIds = undefined
   inTable = false
   skips = new Set()
   controls = 0
@@ -861,10 +871,121 @@ const details = (el: Element) => {
 
 // a form says what it says, without its controls (the field summary is @affordances/md's alone, for now)
 const form = (el: Element) => {
+  if (convertForm) return island(el)
   controls++
   const flow = toFlow(all(el))
   controls--
   return flow
+}
+
+// a form as @affordances/md converts it, by its own code: md-core hands over the form as parse5 would have made it
+// (what prune left, as conversion reads it), and maps the mdast that comes back to its own nodes
+let convertForm: Options['convertForm']
+let contentRoot: Element | undefined
+// the first element with each id in what's converted, as the tree pipeline collects them
+let contentIds: Map<string, Element> | undefined
+const idsOfContent = () => {
+  if (contentIds) return contentIds
+  const found = new Map<string, Element>()
+  const walk = (parent: Element) => {
+    for (const kid of kidsOf(parent)) {
+      if (typeof kid === 'string') continue
+      const id = attr(kid, 'id')
+      if (id && !found.has(id)) found.set(id, kid)
+      walk(kid)
+    }
+  }
+  if (contentRoot) walk(contentRoot)
+  return (contentIds = found)
+}
+const HTML_NS = 'http://www.w3.org/1999/xhtml'
+const island = (el: Element): Md[] => {
+  const nodes = new Map<Element, FormNode>()
+  const fills = new Map<FormNode, string>()
+  const nodeOf = (from: Element): FormNode => {
+    let made = nodes.get(from)
+    if (made) return made
+    // an <AgentText> is a span or div that says its markdown; a filled slot is the marker, emptied, with its fill
+    const agentText = from.verbatim !== undefined && from.tag !== 'affordances-md'
+    const attrs = agentText
+      ? [{ name: 'data-affordances-md-text', value: from.verbatim! }]
+      : [...parseAttrs(from.attrs)].flatMap(([name, value]) =>
+          // only an <AgentText> is markdown said as it is, and what's shown has no hidden
+          name === 'data-affordances-md-text' || (name === 'hidden' && unhidden(from))
+            ? []
+            : [{ name, value }],
+        )
+    made = { nodeName: from.tag, tagName: from.tag, attrs, namespaceURI: HTML_NS, childNodes: [] }
+    nodes.set(from, made)
+    if (agentText) made.childNodes = [{ nodeName: '#text', value: from.verbatim! }]
+    else if (from.verbatim !== undefined) fills.set(made, from.verbatim)
+    else
+      made.childNodes = kidsOf(from).map((kid) =>
+        typeof kid === 'string' ? { nodeName: '#text', value: kid } : nodeOf(kid),
+      )
+    return made
+  }
+  const root = nodeOf(el)
+  const ids = {
+    get: (id: string) => {
+      const found = idsOfContent().get(id)
+      return found && nodeOf(found)
+    },
+  }
+  const whitespace = mode === PRE ? 'pre' : mode === NOWRAP ? 'nowrap' : 'normal'
+  return convertForm!(root, ids, fills, whitespace).map(fromMdast)
+}
+const MDAST: Record<string, number> = {
+  paragraph: PARAGRAPH,
+  heading: HEADING,
+  thematicBreak: THEMATIC_BREAK,
+  blockquote: BLOCKQUOTE,
+  list: LIST,
+  listItem: LIST_ITEM,
+  code: CODE,
+  table: TABLE,
+  tableRow: TABLE_ROW,
+  tableCell: TABLE_CELL,
+  html: HTML,
+  text: TEXT,
+  emphasis: EMPHASIS,
+  strong: STRONG,
+  delete: DELETE,
+  inlineCode: INLINE_CODE,
+  break: BREAK,
+  link: LINK,
+  image: IMAGE,
+}
+// mdast as md-core's nodes, with links and images resolved as the tree pipeline resolves them once it has converted
+const fromMdast = (from: MdastNode): Md => {
+  const type = MDAST[from.type]
+  if (type === undefined) throw new Error(`md-core can't read mdast ${from.type}`)
+  const made = new Md(
+    type,
+    from.children?.map(fromMdast),
+    type === IMAGE ? (from.alt ?? '') : (from.value ?? ''),
+  )
+  made.clean = true
+  if (type === HEADING) made.depth = from.depth ?? 1
+  else if (type === LIST) {
+    made.ordered = Boolean(from.ordered)
+    if (made.ordered) made.depth = from.start ?? 0
+    made.spread = Boolean(from.spread)
+  } else if (type === LIST_ITEM) {
+    made.spread = Boolean(from.spread)
+    made.checked = from.checked ?? null
+  } else if (type === CODE) {
+    made.lang = from.lang ?? null
+    made.meta = from.meta ?? null
+  } else if (type === TABLE) made.align = from.align ?? null
+  else if (type === LINK || type === IMAGE) {
+    made.url = resolve(from.url ?? '', type === IMAGE)
+    made.title = from.title ?? null
+  } else if (type === HTML) {
+    const as = from.data?.affordancesMd
+    made.depth = as === 'inline' ? MARKED_INLINE : as === 'block' ? MARKED_BLOCK : 0
+  } else if (type === TEXT && made.value.includes('\n')) made.depth = 1
+  return made
 }
 
 // a code block's language: a language-* class on its <code>, data-language on it or the <pre>, or a class on the <pre>
@@ -1253,6 +1374,7 @@ const trimAndCollapse = (value: string, breakBefore: unknown, breakAfter: unknow
 
 // the walk over the content's root, as hast-util-to-mdast's root handler: wrapped when it holds blocks
 export const convertRoot = (root: Element): Md => {
+  contentRoot = root
   flow = true
   before = true
   after = true

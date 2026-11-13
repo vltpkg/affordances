@@ -66,7 +66,7 @@ export const marked = (el: Element) => {
   const mode = attr(el, 'data-affordances-md')
   return mode === 'skip' || mode === 'show' ? mode : undefined
 }
-const unhidden = (el: Element) => {
+export const unhidden = (el: Element) => {
   const mode = flags(el) & MARKED ? marked(el) : undefined
   return mode === 'only' || mode === 'show'
 }

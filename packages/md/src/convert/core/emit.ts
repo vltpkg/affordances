@@ -21,8 +21,8 @@ import { FLAG, type Document, type Element, type Options, type Result } from './
 // markdown straight from the parser's tree: what @affordances/md's htmlToMarkdown writes for the same page. one walk
 // prunes, extracts, collapses whitespace and converts (emit-prune, emit-convert) into a lean tree that's written out
 // (emit-markdown); finish adds what the page's head says.
-// not here yet, where they'd hook in: the form summary (convert's form()), streamed suspense boundaries (the
-// parser), custom handlers
+// a form is @affordances/md's own conversion of it, when md passes it in (options.convertForm). not here yet, where
+// they'd hook in: streamed suspense boundaries (the parser), custom handlers
 export const emit = (doc: Document, options: Options = {}): Result => {
   const { head } = doc
   const meta = (key: string) => (head.meta.get(key) ?? '').trim() || undefined
