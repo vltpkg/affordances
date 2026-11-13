@@ -292,6 +292,8 @@ let watched: El[] = []
 let mains: El[] = []
 // every script element, in any namespace: the flight check reads each one's text
 let scripts: El[] = []
+// whether the page has a marker, or an element with data-affordances-md
+let marked = false
 // the elements with a dropped child among their kids, to take out at the end
 let pruned = new Set<El>()
 // whether a node was put anywhere but after everything before it: then the Head's elements are sorted into tree order
@@ -345,10 +347,12 @@ const make = (name: string, id: number, ns: number, attrs: string, flags: number
     // the emitter's fields, here so every element has one shape from the start
     pruned: false,
     code: undefined,
+    verbatim: undefined,
     id,
     ns,
     rec: ns === SVG ? 0 : DROP[id] ? 1 : 2,
   }
+  if (flags & FLAG['data-affordances-md'] || (id === 0 && name === 'affordances-md')) marked = true
   // a main, by tag or by role; which of them end up in the tree is settled at the end
   if (id === MAIN || (flags & FLAG.role && maybe(attrs, 'main') && attr(el, 'role') === 'main'))
     mains.push(el)
@@ -3031,6 +3035,7 @@ export const parse = (input: string): Document => {
   watched = []
   mains = []
   scripts = []
+  marked = false
   pruned.clear()
   reordered = false
   tok = 0
@@ -3052,7 +3057,7 @@ export const parse = (input: string): Document => {
     el.kids = kids
   }
   const root = bodyEl && !bodyGone ? bodyEl : doc
-  const document: Document = { root, head, mains: readMains(root), scripts: scriptTexts }
+  const document: Document = { root, head, mains: readMains(root), scripts: scriptTexts, marked }
   root.tag = '#root'
   root.up = null
   // let the page go: the tree holds slices of it, not the parse's state

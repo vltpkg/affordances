@@ -305,17 +305,12 @@ describe('options', () => {
 // before the package is built again)
 const fixtures = fixturePages()
 // known differences, all from what emit doesn't do yet, each with the share of its reference lines emit reproduces in
-// order: markers and slots (<affordances-md>: main, text), the form summary, shown tab panels, streamed suspense
+// order: slots, the form summary, streamed suspense
 // boundaries. a page that gets closer should raise its floor; one that gets exact moves out of the list
 const KNOWN = new Map([
-  ['disclosure-fumadocs-tabs', 0.76],
-  ['disclosure-radix-tabs', 0.76],
   ['form', 0.58],
   ['form-labels', 0.53],
   ['form-values', 0.33],
-  ['main-markers', 0.99],
-  ['markers', 0.66],
-  ['package-page', 0.93],
   ['settings-form', 0.56],
   ['streamed-instructions', 0.68],
   ['streamed-next16.3', 0.46],

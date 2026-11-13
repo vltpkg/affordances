@@ -82,7 +82,9 @@ export const oracle = (html: string): Document => {
     return el
   }
   // the emitter never reads the scripts; scripts.test.ts holds the parser's to parse5's
-  return { root: build(body ?? document, null, '#root'), head, mains, scripts: [] }
+  // markers are looked for wherever the page might have one
+  const marked = /affordances-md/i.test(html)
+  return { root: build(body ?? document, null, '#root'), head, mains, scripts: [], marked }
 }
 
 // a Document as plain data, for comparing two of them: attributes parsed, parents left out

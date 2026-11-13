@@ -11,6 +11,13 @@ let stripChrome = false
 export const begin = (strip: boolean) => {
   stripChrome = strip
   byId = undefined
+  tabs = undefined
+}
+// the tabs that label a shown panel (data-affordances-md="show"), on a page with markers: their tablists go, since
+// each panel is headed by its tab
+let tabs: Set<string> | undefined
+export const setTabs = (labels: Set<string> | undefined) => {
+  tabs = labels?.size ? labels : undefined
 }
 let page: Element | undefined
 export const setPage = (root: Element) => {
@@ -29,6 +36,7 @@ export const made = (from: Element, kids: Node[], tag = from.tag): Element => {
     map: from.map,
     pruned: true,
     code: from.code,
+    verbatim: undefined,
   }
   return el
 }
@@ -47,7 +55,7 @@ const PRUNES = HIDDEN | ARIA_HIDDEN | STYLE | ROLE | EDITABLE | MARKED
 const flags = (el: Element): number => el.flags
 const mentions = (el: Element) => (el.flags & PRUNES) !== 0
 // a marker's mode; on any other element, data-affordances-md says only skip or show (only and the rest are a marker's)
-const marked = (el: Element) => {
+export const marked = (el: Element) => {
   if (el.tag === 'affordances-md') return attr(el, 'data-mode')
   const mode = attr(el, 'data-affordances-md')
   return mode === 'skip' || mode === 'show' ? mode : undefined
@@ -111,7 +119,7 @@ const editor = (el: Element) => {
 // what an attribute source says about being dropped, remembered: highlighted code repeats a few style="color:…"
 // sources thousands of times. kept small, and only for what the source alone decides (not affordances-md's tag)
 const droppedBy = new Map<string, boolean>()
-const dropped = (el: Element): boolean => {
+export const dropped = (el: Element): boolean => {
   if ((el.flags & PRUNES) === 0) return false
   if (el.tag === 'affordances-md') return droppedNow(el)
   let known = droppedBy.get(el.attrs)
@@ -167,7 +175,8 @@ const ids = () => {
       if (typeof kid === 'string' || dropped(kid)) continue
       const id = attr(kid, 'id')
       if (id !== undefined && !byId!.has(id)) byId!.set(id, kid)
-      walk(kid)
+      // an <AgentText> says its markdown, never what's inside it
+      if (!isText(kid)) walk(kid)
     }
   }
   if (page) walk(page)
@@ -339,9 +348,71 @@ const hasTag = (el: Element, tag: string): boolean => {
   return false
 }
 
+// an <AgentText md>: replaced by its markdown, whatever it holds and however it's hidden
+export const isText = (el: Element) =>
+  el.tag === 'affordances-md' && (el.flags & MARKED) !== 0 && marked(el) === 'text'
+// a span or div (as the page flows around it) whose text is the markdown, written as it is
+const verbatimOf = (el: Element): Element => {
+  const md = attr(el, 'data-md') ?? ''
+  const said: Element = {
+    tag: attr(el, 'data-block') === undefined ? 'span' : 'div',
+    attrs: '',
+    flags: 0,
+    kids: [md],
+    up: el.up,
+    map: undefined,
+    pruned: true,
+    code: undefined,
+    verbatim: md,
+  }
+  return said
+}
+// a tablist with a tab that labels a shown panel
+const shownTablist = (el: Element) => {
+  if (!tabs || !(el.flags & ROLE) || role(el) !== 'tablist') return false
+  const walk = (parent: Element): boolean => {
+    for (const kid of parent.kids) {
+      if (typeof kid === 'string') continue
+      if (kid.flags & ROLE && role(kid) === 'tab' && tabs!.has(attr(kid, 'id') ?? '')) return true
+      if (walk(kid)) return true
+    }
+    return false
+  }
+  return walk(el)
+}
+const fresh = (tag: string, kids: Node[], up: Element | null): Element => ({
+  tag,
+  attrs: '',
+  flags: 0,
+  kids,
+  up,
+  map: undefined,
+  pruned: true,
+  code: undefined,
+  verbatim: undefined,
+})
+// a shown tab panel, headed by its tab's label
+const headed = (panel: Element): Element => {
+  const label = (attr(panel, 'aria-labelledby') ?? '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .flatMap((id) => ids().get(id) ?? [])
+    .filter((tab) => tab.flags & ROLE && role(tab) === 'tab')
+    .map(words)
+    .filter(Boolean)
+    .join(' ')
+  if (!label) return panel
+  const heading = fresh('p', [], panel.up)
+  heading.kids = [fresh('strong', [label], heading)]
+  return made(panel, [heading, ...kidsOf(panel)])
+}
+
 // what a child becomes: itself, something prune made of it, or nothing
 const pruned = (kid: Element): Element | undefined => {
+  if (kid.flags & MARKED && isText(kid)) return verbatimOf(kid)
   if (dropped(kid) || (stripChrome && chrome(kid))) return undefined
+  if (shownTablist(kid)) return undefined
+  if (kid.flags & MARKED && marked(kid) === 'show' && role(kid) === 'tabpanel') return headed(kid)
   if (kid.tag === 'a') {
     const inner = kidsOf(kid)
     const kept = without(inner, linkDrop)

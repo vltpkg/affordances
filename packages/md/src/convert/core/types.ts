@@ -22,6 +22,8 @@ export interface Element {
   // leaves them; and whether the element is code or inside it (undefined until asked)
   pruned?: boolean | undefined
   code?: boolean | undefined
+  // on the span or div prune makes of an <AgentText>: the markdown it stands for, written as it is
+  verbatim?: string | undefined
 }
 
 // the attributes an element's flags record, by name (ascii case-insensitive, as html matches them)
@@ -74,6 +76,8 @@ export interface Document {
   // the own text of every script element in the document, any namespace, in no particular order: what the flight
   // check reads, as it would read each script in parse5's tree
   scripts: string[]
+  // whether any element is an <affordances-md> marker or has data-affordances-md: only then are markers looked for
+  marked: boolean
 }
 
 // what the parser never builds, with everything inside: never content, whatever the page says. the same set as
@@ -105,6 +109,9 @@ export type Options = {
   jsonLd?: boolean
   // another url for a link once it's absolute; undefined keeps it. not called for images or #fragment links
   link?: (url: URL) => string | undefined
+  // @affordances/md's rewrite of the links in marker markdown (an <AgentText>'s), with the page's base; without it
+  // they're written as they are. internal: md passes its own
+  relinkMarkdown?: (markdown: string, base: string, link: Options['link']) => string
 }
 
 export type Result = { markdown: string; title?: string; url?: string; tokens: number }

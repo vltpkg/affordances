@@ -5,6 +5,8 @@ import {
   EMPHASIS,
   HEADING,
   HTML,
+  MARKED_BLOCK,
+  MARKED_INLINE,
   IMAGE,
   INLINE_CODE,
   directItems,
@@ -251,7 +253,8 @@ export const all = (parent: Element, out: Md[] = []): Md[] => {
     if (info & IS_SPACED) mode = whitespaceOf(kid, mode)
     let result: Md | Md[] | undefined
     if (controls !== 0 && CONTROL_TAGS.has(kid.tag)) result = walkOnly(kid)
-    else if (kind === PASS && !(kid.flags & FLAG['data-mdast'])) all(kid, out)
+    else if (kind === PASS && !(kid.flags & FLAG['data-mdast']) && kid.verbatim === undefined)
+      all(kid, out)
     else if (
       flow &&
       fast &&
@@ -390,6 +393,11 @@ for (const tag of new Set([...KIND.keys(), ...BLOCKS, ...CONTENT, 'nobr', 'texta
   )
 
 const one = (el: Element, kind: number, parent: Element): Md | Md[] | undefined => {
+  if (el.verbatim !== undefined) {
+    // its text is the markdown, as the whitespace walk reads it; what's written is the markdown as it is
+    all(el)
+    return marker(el.verbatim, el.tag === 'span' ? MARKED_INLINE : MARKED_BLOCK)
+  }
   if (el.flags & FLAG['data-mdast'] && attr(el, 'data-mdast') === 'ignore') return walkOnly(el)
   switch (kind) {
     case PASS:
@@ -469,6 +477,13 @@ const one = (el: Element, kind: number, parent: Element): Md | Md[] | undefined 
       return node(DELETE, all(el))
   }
   return all(el)
+}
+
+// markdown from a marker, written as it is
+export const marker = (value: string, as: number) => {
+  const made = new Md(HTML, undefined, value)
+  made.depth = as
+  return made
 }
 
 const dropBreaks = (nodes: Md[]) => {
@@ -1326,6 +1341,7 @@ const fastRun = (
     }
     const tag = kid.tag
     if (kid.flags & FLAG['data-mdast']) return decline('data-mdast')
+    if (kid.verbatim !== undefined) return decline('marker markdown')
     const isBreak = tag === 'br'
     const savedAfter = after
     const end = isBreak ? true : collapsableAfter(kids, i, after)

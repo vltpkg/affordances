@@ -24,6 +24,7 @@ import { visit } from 'unist-util-visit'
 import { minifyWhitespace } from './whitespace.ts'
 import { emit as emitCore } from './core/emit.ts'
 import { parse as parseCore } from './core/parse.ts'
+import { readMarkers } from './core/emit-markers.ts'
 import type { Document as CoreDocument, Options as CoreOptions } from './core/types.ts'
 import { declined, forcedPath } from './path.ts'
 
@@ -2440,7 +2441,6 @@ const coreTakes = (options: Options) => {
 
 // what md-core can't write yet as the tree pipeline does: a page with any of it is declined, before it's converted
 const NOT_YET: [why: string, test: (html: string, swapped: Swapped) => boolean][] = [
-  ['marker', (html) => /<affordances-md|data-affordances-md/i.test(html)],
   ['streamed', (html) => /\$R[CRS]\(|data-r[crs]i/i.test(html)],
 ]
 
@@ -2459,13 +2459,20 @@ const readCore = (
   // the first call converts the tree read here; md-core's emit prunes a tree in place, so another parses again
   let doc: CoreDocument | undefined = parseCore(html)
   const reason = untrusted(doc.scripts, swapped)
+  // a marked page whose markers md-core can't read as prune does
+  const why = doc.marked ? readMarkers(doc.root).decline : undefined
+  if (why) {
+    declined(why)
+    return undefined
+  }
+  const coreOptions: CoreOptions = { ...(options as CoreOptions), relinkMarkdown }
   const page: Page = {
     slots: { unique: [], duplicate: [] },
     ...controlOf(swapped.errors),
     markdown: () => {
       const tree = doc ?? parseCore(html)
       doc = undefined
-      return emitCore(tree, options as CoreOptions)
+      return emitCore(tree, coreOptions)
     },
   }
   return { page, reason }

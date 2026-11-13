@@ -30,7 +30,12 @@ export const IMAGE = 19
 const NO_KIDS: Md[] = []
 const LEAF: boolean[] = []
 for (const type of [TEXT, INLINE_CODE, BREAK, IMAGE, HTML, CODE, THEMATIC_BREAK]) LEAF[type] = true
+// a node with no children in mdast
+export const isLeaf = (node: Md) => LEAF[node.type] === true
 // one shape for every node, so the walks over them stay monomorphic
+export const MARKED_INLINE = 1
+export const MARKED_BLOCK = 2
+
 export class Md {
   type: number
   kids: Md[]
@@ -40,7 +45,8 @@ export class Md {
   title: string | null
   lang: string | null
   meta: string | null
-  // a heading's depth, an ordered list's start
+  // a heading's depth, an ordered list's start; for html, whether it's a marker's markdown (an <AgentText>, a slot's
+  // fill): MARKED_INLINE or MARKED_BLOCK, else 0
   depth: number
   ordered: boolean
   spread: boolean
@@ -75,7 +81,9 @@ export class Md {
   }
 }
 
-export const isPhrasing = (node: Md) => node.type >= TEXT
+// as hast-util-to-mdast's wrap reads it: mdast's phrasing, and a marker's inline markdown, which says it's a span
+export const isPhrasing = (node: Md) =>
+  node.type >= TEXT || (node.type === HTML && node.depth === MARKED_INLINE)
 
 // what hast-util-to-mdast does last, to each node's children: adjacent texts as one, the line ending's spaces, a
 // paragraph's (heading's, root's) outer spaces, and empty texts gone. it depends on nothing but the node's own

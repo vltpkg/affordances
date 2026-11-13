@@ -28,12 +28,12 @@ test('handlers and a function extract take the tree pipeline, without a decline'
 })
 
 test('a page md-core declines is counted, and the tree pipeline writes it; strict throws instead', () => {
-  const marked =
-    '<main><affordances-md data-mode="skip"><p>skip</p></affordances-md><p>kept</p></main>'
-  const tree = htmlToMarkdown(marked)
+  const slotted =
+    '<main><p>a</p><affordances-md data-mode="slot" data-name="x"><p>fallback</p></affordances-md></main>'
+  const tree = htmlToMarkdown(slotted)
   forcePath('core')
-  expect(htmlToMarkdown(marked)).toEqual(tree)
-  expect(declines.get('marker')).toBe(1)
+  expect(htmlToMarkdown(slotted)).toEqual(tree)
+  expect(declines.get('slot')).toBe(1)
   forcePath('strict')
-  expect(() => readPage(marked)).toThrow(/md-core declined the page \(marker\)/)
+  expect(() => readPage(slotted)).toThrow(/md-core declined the page \(slot\)/)
 })

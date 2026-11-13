@@ -1,26 +1,39 @@
 import { convertRoot, materialize, startConvert } from './emit-convert.ts'
 import { HEADING, headingText, IMAGE, Md, setext, TEXT, toMarkdown } from './emit-markdown.ts'
-import { begin, findMain, made, setPage } from './emit-prune.ts'
+import { inCells, liftBlocks, relinkMarked } from './emit-lift.ts'
+import { readMarkers } from './emit-markers.ts'
+import { begin, findMain, made, setPage, setTabs } from './emit-prune.ts'
 import type { Document, Options, Result } from './types.ts'
 
 // markdown straight from the parser's tree: what @affordances/md's htmlToMarkdown writes for the same page. one walk
 // prunes, extracts, collapses whitespace and converts (emit-prune, emit-convert) into a lean tree that's written out
 // (emit-markdown); finish adds what the page's head says.
-// not here yet, where they'd hook in: <affordances-md> markers and slots (prune's mode() and convert's one()), the form
-// summary (convert's form()), shown tab panels (prune), streamed suspense boundaries (the parser), custom handlers
+// not here yet, where they'd hook in: slots (prune and convert's one()), the form summary (convert's form()), streamed
+// suspense boundaries (the parser), custom handlers
 export const emit = (doc: Document, options: Options = {}): Result => {
   const { head } = doc
   const meta = (key: string) => (head.meta.get(key) ?? '').trim() || undefined
   const canonical = canonicalOf(head.canonical, options.url)
   const base = options.url ?? canonical
-  // extract: the page's <main>, else the body without its chrome; or the whole body
+  // extract: the page's <AgentMain>s, else its <main>, else the body without its chrome; or the whole body
   const auto = (options.extract ?? 'auto') === 'auto'
+  const markers = doc.marked ? readMarkers(doc.root) : undefined
+  const outer = auto && markers?.mains.length ? markers.mains : undefined
   begin(false)
   setPage(doc.root)
-  const main = auto ? findMain(doc.mains) : undefined
-  if (auto && !main) begin(true)
+  const main = auto && !outer ? findMain(doc.mains) : undefined
+  if (auto && !outer && !main) begin(true)
+  setTabs(markers?.tabs)
   startConvert(options, base)
-  const root = convertRoot(main ? made(doc.root, [main], '#root') : doc.root)
+  const root = convertRoot(
+    outer ? made(doc.root, outer, '#root') : main ? made(doc.root, [main], '#root') : doc.root,
+  )
+  // marker markdown, as @affordances/md treats it once the page is converted
+  const relink = base && options.relinkMarkdown
+  if (relinkMarked(root, relink ? (md) => relink(md, base, options.link) : undefined)) {
+    inCells(root)
+    liftBlocks(root)
+  }
   return finish(
     root,
     {
