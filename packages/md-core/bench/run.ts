@@ -11,7 +11,7 @@ const { values } = parseArgs({
   options: {
     runs: { type: 'string', default: '20' },
     warmup: { type: 'string', default: '3' },
-    budget: { type: 'string', default: '300' },
+    budget: { type: 'string', default: '1000' },
     tool: { type: 'string' },
     page: { type: 'string' },
     json: { type: 'boolean', default: false },
@@ -366,6 +366,16 @@ else {
       console.log(
         `\nmd-core / mdream: ${ratio.toFixed(2)}x (${ratio <= 1 ? `${(1 / ratio).toFixed(2)}x faster` : `${ratio.toFixed(2)}x slower`})`,
       )
+      // synthetic/200 is a fifth of the corpus's bytes and nearly half of md-core's time: the total without it too
+      const without = (t: ToolResult) =>
+        Object.entries(t.pages).reduce(
+          (s, [name, c]) => s + (name === 'synthetic/200' ? 0 : c.median),
+          0,
+        )
+      if (core.pages['synthetic/200'] && mdream.pages['synthetic/200'])
+        console.log(
+          `without synthetic/200: md-core ${ms(without(core))}, mdream ${ms(without(mdream))} (${(without(core) / without(mdream)).toFixed(2)}x)`,
+        )
     }
   }
 }

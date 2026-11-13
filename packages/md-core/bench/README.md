@@ -26,7 +26,7 @@ node bench/run.ts --json                   # machine-readable, nothing else on s
 ```
 
 Other flags: `--runs` (timed runs per page, default 20), `--warmup` (default 3), `--budget` (ms a
-slow tool may spend on one page before it stops at 3 runs, default 300), `--no-gc`.
+slow tool may spend on one page before it stops at 3 runs, default 1000), `--no-gc`.
 
 Tools: md-core, `@affordances/md`, mdream, turndown with the gfm plugin, node-html-markdown. When
 `src/parse.ts` (`parse(html)`) and `src/emit.ts` (`emit(doc, options)`) exist, `md-core parse` and
@@ -40,7 +40,8 @@ Reading the output:
 - `spread` is half the interquartile range, summed over pages, as a share of the total: a rough ± for
   the total. A few percent is normal; more means the machine was busy, so rerun
 - `runs` is the range of timed runs per page; slow tools stop early (see `--budget`)
-- the last line is md-core's total over mdream's on the same pages
+- the last lines are md-core's total over mdream's on the same pages, then both totals without
+  `synthetic/200`, which is nearly half of md-core's time
 
 How it measures: one untimed pass over the corpus warms the jit. Then, page by page, each tool gets
 a full gc, its warm-up runs and its timed runs back to back, so it's timed in its own steady state
