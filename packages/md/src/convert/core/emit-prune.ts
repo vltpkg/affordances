@@ -46,8 +46,12 @@ const MARKED = FLAG['data-affordances-md'] | FLAG['data-mode']
 const PRUNES = HIDDEN | ARIA_HIDDEN | STYLE | ROLE | EDITABLE | MARKED
 const flags = (el: Element): number => el.flags
 const mentions = (el: Element) => (el.flags & PRUNES) !== 0
-const marked = (el: Element) =>
-  el.tag === 'affordances-md' ? attr(el, 'data-mode') : attr(el, 'data-affordances-md')
+// a marker's mode; on any other element, data-affordances-md says only skip or show (only and the rest are a marker's)
+const marked = (el: Element) => {
+  if (el.tag === 'affordances-md') return attr(el, 'data-mode')
+  const mode = attr(el, 'data-affordances-md')
+  return mode === 'skip' || mode === 'show' ? mode : undefined
+}
 const unhidden = (el: Element) => {
   const mode = flags(el) & MARKED ? marked(el) : undefined
   return mode === 'only' || mode === 'show'
