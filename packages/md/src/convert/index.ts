@@ -22,6 +22,10 @@ import { decodeString } from 'micromark-util-decode-string'
 import { normalizeIdentifier } from 'micromark-util-normalize-identifier'
 import { visit } from 'unist-util-visit'
 import { minifyWhitespace } from './whitespace.ts'
+import { emit as emitCore } from './core/emit.ts'
+import { parse as parseCore } from './core/parse.ts'
+import type { Options as CoreOptions } from './core/types.ts'
+import { declined, forcedPath } from './path.ts'
 
 export type Handlers = Record<string, Handle>
 
@@ -2323,6 +2327,8 @@ export const readPage = (html: string, options: Options = {}): Page => {
   const strip = flightStripper()
   const lean = strip.write(html) + strip.end()
   const swapped = strip.swapped()
+  const core = coreTakes(options) ? readCore(lean, swapped, options) : undefined
+  if (core) return core
   const { tree, streamed, reason } = strippedTree(lean, swapped)
   if (!reason) {
     streamed.resolve()
@@ -2338,6 +2344,8 @@ export const readPage = (html: string, options: Options = {}): Page => {
 // trusted throw: the handler answers 502, and a caller that forgets to catch it fails closed too. not part of the
 // package's api: only the handler, which did the stripping, says a page was
 export const readStreamed = (html: string, swapped: Swapped, options: Options = {}): Page => {
+  const core = coreTakes(options) ? readCore(html, swapped, options) : undefined
+  if (core) return core
   const { tree, streamed, reason } = strippedTree(html, swapped)
   if (reason) throw new FlightDataError(reason)
   streamed.resolve()
@@ -2349,8 +2357,6 @@ const readTree = (
   options: Options,
 ): Page => {
   const meta = head(tree, options.url)
-  // a redirect() or notFound() next streamed into the page: the first error row that's one of next's control flow
-  const control = errors.map(fromDigest).find((said) => said !== undefined)
   const content = contentOf(tree, options.extract)
   // a name rendered twice fills neither copy: one of them may be a forgery in user content, and there's no telling which
   const markers = slotMarkers(content)
@@ -2369,13 +2375,7 @@ const readTree = (
       unique: names.flatMap(([name, count]) => (count === 1 ? [name] : [])),
       duplicate: names.flatMap(([name, count]) => (count > 1 ? [name] : [])),
     },
-    errors,
-    ...(control &&
-      ('location' in control
-        ? (control.status === 307 || control.status === 308) && {
-            redirect: { status: control.status, location: control.location },
-          }
-        : { fallback: control })),
+    ...controlOf(errors),
     // the page itself is left as it is, so it can be converted again with other fills
     markdown: (slots) => {
       const fillOf = (node: Element) => {
@@ -2404,6 +2404,58 @@ const readTree = (
       }
       return finish(mdast, meta, url, options)
     },
+  }
+}
+
+// the page's error rows, and the first that's one of next's control flow: a redirect() or notFound() next streamed
+// into the page
+const controlOf = (errors: string[]): Pick<Page, 'errors' | 'redirect' | 'fallback'> => {
+  const control = errors.map(fromDigest).find((said) => said !== undefined)
+  return {
+    errors,
+    ...(control &&
+      ('location' in control
+        ? (control.status === 307 || control.status === 308) && {
+            redirect: { status: control.status, location: control.location },
+          }
+        : { fallback: control })),
+  }
+}
+
+// md-core converts a page unless the call needs a tree (handlers convert hast; a function extract is given one), or
+// the switch says otherwise. until md-core is the default, only the switch sends a page to it
+const coreTakes = (options: Options) => {
+  const path = forcedPath()
+  return (
+    (path === 'core' || path === 'strict') &&
+    !options.handlers &&
+    typeof options.extract !== 'function'
+  )
+}
+
+// what md-core can't write yet as the tree pipeline does: a page with any of it is declined, before it's converted
+const NOT_YET: [why: string, test: (html: string, swapped: Swapped) => boolean][] = [
+  ['marker', (html) => /<affordances-md|data-affordances-md/i.test(html)],
+  [
+    'flight',
+    (html, swapped) => swapped.count > 0 || swapped.unreadable || PUSHED_ANYWHERE.test(html),
+  ],
+  ['streamed', (html) => /\$R[CRS]\(|data-r[crs]i/i.test(html)],
+]
+const PUSHED_ANYWHERE = /self\.__next_f/
+
+// the page as md-core reads it, or undefined when it declines (the tree pipeline takes it instead)
+const readCore = (html: string, swapped: Swapped, options: Options): Page | undefined => {
+  for (const [why, test] of NOT_YET)
+    if (test(html, swapped)) {
+      declined(why)
+      return undefined
+    }
+  return {
+    slots: { unique: [], duplicate: [] },
+    ...controlOf(swapped.errors),
+    // each call parses the page again: md-core's emit prunes the tree it's given in place
+    markdown: () => emitCore(parseCore(html), options as CoreOptions),
   }
 }
 
