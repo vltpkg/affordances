@@ -1245,7 +1245,14 @@ const restoreForeignTemplates = (document: Parse5Tree, tree: HastRoot, renamed: 
 const strippedTree = (html: string, swapped: Swapped) => {
   const tree = fromHtml(html)
   const streamed = resolveStreamed(tree)
-  const reason = untrusted(streamed.scripts.map(scriptText), swapped)
+  const texts = streamed.scripts.map(scriptText)
+  const reason = untrusted(texts, swapped)
+  // a swapped push's nonce is only for the check: anything else that reads a script's text (a json-ld block, a
+  // foreign title) reads it empty, as the page reads without its flight data
+  streamed.scripts.forEach((script, i) => {
+    if (texts[i] === swapped.nonce)
+      script.children = script.children.filter((kid) => kid.type !== 'text')
+  })
   return { tree, streamed, reason }
 }
 
@@ -2508,7 +2515,7 @@ const readCore = (
     return undefined
   }
   // the first call converts the tree read here; md-core's emit prunes a tree in place, so another parses again
-  let doc: CoreDocument | undefined = parseCore(html)
+  let doc: CoreDocument | undefined = parseCore(html, swapped.nonce)
   const reason = untrusted(doc.scripts, swapped)
   // react's streamed boundaries, which the tree pipeline moves into place: md-core doesn't, and declines the page
   if (doc.streamed) {
@@ -2548,7 +2555,7 @@ const readCore = (
     slots: { unique: slots.unique, duplicate: slots.duplicate },
     ...controlOf(swapped.errors),
     markdown: (fills) => {
-      const tree = doc ?? parseCore(html)
+      const tree = doc ?? parseCore(html, swapped.nonce)
       doc = undefined
       return emitCore(tree, { ...coreOptions, ...(fills && { fills }) })
     },

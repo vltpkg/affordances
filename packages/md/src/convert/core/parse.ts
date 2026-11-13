@@ -3025,7 +3025,7 @@ const readMains = (root: El) => {
   return found.toSorted((a, b) => treeOrder(places.get(a)!, places.get(b)!))
 }
 
-export const parse = (input: string): Document => {
+export const parse = (input: string, nonce?: string): Document => {
   html = input.indexOf('\r') < 0 ? input : input.replace(/\r\n?/g, '\n')
   n = html.length
   tstate = DATA
@@ -3063,8 +3063,16 @@ export const parse = (input: string): Document => {
   commentOpen = -1
   tokenize()
   onEof()
-  const head = readHead()
   const scriptTexts = readScripts()
+  // a swapped flight push's nonce is only for the flight check: what else reads a script's text (a json-ld block, a
+  // foreign title) reads it empty, as the page reads without its flight data
+  if (nonce)
+    for (const el of scripts) {
+      let text = ''
+      for (const kid of el.kids) if (typeof kid === 'string') text += kid
+      if (text === nonce) el.kids = el.kids.filter((kid) => typeof kid !== 'string')
+    }
+  const head = readHead()
   // or a script's: $RC, $RR or $RS, in all the text inside it, as the tree pipeline reads one
   const streamed = templated && (instructed || scripts.some((el) => /\$R[CRS]\(/.test(textOf(el))))
   // the dropped elements leave the tree, and the text either side of one is one text

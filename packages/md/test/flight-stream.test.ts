@@ -186,6 +186,9 @@ const CONTEXTS = [
   `<table><tr>${FAKE}</tr></table>`,
   `<select>${FAKE}</select>`,
   `<plaintext>${FAKE}`,
+  // where a script's text is read as text: json-ld, and a foreign title
+  `<script type="application/ld+json">${FAKE.slice(8, -9)}</script>`,
+  `<math><title>${FAKE}</title></math>`,
 ]
 
 // the pushes parse5 sees: script elements in the page (not in a template's content) whose own text is a push
@@ -218,3 +221,35 @@ test('the stripper swaps exactly the pushes parse5 finds as scripts, over every 
       expect([html, page.markdown().markdown]).toEqual([html, readPage(html).markdown().markdown])
     }
 }, 30_000)
+
+// a push where a script's text is read as text, not run: its nonce never reaches the markdown, which reads as the
+// page does with that push's text gone
+const PUSHED_TEXT = push('7:E{"digest":"NEXT_HTTP_ERROR_FALLBACK;404"}\n').slice(8, -9)
+const LD = '{"@context":"https://schema.org","@type":"Thing","name":"Real"}'
+const PLACEMENTS = [
+  `<html><head><script type="application/ld+json">${PUSHED_TEXT}</script></head><body><p>x</p></body></html>`,
+  body(`<p>after</p><script type="application/ld+json">${PUSHED_TEXT}</script>`),
+  body(
+    `<script type="application/ld+json">${LD}</script><script type="application/ld+json">${PUSHED_TEXT}</script>`,
+  ),
+  body(`<math><title><script>${PUSHED_TEXT}</script></title></math><p>x</p>`),
+  `<html><head><title>Page</title></head><body><math><title>A<script>${PUSHED_TEXT}</script>B</title></math><p>x</p></body></html>`,
+  body(
+    `<svg><title><script>${PUSHED_TEXT}</script></title></svg><math><mi><script>${PUSHED_TEXT}</script></mi></math>`,
+  ),
+]
+test.each(PLACEMENTS)('a push read as text leaves no placeholder in the markdown: %s', (html) => {
+  const without = html.replaceAll(PUSHED_TEXT, '')
+  for (const jsonLd of [false, true]) {
+    const expected = readPage(without, { jsonLd }).markdown().markdown
+    const page = readPage(html, { jsonLd })
+    expect(new Set(page.errors)).toEqual(new Set(['NEXT_HTTP_ERROR_FALLBACK;404']))
+    expect(page.markdown().markdown).toBe(expected)
+    for (const sizes of [[html.length], [1], [7, 3, 31]]) {
+      const { kept, swapped } = stream(html, sizes)
+      const streamed = readStreamed(kept, swapped, { jsonLd }).markdown().markdown
+      expect(streamed).not.toContain(swapped.nonce)
+      expect(streamed).toBe(expected)
+    }
+  }
+})
