@@ -206,6 +206,7 @@ export const startConvert = (options: Options, page: string | undefined) => {
   after = undefined
   mode = NORMAL
   urls.clear()
+  linkUrls.clear()
   setBase(page)
 }
 
@@ -719,6 +720,14 @@ const resolve = (url: string, image: boolean) => {
   return href
 }
 
+// a link's url, once per link: a block the fast path declines, or one converted again to be read (materialize), never
+// asks the link option twice, as the tree pipeline asks it once for each link it writes
+const linkUrls = new Map<Element, string>()
+const linkUrl = (el: Element, href: string) => {
+  let url = linkUrls.get(el)
+  if (url === undefined) linkUrls.set(el, (url = resolve(href, false)))
+  return url
+}
 const HEADINGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
 const link = (el: Element, parent: Element) => {
   const href = (attr(el, 'href') ?? '').trim()
@@ -727,7 +736,7 @@ const link = (el: Element, parent: Element) => {
   // a heading's link to its own anchor is the heading
   if (href.startsWith('#') && HEADINGS.has(parent.tag)) return children
   const result = node(LINK, children)
-  result.url = resolve(href, false)
+  result.url = linkUrl(el, href)
   result.title = el.flags & FLAG.title ? (attr(el, 'title') ?? null) : null
   // an icon or avatar link reads as its label
   if (!children.some((child) => child.type !== TEXT || child.value.trim())) {
@@ -1536,7 +1545,7 @@ const fastLink = (el: Element, inHeading: boolean, out: Md[]): boolean => {
   if (!children.some((child) => child.type !== TEXT || child.value.trim()))
     return decline('link named by its label')
   const result = node(LINK, children)
-  result.url = resolve(href, false)
+  result.url = linkUrl(el, href)
   result.title = el.flags & FLAG.title ? (attr(el, 'title') ?? null) : null
   out.push(result)
   return true
