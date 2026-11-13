@@ -555,5 +555,6 @@ describe('the fast path changes nothing', () => {
       const { fast, slow } = fuzzBoth(html)
       expect([html, fast]).toEqual([html, slow])
     }
-  })
+    // nested lists make the generated pages longer: about 13 s for the 3000
+  }, 60_000)
 })

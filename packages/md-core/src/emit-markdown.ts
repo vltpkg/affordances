@@ -1269,7 +1269,7 @@ const handle = (node: Md, parent: Md | undefined, before: string, after: string)
       return value
     }
     case LIST:
-      return list(node, parent)
+      return node.raw !== null ? directListText(node, parent) : list(node, parent)
     case LIST_ITEM:
       return listItem(node, parent)
     case CODE:
@@ -1373,6 +1373,112 @@ const list = (node: Md, parent: Md | undefined) => {
   bulletLastUsed = bullet
   bulletCurrent = saved
   exit()
+  return value
+}
+
+// a list the direct path read (emit-convert's directList): its items and the lists in them, written as list(),
+// listItem(), containerFlow() and between() write a tight or loose list of paragraphs. a paragraph is its markdown
+export type DList = { ordered: boolean; start: number; spread: boolean; items: DItem[] }
+export type DItem = { spread: boolean; blocks: (string | DList)[] }
+// bulletLastUsed, as it is while a direct list's items are written
+let lastUsed: string | undefined
+// each item of a list at the top of a flow, written: its own bullet is the serializer's, once it knows what's before
+// it. a first item opening with a list never gets here, so what came before the list matters to nothing in it
+export const directItems = (top: DList): string[] => {
+  const items: string[] = []
+  for (let i = 0; i < top.items.length; i++) {
+    lastUsed = undefined
+    items.push(itemText(top.items[i]!, 1, i, true))
+  }
+  return items
+}
+// an item's blocks and the line endings between them, as containerFlow() writes a list item's
+const itemText = (item: DItem, level: number, index: number, listFirst: boolean): string => {
+  const blocks = item.blocks
+  let value = ''
+  for (let k = 0; k < blocks.length; k++) {
+    const block = blocks[k]!
+    if (typeof block === 'string') {
+      value += block
+      lastUsed = undefined
+    } else
+      value += listText(
+        block,
+        level + 1,
+        k === 0,
+        level + 1 >= 3 &&
+          k === 0 &&
+          index === 0 &&
+          listFirst &&
+          block.items[0]!.blocks.length === 0,
+      )
+    if (k < blocks.length - 1) value += itemBetween(item, block, blocks[k + 1]!)
+  }
+  return value
+}
+// a list in an item, as list() writes it: the other bullet after a list right before it, or when it's the first of
+// three lists each opening the one before with an empty item (the stack and index test there)
+const listText = (nest: DList, level: number, first: boolean, emptyChain: boolean): string => {
+  let bullet = nest.ordered ? '.' : '-'
+  if (lastUsed ? bullet === lastUsed : false) bullet = nest.ordered ? ')' : '*'
+  else if (!nest.ordered && emptyChain) bullet = '*'
+  let value = ''
+  for (let i = 0; i < nest.items.length; i++) {
+    const marker = nest.ordered ? (nest.start > -1 ? nest.start : 1) + i + bullet : bullet
+    value += bulleted(itemText(nest.items[i]!, level, i, first), marker)
+    lastUsed = undefined
+    if (i < nest.items.length - 1) value += nest.spread ? '\n\n' : '\n'
+  }
+  lastUsed = bullet
+  return value
+}
+// between() for two blocks in an item
+const itemBetween = (item: DItem, left: string | DList, right: string | DList) => {
+  if (item.spread) return '\n\n'
+  if (
+    typeof left === 'string' &&
+    typeof right !== 'string' &&
+    ((right.ordered && right.start !== 1) || right.items[0]!.blocks.length === 0)
+  )
+    return '\n\n'
+  // what left ends with, down through the lists in it
+  let tail: string | DList | DItem = left
+  while (typeof tail !== 'string') {
+    if ('items' in tail) tail = tail.items[tail.items.length - 1]!
+    else if (tail.blocks.length) tail = tail.blocks[tail.blocks.length - 1]!
+    else return '\n'
+  }
+  return typeof right === 'string' ? '\n\n' : '\n'
+}
+// an item's text under its bullet, as listItem()'s indentLines: the bullet on the first line, the rest padded
+// under it, blank lines left blank
+const bulleted = (content: string, marker: string) => {
+  if (content === '') return marker
+  if (content.indexOf('\n') < 0 && content.indexOf('\r') < 0) return marker + ' ' + content
+  const pad = ' '.repeat(marker.length + 1)
+  return indentLines(content, (line, index, blank) =>
+    index ? (blank ? '' : pad) + line : (blank ? marker : marker + ' ') + line,
+  )
+}
+// the top list, once its bullet is known: the other one after a list right before it in the same flow
+const directListText = (node: Md, parent: Md | undefined) => {
+  const bullet = node.ordered
+    ? parent && bulletLastUsed === '.'
+      ? ')'
+      : '.'
+    : parent && bulletLastUsed === '-'
+      ? '*'
+      : '-'
+  const items = node.raw!.split('\0')
+  let value = ''
+  for (let i = 0; i < items.length; i++) {
+    if (i) value += node.spread ? '\n\n' : '\n'
+    value += bulleted(
+      items[i]!,
+      node.ordered ? (node.depth > -1 ? node.depth : 1) + i + bullet : bullet,
+    )
+  }
+  bulletLastUsed = bullet
   return value
 }
 

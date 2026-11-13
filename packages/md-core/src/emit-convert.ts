@@ -7,6 +7,9 @@ import {
   HTML,
   IMAGE,
   INLINE_CODE,
+  directItems,
+  type DItem,
+  type DList,
   isPhrasing,
   renderBlock,
   setext,
@@ -180,6 +183,7 @@ export const startConvert = (options: Options, page: string | undefined) => {
   skips = new Set()
   controls = 0
   titledCode = undefined
+  nested = 0
   before = undefined
   after = undefined
   mode = NORMAL
@@ -259,6 +263,18 @@ export const all = (parent: Element, out: Md[] = []): Md[] => {
       (result = fastBlock(kid, kind)) !== DECLINED
     ) {
       // written by the fast path (or nothing, for a paragraph with nothing in it)
+    } else if (
+      flow &&
+      fast &&
+      kind === LIST_TAG &&
+      nested === 0 &&
+      controls === 0 &&
+      !inTable &&
+      skips.size === 0 &&
+      mode === NORMAL &&
+      (result = directList(kid)) !== DECLINED
+    ) {
+      // a list of inline items and the lists in them, written as it's read
     } else {
       // a block the fast path declined starts again where it started: at a block's edge
       if (block) before = true
@@ -403,8 +419,12 @@ const one = (el: Element, kind: number, parent: Element): Md | Md[] | undefined 
       return textNode('\u200B')
     case STRONG_TAG:
       return node(STRONG, all(el))
-    case QUOTE:
-      return node(BLOCKQUOTE, toFlow(all(el)))
+    case QUOTE: {
+      nested++
+      const quote = node(BLOCKQUOTE, toFlow(all(el)))
+      nested--
+      return quote
+    }
     case LIST_TAG:
       return list(el)
     case ITEM:
@@ -731,21 +751,25 @@ const listItem = (el: Element) => {
   const item = node(LIST_ITEM)
   item.checked = box ? attr(box, 'checked') !== undefined : null
   item.spread = spreadOut(el)
+  nested++
   item.kids = toFlow(all(el))
+  nested--
   return item
 }
 const list = (el: Element) => {
   const result = node(LIST, specific(all(el), LIST_ITEM))
   result.ordered = el.tag === 'ol'
-  if (result.ordered) {
-    const start = attr(el, 'start')
-    // as hast reads it: a number when it is one, and 0 is no start
-    const value =
-      start !== undefined && start !== '' && !Number.isNaN(Number(start)) ? Number(start) : start
-    result.depth = value ? Number.parseInt(String(value), 10) : 1
-  }
+  if (result.ordered) result.depth = startOf(el)
   result.spread = result.kids.length > 1 && result.kids.some((item) => item.spread)
   return result
+}
+
+// an ordered list's first number, as hast reads its start: a number when it is one, and 0 is no start
+const startOf = (el: Element) => {
+  const start = attr(el, 'start')
+  const value =
+    start !== undefined && start !== '' && !Number.isNaN(Number(start)) ? Number(start) : start
+  return value ? Number.parseInt(String(value), 10) : 1
 }
 
 // **term**: definition, one paragraph per pair
@@ -1228,7 +1252,7 @@ const FLOWS = new Set([
 ])
 const DECLINED = null as unknown as Md
 // how the fast path fared, for the reports: blocks written, and declined by the tag that stopped them
-export const fastStats = { taken: 0, declined: new Map<string, number>() }
+export const fastStats = { taken: 0, lists: 0, declined: new Map<string, number>() }
 const decline = (why: string) => {
   fastStats.declined.set(why, (fastStats.declined.get(why) ?? 0) + 1)
   return false
@@ -1272,14 +1296,25 @@ export const materialize = (block: Md): Md => {
   after = true
   mode = NORMAL
   const el = block.el
-  const made = one(el, el.tag === 'p' ? PARAGRAPH_TAG : HEADING_TAG, el.up ?? el)
+  const made = one(el, (INFO.get(el.tag) ?? 0) & KIND_MASK, el.up ?? el)
   fast = savedFast
   return made instanceof Md ? made : block
 }
 // an element's inline children into out, as all() converts them, or false at the first thing it doesn't know
 const fastInline = (parent: Element, heading: Element, out: Md[]): boolean => {
   const kids = kidsOf(parent)
-  for (let i = 0; i < kids.length; i++) {
+  return fastRun(kids, 0, kids.length, parent, heading, out)
+}
+// the same for kids[from, to), with what comes after them read as all() would (a list after a run of an item's text)
+const fastRun = (
+  kids: Node[],
+  from: number,
+  to: number,
+  parent: Element,
+  heading: Element,
+  out: Md[],
+): boolean => {
+  for (let i = from; i < to; i++) {
     const kid = kids[i]!
     if (typeof kid === 'string') {
       const value = minified(kid, kids, i)
@@ -1360,4 +1395,95 @@ const fastLink = (el: Element, inHeading: boolean, out: Md[]): boolean => {
   result.title = el.flags & FLAG.title ? (attr(el, 'title') ?? null) : null
   out.push(result)
   return true
+}
+
+// how deep in list items and blockquotes the walk is: a list at the top of a flow (0) is written on its own, since
+// its bullet depends only on whether a list came right before it
+let nested = 0
+// the direct path for a list: items of inline content and the lists in them, read in one walk into a DList (each
+// paragraph written as its run of text closes) and written by directItems, as list() and listItem() would convert
+// them and the serializer write them. anything else declines it before anything is kept
+const directList = (el: Element): Md | undefined => {
+  const savedBefore = before
+  const savedAfter = after
+  const read = readList(el)
+  // a first item that opens with a list reads the bullet of the list before this one: the slow way
+  const first = read?.items[0]
+  if (!read || (first!.blocks.length !== 0 && typeof first!.blocks[0] !== 'string')) {
+    before = savedBefore
+    after = savedAfter
+    decline(read ? 'list first in its first item' : 'list')
+    return DECLINED
+  }
+  before = true
+  after = savedAfter
+  const result = node(LIST)
+  result.ordered = read.ordered
+  result.depth = read.start
+  result.spread = read.spread
+  result.raw = directItems(read).join('\0')
+  result.el = el
+  fastStats.taken++
+  fastStats.lists++
+  return result
+}
+const readList = (el: Element): DList | null => {
+  if (el.flags & FLAG['data-mdast']) return null
+  const kids = kidsOf(el)
+  const items: DItem[] = []
+  for (let i = 0; i < kids.length; i++) {
+    const kid = kids[i]!
+    // whitespace between items is nothing; anything else moves into an item, the slow way
+    if (typeof kid === 'string') {
+      if (!blank(kid)) return null
+      continue
+    }
+    if (kid.tag !== 'li' || kid.flags & FLAG['data-mdast']) return null
+    const item = readItem(kid)
+    if (!item) return null
+    items.push(item)
+  }
+  if (!items.length) return null
+  const ordered = el.tag === 'ol'
+  let spread = false
+  if (items.length > 1) for (let i = 0; i < items.length && !spread; i++) spread = items[i]!.spread
+  return { ordered, start: ordered ? startOf(el) : 0, spread, items }
+}
+// an item: runs of inline content, each a paragraph, and the lists between them. an item is a block, so what's in it
+// starts and ends at its edges, and so does each list in it
+const readItem = (li: Element): DItem | null => {
+  before = true
+  after = true
+  const kids = kidsOf(li)
+  const blocks: (string | DList)[] = []
+  let from = 0
+  for (let i = 0; i <= kids.length; i++) {
+    const kid = kids[i]
+    const isList =
+      kid !== undefined &&
+      typeof kid !== 'string' &&
+      (kid.tag === 'ul' || kid.tag === 'ol' || kid.tag === 'dir')
+    if (i < kids.length && !isList) continue
+    if (from < i) {
+      const out: Md[] = []
+      if (!fastRun(kids, from, i, li, li, out)) return null
+      // toFlow: a run of whitespace alone is no paragraph
+      for (let k = 0; k < out.length; k++) {
+        const part = out[k]!
+        if (part.type !== TEXT || !whitespaceOnly(part.value)) {
+          blocks.push(renderBlock(node(PARAGRAPH, dropBreaks(out))))
+          break
+        }
+      }
+    }
+    if (isList) {
+      const inner = readList(kid as Element)
+      if (!inner) return null
+      blocks.push(inner)
+      before = true
+      after = true
+    }
+    from = i + 1
+  }
+  return { spread: spreadOut(li), blocks }
 }

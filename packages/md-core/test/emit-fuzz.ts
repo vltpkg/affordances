@@ -75,28 +75,32 @@ export const generator = (seed: number) => {
     '<span hidden>',
     '<span aria-hidden="true">',
   ]
-  const inline = (depth: number): string => {
+  // plain: without the near misses, so what holds it (a list) is mostly taken
+  const inline = (depth: number, plain = false): string => {
     let out = ''
     for (let i = random(5); i >= 0; i--) {
-      const choice = depth > 2 ? 0 : random(14)
+      const choice = depth > 2 ? 0 : random(plain ? 7 : 14)
       switch (choice) {
         case 1:
-        case 2:
-          out += `<${pick(['strong', 'b', 'em', 'i'])}>${inline(depth + 1)}</${pick(['strong', 'b', 'em', 'i'])}>`
+        case 2: {
+          // plain content closes what it opens: one left open carries into what follows (a list ends up inside it)
+          const open = pick(['strong', 'b', 'em', 'i'])
+          out += `<${open}>${inline(depth + 1, plain)}</${plain ? open : pick(['strong', 'b', 'em', 'i'])}>`
           break
+        }
         case 3:
           out += `<code>${pick(['x', '`tick`', ' sp ', 'a|b', '', '``', text()])}</code>`
           break
         case 4: {
           const href = pick(HREFS)
-          out += `<a href="${href}"${pick(TITLES)}>${random(6) === 0 ? pick(['', ' ', href]) : inline(depth + 1)}</a>`
+          out += `<a href="${href}"${pick(TITLES)}>${random(6) === 0 ? pick(['', ' ', href]) : inline(depth + 1, plain)}</a>`
           break
         }
         case 5:
           out += random(2) ? '<br>' : ' <br> '
           break
         case 6:
-          out += `${pick(SPANS)}${inline(depth + 1)}</span>`
+          out += `${pick(SPANS)}${inline(depth + 1, plain)}</span>`
           break
         case 7:
           // near misses: what the fast path declines
@@ -120,10 +124,65 @@ export const generator = (seed: number) => {
     }
     return out
   }
+  // lists the direct path reads (inline items, the lists in them, ordered starts, empty items) and near misses
+  const BLANKS = [' ', '  ', '\n', '\t', ' \n ', '', '']
+  const START = [
+    '',
+    ' start="1"',
+    ' start="3"',
+    ' start="0"',
+    ' start="-2"',
+    ' start="x"',
+    ' start=""',
+  ]
+  // a clean list holds only what the direct path reads; a noisy one may hold anything that declines it
+  const list = (depth: number, clean = random(4) !== 0): string => {
+    const tag = pick(['ul', 'ul', 'ol', 'dir'])
+    let out = `<${tag}${tag === 'ol' ? pick(START) : ''}>`
+    for (let i = random(4); i >= 0; i--) {
+      // a no-break space between items is text in the list, which declines it
+      out += pick(clean ? BLANKS : SPACES) + '<li>'
+      switch (depth > 2 ? random(3) : random(clean ? 8 : 9)) {
+        case 0:
+          break
+        case 1:
+        case 2:
+          out += inline(1, clean)
+          break
+        case 3:
+        case 4:
+          out += inline(1, clean) + pick(SPACES) + list(depth + 1, clean)
+          break
+        case 5:
+          out += list(depth + 1, clean) + inline(1, clean)
+          break
+        case 6:
+          out += inline(1, clean) + list(depth + 1, clean) + pick(SPACES) + list(depth + 1, clean)
+          break
+        case 7:
+          out +=
+            inline(1, clean) + list(depth + 1, clean) + inline(1, clean) + list(depth + 1, clean)
+          break
+        default:
+          // near misses: a paragraph, a block, a checkbox
+          out += pick([
+            `<p>${inline(1, clean)}</p>`,
+            `<div>${inline(1, clean)}</div>`,
+            '<input type="checkbox">x',
+          ])
+      }
+      out += '</li>'
+    }
+    return out + (clean || random(8) ? '' : 'stray') + `</${tag}>`
+  }
   const block = (): string => {
-    switch (random(8)) {
+    switch (random(10)) {
       case 0:
         return `<h${1 + random(6)}${random(4) ? '' : ' id="h"'}>${inline(0)}</h${1 + random(6)}>`
+      case 8:
+        return list(0)
+      case 9:
+        return list(0) + pick(SPACES) + list(0)
       case 1:
         return `<ul><li>${inline(0)}</li><li><p>${inline(0)}</p></li></ul>`
       case 2:
