@@ -592,9 +592,19 @@ const INTEGRATION = {
 }
 const space = (char: string | undefined) =>
   char === ' ' || char === '\n' || char === '\t' || char === '\f' || char === '\r'
-const alpha = (char: string | undefined) => !!char && /[a-z]/i.test(char)
-const lower = (text: string) =>
-  /[A-Z]/.test(text) ? text.replace(/[A-Z]+/g, (upper) => upper.toLowerCase()) : text
+// ascii only, as the tokenizer reads them
+const alpha = (char: string | undefined) => {
+  if (!char) return false
+  const code = char.charCodeAt(0) | 32
+  return code >= 97 && code <= 122
+}
+const lower = (text: string) => {
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i)
+    if (code >= 65 && code <= 90) return text.replace(/[A-Z]+/g, (upper) => upper.toLowerCase())
+  }
+  return text
+}
 // a script's end tag, or (in its escaped text) what changes how its text is read
 const SCRIPT_DATA = /<\/script(?=[\t\n\f\r />])|<!--/gi
 const SCRIPT_ESCAPED = /<\/script(?=[\t\n\f\r />])|<script(?=[\t\n\f\r />])|-->/gi
@@ -739,6 +749,15 @@ export const flightStripper = () => {
     let i = 0
     // not enough left to decide: keep the rest for the next chunk (always a few characters), or at the end, go on
     const short = (need: number) => !final && n - i < need
+    // a tag read the long way starts
+    const tagOpen = (isEnd: boolean) => {
+      state = 'tagName'
+      name = ''
+      end = isEnd
+      selfClosing = false
+      attributes = new Set()
+      encoding = ''
+    }
     // a start tag ended at i: what it opens, and a script's text is held from here
     const opened = (next: State) => {
       state = next
@@ -762,10 +781,13 @@ export const flightStripper = () => {
         if (!inForeign() && alpha(buffer[at])) {
           TAG.lastIndex = at
           const tag = TAG.exec(buffer)
+          const tagName = tag && lower(tag[1]!.slice(0, 32))
           // svg and math go the long way, since only theirs can be self-closing (<svg/> opens no foreign content)
-          if (tag && !/^(svg|math)$/i.test(tag[1]!)) {
+          if (tagName && tagName !== 'svg' && tagName !== 'math') {
             i = TAG.lastIndex
-            ;[name, end, selfClosing] = [lower(tag[1]!.slice(0, 32)), next === '/', false]
+            name = tagName
+            end = next === '/'
+            selfClosing = false
             if (end) {
               endTag()
               state = 'data'
@@ -775,26 +797,12 @@ export const flightStripper = () => {
         }
         if (alpha(next)) {
           i += 1
-          ;[state, name, end, selfClosing, attributes, encoding] = [
-            'tagName',
-            '',
-            false,
-            false,
-            new Set(),
-            '',
-          ]
+          tagOpen(false)
         } else if (next === '/') {
           const after = buffer[i + 2]
           if (alpha(after)) {
             i += 2
-            ;[state, name, end, selfClosing, attributes, encoding] = [
-              'tagName',
-              '',
-              true,
-              false,
-              new Set(),
-              '',
-            ]
+            tagOpen(true)
           } else if (after === '>') i += 3
           else {
             i += 2
@@ -821,7 +829,10 @@ export const flightStripper = () => {
         while (at < n && !space(buffer[at]) && buffer[at] !== '/' && buffer[at] !== '>') at += 1
         if (name.length < 32) name += lower(buffer.slice(i, Math.min(at, i + 32 - name.length)))
         i = at
-        if (i < n) [state, attribute] = ['attributes', 'before']
+        if (i < n) {
+          state = 'attributes'
+          attribute = 'before'
+        }
       } else if (state === 'attributes') {
         // runs of a name, an unquoted value or spaces in one step: most of a page's tags are attributes
         const runOf =
