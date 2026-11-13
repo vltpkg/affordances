@@ -24,7 +24,7 @@ import { visit } from 'unist-util-visit'
 import { minifyWhitespace } from './whitespace.ts'
 import { emit as emitCore } from './core/emit.ts'
 import { parse as parseCore } from './core/parse.ts'
-import type { Options as CoreOptions } from './core/types.ts'
+import type { Document as CoreDocument, Options as CoreOptions } from './core/types.ts'
 import { declined, forcedPath } from './path.ts'
 
 export type Handlers = Record<string, Handle>
@@ -1053,10 +1053,9 @@ export class FlightDataError extends Error {
 // a script's own text: an svg script can hold elements, and another script's text isn't its own
 const scriptText = (script: Element) =>
   script.children.map((child) => (child.type === 'text' ? child.value : '')).join('')
-const untrusted = (scripts: Element[], swapped: Swapped): FlightDataError['reason'] | undefined => {
+const untrusted = (scripts: string[], swapped: Swapped): FlightDataError['reason'] | undefined => {
   let count = 0
-  for (const script of scripts) {
-    const text = scriptText(script)
+  for (const text of scripts) {
     if (text === swapped.nonce) count += 1
     else if (PUSHED.test(text)) return 'unswapped'
   }
@@ -1191,7 +1190,7 @@ const fromHtml = (html: string) =>
 const strippedTree = (html: string, swapped: Swapped) => {
   const tree = fromHtml(html)
   const streamed = resolveStreamed(tree)
-  const reason = untrusted(streamed.scripts, swapped)
+  const reason = untrusted(streamed.scripts.map(scriptText), swapped)
   return { tree, streamed, reason }
 }
 
@@ -2327,8 +2326,13 @@ export const readPage = (html: string, options: Options = {}): Page => {
   const strip = flightStripper()
   const lean = strip.write(html) + strip.end()
   const swapped = strip.swapped()
-  const core = coreTakes(options) ? readCore(lean, swapped, options) : undefined
-  if (core) return core
+  if (coreTakes(options)) {
+    const core = readCore(lean, swapped, options)
+    if (core && !core.reason) return core.page
+    // swaps that can't be trusted: the page as sent, as md-core reads it, and an error of its own
+    const sent = core && readCore(html, { ...swapped, errors: [''] }, options)
+    if (sent) return sent.page
+  }
   const { tree, streamed, reason } = strippedTree(lean, swapped)
   if (!reason) {
     streamed.resolve()
@@ -2345,7 +2349,8 @@ export const readPage = (html: string, options: Options = {}): Page => {
 // package's api: only the handler, which did the stripping, says a page was
 export const readStreamed = (html: string, swapped: Swapped, options: Options = {}): Page => {
   const core = coreTakes(options) ? readCore(html, swapped, options) : undefined
-  if (core) return core
+  if (core?.reason) throw new FlightDataError(core.reason)
+  if (core) return core.page
   const { tree, streamed, reason } = strippedTree(html, swapped)
   if (reason) throw new FlightDataError(reason)
   streamed.resolve()
@@ -2436,27 +2441,34 @@ const coreTakes = (options: Options) => {
 // what md-core can't write yet as the tree pipeline does: a page with any of it is declined, before it's converted
 const NOT_YET: [why: string, test: (html: string, swapped: Swapped) => boolean][] = [
   ['marker', (html) => /<affordances-md|data-affordances-md/i.test(html)],
-  [
-    'flight',
-    (html, swapped) => swapped.count > 0 || swapped.unreadable || PUSHED_ANYWHERE.test(html),
-  ],
   ['streamed', (html) => /\$R[CRS]\(|data-r[crs]i/i.test(html)],
 ]
-const PUSHED_ANYWHERE = /self\.__next_f/
 
-// the page as md-core reads it, or undefined when it declines (the tree pipeline takes it instead)
-const readCore = (html: string, swapped: Swapped, options: Options): Page | undefined => {
+// the page as md-core reads it, and whether its flight swaps can be trusted, as the tree pipeline checks them: every
+// script's own text, where parse5 puts it. undefined when md-core declines (the tree pipeline takes it instead)
+const readCore = (
+  html: string,
+  swapped: Swapped,
+  options: Options,
+): { page: Page; reason: FlightDataError['reason'] | undefined } | undefined => {
   for (const [why, test] of NOT_YET)
     if (test(html, swapped)) {
       declined(why)
       return undefined
     }
-  return {
+  // the first call converts the tree read here; md-core's emit prunes a tree in place, so another parses again
+  let doc: CoreDocument | undefined = parseCore(html)
+  const reason = untrusted(doc.scripts, swapped)
+  const page: Page = {
     slots: { unique: [], duplicate: [] },
     ...controlOf(swapped.errors),
-    // each call parses the page again: md-core's emit prunes the tree it's given in place
-    markdown: () => emitCore(parseCore(html), options as CoreOptions),
+    markdown: () => {
+      const tree = doc ?? parseCore(html)
+      doc = undefined
+      return emitCore(tree, options as CoreOptions)
+    },
   }
+  return { page, reason }
 }
 
 // a tree as hast-util-to-mdast converts it, without what it does first: a structured clone of all it's given, so its

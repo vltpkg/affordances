@@ -290,6 +290,8 @@ let pending: string[] = []
 let pendingText = false
 let watched: El[] = []
 let mains: El[] = []
+// every script element, in any namespace: the flight check reads each one's text
+let scripts: El[] = []
 // the elements with a dropped child among their kids, to take out at the end
 let pruned = new Set<El>()
 // whether a node was put anywhere but after everything before it: then the Head's elements are sorted into tree order
@@ -353,10 +355,10 @@ const make = (name: string, id: number, ns: number, attrs: string, flags: number
   // the Head's elements; of the scripts and links, only those that could be json-ld or the canonical link
   if (WATCH[id]) {
     if (id === SCRIPT) {
-      if (maybe(attrs, 'ld+json') && attr(el, 'type') === 'application/ld+json') {
-        watched.push(el)
-        keepAll(el)
-      }
+      // its text is kept, even inside svg, so it can be checked
+      scripts.push(el)
+      keepAll(el)
+      if (maybe(attrs, 'ld+json') && attr(el, 'type') === 'application/ld+json') watched.push(el)
     } else if (id !== LINK || maybe(attrs, 'canonical')) {
       watched.push(el)
       // a foreign title is read by all the text inside it, even what is in a dropped element
@@ -2978,6 +2980,19 @@ const readHead = (): Head => {
   return head
 }
 
+// each script's own text (its text children, not what's in an element inside it, which svg allows), for the scripts
+// in the document: not in a template's content, or a body a frameset threw out
+const readScripts = (): string[] =>
+  scripts.flatMap((el) => {
+    let top: El = el
+    for (let up = el.up; up; top = up, up = up.up)
+      if (up.id === TEMPLATE && up.ns === HTML) return []
+    if (top !== doc) return []
+    let text = ''
+    for (const kid of el.kids) if (typeof kid === 'string') text += kid
+    return [text]
+  })
+
 // the mains in the root's tree (under it, and in nothing dropped), in tree order
 const readMains = (root: El) => {
   const found: El[] = []
@@ -3015,6 +3030,7 @@ export const parse = (input: string): Document => {
   pendingText = false
   watched = []
   mains = []
+  scripts = []
   pruned.clear()
   reordered = false
   tok = 0
@@ -3024,6 +3040,7 @@ export const parse = (input: string): Document => {
   tokenize()
   onEof()
   const head = readHead()
+  const scriptTexts = readScripts()
   // the dropped elements leave the tree, and the text either side of one is one text
   for (const el of pruned) {
     const kids: Node[] = []
@@ -3035,7 +3052,7 @@ export const parse = (input: string): Document => {
     el.kids = kids
   }
   const root = bodyEl && !bodyGone ? bodyEl : doc
-  const document: Document = { root, head, mains: readMains(root) }
+  const document: Document = { root, head, mains: readMains(root), scripts: scriptTexts }
   root.tag = '#root'
   root.up = null
   // let the page go: the tree holds slices of it, not the parse's state
@@ -3045,6 +3062,7 @@ export const parse = (input: string): Document => {
   afe = []
   watched = []
   mains = []
+  scripts = []
   pruned.clear()
   pending = []
   current = doc = headEl = formEl = htmlEl = bodyEl = null as unknown as El

@@ -71,6 +71,9 @@ export interface Document {
   // every <main> and every element whose role attribute is exactly 'main', in tree order, wherever it is in the
   // root's tree (hidden or not: the emitter decides which one counts)
   mains: Element[]
+  // the own text of every script element in the document, any namespace, in no particular order: what the flight
+  // check reads, as it would read each script in parse5's tree
+  scripts: string[]
 }
 
 // what the parser never builds, with everything inside: never content, whatever the page says. the same set as
