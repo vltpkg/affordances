@@ -730,20 +730,30 @@ export const flightStripper = () => {
   const run = (text: string, final: boolean) => {
     const buffer = carry + text
     carry = ''
+    // what's read is given back as it is, so the output is the buffer between its scripts, sliced only where one starts
+    // or ends and where the chunk does: from is where the next slice starts. a script's text is held in script
+    // instead, to be swapped or given back whole
     const out: string[] = []
+    let from = 0
     const n = buffer.length
     let i = 0
     // not enough left to decide: keep the rest for the next chunk (always a few characters), or at the end, go on
     const short = (need: number) => !final && n - i < need
+    // a start tag ended at i: what it opens, and a script's text is held from here
+    const opened = (next: State) => {
+      state = next
+      if (state === 'script' || state === 'foreignScript') {
+        out.push(buffer.slice(from, i))
+        script = []
+      }
+    }
     while (i < n) {
       if (state === 'data') {
         const lt = buffer.indexOf('<', i)
         if (lt < 0) {
-          out.push(buffer.slice(i))
           i = n
           break
         }
-        out.push(buffer.slice(i, lt))
         i = lt
         if (short(LOOKAHEAD)) break
         const next = buffer[i + 1]
@@ -754,16 +764,16 @@ export const flightStripper = () => {
           const tag = TAG.exec(buffer)
           // svg and math go the long way, since only theirs can be self-closing (<svg/> opens no foreign content)
           if (tag && !/^(svg|math)$/i.test(tag[1]!)) {
-            out.push(buffer.slice(i, TAG.lastIndex))
             i = TAG.lastIndex
             ;[name, end, selfClosing] = [lower(tag[1]!.slice(0, 32)), next === '/', false]
-            state = end ? (endTag(), 'data') : startTag()
-            if (state === 'script' || state === 'foreignScript') script = []
+            if (end) {
+              endTag()
+              state = 'data'
+            } else opened(startTag())
             continue
           }
         }
         if (alpha(next)) {
-          out.push('<')
           i += 1
           ;[state, name, end, selfClosing, attributes, encoding] = [
             'tagName',
@@ -776,7 +786,6 @@ export const flightStripper = () => {
         } else if (next === '/') {
           const after = buffer[i + 2]
           if (alpha(after)) {
-            out.push('</')
             i += 2
             ;[state, name, end, selfClosing, attributes, encoding] = [
               'tagName',
@@ -786,42 +795,31 @@ export const flightStripper = () => {
               new Set(),
               '',
             ]
-          } else if (after === '>') {
-            out.push('</>')
-            i += 3
-          } else {
-            out.push('</')
+          } else if (after === '>') i += 3
+          else {
             i += 2
             state = after === undefined ? 'data' : 'bogus'
           }
         } else if (next === '!') {
           const head = buffer.slice(i, i + 9)
           if (head.startsWith('<!--')) {
-            out.push('<!--')
             i += 4
             state = 'commentStart'
           } else if (lower(head) === '<!doctype' || (head === '<![CDATA[' && inForeign())) {
-            out.push(head)
             i += 9
             state = head === '<![CDATA[' ? 'cdata' : 'bogus'
           } else {
-            out.push('<!')
             i += 2
             state = 'bogus'
           }
         } else if (next === '?') {
-          out.push('<?')
           i += 2
           state = 'bogus'
-        } else {
-          out.push('<')
-          i += 1
-        }
+        } else i += 1
       } else if (state === 'tagName') {
         let at = i
         while (at < n && !space(buffer[at]) && buffer[at] !== '/' && buffer[at] !== '>') at += 1
         if (name.length < 32) name += lower(buffer.slice(i, Math.min(at, i + 32 - name.length)))
-        out.push(buffer.slice(i, at))
         i = at
         if (i < n) [state, attribute] = ['attributes', 'before']
       } else if (state === 'attributes') {
@@ -847,7 +845,6 @@ export const flightStripper = () => {
               encoding.length < 32
             )
               encoding += taken.slice(0, 32)
-            out.push(taken)
             i += taken.length
             continue
           }
@@ -858,18 +855,18 @@ export const flightStripper = () => {
           const stop = quote < 0 ? n : quote
           if (attributeName === 'encoding' && encoding.length < 32)
             encoding += buffer.slice(i, Math.min(stop, i + 32))
-          out.push(buffer.slice(i, quote < 0 ? n : quote + 1))
           i = quote < 0 ? n : quote + 1
           if (quote >= 0) attribute = 'afterValue'
           continue
         }
-        out.push(char)
         i += 1
         if (char === '>') {
           if (attribute === 'name') attributes.add(attributeName)
           if (attribute === 'slash') selfClosing = true
-          state = end ? (endTag(), 'data') : startTag()
-          if (state === 'script' || state === 'foreignScript') script = []
+          if (end) {
+            endTag()
+            state = 'data'
+          } else opened(startTag())
           continue
         }
         if (attribute === 'before' || attribute === 'after') {
@@ -907,48 +904,33 @@ export const flightStripper = () => {
         if (short(2)) break
         // <!--> and <!---> end at once
         const shut = buffer[i] === '>' ? 1 : buffer.startsWith('->', i) ? 2 : 0
-        out.push(buffer.slice(i, i + shut))
         i += shut
         state = shut ? 'data' : 'comment'
       } else if (state === 'comment') {
         const dashes = buffer.indexOf('--', i)
         if (dashes < 0 || (!final && dashes + 4 > n)) {
-          const keep = dashes < 0 ? Math.max(i, n - 1) : dashes
-          out.push(buffer.slice(i, keep))
-          i = keep
-          if (!final) break
-          out.push(buffer.slice(i))
-          i = n
+          i = final ? n : dashes < 0 ? Math.max(i, n - 1) : dashes
           break
         }
         const close = buffer[dashes + 2] === '>' ? 3 : buffer.startsWith('!>', dashes + 2) ? 4 : 0
-        out.push(buffer.slice(i, close ? dashes + close : dashes + 1))
         i = close ? dashes + close : dashes + 1
         if (close) state = 'data'
       } else if (state === 'bogus' || state === 'cdata') {
         const stop = buffer.indexOf(state === 'bogus' ? '>' : ']]>', i)
-        const keep =
+        i =
           stop >= 0
             ? stop + (state === 'bogus' ? 1 : 3)
             : final || state === 'bogus'
               ? n
               : Math.max(i, n - 2)
-        out.push(buffer.slice(i, keep))
-        i = keep
         if (stop >= 0) state = 'data'
         else if (!final && state === 'cdata') break
       } else if (state === 'raw') {
         const close = buffer.indexOf('</', i)
         if (close < 0) {
-          out.push(buffer.slice(i, Math.max(i, n - 1)))
-          i = Math.max(i, n - 1)
-          if (final) {
-            out.push(buffer.slice(i))
-            i = n
-          }
+          i = final ? n : Math.max(i, n - 1)
           break
         }
-        out.push(buffer.slice(i, close))
         i = close
         if (short(raw.length + 3)) break
         if (
@@ -956,10 +938,7 @@ export const flightStripper = () => {
           /[\t\n\f\r />]/.test(buffer[i + 2 + raw.length] ?? '')
         )
           state = 'data'
-        else {
-          out.push('</')
-          i += 2
-        }
+        else i += 2
       } else if (state === 'script') {
         if (dashed) {
           // right after <!--, more dashes then > (<!-->, <!--->) end the escape it started
@@ -989,7 +968,7 @@ export const flightStripper = () => {
           script.push(buffer.slice(i))
           out.push(script.join(''))
           script = []
-          i = n
+          i = from = n
           break
         }
         script.push(buffer.slice(i, found.index))
@@ -998,6 +977,7 @@ export const flightStripper = () => {
         if (match === '</script' && escape !== 'double') {
           ended(out)
           state = 'data'
+          from = i
         } else {
           script.push(found[0])
           i += found[0].length
@@ -1026,11 +1006,11 @@ export const flightStripper = () => {
           script = []
         }
         state = 'data'
-      } else {
-        out.push(buffer.slice(i))
-        i = n
-      }
+        from = i
+      } else i = n
     }
+    // what's read since the last script: a script's own text, still open, is held, not given
+    if (state !== 'script' && state !== 'foreignScript') out.push(buffer.slice(from, i))
     carry = buffer.slice(i)
     if (final && carry) {
       out.push(carry)
