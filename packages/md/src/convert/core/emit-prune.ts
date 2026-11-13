@@ -16,6 +16,11 @@ export const begin = (strip: boolean) => {
 // the tabs that label a shown panel (data-affordances-md="show"), on a page with markers: their tablists go, since
 // each panel is headed by its tab
 let tabs: Set<string> | undefined
+// the slots with a fill, and the fill: each is the fill, as block markdown, and what's in it never converts
+let fills: Map<Element, string> | undefined
+export const setFills = (filled: Map<Element, string>) => {
+  fills = filled.size ? filled : undefined
+}
 export const setTabs = (labels: Set<string> | undefined) => {
   tabs = labels?.size ? labels : undefined
 }
@@ -36,7 +41,8 @@ export const made = (from: Element, kids: Node[], tag = from.tag): Element => {
     map: from.map,
     pruned: true,
     code: from.code,
-    verbatim: undefined,
+    // a copy of an <AgentText> or a filled slot is still its markdown
+    verbatim: from.verbatim,
   }
   return el
 }
@@ -141,7 +147,7 @@ const droppedNow = (el: Element): boolean => {
     ((found & STYLE) !== 0 && styleHidden(attr(el, 'style')))
   )
 }
-const chrome = (el: Element) => {
+export const chrome = (el: Element) => {
   const maybe = mentions(el)
   return (
     (CHROME_TAGS.has(el.tag) || (maybe && CHROME_ROLES.has(role(el)))) && !(maybe && unhidden(el))
@@ -212,7 +218,7 @@ const VALUED = new Set([
 ])
 const VALUE_ROLES = new Set(['spinbutton', 'slider'])
 // a control whose text is a value, not a name
-const valueBearing = (el: Element) =>
+export const valueBearing = (el: Element) =>
   VALUED.has(el.tag) || (mentions(el) && (VALUE_ROLES.has(role(el)) || editor(el)))
 
 // children without the descendants drop picks, at any depth; the same array when nothing goes
@@ -410,6 +416,9 @@ const headed = (panel: Element): Element => {
 // what a child becomes: itself, something prune made of it, or nothing
 const pruned = (kid: Element): Element | undefined => {
   if (kid.flags & MARKED && isText(kid)) return verbatimOf(kid)
+  const fill = fills?.get(kid)
+  // prune reads what's in it, as ever (a link or table around it is judged by it); only conversion leaves it out
+  if (fill !== undefined && !dropped(kid)) return { ...made(kid, kidsOf(kid)), verbatim: fill }
   if (dropped(kid) || (stripChrome && chrome(kid))) return undefined
   if (shownTablist(kid)) return undefined
   if (kid.flags & MARKED && marked(kid) === 'show' && role(kid) === 'tabpanel') return headed(kid)

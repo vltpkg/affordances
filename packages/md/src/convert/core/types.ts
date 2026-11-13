@@ -112,6 +112,8 @@ export type Options = {
   // @affordances/md's rewrite of the links in marker markdown (an <AgentText>'s), with the page's base; without it
   // they're written as they are. internal: md passes its own
   relinkMarkdown?: (markdown: string, base: string, link: Options['link']) => string
+  // markdown for each <AgentSlot name>, in place of its children; a name the page renders more than once fills nothing
+  fills?: Record<string, string>
 }
 
 export type Result = { markdown: string; title?: string; url?: string; tokens: number }

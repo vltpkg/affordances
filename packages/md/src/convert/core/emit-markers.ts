@@ -30,7 +30,7 @@ const CHANGED = new Set([
   'summary',
   'dt',
 ])
-const changed = (el: Element) =>
+export const changed = (el: Element) =>
   CHANGED.has(el.tag) || (el.flags & FLAG.role && attr(el, 'role') === 'tablist') || isText(el)
 
 const mode = (el: Element) =>
@@ -53,7 +53,6 @@ export const readMarkers = (root: Element): Markers => {
         found.mains.push(kid)
         continue
       }
-      if (m === 'slot') decline('slot')
       // data-affordances-md="show", as the attribute says it: what a tablist's tabs are checked against
       if (kid.tag !== 'affordances-md' && attr(kid, 'data-affordances-md') === 'show') {
         if (gone || under) decline('shown panel inside what prune changes')

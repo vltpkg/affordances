@@ -22,9 +22,8 @@ import { decodeString } from 'micromark-util-decode-string'
 import { normalizeIdentifier } from 'micromark-util-normalize-identifier'
 import { visit } from 'unist-util-visit'
 import { minifyWhitespace } from './whitespace.ts'
-import { emit as emitCore } from './core/emit.ts'
+import { emit as emitCore, readSlots } from './core/emit.ts'
 import { parse as parseCore } from './core/parse.ts'
-import { readMarkers } from './core/emit-markers.ts'
 import type { Document as CoreDocument, Options as CoreOptions } from './core/types.ts'
 import { declined, forcedPath } from './path.ts'
 
@@ -2330,7 +2329,8 @@ export const readPage = (html: string, options: Options = {}): Page => {
   if (coreTakes(options)) {
     const core = readCore(lean, swapped, options)
     if (core && !core.reason) return core.page
-    // swaps that can't be trusted: the page as sent, as md-core reads it, and an error of its own
+    // swaps that can't be trusted: the page as sent, as md-core reads it, and an error of its own. a rare path, so the
+    // page is parsed again with every push still in it as a script's text
     const sent = core && readCore(html, { ...swapped, errors: [''] }, options)
     if (sent) return sent.page
   }
@@ -2459,20 +2459,20 @@ const readCore = (
   // the first call converts the tree read here; md-core's emit prunes a tree in place, so another parses again
   let doc: CoreDocument | undefined = parseCore(html)
   const reason = untrusted(doc.scripts, swapped)
+  const coreOptions: CoreOptions = { ...(options as CoreOptions), relinkMarkdown }
   // a marked page whose markers md-core can't read as prune does
-  const why = doc.marked ? readMarkers(doc.root).decline : undefined
-  if (why) {
-    declined(why)
+  const slots = readSlots(doc, coreOptions)
+  if ('decline' in slots) {
+    declined(slots.decline)
     return undefined
   }
-  const coreOptions: CoreOptions = { ...(options as CoreOptions), relinkMarkdown }
   const page: Page = {
-    slots: { unique: [], duplicate: [] },
+    slots: { unique: slots.unique, duplicate: slots.duplicate },
     ...controlOf(swapped.errors),
-    markdown: () => {
+    markdown: (fills) => {
       const tree = doc ?? parseCore(html)
       doc = undefined
-      return emitCore(tree, coreOptions)
+      return emitCore(tree, { ...coreOptions, ...(fills && { fills }) })
     },
   }
   return { page, reason }

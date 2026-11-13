@@ -1,28 +1,46 @@
+import { attr } from './attr.ts'
 import { convertRoot, materialize, startConvert } from './emit-convert.ts'
 import { HEADING, headingText, IMAGE, Md, setext, TEXT, toMarkdown } from './emit-markdown.ts'
 import { inCells, liftBlocks, relinkMarked } from './emit-lift.ts'
 import { readMarkers } from './emit-markers.ts'
-import { begin, findMain, made, setPage, setTabs } from './emit-prune.ts'
-import type { Document, Options, Result } from './types.ts'
+import {
+  begin,
+  chrome,
+  dropped,
+  findMain,
+  isText,
+  made,
+  marked,
+  setFills,
+  setPage,
+  setTabs,
+  valueBearing,
+} from './emit-prune.ts'
+import { FLAG, type Document, type Element, type Options, type Result } from './types.ts'
 
 // markdown straight from the parser's tree: what @affordances/md's htmlToMarkdown writes for the same page. one walk
 // prunes, extracts, collapses whitespace and converts (emit-prune, emit-convert) into a lean tree that's written out
 // (emit-markdown); finish adds what the page's head says.
-// not here yet, where they'd hook in: slots (prune and convert's one()), the form summary (convert's form()), streamed
-// suspense boundaries (the parser), custom handlers
+// not here yet, where they'd hook in: the form summary (convert's form()), streamed suspense boundaries (the
+// parser), custom handlers
 export const emit = (doc: Document, options: Options = {}): Result => {
   const { head } = doc
   const meta = (key: string) => (head.meta.get(key) ?? '').trim() || undefined
   const canonical = canonicalOf(head.canonical, options.url)
   const base = options.url ?? canonical
-  // extract: the page's <AgentMain>s, else its <main>, else the body without its chrome; or the whole body
-  const auto = (options.extract ?? 'auto') === 'auto'
-  const markers = doc.marked ? readMarkers(doc.root) : undefined
-  const outer = auto && markers?.mains.length ? markers.mains : undefined
-  begin(false)
-  setPage(doc.root)
-  const main = auto && !outer ? findMain(doc.mains) : undefined
-  if (auto && !outer && !main) begin(true)
+  const content = contentOf(doc, options)
+  const { outer, main, markers } = content
+  // a slot with a fill is the fill, and what's in it never converts
+  const fills = new Map<Element, string>()
+  if (options.fills && markers) {
+    const { slots, unique } = slotsIn(doc, content)
+    for (const slot of slots) {
+      const name = attr(slot, 'data-name') ?? ''
+      const fill = Object.hasOwn(options.fills, name) ? options.fills[name] : undefined
+      if (unique.has(name) && typeof fill === 'string') fills.set(slot, fill)
+    }
+  }
+  setFills(fills)
   setTabs(markers?.tabs)
   startConvert(options, base)
   const root = convertRoot(
@@ -47,6 +65,107 @@ export const emit = (doc: Document, options: Options = {}): Result => {
     canonical ?? options.url,
     options,
   )
+}
+
+// what becomes markdown: the page's <AgentMain>s, else its <main>, else the body without its chrome; or the whole body
+type Content = {
+  markers: ReturnType<typeof readMarkers> | undefined
+  outer: Element[] | undefined
+  main: Element | undefined
+  strip: boolean
+}
+const contentOf = (doc: Document, options: Options): Content => {
+  const auto = (options.extract ?? 'auto') === 'auto'
+  const markers = doc.marked ? readMarkers(doc.root) : undefined
+  const outer = auto && markers?.mains.length ? markers.mains : undefined
+  begin(false)
+  setPage(doc.root)
+  const main = auto && !outer ? findMain(doc.mains) : undefined
+  const strip = auto && !outer && !main
+  if (strip) begin(true)
+  return { markers, outer, main, strip }
+}
+
+// the <AgentSlot>s that reach the markdown, in page order, as @affordances/md finds them once the page is pruned and
+// extracted: not hidden, not in an <AgentText>, not in chrome that's stripped, and never one inside another. and the
+// names rendered once, which are the ones a fill can go to
+// what prune could take a slot out with: a link drops a block with nothing to read, a skeleton table goes, and so
+// does a tablist whose tab labels a shown panel. where md-core can't tell from the tree as parsed, it declines
+const slotsIn = (doc: Document, { outer, main, strip, markers }: Content) => {
+  const slots: Element[] = []
+  let decline: string | undefined
+  const walk = (parent: Element, around: Element[]) => {
+    for (const kid of parent.kids) {
+      if (typeof kid === 'string' || isText(kid) || dropped(kid) || (strip && chrome(kid))) continue
+      if (kid.tag === 'affordances-md' && marked(kid) === 'slot') {
+        for (const el of around)
+          if (el.tag === 'a' ? !says(kid) : el.tag === 'table' ? !standing(el) : markers?.tabs.size)
+            decline ??= `slot inside ${el.tag === 'a' || el.tag === 'table' ? `<${el.tag}>` : 'a tablist'}`
+        slots.push(kid)
+        continue
+      }
+      const risky =
+        kid.tag === 'a' ||
+        kid.tag === 'table' ||
+        (kid.flags & FLAG.role && attr(kid, 'role') === 'tablist')
+      walk(kid, risky ? [...around, kid] : around)
+    }
+  }
+  for (const root of outer ?? [main ?? doc.root]) walk(root, [])
+  const counts = new Map<string, number>()
+  for (const slot of slots) {
+    const name = attr(slot, 'data-name') ?? ''
+    if (name) counts.set(name, (counts.get(name) ?? 0) + 1)
+  }
+  const unique = new Set([...counts].flatMap(([name, count]) => (count === 1 ? [name] : [])))
+  const duplicate = [...counts].flatMap(([name, count]) => (count > 1 ? [name] : []))
+  return { slots, unique, duplicate, decline }
+}
+// whether prune leaves an element something to read: text outside what's hidden and what carries a value, an
+// <AgentText>'s markdown, or a described image
+const says = (el: Element): boolean =>
+  el.kids.some((kid) =>
+    typeof kid === 'string'
+      ? kid.trim() !== ''
+      : isText(kid)
+        ? (attr(kid, 'data-md') ?? '') !== ''
+        : !dropped(kid) &&
+          !valueBearing(kid) &&
+          ((kid.tag === 'img' && !!attr(kid, 'alt')) || says(kid)),
+  )
+const cells = (row: Element, tags: string[]) =>
+  row.kids.filter((cell): cell is Element => typeof cell !== 'string' && tags.includes(cell.tag))
+// a table that's no skeleton: a body row (not under thead, nor a first row of headers alone) has a cell that says
+// something
+const standing = (table: Element) => {
+  const rows: [Element, boolean][] = []
+  const walk = (parent: Element, inHead: boolean) => {
+    for (const kid of parent.kids) {
+      if (typeof kid === 'string' || dropped(kid)) continue
+      if (kid.tag === 'tr') rows.push([kid, inHead])
+      walk(kid, inHead || kid.tag === 'thead')
+    }
+  }
+  walk(table, false)
+  const headed = rows.some(([, inHead]) => inHead)
+  return rows.some(
+    ([row, inHead], i) =>
+      !inHead &&
+      !(i === 0 && !headed && cells(row, ['td']).length === 0) &&
+      cells(row, ['td', 'th']).some(says),
+  )
+}
+
+// a page's slot names, unique and duplicate, or why md-core can't read them as @affordances/md does
+export const readSlots = (
+  doc: Document,
+  options: Options = {},
+): { unique: string[]; duplicate: string[] } | { decline: string } => {
+  const content = contentOf(doc, options)
+  if (content.markers?.decline) return { decline: content.markers.decline }
+  if (!content.markers) return { unique: [], duplicate: [] }
+  const { unique, duplicate, decline } = slotsIn(doc, content)
+  return decline ? { decline } : { unique: [...unique], duplicate }
 }
 
 // the page's canonical, if it's an http(s) url that fits in a Link header

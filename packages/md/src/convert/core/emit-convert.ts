@@ -30,7 +30,13 @@ import {
   BLOCKQUOTE,
 } from './emit-markdown.ts'
 import { attr } from './attr.ts'
-import { classes, kidsOf, linkLabel, text } from './emit-prune.ts'
+import { classes, kidsOf as prunedKids, linkLabel, text } from './emit-prune.ts'
+
+// an element's children as conversion reads them: prune's, except a filled slot's, which never convert (prune still
+// reads them, as @affordances/md's does before it empties the slot)
+const NONE: Node[] = []
+const kidsOf = (el: Element): Node[] =>
+  el.verbatim !== undefined && el.tag === 'affordances-md' ? NONE : prunedKids(el)
 import { FLAG, type Element, type Node, type Options } from './types.ts'
 
 // the page's content as the emitter's tree, as hast-util-to-mdast (MIT, Titus Wormer) converts it with
@@ -394,7 +400,8 @@ for (const tag of new Set([...KIND.keys(), ...BLOCKS, ...CONTENT, 'nobr', 'texta
 
 const one = (el: Element, kind: number, parent: Element): Md | Md[] | undefined => {
   if (el.verbatim !== undefined) {
-    // its text is the markdown, as the whitespace walk reads it; what's written is the markdown as it is
+    // an <AgentText>'s text is its markdown, as the whitespace walk reads it (a filled slot has none); what's
+    // written is the markdown as it is
     all(el)
     return marker(el.verbatim, el.tag === 'span' ? MARKED_INLINE : MARKED_BLOCK)
   }
