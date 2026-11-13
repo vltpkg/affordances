@@ -78,14 +78,16 @@ export interface Document {
   scripts: string[]
   // whether any element is an <affordances-md> marker or has data-affordances-md: only then are markers looked for
   marked: boolean
-  // whether react's streamed boundaries may move: a <template id> to move one into place through, and an instruction
-  // to (a $RC, $RR or $RS in a script, a template with data-bid or data-pid)
-  streamed: boolean
+  // why md-core can't move react's streamed boundaries into place as the tree pipeline does, if it can't (a
+  // boundary or segment in svg, where it keeps nothing)
+  streamed: string | undefined
   // whether an element's name has a # or a .: the tree pipeline reads such a name as a selector (<a#x> is a link with
   // id x, <script#x> a script), which md-core doesn't
   selector: boolean
   // whether any element is a strikethrough: s, strike or del
   struck: boolean
+  // whether a form is inside a link or a strikethrough, which the tree pipeline splits around the form's blocks
+  formInSplit: boolean
 }
 
 // what the parser never builds, with everything inside: never content, whatever the page says. the same set as

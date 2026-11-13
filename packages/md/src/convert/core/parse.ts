@@ -1,5 +1,6 @@
 import { attr, parseAttrs } from './attr.ts'
 import { decode } from './entities.ts'
+import { resolveStreamed } from './streamed.ts'
 import { FLAG, flagOf, NEVER, type Document, type Element, type Head, type Node } from './types.ts'
 
 // html to a Document in one scan, as a browser with scripting off reads it. the tokenizer jumps between '<' with
@@ -33,7 +34,7 @@ const NAMES = (
   'input keygen label li link listing main malignmark marquee math menu meta mglyph mi mn mo ms mtext nav nobr ' +
   'noembed noframes noscript object ol optgroup option p param plaintext pre rb rp rt rtc ruby s script search ' +
   'section select small source span strike strong style sub summary sup svg table tbody td template textarea tfoot ' +
-  'th thead title tr track tt u ul var video wbr xmp'
+  'th thead title tr track tt u ul var video wbr xmp #comment'
 ).split(' ')
 const IDS = new Map(NAMES.map((name, i) => [name, i + 1]))
 const T = (name: string) => {
@@ -161,7 +162,7 @@ const UL = T('ul')
 const WBR = T('wbr')
 const XMP = T('xmp')
 
-const DROP = set([...NEVER].join(' '))
+const DROP = set([...NEVER, '#comment'].join(' '))
 // elements the Head is read from
 const WATCH = set('html title meta link script')
 const SPECIAL_HTML = set(
@@ -294,13 +295,20 @@ let mains: El[] = []
 let scripts: El[] = []
 // whether the page has a marker, or an element with data-affordances-md
 let marked = false
-// whether the page has a <template id>, which a streamed boundary or placeholder moves into place through, and a
-// template instruction (data-bid, data-pid: the external runtime's) for one
+// whether the page has a <template id>, which a streamed boundary or placeholder moves into place through, and an
+// instruction template (the external runtime's data-rci, data-rri, data-rsi) to move one
 let templated = false
 let instructed = false
+// whether an instruction template is inside svg, where md-core keeps nothing: the tree pipeline reads it there
+let svgInstructed = false
+// every element with an id, wherever it is: the streamed moves find a segment by its id, inside svg too
+let withIds: El[] = []
 // whether an element's name has a # or a . (only an unknown tag can): hast-util-from-parse5 reads one as a
 // selector, so <a#x> is a link with id x there, and <script#x> a script
 let selector = false
+// whether a form is made inside a link or a strikethrough: the tree pipeline splits one around the form's blocks in the
+// same pass that converts the form, which md-core's form (converted on its own) doesn't
+let formInSplit = false
 // whether the page has a strikethrough (s, strike, del)
 let struck = false
 // the elements with a dropped child among their kids, to take out at the end
@@ -364,9 +372,15 @@ const make = (name: string, id: number, ns: number, attrs: string, flags: number
   if (flags & FLAG['data-affordances-md'] || (id === 0 && name === 'affordances-md')) marked = true
   if (id === 0 && (name.includes('#') || name.includes('.'))) selector = true
   if (id === S || id === STRIKE || (id === 0 && name === 'del')) struck = true
+  if (flags & FLAG.id) withIds.push(el)
+  if (id === FORM && !formInSplit)
+    for (const open of stack)
+      if (open.id === A || open.id === S || open.id === STRIKE || open.tag === 'del')
+        formInSplit = true
   if (id === TEMPLATE && attrs !== '') {
     if (flags & FLAG.id) templated = true
-    if (/data-[bp]id/i.test(attrs) || attrs.includes('&')) instructed = true
+    // any case: html matches attribute names so
+    if (/data-r/i.test(attrs)) instructed = true
   }
   // a main, by tag or by role; which of them end up in the tree is settled at the end
   if (id === MAIN || (flags & FLAG.role && maybe(attrs, 'main') && attr(el, 'role') === 'main'))
@@ -893,10 +907,17 @@ const startInForeign = () => {
     name = SVG_TAGS.get(tag) ?? tag
     if (name === 'foreignObject') id = FOREIGN_OBJECT
   } else if (attrs !== '') attrs = mathAttrs(attrs)
+  // an instruction template in svg, made or not: any spelling, as the tree pipeline reads its attributes
+  if (ns === SVG && id === TEMPLATE && attrs !== '' && /data-r/i.test(attrs))
+    instructed = svgInstructed = true
   if (!tself) insert(name, id, ns, attrs, flagsOf(attrs))
-  // a self-closed svg child is nothing anyone will read, unless the Head reads it
-  else if (ns !== SVG || WATCH[id] || cur().rec !== 0)
-    attach(make(name, id, ns, attrs, flagsOf(attrs)))
+  // a self-closed svg child is nothing anyone will read, unless the Head reads it, or it has an id a streamed
+  // move could find
+  else {
+    const flags = flagsOf(attrs)
+    if (ns !== SVG || WATCH[id] || cur().rec !== 0 || flags & FLAG.id)
+      attach(make(name, id, ns, attrs, flags))
+  }
 }
 const fontExits = () => {
   const map = parseAttrs(tattrs)
@@ -1106,11 +1127,29 @@ const onNul = () => {
       return afterBodyAnything()
   }
 }
-const onComment = () => {
+// a comment's data, which only a react boundary's needs: <!--$-->, <!--$?-->, <!--$!--> and <!--/$-->, which the
+// streamed moves find a fallback's end by. as an element of its own, dropped once the parse is done; the rest aren't kept
+const onComment = (data = '') => {
   tok = COMMENT
   skipNL = false
   if (mode === IN_TABLE_TEXT && cur().ns === HTML) tableTextAnything()
+  if (data.charCodeAt(0) !== 36 && data !== '/$') return
+  const el = make(COMMENT_TAG_NAME, COMMENT_TAG, HTML, data, 0)
+  // where the tree builder inserts a comment: the document before <html> and after the body's end, the html element
+  // just after the body, else the current node
+  const target =
+    mode === INITIAL ||
+    mode === BEFORE_HTML ||
+    mode === AFTER_AFTER_BODY ||
+    mode === AFTER_AFTER_FRAMESET
+      ? doc
+      : mode === AFTER_BODY
+        ? (stack[0] ?? doc)
+        : cur()
+  appendChild(target, el)
 }
+const COMMENT_TAG_NAME = '#comment'
+const COMMENT_TAG = T(COMMENT_TAG_NAME)
 let doctypeQuirks = false
 const onDoctype = () => {
   tok = DOCTYPE
@@ -2800,8 +2839,9 @@ const doctypeIsQuirks = (text: string, eof: boolean) => {
 // after '<!': a comment, the doctype, cdata (in foreign content) or a bogus comment. where it ends
 const markup = (i: number) => {
   if (html.charCodeAt(i) === 45 && html.charCodeAt(i + 1) === 45) {
-    onComment()
-    return commentEnd(i + 2)
+    const end = commentEnd(i + 2)
+    onComment(commentData(i + 2, end))
+    return end
   }
   if (html.slice(i, i + 7).toLowerCase() === 'doctype') {
     const close = html.indexOf('>', i + 7)
@@ -2816,12 +2856,37 @@ const markup = (i: number) => {
     if (text) chars(text)
     return close < 0 ? n : close + 3
   }
-  onComment()
-  return bogusEnd(i)
+  const end = bogusEnd(i)
+  onComment(bogusData(i, end))
+  return end
 }
 const bogusEnd = (i: number) => {
   const close = html.indexOf('>', i)
   return close < 0 ? n : close + 1
+}
+// a comment's data from just after '<!--' to where it ends: none for <!--> and <!--->, else up to its --> or --!>,
+// or to the end of the page, without the dashes (and !) the tokenizer was holding there
+const commentData = (from: number, end: number) => {
+  let data: string
+  if (end === from + 1 || (end === from + 2 && html.charCodeAt(from) === 45)) data = ''
+  else if (end < n || html.endsWith('-->') || html.endsWith('--!>'))
+    data = html.slice(from, end - (html.charCodeAt(end - 2) === 33 ? 4 : 3))
+  else {
+    data = html.slice(from, n)
+    data = data.endsWith('--!')
+      ? data.slice(0, -3)
+      : data.endsWith('--')
+        ? data.slice(0, -2)
+        : data.endsWith('-')
+          ? data.slice(0, -1)
+          : data
+  }
+  return data.indexOf('\0') >= 0 ? data.replaceAll('\0', '\uFFFD') : data
+}
+// a bogus comment's data: to its '>', or to the end of the page
+const bogusData = (from: number, end: number) => {
+  const data = html.slice(from, end === n && html.charCodeAt(n - 1) !== 62 ? n : end - 1)
+  return data.indexOf('\0') >= 0 ? data.replaceAll('\0', '\uFFFD') : data
 }
 // a comment from just after '<!--': <!--> and <!---> end at once, then the first --> or --!>
 const commentEnd = (i: number) => {
@@ -3012,6 +3077,53 @@ const readScripts = (): string[] =>
     return [text]
   })
 
+// whether an element is in the document as the tree pipeline's walk finds it: not in an html template's content (the
+// walk doesn't go there), not in a body a frameset threw out
+const inDocument = (el: El) => {
+  let top: El = el
+  for (let up = el.up; up; top = up, up = up.up)
+    if (up.id === TEMPLATE && up.ns === HTML) return false
+  return top === doc
+}
+const inTreeOrder = (els: El[]) => {
+  if (!reordered || els.length < 2) return els
+  const places = new Map(els.map((el) => [el, position(el)]))
+  return els.toSorted((a, b) => treeOrder(places.get(a)!, places.get(b)!))
+}
+const moveStreamed = () => {
+  // what the parser kept out of the tree, which the tree pipeline has: what's inside svg
+  const reachable = new Set<El>()
+  const walk = (parent: El) => {
+    for (const kid of parent.kids)
+      if (typeof kid !== 'string') {
+        reachable.add(kid as El)
+        if (!((kid as El).id === TEMPLATE && (kid as El).ns === HTML)) walk(kid as El)
+      }
+  }
+  walk(doc)
+  const svgIds = new Set<string>()
+  let svgTemplate = false
+  for (const el of withIds)
+    if (!reachable.has(el) && inDocument(el)) {
+      svgIds.add(attr(el, 'id') ?? '')
+      if (el.id === TEMPLATE) svgTemplate = true
+    }
+  const why = resolveStreamed({
+    root: doc,
+    // in tree order, which foster parenting and the adoption agency can make other than the order they were made in
+    scripts: inTreeOrder(scripts.filter(inDocument)),
+    textOf: (el) => textOf(el as El),
+    content: (el) => (el as El).id === TEMPLATE && (el as El).ns === HTML,
+    keeps: (el) => (el as El).rec >= 2,
+    svgIds,
+    svgTemplate,
+    svgInstructed,
+  })
+  // what moved is in tree order no longer the order it was made in
+  reordered = true
+  return why
+}
+
 // the mains in the root's tree (under it, and in nothing dropped), in tree order
 const readMains = (root: El) => {
   const found: El[] = []
@@ -3025,7 +3137,15 @@ const readMains = (root: El) => {
   return found.toSorted((a, b) => treeOrder(places.get(a)!, places.get(b)!))
 }
 
-export const parse = (input: string, nonce?: string): Document => {
+// moves: false gives the tree as built, before react's streamed moves (the parser's own tests, against parse5)
+// for tests: what sees the document once the streamed moves are made, before anything walks it, with the elements the
+// parser still holds (its mains, scripts, and what has an id), which a move can leave outside the document (a test
+// checks there that no move made a loop, in steps, and stops the parse if one did)
+let afterMoves: ((doc: Element, held: Element[]) => void) | undefined
+export const onMoved = (check: ((doc: Element, held: Element[]) => void) | undefined) => {
+  afterMoves = check
+}
+export const parse = (input: string, nonce?: string, moves = true): Document => {
   html = input.indexOf('\r') < 0 ? input : input.replace(/\r\n?/g, '\n')
   n = html.length
   tstate = DATA
@@ -3053,8 +3173,11 @@ export const parse = (input: string, nonce?: string): Document => {
   marked = false
   templated = false
   instructed = false
+  svgInstructed = false
+  withIds = []
   selector = false
   struck = false
+  formInSplit = false
   pruned.clear()
   reordered = false
   tok = 0
@@ -3072,9 +3195,15 @@ export const parse = (input: string, nonce?: string): Document => {
       for (const kid of el.kids) if (typeof kid === 'string') text += kid
       if (text === nonce) el.kids = el.kids.filter((kid) => typeof kid !== 'string')
     }
+  // react's streamed boundaries moved into place, as the tree pipeline moves them, before anything reads the page
+  // (next streams a dynamic page's metadata into the body): or why md-core can't
+  // only a page with an instruction can move anything: a template's, or a script's $RC, $RR or $RS
+  const streamed =
+    templated && moves && (instructed || scripts.some((el) => textOf(el).includes('$R')))
+      ? moveStreamed()
+      : undefined
+  afterMoves?.(doc, [...mains, ...scripts, ...withIds])
   const head = readHead()
-  // or a script's: $RC, $RR or $RS, in all the text inside it, as the tree pipeline reads one
-  const streamed = templated && (instructed || scripts.some((el) => /\$R[CRS]\(/.test(textOf(el))))
   // the dropped elements leave the tree, and the text either side of one is one text
   for (const el of pruned) {
     const kids: Node[] = []
@@ -3095,6 +3224,7 @@ export const parse = (input: string, nonce?: string): Document => {
     streamed,
     selector,
     struck,
+    formInSplit,
   }
   root.tag = '#root'
   root.up = null
@@ -3104,6 +3234,7 @@ export const parse = (input: string, nonce?: string): Document => {
   stack = []
   afe = []
   watched = []
+  withIds = []
   mains = []
   scripts = []
   pruned.clear()

@@ -51,7 +51,8 @@ test('the fixtures and the corpus', () => {
     })
 })
 
-test('6000 generated pages', () => {
+// about a second; more on a loaded machine running both vitest projects at once
+test('6000 generated pages', { timeout: 30_000 }, () => {
   const failures: string[] = []
   for (let seed = 1; seed <= 6000; seed++) {
     const html = generate(seed)

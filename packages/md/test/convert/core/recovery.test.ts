@@ -42,6 +42,8 @@ test.each([
   ['in an ol, beside text', '<ol>a<s>*b*</s>', 'strikethrough and list'],
   ['a list in a strikethrough', '<del><ul><s>x', 'strikethrough and list'],
   ['a break in a strikethrough in a list', '<dir><del><br>', 'strikethrough and list'],
+  ['a form in a strikethrough', '<del><form><nobr>f\t', 'form in a link or strikethrough'],
+  ['a form in a link', '<a href=/x><form><nobr>f\t</form></a>', 'form in a link or strikethrough'],
 ])('declined: %s', (_, html, why) => {
   const { core, tree, declined } = both(html)
   expect({ core, declined }).toEqual({ core: tree, declined: [why] })

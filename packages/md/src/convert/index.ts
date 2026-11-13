@@ -2493,11 +2493,37 @@ const controlOf = (errors: string[]): Pick<Page, 'errors' | 'redirect' | 'fallba
 const coreTakes = (options: Options) =>
   forcedPath() !== 'hast' && !options.handlers && typeof options.extract !== 'function'
 
-// whether a page has react's streamed boundaries, from its html alone: a template, and one of the instructions
-// resolveStreamed moves them by. a scan, not a parse: what it misses (an instruction spelled with a reference, an
-// attribute in capitals) md-core still declines once it has parsed the page
-export const mayStream = (html: string) =>
-  html.includes('<template') && STREAMED.some((signature) => html.includes(signature))
+// an id attribute, as written
+const SVG_ID = /\sid\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi
+
+// whether a page has react's streamed boundaries where md-core can't move them, from its html alone: md-core moves
+// them as the tree pipeline does, but keeps nothing inside svg, so one that moves through a template in svg, or finds
+// its segment there, is the tree pipeline's. a scan, not a parse, and a superset of those pages as react writes them
+// (lowercase, double quotes): a template and one of the instructions resolveStreamed moves by, and an svg holding a
+// template or an id the instructions name. what it misses (another spelling: a name's case, its quotes, a reference)
+// md-core still declines once it has parsed the page: an instruction template in svg, a template with an id there,
+// a segment found there
+export const mayStream = (html: string) => {
+  if (!html.includes('<template') || !STREAMED.some((signature) => html.includes(signature)))
+    return false
+  // the segments the instructions name, as written
+  const segments = new Set<string>()
+  for (const [, kind, a, b] of html.matchAll(/\$R([CRS])\("([^"]+)","([^"]+)"/g))
+    segments.add(kind === 'S' ? a! : b!)
+  for (const [, sid] of html.matchAll(/data-sid="([^"]*)"/g)) segments.add(sid!)
+  // each svg, to its end or the page's: what's inside is at most that. an svg inside one that hasn't ended is in its
+  // stretch already, so the stretches never overlap, and one without an end is the page's last
+  for (let at = html.indexOf('<svg'); at >= 0;) {
+    const close = html.indexOf('</svg', at)
+    const inside = html.slice(at, close < 0 ? html.length : close)
+    if (inside.includes('<template')) return true
+    for (const [, double, single, bare] of inside.matchAll(SVG_ID))
+      if (segments.has(double ?? single ?? bare!)) return true
+    if (close < 0) break
+    at = html.indexOf('<svg', close)
+  }
+  return false
+}
 
 // the page as md-core reads it, and whether its flight swaps can be trusted, as the tree pipeline checks them: every
 // script's own text, where parse5 puts it. undefined when md-core declines (the tree pipeline takes it instead)
@@ -2517,13 +2543,18 @@ const readCore = (
   const reason = untrusted(doc.scripts, swapped)
   // react's streamed boundaries, which the tree pipeline moves into place: md-core doesn't, and declines the page
   if (doc.streamed) {
-    declined('streamed')
+    declined(doc.streamed)
     return undefined
   }
   // a <main> where prune may take it out first (an empty one in a link is an empty block there): the tree pipeline
   // finds landmarks on the pruned page, md-core on the parsed one
   if (options.extract !== 'none' && doc.mains.some(underChanged)) {
     declined('main inside what prune changes')
+    return undefined
+  }
+  // a form in a link or a strikethrough: the tree pipeline converts the form and splits what holds it in one pass
+  if (doc.formInSplit) {
+    declined('form in a link or strikethrough')
     return undefined
   }
   // a strikethrough the tree pipeline writes outside a paragraph

@@ -259,6 +259,16 @@ const TEXT = [
   '<div hidden id="S:0"><p>moved</p></div>',
   '<template id="B:0"></template>',
   '<template data-dgst="NEXT_HTTP_ERROR_FALLBACK;404"></template>',
+  // react's boundary comments and the other instructions, so the streamed moves meet the parser's recovery
+  '<!--$-->',
+  '<!--$?-->',
+  '<!--$!-->',
+  '<!--/$-->',
+  '<template id="P:0"></template>',
+  '<script>$RS("S:1","P:0")</script>',
+  '<div hidden id="S:1"><p>placed</p></div>',
+  '<template data-rci="" data-bid="B:0" data-sid="S:1"></template>',
+  '<script>$RC("B:0","S:1")</script>',
 ]
 
 export const treePages = (seed: number) => {

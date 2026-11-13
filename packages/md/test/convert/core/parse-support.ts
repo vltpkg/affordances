@@ -8,7 +8,7 @@ const attrs = (el: Element) => Object.fromEntries(parseAttrs(el.attrs))
 
 // the parser's Document and the oracle's, as plain data
 export const both = (html: string) => ({
-  ours: plain(parse(html), attrs),
+  ours: plain(parse(html, undefined, false), attrs),
   theirs: plain(oracle(html), attrs),
 })
 

@@ -92,9 +92,10 @@ export const oracle = (html: string): Document => {
     mains,
     scripts: [],
     marked,
-    streamed: false,
+    streamed: undefined,
     selector: false,
     struck: false,
+    formInSplit: false,
   }
 }
 
