@@ -1,6 +1,6 @@
 # md-core bench
 
-Speed and output parity for `@affordances/md-core`. Run everything from `packages/md-core`.
+Speed and output parity for `@affordances/md`'s single-pass converter, `packages/md/src/convert/core`. Run everything from `packages/md-core`.
 
 | command                | what it does                                                                                             |
 | ---------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -29,7 +29,7 @@ Other flags: `--runs` (timed runs per page, default 20), `--warmup` (default 3),
 slow tool may spend on one page before it stops at 3 runs, default 1000), `--no-gc`.
 
 Tools: md-core, `@affordances/md`, mdream, turndown with the gfm plugin, node-html-markdown. When
-`src/parse.ts` (`parse(html)`) and `src/emit.ts` (`emit(doc, options)`) exist, `md-core parse` and
+`packages/md/src/convert/core/parse.ts` (`parse(html)`) and `emit.ts` (`emit(doc, options)`) exist, `md-core parse` and
 `md-core emit` time the two stages alone; emit runs on a tree parsed outside the clock.
 
 Reading the output:

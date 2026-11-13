@@ -24,7 +24,7 @@ type Convert = (
 let core: Convert | undefined
 let coreFailure = ''
 try {
-  core = (await import('../src/index.ts')).htmlToMarkdown
+  core = (await import('../../md/src/convert/core/index.ts')).htmlToMarkdown
 } catch (error) {
   coreFailure = `import failed: ${(error as Error).message.split('\n')[0]}`
 }

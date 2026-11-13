@@ -4,8 +4,8 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 // @affordances/md's fixtures, each with the url it's converted against
 export type Page = { name: string; html: string; url: string; corpus: boolean }
 
-const corpusDir = new URL('../bench/corpus/', import.meta.url)
-const fixturesDir = new URL('../../md/test/fixtures/', import.meta.url)
+const corpusDir = new URL('../../../../md-core/bench/corpus/', import.meta.url)
+const fixturesDir = new URL('../../fixtures/', import.meta.url)
 
 export const corpusPages = (): Page[] => {
   const cache = new URL('.cache/', corpusDir)

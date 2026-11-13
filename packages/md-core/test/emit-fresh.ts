@@ -1,8 +1,8 @@
 // emit on fresh trees, as bench/run.ts times it: a pool of parsed documents, each emitted once. prints, per page,
 // the best of several pool medians (other work on the machine only ever adds time): node test/emit-fresh.ts [page]
 import { loadCorpus } from '../bench/corpus.ts'
-import { emit } from '../src/emit.ts'
-import { parse } from '../src/parse.ts'
+import { emit } from '../../md/src/convert/core/emit.ts'
+import { parse } from '../../md/src/convert/core/parse.ts'
 
 const want = process.argv[2]
 const gc = (globalThis as { gc?: () => void }).gc

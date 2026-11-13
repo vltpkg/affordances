@@ -1,14 +1,15 @@
 // where emit's time goes, phase by phase, over the corpus: node test/emit-phases.ts
-import { convertRoot, startConvert } from '../src/emit-convert.ts'
-import { toMarkdown } from '../src/emit-markdown.ts'
-import { begin, findMain, made, setPage } from '../src/emit-prune.ts'
-import type { Document } from '../src/types.ts'
-import { oracle } from './support/oracle.ts'
-import { corpusPages } from './emit-pages.ts'
+import { convertRoot, startConvert } from '../../md/src/convert/core/emit-convert.ts'
+import { toMarkdown } from '../../md/src/convert/core/emit-markdown.ts'
+import { begin, findMain, made, setPage } from '../../md/src/convert/core/emit-prune.ts'
+import type { Document } from '../../md/src/convert/core/types.ts'
+import { oracle } from '../../md/test/convert/core/support/oracle.ts'
+import { corpusPages } from '../../md/test/convert/core/emit-pages.ts'
 
-// --parser: documents from src/parse.ts, else the oracle's
+// --parser: documents from md's src/convert/core/parse.ts, else the oracle's
 const build = process.argv.includes('--parser')
-  ? ((await import('../src/parse.ts')) as { parse: (html: string) => Document }).parse
+  ? ((await import('../../md/src/convert/core/parse.ts')) as { parse: (html: string) => Document })
+      .parse
   : oracle
 const corpus = corpusPages().map((page) => ({ page, doc: build(page.html) }))
 // per phase, the fastest whole-corpus run: other work on the machine only ever adds time

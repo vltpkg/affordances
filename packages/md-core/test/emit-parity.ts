@@ -4,10 +4,10 @@
 //   node test/emit-parity.ts --time     emit-only time for the corpus (median of runs, warm)
 import { writeFileSync } from 'node:fs'
 import { htmlToMarkdown } from '@affordances/md'
-import { emit } from '../src/emit.ts'
-import type { Document } from '../src/types.ts'
-import { oracle } from './support/oracle.ts'
-import { corpusPages, fixturePages, similarity } from './emit-pages.ts'
+import { emit } from '../../md/src/convert/core/emit.ts'
+import type { Document } from '../../md/src/convert/core/types.ts'
+import { oracle } from '../../md/test/convert/core/support/oracle.ts'
+import { corpusPages, fixturePages, similarity } from '../../md/test/convert/core/emit-pages.ts'
 
 // the first differing hunks, as a unified-ish listing
 const hunks = (reference: string, ours: string, count = 6) => {
@@ -44,11 +44,12 @@ const hunks = (reference: string, ours: string, count = 6) => {
 const median = (values: number[]) => values.toSorted((a, b) => a - b)[values.length >> 1]!
 const args = process.argv.slice(2)
 const parser = async (): Promise<(html: string) => Document> =>
-  ((await import('../src/parse.ts')) as { parse: (html: string) => Document }).parse
+  ((await import('../../md/src/convert/core/parse.ts')) as { parse: (html: string) => Document })
+    .parse
 const pages = [...corpusPages(), ...fixturePages()]
 if (args[0] === '--time') {
   // emit alone, over documents built once; --runs n, and per page with --pages
-  // --parser: documents from src/parse.ts (while it's being written, it may not load), else the oracle's
+  // --parser: documents from md's src/convert/core/parse.ts (while it's being written, it may not load), else the oracle's
   const build = args.includes('--parser') ? await parser() : oracle
   const real = corpusPages()
   let corpus = real.map((page) => ({ page, doc: build(page.html) }))

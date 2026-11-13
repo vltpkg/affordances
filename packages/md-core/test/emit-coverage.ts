@@ -1,9 +1,9 @@
 // how many top-level paragraphs and headings each corpus page writes by the fast path, and why the rest declined:
 //   node test/emit-coverage.ts
 import { loadCorpus } from '../bench/corpus.ts'
-import { emit } from '../src/emit.ts'
-import { fastStats } from '../src/emit-convert.ts'
-import { parse } from '../src/parse.ts'
+import { emit } from '../../md/src/convert/core/emit.ts'
+import { fastStats } from '../../md/src/convert/core/emit-convert.ts'
+import { parse } from '../../md/src/convert/core/parse.ts'
 
 for (const page of loadCorpus()) {
   fastStats.taken = 0

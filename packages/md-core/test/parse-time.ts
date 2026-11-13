@@ -1,7 +1,7 @@
 // times parse() over the corpus: `node test/parse-time.ts` from the package. each page is parsed warm and timed in
 // turn with the others (so no page has the optimizer to itself), and the median of each is reported
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { parse } from '../src/parse.ts'
+import { parse } from '../../md/src/convert/core/parse.ts'
 
 const dir = new URL('../bench/corpus/.cache/', import.meta.url)
 if (!existsSync(dir)) throw new Error('no corpus: run the bench fetch first')

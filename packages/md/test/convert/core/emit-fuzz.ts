@@ -1,8 +1,8 @@
 // generated pages for the fast path's gate: the shapes it accepts and their near misses, seeded so a failure repeats.
 // as a script, it runs many and stops at the first page whose markdown differs with the fast path on and off:
 //   node test/emit-fuzz.ts [count] [seed]
-import { emit } from '../src/emit.ts'
-import { parse } from '../src/parse.ts'
+import { emit } from '../../../src/convert/core/emit.ts'
+import { parse } from '../../../src/convert/core/parse.ts'
 
 export const generator = (seed: number) => {
   let state = seed >>> 0 || 1

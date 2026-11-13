@@ -6,7 +6,7 @@ import {
   type Element,
   type Head,
   type Node,
-} from '../../src/types.ts'
+} from '../../../../src/convert/core/types.ts'
 
 // the Document parse.ts must build, made the slow way: parse5 reads the page as a browser does, and this walks its
 // tree into the contract's shape. the parser is tested against it, and the emitter can be written against it before

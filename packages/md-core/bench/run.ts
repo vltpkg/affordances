@@ -50,7 +50,7 @@ const isNotImplemented = (error: unknown) =>
 
 // md-core is imported dynamically: it's mid-rewrite and must not take the whole bench down
 try {
-  const core = await import('../src/index.ts')
+  const core = await import('../../md/src/convert/core/index.ts')
   add({ name: 'md-core', setup: (html) => () => core.htmlToMarkdown(html, { url }).markdown })
 } catch (error) {
   add({ name: 'md-core', setup: () => () => '' }, `import failed: ${failure(error)}`)
@@ -70,8 +70,8 @@ const stage = async (file: string) => {
     return undefined
   }
 }
-const parseMod = await stage('../src/parse.ts')
-const emitMod = await stage('../src/emit.ts')
+const parseMod = await stage('../../md/src/convert/core/parse.ts')
+const emitMod = await stage('../../md/src/convert/core/emit.ts')
 const parse =
   typeof parseMod?.parse === 'function' ? (parseMod.parse as (h: string) => unknown) : undefined
 const emit =

@@ -1,10 +1,15 @@
-import { htmlToMarkdown } from '@affordances/md'
+import { htmlToMarkdown } from '../../../src/index.ts'
 import { describe, expect, test } from 'vitest'
-import { emit } from '../src/emit.ts'
-import { attentionAgrees, type Item, regexSafe, scannedSafe } from '../src/emit-markdown.ts'
-import type { Options, Result } from '../src/types.ts'
+import { emit } from '../../../src/convert/core/emit.ts'
+import {
+  attentionAgrees,
+  type Item,
+  regexSafe,
+  scannedSafe,
+} from '../../../src/convert/core/emit-markdown.ts'
+import type { Options, Result } from '../../../src/convert/core/types.ts'
 import { corpusPages, fixturePages, type Page, similarity } from './emit-pages.ts'
-import { parse } from '../src/parse.ts'
+import { parse } from '../../../src/convert/core/parse.ts'
 import { both as fuzzBoth, generator } from './emit-fuzz.ts'
 import { oracle } from './support/oracle.ts'
 

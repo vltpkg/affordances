@@ -1,9 +1,9 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, test } from 'vitest'
-import { attr, parseAttrs, scanAttr } from '../src/attr.ts'
-import { ENTITIES } from '../src/entities-table.ts'
-import { parse } from '../src/parse.ts'
-import { NEVER, type Element, type Node } from '../src/types.ts'
+import { attr, parseAttrs, scanAttr } from '../../../src/convert/core/attr.ts'
+import { ENTITIES } from '../../../src/convert/core/entities-table.ts'
+import { parse } from '../../../src/convert/core/parse.ts'
+import { NEVER, type Element, type Node } from '../../../src/convert/core/types.ts'
 import { generate, KNOWN, ORACLE_THROWS } from './parse-fuzz.ts'
 import { difference } from './parse-support.ts'
 
@@ -574,10 +574,15 @@ describe('character references, the whole table', () => {
   })
 })
 
-describe('the corpus pages', () => {
-  const dir = new URL('../bench/corpus/.cache/', import.meta.url)
-  const pages = existsSync(dir) ? readdirSync(dir).filter((file) => file.endsWith('.html')) : []
-  test.skipIf(pages.length === 0).each(pages)('%s', (file) => {
+// the corpus is fetched, not committed: without it there's nothing to register
+const corpusDir = new URL('../../../../md-core/bench/corpus/.cache/', import.meta.url)
+const corpusFiles = existsSync(corpusDir)
+  ? readdirSync(corpusDir).filter((file) => file.endsWith('.html'))
+  : []
+describe.skipIf(corpusFiles.length === 0)('the corpus pages', () => {
+  const dir = corpusDir
+  const pages = corpusFiles
+  test.each(pages)('%s', (file) => {
     const html = readFileSync(new URL(file, dir), 'utf8')
     expect(difference(html)).toBeUndefined()
   })

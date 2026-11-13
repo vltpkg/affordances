@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from 'node:util'
-import { parseAttrs } from '../src/attr.ts'
-import { parse } from '../src/parse.ts'
-import type { Element } from '../src/types.ts'
+import { parseAttrs } from '../../../src/convert/core/attr.ts'
+import { parse } from '../../../src/convert/core/parse.ts'
+import type { Element } from '../../../src/convert/core/types.ts'
 import { oracle, plain } from './support/oracle.ts'
 
 const attrs = (el: Element) => Object.fromEntries(parseAttrs(el.attrs))
