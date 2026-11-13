@@ -570,7 +570,10 @@ const FILLABLE = 'affordancesSlot'
 // for one. only the script's text is swapped, for a nonce (hex and dashes), so even a mistaken swap can't end the context
 // it's in. after parsing, every nonce must be a script's whole text and no script may still hold a push, or the swaps
 // can't be trusted
-const CALL = String.raw`\s*(?:\(self\.__next_f\s*=\s*self\.__next_f\s*\|\|\s*\[\]\)|self\.__next_f)\.push\(`
+// what every push starts with, as written (CALL is made of it): a page that never says it has no push to strip
+export const NEXT_F = 'self.__next_f'
+const F = NEXT_F.replaceAll('.', '\\.')
+export const CALL = String.raw`\s*(?:\(${F}\s*=\s*${F}\s*\|\|\s*\[\]\)|${F})\.push\(`
 const PUSH = new RegExp(String.raw`^${CALL}([\s\S]*)\)\s*;?\s*$`)
 // a script that starts like a push is one, read or not: one that doesn't end like one can't be read
 const PUSHED = new RegExp(String.raw`^${CALL}`)
@@ -2376,9 +2379,13 @@ export type Redirect = { status: 307 | 308; location: string }
 export type Fallback = { status: 401 | 403 | 404 }
 
 export const readPage = (html: string, options: Options = {}): Page => {
-  const strip = flightStripper()
-  const lean = strip.write(html) + strip.end()
-  const swapped = strip.swapped()
+  // a script is a push only if its text, a run of the page as written, starts with CALL, which needs NEXT_F: a page
+  // without it is what the stripper would give back, with nothing swapped. only here, where the whole page is in hand
+  const strip = html.includes(NEXT_F) ? flightStripper() : undefined
+  const lean = strip ? strip.write(html) + strip.end() : html
+  const swapped: Swapped = strip
+    ? strip.swapped()
+    : { nonce: crypto.randomUUID(), count: 0, errors: [], unreadable: false }
   if (coreTakes(options)) {
     const core = readCore(lean, swapped, options)
     if (core && !core.reason) return core.page
