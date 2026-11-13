@@ -1191,8 +1191,54 @@ const rowScanner = () => {
 
 // html as a tree, parsed as hast-util-from-html parses it (scripting off) but without each node's place in the source:
 // nothing reads it, and working it out costs more than the parse (most of a conversion, on a page of many lines)
-const fromHtml = (html: string) =>
-  fromParse5(parseHtml(html, { scriptingEnabled: false })) as HastRoot
+const fromHtml = (html: string) => {
+  const document = parseHtml(html, { scriptingEnabled: false })
+  const foreign = renameForeignTemplates(document)
+  const tree = fromParse5(document) as HastRoot
+  if (foreign.size) restoreForeignTemplates(document, tree, foreign)
+  return tree
+}
+// a <template> in svg or math is an element like any other there, with children and no content, but
+// hast-util-from-parse5 reads every template's content and throws on one without. so it's converted under another
+// name and named template again after, its children where parse5 put them: prune drops it as a template, and the
+// flight check still finds a script in it, as md-core does. only the ones renamed are named back, found by walking
+// both trees (hast-util-from-parse5 makes one node of each), so an element the page names so is left as it is
+type Parse5Tree = ReturnType<typeof parseHtml>
+type Parse5Any = {
+  nodeName: string
+  tagName?: string
+  namespaceURI?: string
+  childNodes?: Parse5Any[]
+  content?: Parse5Any
+}
+const FOREIGN_TEMPLATE = 'affordances-foreign-template'
+const renameForeignTemplates = (document: Parse5Tree) => {
+  const renamed = new Set<Parse5Any>()
+  const walk = (node: Parse5Any) => {
+    if (node.tagName === 'template' && node.namespaceURI !== 'http://www.w3.org/1999/xhtml') {
+      node.tagName = node.nodeName = FOREIGN_TEMPLATE
+      renamed.add(node)
+    }
+    for (const child of node.childNodes ?? []) walk(child)
+    if (node.content) walk(node.content)
+  }
+  walk(document as unknown as Parse5Any)
+  return renamed
+}
+const restoreForeignTemplates = (document: Parse5Tree, tree: HastRoot, renamed: Set<Parse5Any>) => {
+  const walk = (from: Parse5Any, to: HastRoot | Element) => {
+    const kids = from.childNodes ?? []
+    for (let i = 0; i < kids.length; i++) {
+      const node = kids[i]!
+      const made = to.children[i]
+      if (!made || made.type !== 'element') continue
+      if (renamed.has(node)) made.tagName = 'template'
+      walk(node, made)
+      if (node.content && made.content) walk(node.content, made.content)
+    }
+  }
+  walk(document as unknown as Parse5Any, tree)
+}
 
 // a page's html with its flight pushes taken out, parsed: the tree and the error rows' digests, or why they can't be
 // trusted
