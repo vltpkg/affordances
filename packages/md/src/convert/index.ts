@@ -2484,15 +2484,9 @@ const controlOf = (errors: string[]): Pick<Page, 'errors' | 'redirect' | 'fallba
 }
 
 // md-core converts a page unless the call needs a tree (handlers convert hast; a function extract is given one), or
-// the switch says otherwise. until md-core is the default, only the switch sends a page to it
-const coreTakes = (options: Options) => {
-  const path = forcedPath()
-  return (
-    (path === 'core' || path === 'strict') &&
-    !options.handlers &&
-    typeof options.extract !== 'function'
-  )
-}
+// the switch says otherwise
+const coreTakes = (options: Options) =>
+  forcedPath() !== 'hast' && !options.handlers && typeof options.extract !== 'function'
 
 // whether a page has react's streamed boundaries, from its html alone: a template, and one of the instructions
 // resolveStreamed moves them by. a scan, not a parse: what it misses (an instruction spelled with a reference, an

@@ -6,7 +6,7 @@ Speed and output parity for `@affordances/md`'s single-pass converter, `packages
 | ---------------------- | -------------------------------------------------------------------------------------------------------- |
 | `node bench/fetch.ts`  | downloads the pages in `corpus/urls.txt` into `corpus/.cache/` (skips cached files; `--force` refetches) |
 | `node bench/run.ts`    | speed: every tool on every page, median of n runs                                                        |
-| `node bench/parity.ts` | output: md-core against `@affordances/md`, the reference                                                 |
+| `node bench/parity.ts` | output: `@affordances/md` by default (md-core) against its tree pipeline, the reference                  |
 
 ## Corpus
 

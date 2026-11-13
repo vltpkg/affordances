@@ -1,7 +1,9 @@
-// output parity: md-core against @affordances/md (the reference) on every corpus page
+// output parity on every corpus page: @affordances/md as it converts by default (md-core, and the tree pipeline for
+// what md-core declines) against its tree pipeline, the reference
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
-import { htmlToMarkdown as reference } from '@affordances/md'
+import { declines, forcePath } from '../../md/src/convert/path.ts'
+import { htmlToMarkdown } from '../../md/src/index.ts'
 import { filterPages, loadCorpus } from './corpus.ts'
 import { table } from './table.ts'
 
@@ -21,13 +23,16 @@ type Convert = (
   html: string,
   o: typeof options,
 ) => { markdown: string; title?: string; url?: string }
-let core: Convert | undefined
-let coreFailure = ''
-try {
-  core = (await import('../../md/src/convert/core/index.ts')).htmlToMarkdown
-} catch (error) {
-  coreFailure = `import failed: ${(error as Error).message.split('\n')[0]}`
+const reference: Convert = (html, o) => {
+  forcePath('hast')
+  try {
+    return htmlToMarkdown(html, o)
+  } finally {
+    forcePath(undefined)
+  }
 }
+const core: Convert | undefined = htmlToMarkdown
+const coreFailure = ''
 
 // lines as small ints, so the lcs compares numbers, not strings
 const intern = (a: string[], b: string[]) => {
@@ -212,5 +217,8 @@ console.log(
   compared
     ? `\nparity: ${exact}/${pages.length} exact, ${floor1((common / refLines) * 100)}% of reference lines reproduced in order (over ${compared} page${compared > 1 ? 's' : ''} md-core converted)`
     : `\nparity: n/a, md-core ${notImplemented ? 'not implemented' : coreFailure || 'failed on every page'}`,
+)
+console.log(
+  `declined to the tree pipeline: ${declines.size ? [...declines].map(([why, n]) => `${why} ${n}`).join(', ') : 'none'}`,
 )
 if (values.write) console.log(`outputs written to ${outDir.pathname}`)

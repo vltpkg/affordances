@@ -10,8 +10,15 @@ afterEach(() => {
 
 const page = '<main><h1>Hi</h1><p>Some <em>text</em>.</p></main>'
 
-test('md-core and the tree pipeline write the same markdown for a page both can convert', () => {
+test('md-core is the default, and writes what the tree pipeline does', () => {
+  forcePath('hast')
   const tree = htmlToMarkdown(page, { url: 'https://shop.test/page' })
+  forcePath(undefined)
+  expect(htmlToMarkdown(page, { url: 'https://shop.test/page' })).toEqual(tree)
+  // a page reaches md-core: one it declines is counted
+  htmlToMarkdown('<template id="B:0"></template><script>$RC("B:0","S:0")</script>')
+  expect(declines.get('streamed')).toBe(1)
+  declines.clear()
   forcePath('strict')
   expect(htmlToMarkdown(page, { url: 'https://shop.test/page' })).toEqual(tree)
   expect(declines.size).toBe(0)
@@ -31,12 +38,17 @@ test('handlers and a function extract take the tree pipeline, without a decline'
 test('a page md-core declines is counted, and the tree pipeline writes it; strict throws instead', () => {
   const slotted =
     '<main><p>a</p><template id="B:0"></template></main><div hidden id="S:0">b</div><script>$RC("B:0","S:0")</script>'
+  forcePath('hast')
   const tree = htmlToMarkdown(slotted)
+  expect(declines.size).toBe(0)
   forcePath('core')
   expect(htmlToMarkdown(slotted)).toEqual(tree)
   expect(declines.get('streamed')).toBe(1)
   forcePath('strict')
   expect(() => readPage(slotted)).toThrow(/md-core declined the page \(streamed\)/)
+  // unless that decline is allowed
+  forcePath('strict', ['streamed'])
+  expect(readPage(slotted).markdown().markdown).toBe(tree.markdown)
 })
 
 test('an element named like a selector, which the tree pipeline renames, declines the page', () => {

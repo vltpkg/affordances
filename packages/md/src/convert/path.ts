@@ -3,10 +3,13 @@
 // bench, never an option or an environment variable a deployment could set
 export type Path = 'hast' | 'core' | 'strict'
 
-// 'core' converts as the default does; 'strict' does too, but a decline throws instead of taking the tree pipeline
+// 'core' converts as the default does; 'strict' does too, but a decline throws instead of taking the tree pipeline,
+// unless it's one of the declines allowed
 let forced: Path | undefined
-export const forcePath = (path: Path | undefined) => {
+let allowed = new Set<string>()
+export const forcePath = (path: Path | undefined, allow: string[] = []) => {
   forced = path
+  allowed = new Set(allow)
 }
 export const forcedPath = () => forced
 
@@ -24,5 +27,5 @@ export class Declined extends Error {
 }
 export const declined = (why: string) => {
   declines.set(why, (declines.get(why) ?? 0) + 1)
-  if (forced === 'strict') throw new Declined(why)
+  if (forced === 'strict' && !allowed.has(why)) throw new Declined(why)
 }
