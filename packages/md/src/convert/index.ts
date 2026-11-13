@@ -22,7 +22,8 @@ import { decodeString } from 'micromark-util-decode-string'
 import { normalizeIdentifier } from 'micromark-util-normalize-identifier'
 import { visit } from 'unist-util-visit'
 import { minifyWhitespace } from './whitespace.ts'
-import { emit as emitCore, readSlots } from './core/emit.ts'
+import { emit as emitCore, readSlots, stripsChrome } from './core/emit.ts'
+import { chromeUnderChanged, struckList, underChanged } from './core/emit-markers.ts'
 import { parse as parseCore } from './core/parse.ts'
 import type {
   Document as CoreDocument,
@@ -441,7 +442,10 @@ const pruneWith = (
 // data-rci, data-rri, data-rsi. ids are hex (B:a comes after B:9) and can carry a prefix, and a segment is a hidden
 // div, or the table, tbody, tr or svg its content needs. $RX, a boundary the server gave up on, keeps its fallback.
 // make the same moves, so streamed content counts. the page's scripts come from the same walk, before any move
-const resolveStreamed = (tree: HastRoot) => {
+// what resolveStreamed moves a segment by, as it's written in the html: a script's $RC or $RR (a boundary) or $RS (a
+// placeholder), or the external runtime's templates for them. md's pre-check scans for the same
+const STREAMED = ['$RC("', '$RR("', '$RS("', 'data-rci', 'data-rri', 'data-rsi']
+export const resolveStreamed = (tree: HastRoot) => {
   // one walk: the instructions, every id, each element's parent, and the scripts
   const scripts: Element[] = []
   const instructions: Element[] = []
@@ -2444,10 +2448,11 @@ const coreTakes = (options: Options) => {
   )
 }
 
-// what md-core can't write yet as the tree pipeline does: a page with any of it is declined, before it's converted
-const NOT_YET: [why: string, test: (html: string, swapped: Swapped) => boolean][] = [
-  ['streamed', (html) => /\$R[CRS]\(|data-r[crs]i/i.test(html)],
-]
+// whether a page has react's streamed boundaries, from its html alone: a template, and one of the instructions
+// resolveStreamed moves them by. a scan, not a parse: what it misses (an instruction spelled with a reference, an
+// attribute in capitals) md-core still declines once it has parsed the page
+export const mayStream = (html: string) =>
+  html.includes('<template') && STREAMED.some((signature) => html.includes(signature))
 
 // the page as md-core reads it, and whether its flight swaps can be trusted, as the tree pipeline checks them: every
 // script's own text, where parse5 puts it. undefined when md-core declines (the tree pipeline takes it instead)
@@ -2456,14 +2461,42 @@ const readCore = (
   swapped: Swapped,
   options: Options,
 ): { page: Page; reason: FlightDataError['reason'] | undefined } | undefined => {
-  for (const [why, test] of NOT_YET)
-    if (test(html, swapped)) {
-      declined(why)
-      return undefined
-    }
+  // a page react streams boundaries into: md-core would only parse it to decline it, so it goes to the tree pipeline
+  // first. a superset of md-core's own check below, which still declines whatever this misses
+  if (mayStream(html)) {
+    declined('streamed')
+    return undefined
+  }
   // the first call converts the tree read here; md-core's emit prunes a tree in place, so another parses again
   let doc: CoreDocument | undefined = parseCore(html)
   const reason = untrusted(doc.scripts, swapped)
+  // react's streamed boundaries, which the tree pipeline moves into place: md-core doesn't, and declines the page
+  if (doc.streamed) {
+    declined('streamed')
+    return undefined
+  }
+  // a <main> where prune may take it out first (an empty one in a link is an empty block there): the tree pipeline
+  // finds landmarks on the pruned page, md-core on the parsed one
+  if (options.extract !== 'none' && doc.mains.some(underChanged)) {
+    declined('main inside what prune changes')
+    return undefined
+  }
+  // a strikethrough the tree pipeline writes outside a paragraph
+  if (doc.struck && struckList(doc.root)) {
+    declined('strikethrough and list')
+    return undefined
+  }
+  // chrome md-core would strip before prune judges what's around it
+  if (stripsChrome(doc, options as CoreOptions) && chromeUnderChanged(doc.root)) {
+    declined('chrome inside what prune changes')
+    return undefined
+  }
+  // an element named like a selector, which the tree pipeline renames (to a script, a link, a main): it decides
+  // the page, flight check and all
+  if (doc.selector) {
+    declined('selector tag name')
+    return undefined
+  }
   const coreOptions: CoreOptions = { ...(options as CoreOptions), relinkMarkdown, convertForm }
   // a marked page whose markers md-core can't read as prune does
   const slots = readSlots(doc, coreOptions)

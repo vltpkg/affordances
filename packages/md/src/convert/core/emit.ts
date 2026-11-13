@@ -156,6 +156,9 @@ const standing = (table: Element) => {
   )
 }
 
+// whether the page's chrome is stripped: no <AgentMain> or <main> is the content
+export const stripsChrome = (doc: Document, options: Options = {}) => contentOf(doc, options).strip
+
 // a page's slot names, unique and duplicate, or why md-core can't read them as @affordances/md does
 export const readSlots = (
   doc: Document,

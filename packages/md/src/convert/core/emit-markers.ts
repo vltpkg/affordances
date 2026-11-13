@@ -33,6 +33,44 @@ const CHANGED = new Set([
 export const changed = (el: Element) =>
   CHANGED.has(el.tag) || (el.flags & FLAG.role && attr(el, 'role') === 'tablist') || isText(el)
 
+// a strikethrough the tree pipeline writes outside a paragraph, where md-core writes what's in it otherwise: one
+// that holds a list, or one in a list with no list item between
+const STRUCK = new Set(['s', 'strike', 'del'])
+const LISTS = new Set(['ul', 'ol', 'dir', 'menu'])
+const holds = (el: Element, tags: Set<string>): boolean =>
+  el.kids.some((kid) => typeof kid !== 'string' && (tags.has(kid.tag) || holds(kid, tags)))
+export const struckList = (root: Element): boolean => {
+  const walk = (el: Element, inList: boolean): boolean =>
+    el.kids.some(
+      (kid) =>
+        typeof kid !== 'string' &&
+        ((STRUCK.has(kid.tag) && (inList || holds(kid, LISTS))) ||
+          walk(kid, LISTS.has(kid.tag) || (inList && kid.tag !== 'li'))),
+    )
+  return walk(root, false)
+}
+
+// chrome inside what prune changes, on a page whose chrome is stripped: the tree pipeline strips it after prune has
+// judged what's around it (a link, a heading, a cell), md-core before
+const CHROME = new Set(['nav', 'header', 'footer', 'aside', 'dialog'])
+const CHROME_ROLES = new Set(['navigation', 'banner', 'contentinfo', 'complementary'])
+const isChrome = (el: Element) =>
+  CHROME.has(el.tag) || (el.flags & FLAG.role && CHROME_ROLES.has(attr(el, 'role') ?? ''))
+export const chromeUnderChanged = (root: Element): boolean => {
+  const walk = (el: Element, under: boolean): boolean =>
+    el.kids.some(
+      (kid) =>
+        typeof kid !== 'string' && ((under && isChrome(kid)) || walk(kid, under || changed(kid))),
+    )
+  return walk(root, false)
+}
+
+// whether something prune may change is above an element
+export const underChanged = (el: Element) => {
+  for (let at = el.up; at; at = at.up) if (changed(at)) return true
+  return false
+}
+
 const mode = (el: Element) =>
   el.flags & (FLAG['data-affordances-md'] | FLAG['data-mode']) ? marked(el) : undefined
 

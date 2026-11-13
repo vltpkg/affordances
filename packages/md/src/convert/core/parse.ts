@@ -294,6 +294,15 @@ let mains: El[] = []
 let scripts: El[] = []
 // whether the page has a marker, or an element with data-affordances-md
 let marked = false
+// whether the page has a <template id>, which a streamed boundary or placeholder moves into place through, and a
+// template instruction (data-bid, data-pid: the external runtime's) for one
+let templated = false
+let instructed = false
+// whether an element's name has a # or a . (only an unknown tag can): hast-util-from-parse5 reads one as a
+// selector, so <a#x> is a link with id x there, and <script#x> a script
+let selector = false
+// whether the page has a strikethrough (s, strike, del)
+let struck = false
 // the elements with a dropped child among their kids, to take out at the end
 let pruned = new Set<El>()
 // whether a node was put anywhere but after everything before it: then the Head's elements are sorted into tree order
@@ -353,6 +362,12 @@ const make = (name: string, id: number, ns: number, attrs: string, flags: number
     rec: ns === SVG ? 0 : DROP[id] ? 1 : 2,
   }
   if (flags & FLAG['data-affordances-md'] || (id === 0 && name === 'affordances-md')) marked = true
+  if (id === 0 && (name.includes('#') || name.includes('.'))) selector = true
+  if (id === S || id === STRIKE || (id === 0 && name === 'del')) struck = true
+  if (id === TEMPLATE && attrs !== '') {
+    if (flags & FLAG.id) templated = true
+    if (/data-[bp]id/i.test(attrs) || attrs.includes('&')) instructed = true
+  }
   // a main, by tag or by role; which of them end up in the tree is settled at the end
   if (id === MAIN || (flags & FLAG.role && maybe(attrs, 'main') && attr(el, 'role') === 'main'))
     mains.push(el)
@@ -3036,6 +3051,10 @@ export const parse = (input: string): Document => {
   mains = []
   scripts = []
   marked = false
+  templated = false
+  instructed = false
+  selector = false
+  struck = false
   pruned.clear()
   reordered = false
   tok = 0
@@ -3046,6 +3065,8 @@ export const parse = (input: string): Document => {
   onEof()
   const head = readHead()
   const scriptTexts = readScripts()
+  // or a script's: $RC, $RR or $RS, in all the text inside it, as the tree pipeline reads one
+  const streamed = templated && (instructed || scripts.some((el) => /\$R[CRS]\(/.test(textOf(el))))
   // the dropped elements leave the tree, and the text either side of one is one text
   for (const el of pruned) {
     const kids: Node[] = []
@@ -3057,7 +3078,16 @@ export const parse = (input: string): Document => {
     el.kids = kids
   }
   const root = bodyEl && !bodyGone ? bodyEl : doc
-  const document: Document = { root, head, mains: readMains(root), scripts: scriptTexts, marked }
+  const document: Document = {
+    root,
+    head,
+    mains: readMains(root),
+    scripts: scriptTexts,
+    marked,
+    streamed,
+    selector,
+    struck,
+  }
   root.tag = '#root'
   root.up = null
   // let the page go: the tree holds slices of it, not the parse's state

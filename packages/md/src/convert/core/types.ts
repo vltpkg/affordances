@@ -78,6 +78,14 @@ export interface Document {
   scripts: string[]
   // whether any element is an <affordances-md> marker or has data-affordances-md: only then are markers looked for
   marked: boolean
+  // whether react's streamed boundaries may move: a <template id> to move one into place through, and an instruction
+  // to (a $RC, $RR or $RS in a script, a template with data-bid or data-pid)
+  streamed: boolean
+  // whether an element's name has a # or a .: the tree pipeline reads such a name as a selector (<a#x> is a link with
+  // id x, <script#x> a script), which md-core doesn't
+  selector: boolean
+  // whether any element is a strikethrough: s, strike or del
+  struck: boolean
 }
 
 // what the parser never builds, with everything inside: never content, whatever the page says. the same set as
