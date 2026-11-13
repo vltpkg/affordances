@@ -198,19 +198,32 @@ test('marker markdown in a table cell stays in its cell', () => {
   )
 })
 
-test('a fill with tens of thousands of links converts in linear time', () => {
-  // each link rewrites only its own span; applying them one copy at a time took ~12s at this size
-  const fill = Array.from(
-    { length: 15000 },
-    (_, i) => `- [l](/p/${i}) <https://example.test/q${i}>`,
-  ).join('\n')
-  const started = performance.now()
-  const markdown = md(slot('readme'), { readme: fill })
-  expect(performance.now() - started).toBeLessThan(8000)
-  expect(markdown).toContain(
-    '- [l](https://example.test/p/14999.md) [https://example.test/q14999](https://example.test/q14999.md)',
+// a fill of links, each relative and each also an autolink, that the link hook rewrites
+const fillOf = (links: number) =>
+  Array.from({ length: links }, (_, i) => `- [l](/p/${i}) <https://example.test/q${i}>`).join('\n')
+// the best of three conversions of a page whose slot gets that fill, and its markdown
+const fillTimed = (links: number) => {
+  const fill = fillOf(links)
+  let best = Infinity
+  let markdown = ''
+  for (let run = 0; run < 3; run++) {
+    const started = performance.now()
+    markdown = md(slot('readme'), { readme: fill })
+    best = Math.min(best, performance.now() - started)
+  }
+  return { best, markdown }
+}
+test('a fill with thousands of links converts in linear time', () => {
+  // each link rewrites only its own span; applying them one copy at a time took ~12s at 15000 links. measured as how
+  // the time grows with eight times the links, which a loaded machine slows alike: about 8x when it's linear, about
+  // 64x when each link copies the whole fill
+  const small = fillTimed(1000)
+  const large = fillTimed(8000)
+  expect(large.best / small.best).toBeLessThan(24)
+  expect(large.markdown).toContain(
+    '- [l](https://example.test/p/7999.md) [https://example.test/q7999](https://example.test/q7999.md)',
   )
-}, 30000)
+}, 60000)
 
 test('A10: a slot inside another slot never counts, so its fill never runs', () => {
   const html = page(slot('outer', `${slot('inner', '<p>Inner kids</p>')}<p>Outer kids</p>`))
