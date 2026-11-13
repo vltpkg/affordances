@@ -1269,7 +1269,8 @@ const collect = (
     else piece(value)
     return
   }
-  if (mode === PRE) {
+  // in preformatted text an element keeps it, unless it says otherwise (a <nobr> doesn't wrap, so it collapses)
+  if (mode === PRE && whitespaceOf(kid, PRE) === PRE) {
     collectElement(kid, index, kids, rowAfter, normal)
     return
   }

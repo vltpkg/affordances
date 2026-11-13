@@ -2982,7 +2982,7 @@ const readHead = (): Head => {
       anyTitle ??= textOf(el)
     } else if (el.tag === 'link') {
       if (inHead && attr(el, 'rel') === 'canonical') head.canonical ??= attr(el, 'href')
-    } else if (el.tag === 'html') head.lang ??= attr(el, 'lang') || undefined
+    } else if (el.tag === 'html' && el.ns === HTML) head.lang ??= attr(el, 'lang') || undefined
     else if (el.tag === 'meta') {
       for (const kind of ['name', 'property']) {
         const value = attr(el, kind)

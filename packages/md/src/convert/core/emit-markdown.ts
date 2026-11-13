@@ -1192,7 +1192,7 @@ const hasBreak = (node: Md): boolean => {
   for (const kid of node.kids) {
     if (kid.type === BREAK) return true
     if (
-      (kid.type === TEXT || kid.type === INLINE_CODE || kid.type === HTML) &&
+      (kid.type === TEXT || kid.type === INLINE_CODE || kid.type === HTML || kid.type === CODE) &&
       /[\r\n]/.test(kid.value)
     )
       return true

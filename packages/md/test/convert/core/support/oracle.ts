@@ -45,7 +45,9 @@ export const oracle = (html: string): Document => {
         anyTitle ??= textOf(child)
       } else if (tag === 'link' && inHead && get(child, 'rel') === 'canonical')
         head.canonical ??= get(child, 'href')
-      else if (tag === 'html') head.lang ??= get(child, 'lang') || undefined
+      // the root's: an <html> in svg or math is a foreign element
+      else if (tag === 'html' && child.namespaceURI === 'http://www.w3.org/1999/xhtml')
+        head.lang ??= get(child, 'lang') || undefined
       else if (tag === 'body') body ??= child
       else if (tag === 'meta') {
         for (const kind of ['name', 'property']) {
