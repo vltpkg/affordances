@@ -2,7 +2,7 @@ import { attr } from './attr.ts'
 import { convertRoot, materialize, startConvert } from './emit-convert.ts'
 import { HEADING, headingText, IMAGE, Md, setext, TEXT, toMarkdown } from './emit-markdown.ts'
 import { inCells, liftBlocks, relinkMarked } from './emit-lift.ts'
-import { readMarkers } from './emit-markers.ts'
+import { readMarkers, reads } from './emit-markers.ts'
 import {
   begin,
   chrome,
@@ -13,6 +13,7 @@ import {
   marked,
   setFills,
   setPage,
+  setHeadings,
   setTabs,
   valueBearing,
 } from './emit-prune.ts'
@@ -42,6 +43,7 @@ export const emit = (doc: Document, options: Options = {}): Result => {
   }
   setFills(fills)
   setTabs(markers?.tabs)
+  setHeadings(markers?.headings)
   startConvert(options, base)
   const root = convertRoot(
     outer ? made(doc.root, outer, '#root') : main ? made(doc.root, [main], '#root') : doc.root,
@@ -91,27 +93,68 @@ const contentOf = (doc: Document, options: Options): Content => {
 // names rendered once, which are the ones a fill can go to
 // what prune could take a slot out with: a link drops a block with nothing to read, a skeleton table goes, and so
 // does a tablist whose tab labels a shown panel. where md-core can't tell from the tree as parsed, it declines
+// what a slot can be inside for md-core to read it as the tree pipeline does: plain containers with no text rules of
+// their own, headings, emphasis and code (in a pre too), a table's parts (the table itself is judged whole), a button, a label, a
+// summary, and a form, which md's own form code converts
+const SLOT_SAFE = new Set(
+  (
+    'div section article main aside header footer nav p span li ul ol blockquote figure ' +
+    'h1 h2 h3 h4 h5 h6 em strong b i code pre tbody thead tfoot tr td button label summary details form affordances-md'
+  ).split(' '),
+)
+// what takes a value out of what's inside it before a slot there is judged: a link
+const STRIPS = new Set(['a'])
+const holdsValue = (el: Element): boolean =>
+  el.kids.some((kid) => typeof kid !== 'string' && (valueBearing(kid) || holdsValue(kid)))
+const isTablist = (el: Element) => (el.flags & FLAG.role) !== 0 && attr(el, 'role') === 'tablist'
+// the links an element is inside, outermost first
+const linksAbove = (el: Element) => {
+  const links: Element[] = []
+  for (let at = el.up; at; at = at.up) if (at.tag === 'a') links.unshift(at)
+  return links
+}
 const slotsIn = (doc: Document, { outer, main, strip, markers }: Content) => {
   const slots: Element[] = []
   let decline: string | undefined
-  const walk = (parent: Element, around: Element[]) => {
+  const walk = (parent: Element, around: Element[], unlisted = false, valued = false) => {
     for (const kid of parent.kids) {
       if (typeof kid === 'string' || isText(kid) || dropped(kid) || (strip && chrome(kid))) continue
       if (kid.tag === 'affordances-md' && marked(kid) === 'slot') {
+        // what prune makes of a slot depends on all that's around it, which md-core doesn't repeat. it reads a slot only
+        // inside what prune leaves as it is or judges as md-core does: plain containers, headings, emphasis, a table's
+        // cells, a button, a label, a summary, a tablist, and links, which keep a slot with something to read and drop
+        // one without (and a link that says nothing but values is its label, or gone with the slot). never with a value
+        // around it (its text is a value, and prune may take it out), nor in a link with one inside it, which the link
+        // takes out first. anything else declines
+        if (unlisted || valued) decline ??= "slot inside an element md-core can't judge"
+        else if (around.some((el) => STRIPS.has(el.tag)) && holdsValue(kid))
+          decline ??= 'slot holding a value'
+        else if (around.some((el) => el.tag === 'a')) {
+          const read = reads(kid)
+          if (read === false) continue
+          if (
+            read === undefined ||
+            around.some((el) => el.tag === 'a' && reads(el, false) !== true)
+          )
+            decline ??= 'slot inside <a>'
+        }
         for (const el of around)
-          if (el.tag === 'a' ? !says(kid) : el.tag === 'table' ? !standing(el) : markers?.tabs.size)
-            decline ??= `slot inside ${el.tag === 'a' || el.tag === 'table' ? `<${el.tag}>` : 'a tablist'}`
+          if (el.tag === 'table' ? !standing(el) : el.tag !== 'a' && markers?.tabs.size)
+            decline ??= `slot inside ${el.tag === 'table' ? '<table>' : 'a tablist'}`
         slots.push(kid)
         continue
       }
-      const risky =
-        kid.tag === 'a' ||
-        kid.tag === 'table' ||
-        (kid.flags & FLAG.role && attr(kid, 'role') === 'tablist')
-      walk(kid, risky ? [...around, kid] : around)
+      const risky = kid.tag === 'a' || kid.tag === 'table' || isTablist(kid)
+      walk(
+        kid,
+        risky ? [...around, kid] : around,
+        unlisted || !(SLOT_SAFE.has(kid.tag) || risky),
+        valued || valueBearing(kid),
+      )
     }
   }
-  for (const root of outer ?? [main ?? doc.root]) walk(root, [])
+  // the links above where the content starts (an <AgentMain> inside a link) judge its slots too
+  for (const root of outer ?? [main ?? doc.root]) walk(root, linksAbove(root))
   const counts = new Map<string, number>()
   for (const slot of slots) {
     const name = attr(slot, 'data-name') ?? ''
@@ -121,18 +164,6 @@ const slotsIn = (doc: Document, { outer, main, strip, markers }: Content) => {
   const duplicate = [...counts].flatMap(([name, count]) => (count > 1 ? [name] : []))
   return { slots, unique, duplicate, decline }
 }
-// whether prune leaves an element something to read: text outside what's hidden and what carries a value, an
-// <AgentText>'s markdown, or a described image
-const says = (el: Element): boolean =>
-  el.kids.some((kid) =>
-    typeof kid === 'string'
-      ? kid.trim() !== ''
-      : isText(kid)
-        ? (attr(kid, 'data-md') ?? '') !== ''
-        : !dropped(kid) &&
-          !valueBearing(kid) &&
-          ((kid.tag === 'img' && !!attr(kid, 'alt')) || says(kid)),
-  )
 const cells = (row: Element, tags: string[]) =>
   row.kids.filter((cell): cell is Element => typeof cell !== 'string' && tags.includes(cell.tag))
 // a table that's no skeleton: a body row (not under thead, nor a first row of headers alone) has a cell that says
@@ -152,12 +183,9 @@ const standing = (table: Element) => {
     ([row, inHead], i) =>
       !inHead &&
       !(i === 0 && !headed && cells(row, ['td']).length === 0) &&
-      cells(row, ['td', 'th']).some(says),
+      cells(row, ['td', 'th']).some((cell) => reads(cell) === true),
   )
 }
-
-// whether the page's chrome is stripped: no <AgentMain> or <main> is the content
-export const stripsChrome = (doc: Document, options: Options = {}) => contentOf(doc, options).strip
 
 // a page's slot names, unique and duplicate, or why md-core can't read them as @affordances/md does
 export const readSlots = (

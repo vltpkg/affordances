@@ -22,8 +22,8 @@ import { decodeString } from 'micromark-util-decode-string'
 import { normalizeIdentifier } from 'micromark-util-normalize-identifier'
 import { visit } from 'unist-util-visit'
 import { minifyWhitespace } from './whitespace.ts'
-import { emit as emitCore, readSlots, stripsChrome } from './core/emit.ts'
-import { chromeUnderChanged, struckList, underChanged } from './core/emit-markers.ts'
+import { emit as emitCore, readSlots } from './core/emit.ts'
+import { struckList, underChanged } from './core/emit-markers.ts'
 import { parse as parseCore } from './core/parse.ts'
 import type {
   Document as CoreDocument,
@@ -2560,11 +2560,6 @@ const readCore = (
   // a strikethrough the tree pipeline writes outside a paragraph
   if (doc.struck && struckList(doc.root)) {
     declined('strikethrough and list')
-    return undefined
-  }
-  // chrome md-core would strip before prune judges what's around it
-  if (stripsChrome(doc, options as CoreOptions) && chromeUnderChanged(doc.root)) {
-    declined('chrome inside what prune changes')
     return undefined
   }
   // an element named like a selector, which the tree pipeline renames (to a script, a link, a main): it decides

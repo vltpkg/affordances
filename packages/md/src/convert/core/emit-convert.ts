@@ -30,13 +30,34 @@ import {
   BLOCKQUOTE,
 } from './emit-markdown.ts'
 import { attr, parseAttrs } from './attr.ts'
-import { classes, kidsOf as prunedKids, linkLabel, text, unhidden } from './emit-prune.ts'
+import {
+  chrome,
+  classes,
+  kidsOf as prunedKids,
+  linkLabel,
+  strips,
+  text,
+  unhidden,
+} from './emit-prune.ts'
 
 // an element's children as conversion reads them: prune's, except a filled slot's, which never convert (prune still
 // reads them, as @affordances/md's does before it empties the slot)
 const NONE: Node[] = []
-const kidsOf = (el: Element): Node[] =>
-  el.verbatim !== undefined && el.tag === 'affordances-md' ? NONE : prunedKids(el)
+// and on a page whose chrome is stripped, without it: stripped after prune, as @affordances/md strips it
+let shown = new Map<Element, Node[]>()
+const kidsOf = (el: Element): Node[] => {
+  if (el.verbatim !== undefined && el.tag === 'affordances-md') return NONE
+  const kids = prunedKids(el)
+  if (!strips()) return kids
+  let kept = shown.get(el)
+  if (kept === undefined) {
+    kept = kids.some((kid) => typeof kid !== 'string' && chrome(kid))
+      ? kids.filter((kid) => typeof kid === 'string' || !chrome(kid))
+      : kids
+    shown.set(el, kept)
+  }
+  return kept
+}
 import {
   FLAG,
   type Element,
@@ -197,6 +218,7 @@ export const startConvert = (options: Options, page: string | undefined) => {
   convertForm = options.convertForm
   contentRoot = undefined
   contentIds = undefined
+  shown = new Map()
   inTable = false
   skips = new Set()
   controls = 0
@@ -740,7 +762,8 @@ const link = (el: Element, parent: Element) => {
   result.title = el.flags & FLAG.title ? (attr(el, 'title') ?? null) : null
   // an icon or avatar link reads as its label
   if (!children.some((child) => child.type !== TEXT || child.value.trim())) {
-    const name = linkLabel(el)
+    // named as the tree pipeline names it once the page is converted: by what's in the content
+    const name = linkLabel(el, idsOfContent)
     if (!name) return undefined
     result.kids = [unsafeText(name)]
   }

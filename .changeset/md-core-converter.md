@@ -2,4 +2,4 @@
 '@affordances/md': patch
 ---
 
-Converts about 5× faster; the markdown is unchanged. Malformed HTML, and a few unusual placements (a slot or AgentMain inside a link, a shown panel under a hidden one, or a header or nav inside a link on a page with no `<main>`), can convert slightly slower.
+Converts about 5× faster; the markdown is unchanged. Malformed HTML, and a few unusual placements (a form inside a link or strikethrough, a React streamed boundary that moves through an `<svg>` or into its own segment, an AgentMain inside a link that also holds tabs, form values or empty blocks, a slot inside a form control or an element other than plain containers, headings, emphasis, code, table cells, buttons, labels, summaries, forms and links, or in a link that holds a value or says nothing but values, a shown tab panel whose tab is inside a link or table, or tabs whose only shown panel is under a hidden element), can convert slightly slower.

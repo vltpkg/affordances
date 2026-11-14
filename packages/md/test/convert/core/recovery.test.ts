@@ -35,8 +35,6 @@ test.each([
     '<listing><a href="/y"><main>',
     'main inside what prune changes',
   ],
-  ['chrome in a header cell', '<table><th><footer>&#x110000;', 'chrome inside what prune changes'],
-  ['chrome in a link', '<a><b><header>d', 'chrome inside what prune changes'],
   ['a strikethrough right in a list', '<ul><s>*a*', 'strikethrough and list'],
   ['in a dir', '<dir><del>_b_', 'strikethrough and list'],
   ['in an ol, beside text', '<ol>a<s>*b*</s>', 'strikethrough and list'],
@@ -51,6 +49,12 @@ test.each([
 
 test('what real pages have still converts on md-core: a strikethrough in a list item, a card link with a header', () => {
   for (const html of [
+    // chrome on a page without a main, stripped once prune has judged what's around it
+    '<table><th><footer>&#x110000;',
+    '<a><b><header>d',
+    '<p>x</p><a href="/p"><header>Title</header></a><a href="/q" aria-labelledby="n"><svg></svg></a><nav id="n">Menu</nav>',
+    '<h2><a href="/p"><nav>Docs</nav></a></h2><p>body</p>',
+    '<table><tr><th>A</th></tr><tr><td><aside>note</aside></td></tr></table>',
     '<main><ul><li><s>$20</s> $15</li></ul></main>',
     '<main><a href="/p"><header>Title</header><p>Body</p></a></main>',
     '<main><h2>About</h2><pre>a\nb</pre></main>',

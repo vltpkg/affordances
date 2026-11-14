@@ -8,6 +8,9 @@ import { FLAG, type Element, type Node } from './types.ts'
 // emit owns its document and prunes it in place: an element's kids become what prune leaves, once, and pruned says so
 // chrome (nav, header, footer, …) is stripped too: the page has no <main>
 let stripChrome = false
+// whether this page's chrome is stripped: only once it's pruned, as @affordances/md strips it, so what prune reads
+// around it (a link's text, a heading's, the spacing) still has it
+export const strips = () => stripChrome
 export const begin = (strip: boolean) => {
   stripChrome = strip
   byId = undefined
@@ -23,6 +26,11 @@ export const setFills = (filled: Map<Element, string>) => {
 }
 export const setTabs = (labels: Set<string> | undefined) => {
   tabs = labels?.size ? labels : undefined
+}
+// each shown tab panel's heading, as @affordances/md finds its tabs
+let headings: Map<Element, string> | undefined
+export const setHeadings = (found: Map<Element, string> | undefined) => {
+  headings = found
 }
 let page: Element | undefined
 export const setPage = (root: Element) => {
@@ -254,7 +262,7 @@ const unwrap = (kids: Node[], tag: string): Node[] =>
   )
 
 // a name's words: what an element says, without its controls or what's never content
-const words = (el: Element | undefined): string =>
+export const words = (el: Element | undefined): string =>
   el && !valueBearing(el)
     ? text(
         made(
@@ -264,14 +272,16 @@ const words = (el: Element | undefined): string =>
       )
     : ''
 // what an icon or avatar link is called without content: its aria-labelledby, aria-label or title
-export const linkLabel = (a: Element): string => {
+// the ids are looked up only for a link that has an aria-labelledby: gathering them reads every element's id
+export const linkLabel = (a: Element, named: () => Map<string, Element> = ids): string => {
   if (a.attrs === '') return ''
   const labelledBy = attr(a, 'aria-labelledby')
   if (labelledBy) {
+    const found = named()
     const names = labelledBy
       .split(/\s+/)
       .filter(Boolean)
-      .flatMap((id) => ids().get(id) ?? [])
+      .flatMap((id) => found.get(id) ?? [])
       .map(words)
       .filter(Boolean)
       .join(' ')
@@ -303,7 +313,18 @@ const hasDescribed = (node: Node): boolean => {
 }
 const nothingToRead = (node: Element) => !toString(node).trim() && !hasDescribed(node)
 
-const INLINE = new Set(['a', 'span', 'code', 'strong', 'em', 'b', 'i', 'small', 'time', 'abbr'])
+export const INLINE = new Set([
+  'a',
+  'span',
+  'code',
+  'strong',
+  'em',
+  'b',
+  'i',
+  'small',
+  'time',
+  'abbr',
+])
 const isInline = (node: Node | undefined): node is Element =>
   node !== undefined && typeof node !== 'string' && INLINE.has(node.tag)
 const isBlank = (node: Node | undefined) => typeof node === 'string' && !node.trim()
@@ -347,7 +368,18 @@ const skeleton = (table: Element) => {
 }
 
 // headers and summaries whose text is a button's read as the button's text
-const LABEL_HOSTS = new Set(['th', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'caption', 'summary', 'dt'])
+export const LABEL_HOSTS = new Set([
+  'th',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'caption',
+  'summary',
+  'dt',
+])
 const hasTag = (el: Element, tag: string): boolean => {
   for (const kid of kidsOf(el))
     if (typeof kid !== 'string' && (kid.tag === tag || hasTag(kid, tag))) return true
@@ -399,14 +431,16 @@ const fresh = (tag: string, kids: Node[], up: Element | null): Element => ({
 })
 // a shown tab panel, headed by its tab's label
 const headed = (panel: Element): Element => {
-  const label = (attr(panel, 'aria-labelledby') ?? '')
-    .split(/\s+/)
-    .filter(Boolean)
-    .flatMap((id) => ids().get(id) ?? [])
-    .filter((tab) => tab.flags & ROLE && role(tab) === 'tab')
-    .map(words)
-    .filter(Boolean)
-    .join(' ')
+  const label = headings?.has(panel)
+    ? headings.get(panel)!
+    : (attr(panel, 'aria-labelledby') ?? '')
+        .split(/\s+/)
+        .filter(Boolean)
+        .flatMap((id) => ids().get(id) ?? [])
+        .filter((tab) => tab.flags & ROLE && role(tab) === 'tab')
+        .map(words)
+        .filter(Boolean)
+        .join(' ')
   if (!label) return panel
   const heading = fresh('p', [], panel.up)
   heading.kids = [fresh('strong', [label], heading)]
@@ -419,7 +453,7 @@ const pruned = (kid: Element): Element | undefined => {
   const fill = fills?.get(kid)
   // prune reads what's in it, as ever (a link or table around it is judged by it); only conversion leaves it out
   if (fill !== undefined && !dropped(kid)) return { ...made(kid, kidsOf(kid)), verbatim: fill }
-  if (dropped(kid) || (stripChrome && chrome(kid))) return undefined
+  if (dropped(kid)) return undefined
   if (shownTablist(kid)) return undefined
   if (kid.flags & MARKED && marked(kid) === 'show' && role(kid) === 'tabpanel') return headed(kid)
   if (kid.tag === 'a') {

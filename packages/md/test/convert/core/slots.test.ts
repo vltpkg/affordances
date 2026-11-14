@@ -55,9 +55,9 @@ test.each([
 test.each([
   ['a block, in a paragraph', `<p>Latest ${slot('v')} today</p>`, { v: '**5.1.0**' }],
   [
-    'in a heading, a link and emphasis',
-    `<h1>Package ${slot('v')}</h1><p><a href="/p">See ${slot('w')} more</a></p><p><em>A ${slot('x')}</em> b</p>`,
-    { v: 'express', w: '[docs](/docs)', x: '- one' },
+    'in a heading and emphasis',
+    `<h1>Package ${slot('v')}</h1><p><em>A ${slot('x')}</em> b</p>`,
+    { v: 'express', x: '- one' },
   ],
   [
     'in table cells',
@@ -102,10 +102,22 @@ test('a second markdown() with other fills is what the tree pipeline writes, as 
   expect(core).toEqual(tree)
 })
 
+// a link drops a block with nothing to read, and keeps one with something: either way md-core reads it as the tree
+// pipeline does
+test.each([
+  ['nothing to read', `<p><a href="/x">${slot('a', '')}</a></p>`],
+  ['only something hidden', `<p><a href="/x">${slot('a', '<span hidden>h</span>')}</a></p>`],
+  ['something to read', `<p><a href="/x">${slot('a', '<span>Loading</span>')}</a></p>`],
+  ['a described image', `<p><a href="/x">${slot('a', '<img alt="icon">')}</a></p>`],
+])('a slot in a link with %s', (_, html) => {
+  const { core, tree } = both(html, [{ a: 'FILL' }, undefined])
+  expect(core).toEqual(tree)
+})
+
 test('a slot md-core cannot tell prune keeps is declined, never written differently', () => {
   for (const html of [
-    // a link drops a block with nothing to read
-    `<p><a href="/x">${slot('a', '')}</a></p>`,
+    // a link around a tablist prune may take out first
+    `<a href="/x">${slot('a', '<div role="tablist"><span role="tab" id="t">t</span></div>')}</a>`,
     // a skeleton table goes whole
     `<table><tr><th>A</th></tr><tr><td>${slot('a', '')}</td></tr></table>`,
   ]) {
@@ -116,4 +128,122 @@ test('a slot md-core cannot tell prune keeps is declined, never written differen
     expect(readPage(html).markdown({ a: 'FILL' }).markdown).toBe(tree)
     expect(declines.size).toBe(1)
   }
+})
+
+// a link drops a slot with nothing to read, wherever the content starts, and a link that says nothing but values is
+// its label, or gone with the slot: md-core never counts a slot the tree pipeline drops, and declines where it can't
+// tell
+test.each([
+  [
+    'an empty slot in an <AgentMain> in a link',
+    `<a href="/y" aria-label="Y label"><affordances-md data-mode="main">${slot('a', '')}Head</affordances-md></a>`,
+    // the link takes the empty slot out of the main first: md-core declines the main
+    ['main marker inside what prune changes'],
+  ],
+  [
+    'a slot with only a value, in a link labelled by nothing',
+    `<a href="/z" aria-labelledby="lbl">${slot('a', '<output>out</output>')}</a>`,
+    ['slot holding a value'],
+  ],
+  [
+    'a slot with only a value, in a labelled link',
+    `<p>x</p><a href="/z" aria-label="L">${slot('a', '<output>out</output>')}</a>`,
+    ['slot holding a value'],
+  ],
+  [
+    'a slot in a label in an <AgentMain> in a link',
+    `<a href="/w" title="W"><affordances-md data-mode="main"><label>${slot('a', 'fallback')}</label></affordances-md></a>`,
+    [],
+  ],
+  // a slot among other things in a link, or in something inside one
+  ['a slot in a link with text', `<p><a href="/p">See ${slot('a')} more</a></p>`, []],
+  ['a slot in a span in a link', `<p><a href="/x"><span>${slot('a', '')}</span></a></p>`, []],
+  [
+    'a slot in an image link in a summary, with only a value',
+    `<a href="/y" aria-label="Y label"><summary><button><img src="/i.png" alt="Pic">${slot('a', '<output>out</output>')}`,
+    ['slot holding a value'],
+  ],
+  [
+    'a slot in an optgroup in a link',
+    `<a href="/y">&#x0;<optgroup>${slot('a', '&#x0;')}`,
+    ["slot inside an element md-core can't judge"],
+  ],
+])('a slot in a link around its content: %s', (_, html, why) => {
+  forcePath('hast')
+  const page = readPage(html, at)
+  const tree = [page.slots, page.markdown({ a: 'FILL' }).markdown]
+  forcePath('core')
+  declines.clear()
+  const core = readPage(html, at)
+  expect({
+    read: [core.slots, core.markdown({ a: 'FILL' }).markdown],
+    declined: [...declines.keys()],
+  }).toEqual({
+    read: tree,
+    declined: why,
+  })
+})
+
+// the placements real pages put a slot in, each read on md-core exactly as the tree pipeline reads it
+test.each([
+  ['a div', `<div>${slot('s', 'fallback')}</div>`],
+  ['a section', `<section>${slot('s', 'fallback')}</section>`],
+  ['a paragraph', `<p>${slot('s', 'fallback')}</p>`],
+  ['a list item', `<ul><li>${slot('s', 'fallback')}</li></ul>`],
+  ['a table cell', `<table><tr><td>a</td><td>${slot('s', 'fallback')}</td></tr></table>`],
+  ['a heading', `<h2>Title ${slot('s', 'fallback')}</h2>`],
+  ['a span', `<p><span>${slot('s', 'fallback')}</span></p>`],
+  ['strong', `<p><strong>${slot('s', 'fallback')}</strong></p>`],
+  ['a link with text', `<a href="/x">go ${slot('s', 'fallback')}</a>`],
+  ['a button', `<button>${slot('s', 'fallback')}</button>`],
+  ['a label', `<label>${slot('s', 'fallback')}</label>`],
+  ['a summary', `<details><summary>${slot('s', 'fallback')}</summary></details>`],
+  ['a blockquote', `<blockquote>${slot('s', 'fallback')}</blockquote>`],
+])('a slot in %s reads on md-core as the tree pipeline reads it', (_, html) => {
+  const { core, tree } = both(html, [{ s: 'FILLED' }, undefined])
+  expect(core).toEqual(tree)
+})
+
+// a slot under what carries a value (its text is a value, and prune may take it out), wherever it is: md-core declines
+test.each([
+  ['an optgroup in a heading', `<h2><optgroup>${slot('a')}`],
+  ['a meter in a heading', `<h1><meter>${slot('a')}`],
+  ['an option in a term', `<dt><option>${slot('a')}`],
+  ['a meter in a summary', `<summary><meter>${slot('a')}`],
+  ['a progress in a link', `<a href="/x"><progress>${slot('a')}1. n`],
+  ['a textarea in a header cell', `<math><th><textarea>${slot('a')}`],
+  ['a datalist in a button in a heading', `<h2><button><datalist><${slot('a')}`],
+])('a slot under a value md-core declines: %s', (_, html) => {
+  forcePath('hast')
+  const page = readPage(html, at)
+  const tree = [page.slots, page.markdown({ a: 'FILL' }).markdown]
+  forcePath('core')
+  declines.clear()
+  const core = readPage(html, at)
+  expect({
+    read: [core.slots, core.markdown({ a: 'FILL' }).markdown],
+    declined: [...declines.keys()],
+  }).toEqual({
+    read: tree,
+    declined: ["slot inside an element md-core can't judge"],
+  })
+})
+
+// what's inside an <AgentMain> is read for shown panels and tablists as the rest of the page is: a slot in a tablist
+// a shown panel's tab takes out is never counted
+test('a slot in a shown tablist inside an <AgentMain> is declined, never counted', () => {
+  const html = `<affordances-md data-mode="main"><div role="tablist"><button role="tab" id="t3">x</button>${slot('b', 'y')}</div><section data-affordances-md="show" aria-labelledby="t3">p</section></affordances-md>`
+  forcePath('hast')
+  const page = readPage(html, at)
+  const tree = [page.slots, page.markdown({ b: 'FILL' }).markdown]
+  forcePath('core')
+  declines.clear()
+  const core = readPage(html, at)
+  expect({
+    read: [core.slots, core.markdown({ b: 'FILL' }).markdown],
+    declined: [...declines.keys()],
+  }).toEqual({
+    read: tree,
+    declined: ['slot inside a tablist'],
+  })
 })
