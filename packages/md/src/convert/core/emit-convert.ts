@@ -31,7 +31,7 @@ import {
   BLOCKQUOTE,
 } from './emit-markdown.ts'
 import { attr, parseAttrs } from './attr.ts'
-import { HTML_NS, IMAGE_SCHEMES, LINK_SCHEMES } from '../shared.ts'
+import { gridFits, HTML_NS, IMAGE_SCHEMES, LINK_SCHEMES } from '../shared.ts'
 // whitespace, as css lays it out
 import { BLOCKS, CONTENT, SKIPPABLE } from '../whitespace.ts'
 import {
@@ -1120,13 +1120,20 @@ const cell = (el: Element) => {
   return result
 }
 
-const table = (el: Element): Md => {
+const table = (el: Element): Md | Md[] => {
   if (inTable) return unsafeText(toText(el))
   inTable = true
   const { align, headless } = inspect(el)
   const rows = specific(all(el), TABLE_ROW)
   if (headless) rows.unshift(node(TABLE_ROW))
   for (const row of rows) row.kids = specific(row.kids, TABLE_CELL)
+  // a grid far bigger than the table (see gridFits): its cells, in row order, each a paragraph
+  if (!gridFits(spansOf(el))) {
+    inTable = false
+    return rows.flatMap((row) =>
+      row.kids.flatMap((at) => (at.kids.length ? [node(PARAGRAPH, at.kids)] : [])),
+    )
+  }
   let columns = 1
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
     const cells = rows[rowIndex]!.kids
@@ -1154,6 +1161,30 @@ const table = (el: Element): Md => {
   const result = node(TABLE, rows)
   result.align = align
   return result
+}
+// each row's cells' [colspan, rowspan], as the grid reads them: the table's own rows, not a nested table's
+const spanOf = (el: Element, name: string) => {
+  const value = el.flags & (FLAG.rowspan | FLAG.colspan) ? attr(el, name) : undefined
+  return (value && Number.parseInt(value, 10)) || 1
+}
+const spansOf = (el: Element) => {
+  const rows: [number, number][][] = []
+  const walk = (parent: Element) => {
+    for (const kid of kidsOf(parent)) {
+      if (typeof kid === 'string' || kid.tag === 'table') continue
+      if (kid.tag !== 'tr') walk(kid)
+      else
+        rows.push(
+          kidsOf(kid).flatMap((at) =>
+            typeof at !== 'string' && (at.tag === 'td' || at.tag === 'th')
+              ? [[spanOf(at, 'colspan'), spanOf(at, 'rowspan')] as [number, number]]
+              : [],
+          ),
+        )
+    }
+  }
+  walk(el)
+  return rows
 }
 const inspect = (el: Element) => {
   const align: (string | null)[] = [null]

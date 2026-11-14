@@ -89,3 +89,32 @@ test('thousands of tabs with one id read on md-core as the tree pipeline reads t
   expect(core).toBe(tree)
   expect(core).toContain('**Tab**\n\nPanel')
 })
+
+// a rowspan down every row: GFM's grid pads each row with the cells spanned into it, n×n from 2n cells (~16M, out of
+// memory, at 4000 rows). past four times the table's cells, and 64 more, the table is its cells as text, on both paths
+test.each([
+  ['md-core', 'strict'],
+  ['the tree pipeline', 'hast'],
+] as const)(
+  'a table whose spans would make a grid far bigger than it is written as text, on %s',
+  (_, path) => {
+    const rows = 4000
+    let html = '<main><table>'
+    for (let i = 0; i < rows; i++)
+      html += `<tr><td rowspan="${rows}">${i}</td><td colspan="3">x</td></tr>`
+    forcePath(path)
+    const { markdown } = htmlToMarkdown(`${html}</table></main>`)
+    expect(markdown.length).toBeLessThan(10 * rows)
+    expect(markdown).toMatch(/^0\n\nx\n\n1\n\nx\n\n[^]*\n\n3999\n\nx\n$/)
+  },
+)
+// a small one still is a grid: spans pad it, within the limit
+test('a table whose spans pad it a little is still a grid, on both paths', () => {
+  const html =
+    '<main><table><tr><th>a</th><th>b</th><th>c</th></tr><tr><td rowspan="3">r</td><td colspan="2">wide</td></tr><tr><td>1</td></tr><tr><td>2</td></tr></table></main>'
+  const { core, tree } = onBoth(() => htmlToMarkdown(html).markdown, 'strict')
+  expect(core).toBe(tree)
+  expect(core).toBe(
+    '| a | b    | c |\n| - | ---- | - |\n| r | wide |   |\n|   | 1    |   |\n|   | 2    |   |\n',
+  )
+})

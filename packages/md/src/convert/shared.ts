@@ -166,3 +166,33 @@ export const pageTitle = (title: string | undefined, h1: string | undefined) => 
   const separator = ` [${TITLE_SEPARATORS}] `
   return new RegExp(`^${name}${separator}\\S|\\S${separator}${name}$`).test(said) ? h1 : title
 }
+
+// whether a table is written as a grid: GFM pads each row to the widest and fills each spanned cell's span with empty
+// cells, down the rows there are, so a rowspan of thousands down thousands of rows (or one wide row over many short
+// ones) makes a grid quadratic in what the page wrote. a grid is written while it stays within GRID_FACTOR times the
+// table's cells, and GRID_SPARE more; past that, the table is its cells in row order, as text. counted from each row's
+// cells as [colspan, rowspan] (each `parseInt || 1`, as the grid reads them), before anything is built
+const GRID_FACTOR = 4
+const GRID_SPARE = 64
+export const gridFits = (rows: [colSpan: number, rowSpan: number][][]) => {
+  let cells = 0
+  let columns = 1
+  // the empty cells each row gains: those of its own colspans, and those its rows above span down into it, kept as
+  // where each of those starts and stops
+  const own = Array.from({ length: rows.length }, () => 0)
+  const down = Array.from({ length: rows.length + 1 }, () => 0)
+  let spanned = 0
+  for (let row = 0; row < rows.length; row++) {
+    for (const [colSpan, rowSpan] of rows[row]!) {
+      if ((colSpan > 1 || rowSpan > 1) && colSpan >= 1 && rowSpan >= 1) {
+        own[row]! += colSpan - 1
+        down[row + 1]! += colSpan
+        down[Math.min(row + rowSpan, rows.length)]! -= colSpan
+      }
+    }
+    cells += rows[row]!.length
+    spanned += down[row]!
+    columns = Math.max(columns, rows[row]!.length + own[row]! + spanned)
+  }
+  return rows.length * columns <= GRID_FACTOR * cells + GRID_SPARE
+}

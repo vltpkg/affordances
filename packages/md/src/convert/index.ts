@@ -8,6 +8,7 @@ import type {
   PhrasingContent,
   Root as MdastRoot,
   TableCell,
+  TableRow,
 } from 'mdast'
 import { fromParse5 } from 'hast-util-from-parse5'
 import { select, selectAll } from 'hast-util-select'
@@ -31,6 +32,7 @@ import {
   declarations,
   type Declarations,
   fenced,
+  gridFits,
   hides,
   HTML_NS,
   IMAGE_SCHEMES,
@@ -1830,6 +1832,50 @@ const dl: Handle = (state, node) => {
   return out as never
 }
 
+// a table as hast-util-to-mdast writes it, unless its grid is far bigger than the table (see gridFits): then its cells,
+// in row order, each a paragraph, as md-core writes them
+const table: Handle = (state, node) => {
+  if (state.inTable || gridFits(spansOf(node))) return defaultHandlers.table(state, node)
+  state.inTable = true
+  const rows = state.toSpecificContent(state.all(node), (): TableRow => ({
+    type: 'tableRow',
+    children: [],
+  }))
+  const said = rows.flatMap((row) =>
+    state.toSpecificContent(row.children, (): TableCell => ({ type: 'tableCell', children: [] })),
+  )
+  state.inTable = false
+  return said.flatMap((cell): Paragraph[] =>
+    cell.children.length ? [{ type: 'paragraph', children: cell.children }] : [],
+  )
+}
+// each row's cells' [colspan, rowspan], as the grid reads them: the table's own rows, not a nested table's
+const spanOf = (value: unknown) => Number.parseInt(String(value), 10) || 1
+const spansOf = (el: Element) => {
+  const rows: [number, number][][] = []
+  const walk = (parent: Element) => {
+    for (const kid of parent.children) {
+      if (kid.type !== 'element' || kid.tagName === 'table') continue
+      if (kid.tagName !== 'tr') walk(kid)
+      else
+        rows.push(
+          kid.children.flatMap((cell) =>
+            cell.type === 'element' && (cell.tagName === 'td' || cell.tagName === 'th')
+              ? [
+                  [spanOf(cell.properties.colSpan), spanOf(cell.properties.rowSpan)] as [
+                    number,
+                    number,
+                  ],
+                ]
+              : [],
+          ),
+        )
+    }
+  }
+  walk(el)
+  return rows
+}
+
 // a cell is one line, so blocks laid out in it (<div>s, <p>s, which no css gap spaces) are separated by a space
 // instead of run together: <td><div>1,542</div><div>1,533–1,550</div></td> reads 1,542 1,533–1,550
 // a part of a cell that already ends in a space (a field line's "Qty: ") needs no other
@@ -1956,6 +2002,7 @@ const titled =
 
 const handlers: Handlers = {
   form,
+  table,
   [FIELD_LINE]: fieldLine,
   pre,
   a: link,
