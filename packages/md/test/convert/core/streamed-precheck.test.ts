@@ -6,14 +6,15 @@ import { mayStream } from '../../../src/convert/index.ts'
 import { corpusPages, fixturePages } from './emit-pages.ts'
 import { treePages } from './tree-fuzz.ts'
 
-// md-core's parse, counted: a page the scan sends to the tree pipeline must never reach it
+// md-core's reading of a page, counted: a page the scan sends to the tree pipeline must never reach it. the tree
+// pipeline asks md-core's parser only where a page too deep is cut, without its streamed moves, which isn't counted
 const parses = vi.hoisted(() => ({ count: 0 }))
 vi.mock('../../../src/convert/core/parse.ts', async (original) => {
   const actual = await original<typeof import('../../../src/convert/core/parse.ts')>()
   return {
     ...actual,
     parse: (...args: Parameters<typeof actual.parse>) => {
-      parses.count++
+      if (args[2] !== false) parses.count++
       return actual.parse(...args)
     },
   }

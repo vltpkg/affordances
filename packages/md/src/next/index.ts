@@ -595,6 +595,21 @@ const convertPage = (options: MdHandlerOptions) => {
 }
 
 // renders the page as html the normal way (real RSC, Suspense, auth), then converts it
+// a conversion that threw, for whatever reason md didn't foresee: nothing of the page goes out, as with flight data it
+// can't read (502, private, no-store), and the error is logged once, so a bug in md never becomes the framework's
+// generic 500 or a page converted in part
+const unconverted = (target: URL, error: unknown, headers: Headers, upstream: Response) => {
+  once(
+    'convert',
+    `[affordances-md] ${target.pathname} couldn't be converted (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}), so it answers 502, private, no-store. Please report it to @affordances/md.`,
+    { production: true, level: 'error' },
+  )
+  return fail(
+    502,
+    "The page couldn't be converted",
+    credentialed(headers) || upstream.headers.has('set-cookie'),
+  )
+}
 const renderPage =
   (options: MdHandlerOptions) =>
   async (request: Request, pagePath: string, direct: boolean, seen: Seen): Promise<Response> => {
@@ -746,8 +761,8 @@ const renderPage =
     clearTimeout(timer)
     if ('whole' in body) return tooLarge(body.whole === true)
     // a page whose shell arrived is converted as far as it streamed: boundaries still loading keep their fallback
-    const partial = !body.complete
-    if (partial && !body.html.trim()) return unreached(target, true, timeout)
+    const loading = !body.complete
+    if (loading && !body.html.trim()) return unreached(target, true, timeout)
     // the page, read once: what it streamed, the slots it rendered, and its markdown
     let read: Page
     try {
@@ -756,7 +771,7 @@ const renderPage =
         link: options.linkTwins === false ? undefined : twinLinks(target),
       })
     } catch (error) {
-      if (!(error instanceof FlightDataError)) throw error
+      if (!(error instanceof FlightDataError)) return unconverted(target, error, headers, upstream)
       // flight data the stripper can't account for (a push it didn't take out, one it can't read, a placeholder that
       // isn't a script): what the page says can't be told, so none of it goes out. in production too, once
       once(
@@ -770,6 +785,9 @@ const renderPage =
         credentialed(headers) || upstream.headers.has('set-cookie'),
       )
     }
+    // a page cut short, as one still loading or one nested deeper than md reads (something of it left out), says so and
+    // is never cached
+    const partial = loading || read.cut === true
     // personal: rendered with someone's credentials (the caller's, or the route's service ones), or answered with a
     // cookie. a credential-free render is the anonymous public view, whatever cache-control next put on it (next
     // sends private, no-store for every dynamic render), so only this marks a page for llms to leave out
@@ -794,10 +812,17 @@ const renderPage =
     // the page rendered, so its own redirect(), notFound() and layout checks ran: now the slots it rendered get filled
     const slots = routed?.module.slots && (await fillSlots(read.slots, target, routed))
     if (slots instanceof Response) return slots
-    const result = read.markdown(slots)
-    const page = partial
+    let result: ReturnType<Page['markdown']>
+    try {
+      result = read.markdown(slots)
+    } catch (error) {
+      return unconverted(target, error, headers, upstream)
+    }
+    const page = loading
       ? `${result.markdown}\n> Some of this page was still loading after ${timeout}ms and is missing or shown as its loading state.\n`
-      : result.markdown
+      : read.cut
+        ? `${result.markdown}\n> This page nests deeper than @affordances/md reads, so some of it is missing.\n`
+        : result.markdown
     const extra = await appended
     const markdown = extra ? `${page}\n${extra.trim()}\n` : page
 

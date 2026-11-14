@@ -16,12 +16,13 @@ import { toString } from 'hast-util-to-string'
 import { gfmToMarkdown } from 'mdast-util-gfm'
 import { toMarkdown } from 'mdast-util-to-markdown'
 import { parse, postprocess, preprocess } from 'micromark'
-import { parse as parseHtml } from 'parse5'
+import { defaultTreeAdapter, parse as parseHtml } from 'parse5'
 import { gfm } from 'micromark-extension-gfm'
 import { decodeString } from 'micromark-util-decode-string'
 import { normalizeIdentifier } from 'micromark-util-normalize-identifier'
 import { visit } from 'unist-util-visit'
 import { minifyWhitespace } from './whitespace.ts'
+import { CUT, flattenDeep } from './depth.ts'
 import { emit as emitCore, readSlots } from './core/emit.ts'
 import { struckList, underChanged } from './core/emit-markers.ts'
 import { parse as parseCore } from './core/parse.ts'
@@ -1183,13 +1184,57 @@ const rowScanner = () => {
   }
 }
 
+// where md-core cut the page it last read, if the tree pipeline reads that page next (md-core declined it): one page
+let parsedCut: { html: string; cut: number | undefined } | undefined
+// the page up to where it nests deeper than md reads, if it does
+const cutAt = (html: string, cut: number | undefined) =>
+  cut === undefined ? html : html.slice(0, cut)
+
+// parse5's own count of open elements as it parses, through the tree adapter's hooks (every change to its stack calls
+// one): a page that takes it past CUT is one md-core's parser cuts, and the parse stops there
+const tooDeep = Symbol('too deep')
+let stacked = 0
+const counting = {
+  ...defaultTreeAdapter,
+  onItemPush: () => {
+    if (++stacked > CUT) throw tooDeep
+  },
+  onItemPop: () => {
+    stacked--
+  },
+}
+// the page parsed whole if it never nests past CUT, else undefined
+const shallow = (page: string) => {
+  stacked = 0
+  try {
+    return parseHtml(page, { scriptingEnabled: false, treeAdapter: counting })
+  } catch (error) {
+    if (error === tooDeep) return undefined
+    throw error
+  }
+}
+
 // html as a tree, parsed as hast-util-from-html parses it (scripting off) but without each node's place in the source:
 // nothing reads it, and working it out costs more than the parse (most of a conversion, on a page of many lines)
-const fromHtml = (html: string) => {
-  const document = parseHtml(html, { scriptingEnabled: false })
+const fromHtml = (page: string) => {
+  // a page nesting deeper than md reads is read up to where it does, as md-core reads it: the cut md-core found when it
+  // read this page and declined it, or, once parse5 nests past CUT, md-core's parser asked now (only it can tell where,
+  // in a pass that never goes past the cut)
+  const known = parsedCut?.html === page ? parsedCut : undefined
+  parsedCut = undefined
+  let cut = known?.cut
+  let document = known ? undefined : shallow(page)
+  if (!document) {
+    if (!known) cut = parseCore(page, undefined, false).cut
+    document = parseHtml(cutAt(page, cut), { scriptingEnabled: false })
+  }
+  // a page nested deeper than md reads is read as text there, before anything recurses over it, as md-core reads it
+  const lost = flattenDeep(document as never)
   const foreign = renameForeignTemplates(document)
   const tree = fromParse5(document) as HastRoot
   if (foreign.size) restoreForeignTemplates(document, tree, foreign)
+  // and whether it was cut, which the page says (readTree)
+  if (cut !== undefined || lost) tree.data = { ...tree.data, cut: true } as never
   return tree
 }
 // a <template> in svg or math is an element like any other there, with children and no content, but
@@ -2370,6 +2415,9 @@ export type Page = {
   // never react's <!--$!--> or $RX in the html, which a boundary that renders in the browser by design (dynamic with
   // ssr: false, useSearchParams) writes too
   errors: string[]
+  // the page nests deeper than md reads, and something of it is missing: past 512 open elements it's read up to the tag
+  // that opens one more, and past 128 deep only plain structure's text is read
+  cut?: true
   markdown: (slots?: Record<string, string>) => Result
 }
 // the <AgentSlot> names that reach the markdown, in page order: the ones a fill can go to, and those the page renders
@@ -2442,6 +2490,7 @@ const readTree = (
       duplicate: names.flatMap(([name, count]) => (count > 1 ? [name] : [])),
     },
     ...controlOf(errors),
+    ...((tree.data as { cut?: boolean } | undefined)?.cut && { cut: true }),
     // the page itself is left as it is, so it can be converted again with other fills
     markdown: (slots) => {
       const fillOf = (node: Element) => {
@@ -2540,6 +2589,13 @@ const readCore = (
   }
   // the first call converts the tree read here; md-core's emit prunes a tree in place, so another parses again
   let doc: CoreDocument | undefined = parseCore(html, swapped.nonce)
+  // where it's cut, for the tree pipeline if md-core declines it below
+  parsedCut = { html, cut: doc.cut }
+  // a page nesting deeper than md reads is read up to where it does: parsed again, up to there
+  const source = cutAt(html, doc.cut)
+  if (doc.cut !== undefined) doc = parseCore(source, swapped.nonce)
+  // cut, or with something nested too deep left out
+  const cut = source !== html || doc.lost
   const reason = untrusted(doc.scripts, swapped)
   // react's streamed boundaries, which the tree pipeline moves into place: md-core doesn't, and declines the page
   if (doc.streamed) {
@@ -2578,8 +2634,9 @@ const readCore = (
   const page: Page = {
     slots: { unique: slots.unique, duplicate: slots.duplicate },
     ...controlOf(swapped.errors),
+    ...(cut && { cut }),
     markdown: (fills) => {
-      const tree = doc ?? parseCore(html, swapped.nonce)
+      const tree = doc ?? parseCore(source, swapped.nonce)
       doc = undefined
       return emitCore(tree, { ...coreOptions, ...(fills && { fills }) })
     },

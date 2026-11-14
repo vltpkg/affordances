@@ -96,6 +96,8 @@ export const oracle = (html: string): Document => {
     selector: false,
     struck: false,
     formInSplit: false,
+    cut: undefined,
+    lost: false,
   }
 }
 

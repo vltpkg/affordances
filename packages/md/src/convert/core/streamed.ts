@@ -38,21 +38,28 @@ export const resolveStreamed = (page: Streamed): string | undefined => {
   const instructions: Element[] = []
   const byId = new Map<string, Element>()
   const parents = new Map<Node, Element>()
-  const walk = (parent: Element) => {
-    for (const node of parent.kids) {
-      if (typeof node === 'string' || isComment(node)) continue
-      parents.set(node, parent)
-      const id = attr(node, 'id')
-      if (id !== undefined) byId.set(id, node)
-      if (node.tag === 'template') {
-        if (id !== undefined) templates.push(node)
-        if (attr(node, 'data-bid') !== undefined || attr(node, 'data-pid') !== undefined)
-          instructions.push(node)
-      }
-      if (!page.content(node)) walk(node)
+  // in page order, without recursing: a stack of where it is in each element it's inside
+  const stack: [Element, number][] = [[page.root, 0]]
+  while (stack.length) {
+    const top = stack[stack.length - 1]!
+    const [parent, at] = top
+    if (at === parent.kids.length) {
+      stack.pop()
+      continue
     }
+    top[1]++
+    const node = parent.kids[at]!
+    if (typeof node === 'string' || isComment(node)) continue
+    parents.set(node, parent)
+    const id = attr(node, 'id')
+    if (id !== undefined) byId.set(id, node)
+    if (node.tag === 'template') {
+      if (id !== undefined) templates.push(node)
+      if (attr(node, 'data-bid') !== undefined || attr(node, 'data-pid') !== undefined)
+        instructions.push(node)
+    }
+    if (!page.content(node)) stack.push([node, 0])
   }
-  walk(page.root)
   const boundaries = new Map<string, string>()
   const placeholders = new Map<string, string>()
   for (const script of page.scripts)

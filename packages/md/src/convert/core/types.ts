@@ -88,6 +88,11 @@ export interface Document {
   struck: boolean
   // whether a form is inside a link or a strikethrough, which the tree pipeline splits around the form's blocks
   formInSplit: boolean
+  // where a page nesting deeper than md reads is cut (the tag that takes it past CUT), if it is: what md reads is the
+  // page up to there, parsed again
+  cut: number | undefined
+  // whether reading what's nested deeper than md reads as text left anything out (anything but plain structure)
+  lost: boolean
 }
 
 // what the parser never builds, with everything inside: never content, whatever the page says. the same set as

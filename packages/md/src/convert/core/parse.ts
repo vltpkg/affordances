@@ -1,6 +1,7 @@
 import { attr, parseAttrs } from './attr.ts'
 import { decode } from './entities.ts'
 import { resolveStreamed } from './streamed.ts'
+import { CUT, DEPTH, PLAIN as STRUCTURE } from '../depth.ts'
 import { FLAG, flagOf, NEVER, type Document, type Element, type Head, type Node } from './types.ts'
 
 // html to a Document in one scan, as a browser with scripting off reads it. the tokenizer jumps between '<' with
@@ -20,6 +21,9 @@ interface El extends Element {
   // ever leave). every element but inside svg keeps its children, dropped ones too, until the parse ends: the
   // adoption agency and foster parenting place nodes by them, and the Head is read in their order
   rec: number
+  // how many elements are above it, the document's children at 1, as it was put in place (an element the adoption
+  // agency, foster parenting or a streamed move puts somewhere else may be deeper now: the parse then counts again)
+  depth: number
 }
 
 const HTML = 0
@@ -47,6 +51,8 @@ const set = (names: string) => {
   for (const name of names.split(' ')) ids[T(name)] = 1
   return ids
 }
+// what an element too deep to read keeps the text of: elements that are only structure (the tree pipeline's PLAIN)
+const FLAT = set(STRUCTURE.join(' '))
 
 const A = T('a')
 const ADDRESS = T('address')
@@ -368,6 +374,7 @@ const make = (name: string, id: number, ns: number, attrs: string, flags: number
     id,
     ns,
     rec: ns === SVG ? 0 : DROP[id] ? 1 : 2,
+    depth: 0,
   }
   if (flags & FLAG['data-affordances-md'] || (id === 0 && name === 'affordances-md')) marked = true
   if (id === 0 && (name.includes('#') || name.includes('.'))) selector = true
@@ -427,9 +434,63 @@ const addKid = (parent: El, kid: Node) => {
       kids.push(kid)
   }
 }
+// what an element nested DEPTH deep keeps, as the tree pipeline's flattenDeep keeps it: the text inside it, through
+// elements that are only structure, and nothing of anything else; and whether anything else was there (react's boundary
+// comments aside, which aren't elements to the tree pipeline)
+let flatLost = false
+const flatText = (nodes: Node[]) => {
+  let text = ''
+  const todo: [Node[], number][] = [[nodes, 0]]
+  while (todo.length) {
+    const top = todo[todo.length - 1]!
+    const [list, at] = top
+    if (at === list.length) {
+      todo.pop()
+      continue
+    }
+    top[1]++
+    const node = list[at]!
+    if (typeof node === 'string') text += node
+    else if ((node as El).ns === HTML && FLAT[(node as El).id] === 1 && node.attrs === '')
+      todo.push([node.kids, 0])
+    // what's in svg or math, and what md never reads (a script, a template), md reads nothing of anyway, on either path
+    else if (node.tag !== '#comment' && (node as El).ns === HTML && !DROP[(node as El).id])
+      flatLost = true
+  }
+  return text
+}
+// the page with everything nested deeper than md reads as text, as the tree pipeline flattens it, without recursing;
+// whether that left anything out
+const flatten = (root: El) => {
+  flatLost = false
+  // and whether the element is in what md never reads: flattened too, but nothing there is lost
+  const todo: [El, number, boolean][] = [[root, 0, false]]
+  while (todo.length) {
+    const [el, depth, never] = todo.pop()!
+    if (depth === DEPTH && el !== root) {
+      if (!el.kids.some((kid) => typeof kid !== 'string')) continue
+      const before: boolean = flatLost
+      const text = flatText(el.kids)
+      if (never) flatLost = before
+      el.kids = text ? [text] : []
+      continue
+    }
+    for (const kid of el.kids)
+      if (typeof kid !== 'string')
+        todo.push([kid as El, depth + 1, never || DROP[(kid as El).id] === 1])
+  }
+  return flatLost
+}
+// the deepest element in the tree, as elements were put in place
+let deepest = 0
+const placed = (parent: El, el: El) => {
+  el.depth = parent.depth + 1
+  if (el.depth > deepest) deepest = el.depth
+}
 const appendChild = (parent: El, el: El) => {
   el.up = parent
   if (parent.rec === 0) return
+  placed(parent, el)
   adopted(parent, el)
   addKid(parent, el)
 }
@@ -443,6 +504,7 @@ const appendText = (parent: El, text: string) => {
 const insertBefore = (parent: El, el: El, ref: El) => {
   el.up = parent
   if (parent.rec === 0) return
+  placed(parent, el)
   adopted(parent, el)
   reordered = true
   const at = parent.kids.lastIndexOf(ref)
@@ -499,9 +561,14 @@ const insertText = (text: string) => {
   } else appendText(parent, text)
 }
 
+// where the last tag starts, and where a page nesting deeper than md reads is cut: at the tag that takes the stack of
+// open elements past CUT, so what's before it never nests that deep (-1 until then)
+let tagAt = 0
+let cutAt = -1
 // the stack of open elements
 const push = (el: El) => {
   stack.push(el)
+  if (stack.length > CUT && cutAt < 0) cutAt = tagAt
   current = el
   if (el.ns === HTML) {
     if (el.id === P) pCount++
@@ -2907,6 +2974,8 @@ const tokenize = () => {
   // where the text not yet handed on starts: a '<' that starts nothing is text, and joins it
   let from = 0
   while (pos < length) {
+    // past the cut, nothing more is read: the page is parsed again up to it
+    if (cutAt >= 0) return
     if (tstate !== DATA) {
       if (tstate === PLAIN) {
         rawText(pos, length, false)
@@ -2944,6 +3013,7 @@ const tokenize = () => {
       const end = tagEnd(to)
       dataText(from, lt)
       if (end < 0) return
+      tagAt = lt
       emitStart(to, attrsEnd)
       pos = from = end
     } else if (c === 47) {
@@ -3093,14 +3163,14 @@ const inTreeOrder = (els: El[]) => {
 const moveStreamed = () => {
   // what the parser kept out of the tree, which the tree pipeline has: what's inside svg
   const reachable = new Set<El>()
-  const walk = (parent: El) => {
-    for (const kid of parent.kids)
+  // without recursing: a page can nest deeper than the stack goes
+  const unwalked: El[] = [doc]
+  while (unwalked.length)
+    for (const kid of unwalked.pop()!.kids)
       if (typeof kid !== 'string') {
         reachable.add(kid as El)
-        if (!((kid as El).id === TEMPLATE && (kid as El).ns === HTML)) walk(kid as El)
+        if (!((kid as El).id === TEMPLATE && (kid as El).ns === HTML)) unwalked.push(kid as El)
       }
-  }
-  walk(doc)
   const svgIds = new Set<string>()
   let svgTemplate = false
   for (const el of withIds)
@@ -3180,12 +3250,18 @@ export const parse = (input: string, nonce?: string, moves = true): Document => 
   formInSplit = false
   pruned.clear()
   reordered = false
+  deepest = 0
+  tagAt = 0
+  cutAt = -1
   tok = 0
   // found when first needed
   amp = -1
   commentOpen = -1
   tokenize()
   onEof()
+  // a page nested deeper than md reads is read as text there, as the tree pipeline reads it, before anything else reads
+  // the tree (what was moved after it was put in place may be deeper than it was then: then it's walked to find out)
+  const lost = (deepest > DEPTH || reordered) && flatten(doc)
   const scriptTexts = readScripts()
   // a swapped flight push's nonce is only for the flight check: what else reads a script's text (a json-ld block, a
   // foreign title) reads it empty, as the page reads without its flight data
@@ -3225,6 +3301,8 @@ export const parse = (input: string, nonce?: string, moves = true): Document => 
     selector,
     struck,
     formInSplit,
+    cut: cutAt < 0 ? undefined : cutAt,
+    lost,
   }
   root.tag = '#root'
   root.up = null

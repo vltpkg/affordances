@@ -53,6 +53,8 @@ The dehydrated state travels in the page's scripts, which are never part of the 
 
 If the page is still streaming when the handler's `timeout` runs out (10 seconds by default), the handler converts what has arrived. Boundaries that resolved in time are in place, and the rest show their fallback. The Markdown ends with a note saying the page was still loading, and it's sent with `cache-control: private, no-store` and an `x-affordances-md-partial: 1` header, so a partial page is never cached. If nothing of the page has arrived by then, the answer is `504`.
 
+A page nested more than 512 elements deep is read up to the tag that would nest it deeper. Its Markdown ends with a note saying so, and it gets the same headers, so it is never cached either. Anything nested more than 128 deep is read as its plain text, and if that leaves anything out (anything but plain structure, such as a `<div>` with a class), the page is marked the same way.
+
 ## Elements
 
 - Headings, paragraphs, lists, blockquotes, tables, and rules, with GitHub-flavored Markdown for tables, strikethrough, and task lists.
