@@ -10,6 +10,7 @@ import {
   IMAGE,
   INLINE_CODE,
   directItems,
+  startSerializing,
   type DItem,
   type DList,
   isPhrasing,
@@ -212,6 +213,8 @@ let controls = 0
 let titledCode: Element | undefined
 let titledAs = ''
 export const startConvert = (options: Options, page: string | undefined) => {
+  // blocks are written as they convert, so the serializer starts here too
+  startSerializing()
   fast = (options as { fast?: boolean }).fast !== false
   base = page
   relink = options.link

@@ -1851,13 +1851,21 @@ const writeFlat = (node: Md): string | undefined => {
 }
 
 // the markdown for a root, as toMarkdown writes it
-export const toMarkdown = (root: Md): string => {
+// the serializer's state, as a page starts: what an error left behind on the page before (one thrown between enter()
+// and exit(), on the way or in a block written as it converts) never reaches the next
+export const startSerializing = () => {
   stack = []
   masks = []
   mask = 0
   indexStack = []
   bulletCurrent = undefined
   bulletLastUsed = undefined
+  lastUsed = undefined
+  endsAsInput = false
+}
+
+export const toMarkdown = (root: Md): string => {
+  startSerializing()
   // toMarkdown ends what it writes with a line ending; finish trims it straight off, so it's never added (reading
   // the last character would copy the whole markdown into one string just for that)
   return handle(root, undefined, '\n', '\n')
