@@ -171,7 +171,7 @@ const ids = () => {
   const walk = (parent: Element) => {
     for (const kid of parent.kids) {
       if (typeof kid === 'string' || dropped(kid)) continue
-      const id = attr(kid, 'id')
+      const id = kid.flags & FLAG.id ? attr(kid, 'id') : undefined
       if (id !== undefined && !byId!.has(id)) byId!.set(id, kid)
       // an <AgentText> says its markdown, never what's inside it
       if (!isText(kid)) walk(kid)

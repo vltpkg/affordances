@@ -916,7 +916,7 @@ const idsOfContent = () => {
   const walk = (parent: Element) => {
     for (const kid of kidsOf(parent)) {
       if (typeof kid === 'string') continue
-      const id = attr(kid, 'id')
+      const id = kid.flags & FLAG.id ? attr(kid, 'id') : undefined
       if (id && !found.has(id)) found.set(id, kid)
       walk(kid)
     }

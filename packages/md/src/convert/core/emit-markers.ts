@@ -171,7 +171,11 @@ export const readMarkers = (root: Element): Markers => {
       // data-affordances-md="show", as the attribute says it: what a tablist's tabs are checked against. one under
       // something hidden or something prune changes may or may not be found by then (prune finds them on a page it
       // is pruning in place): its tabs are uncertain, which matters only if they'd decide a tablist
-      if (kid.tag !== 'affordances-md' && attr(kid, 'data-affordances-md') === 'show') {
+      if (
+        kid.tag !== 'affordances-md' &&
+        kid.flags & FLAG['data-affordances-md'] &&
+        attr(kid, 'data-affordances-md') === 'show'
+      ) {
         if (CHANGED.has(kid.tag)) decline('shown panel prune changes')
         for (const id of (attr(kid, 'aria-labelledby') ?? '').split(/\s+/))
           if (id) (gone || under ? uncertain : found.tabs).add(id)
@@ -232,11 +236,11 @@ const tabHeadings = (root: Element, shown: Set<string>): Map<Element, string> | 
   const visit = (parent: Element, inDoubt: boolean) => {
     for (const kid of parent.kids) {
       if (typeof kid === 'string') continue
-      if (attr(kid, 'id') !== undefined) withIds.push(kid)
+      if (kid.flags & FLAG.id) withIds.push(kid)
       if (isText(kid) || dropped(kid)) {
         never.add(kid)
         below(kid, (el) => {
-          if (attr(el, 'id') !== undefined) withIds.push(el)
+          if (el.flags & FLAG.id) withIds.push(el)
           never.add(el)
         })
         continue
@@ -245,7 +249,7 @@ const tabHeadings = (root: Element, shown: Set<string>): Map<Element, string> | 
       if (list && tabsIn(kid).some((id) => shown.has(id))) {
         goneWith.set(kid, parent)
         below(kid, (el) => {
-          if (attr(el, 'id') !== undefined) withIds.push(el)
+          if (el.flags & FLAG.id) withIds.push(el)
         })
         continue
       }

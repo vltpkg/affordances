@@ -28,25 +28,28 @@ import { canonicalOf, collapsed, fenced, pageTitle, pretty, yaml } from '../shar
 // a form is @affordances/md's own conversion of it, when md passes it in (options.convertForm). not here yet, where
 // they'd hook in: streamed suspense boundaries (the parser), custom handlers
 // a page's markdown. what md-core holds of the page while it writes it is let go after, written or thrown
-export const emit = (doc: Document, options: Options = {}): Result => {
+// read: what readSlots found on this same tree, before anything converted it
+export const emit = (doc: Document, options: Options = {}, read?: Read): Result => {
   try {
-    return write(doc, options)
+    return write(doc, options, read)
   } finally {
     endPage()
     endConvert()
   }
 }
-const write = (doc: Document, options: Options): Result => {
+const write = (doc: Document, options: Options, read: Read | undefined): Result => {
   const { head } = doc
   const meta = (key: string) => (head.meta.get(key) ?? '').trim() || undefined
   const canonical = canonicalOf(head.canonical, options.url)
   const base = options.url ?? canonical
-  const content = contentOf(doc, options)
-  const { outer, main, markers } = content
+  const content = read?.content ?? contentOf(doc, options)
+  const { outer, main, markers, strip } = content
+  begin(strip)
+  setPage(doc.root)
   // a slot with a fill is the fill, and what's in it never converts
   const fills = new Map<Element, string>()
   if (options.fills && markers) {
-    const { slots, unique } = slotsIn(doc, content)
+    const { slots, unique } = read?.slots ?? slotsIn(doc, content)
     for (const slot of slots) {
       const name = attr(slot, 'data-name') ?? ''
       const fill = Object.hasOwn(options.fills, name) ? options.fills[name] : undefined
@@ -92,12 +95,8 @@ const contentOf = (doc: Document, options: Options): Content => {
   const auto = (options.extract ?? 'auto') === 'auto'
   const markers = doc.marked ? readMarkers(doc.root) : undefined
   const outer = auto && markers?.mains.length ? markers.mains : undefined
-  begin(false)
-  setPage(doc.root)
   const main = auto && !outer ? findMain(doc.mains) : undefined
-  const strip = auto && !outer && !main
-  if (strip) begin(true)
-  return { markers, outer, main, strip }
+  return { markers, outer, main, strip: auto && !outer && !main }
 }
 
 // what prune could take a slot out with: a link drops a block with nothing to read, a skeleton table goes, and so
@@ -196,26 +195,21 @@ const standing = (table: Element) => {
   )
 }
 
-// a page's slot names, unique and duplicate, or why md-core can't read them as @affordances/md does
+// what a page's content and slots are, read from the tree as parsed (none of it reads what prune holds of a page): the
+// first emit of that tree starts from it
+export type Read = { content: Content; slots: ReturnType<typeof slotsIn> | undefined }
+// a page's slot names, unique and duplicate, and the read they came from; or why md-core can't read them as
+// @affordances/md does
 export const readSlots = (
   doc: Document,
   options: Options = {},
-): { unique: string[]; duplicate: string[] } | { decline: string } => {
-  try {
-    return slotsOf(doc, options)
-  } finally {
-    endPage()
-  }
-}
-const slotsOf = (
-  doc: Document,
-  options: Options,
-): { unique: string[]; duplicate: string[] } | { decline: string } => {
+): { unique: string[]; duplicate: string[]; read: Read } | { decline: string } => {
   const content = contentOf(doc, options)
   if (content.markers?.decline) return { decline: content.markers.decline }
-  if (!content.markers) return { unique: [], duplicate: [] }
-  const { unique, duplicate, decline } = slotsIn(doc, content)
-  return decline ? { decline } : { unique: [...unique], duplicate }
+  if (!content.markers) return { unique: [], duplicate: [], read: { content, slots: undefined } }
+  const slots = slotsIn(doc, content)
+  if (slots.decline) return { decline: slots.decline }
+  return { unique: [...slots.unique], duplicate: slots.duplicate, read: { content, slots } }
 }
 
 type Meta = {

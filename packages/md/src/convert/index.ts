@@ -2702,8 +2702,10 @@ const readCore = (
     ...(cutOff && { cut: cutOff }),
     markdown: (fills) => {
       const tree = doc ?? parseCore(source, swapped.nonce)
+      // the slots' read is of the tree read here, and so is the first call's only
+      const first = doc && slots.read
       doc = undefined
-      return emitCore(tree, { ...coreOptions, ...(fills && { fills }) })
+      return emitCore(tree, { ...coreOptions, ...(fills && { fills }) }, first)
     },
   }
   return { page, reason }
