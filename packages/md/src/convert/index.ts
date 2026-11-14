@@ -1,4 +1,4 @@
-import type { Element, ElementContent, Root as HastRoot } from 'hast'
+import type { Element, ElementContent, Nodes as HastNodes, Root as HastRoot } from 'hast'
 import type {
   Html,
   List,
@@ -129,7 +129,37 @@ const linkLabel = (a: Element, byId: Ids) =>
 // the page's ids, or how to find them only once a link needs them
 type Ids = Map<string, Element> | (() => Map<string, Element>)
 
-const described = (node: Element) => selectAll('img[alt]:not([alt=""])', node)
+// what selectAll(selector, root) finds for a selector of simple parts: the root and what's under it that matches, each
+// once, in document order (not a template's content). selectAll checks each match against every one before it, which
+// on a form of thousands of fields is quadratic; this is linear
+const elementsIn = (root: HastRoot | Element, matches: (el: Element) => boolean) => {
+  const found: Element[] = []
+  const seen = new Set<Element>()
+  const stack: HastNodes[] = [root]
+  for (let node = stack.pop(); node; node = stack.pop()) {
+    if (node.type === 'element' && matches(node) && !seen.has(node)) {
+      seen.add(node)
+      found.push(node)
+    }
+    if ('children' in node) for (let i = node.children.length; i--;) stack.push(node.children[i]!)
+  }
+  return found
+}
+// an attribute as a selector reads it: absent when null, false or an empty list, a list joined with spaces
+const attributeOf = (el: Element, property: string, name: string) => {
+  const value = el.properties[property]
+  if (value === null || value === undefined || value === false) return
+  if (value === true) return name
+  if (Array.isArray(value)) return value.length ? value.join(' ').trim() : undefined
+  return String(value)
+}
+
+// img[alt]:not([alt=""])
+const described = (node: Element) =>
+  elementsIn(
+    node,
+    (el) => el.tagName === 'img' && !['', undefined].includes(attributeOf(el, 'alt', 'alt')),
+  )
 
 // what a link renders as: its text, else its described images, else its label
 const linkText = (a: Element, byId: Ids) =>
@@ -290,7 +320,9 @@ type Pruning = { byId: () => Map<string, Element>; tabs: () => Set<string> }
 // a tablist whose panels are shown: each panel is headed by its tab, so the tabs aren't said again
 const shownTablist = (el: Element, page: Pruning) =>
   String(el.properties.role) === 'tablist' &&
-  selectAll('[role=tab]', el).some((tab) => page.tabs().has(String(tab.properties.id ?? '')))
+  elementsIn(el, (tab) => attributeOf(tab, 'role', 'role') === 'tab').some((tab) =>
+    page.tabs().has(String(tab.properties.id ?? '')),
+  )
 // with the page, and the parent's style already parsed
 const pruneWith = (
   parent: HastRoot | Element,
@@ -1423,9 +1455,12 @@ const namedByContent = (el: Element) =>
 // aria-checked>, a toggle a <button aria-pressed>, a radio group's items <button role="radio">, and a select's
 // trigger a <button role="combobox"> showing the value. radix's native mirror of each is aria-hidden, so prune
 // dropped it and it's never counted twice
-const ARIA_FIELDS =
-  '[role=switch], [role=checkbox], [role=radio], [role=combobox], button[aria-pressed]'
 const ROLES = new Set(['switch', 'checkbox', 'radio', 'combobox'])
+// input, select, textarea, [role=switch], [role=checkbox], [role=radio], [role=combobox], button[aria-pressed]
+const isField = (el: Element) =>
+  ['input', 'select', 'textarea'].includes(el.tagName) ||
+  ROLES.has(attributeOf(el, 'role', 'role') ?? '') ||
+  (el.tagName === 'button' && attributeOf(el, 'ariaPressed', 'aria-pressed') !== undefined)
 const roleOf = (field: Element) => {
   if (['input', 'select', 'textarea'].includes(field.tagName)) return
   const role = String(field.properties.role ?? '')
@@ -1530,7 +1565,7 @@ const valueOf = (field: Element) => {
       : ''
   if (field.tagName === 'textarea') return text(field)
   if (field.tagName === 'select') {
-    const options = selectAll('option', field)
+    const options = elementsIn(field, (el) => el.tagName === 'option')
     const chosen = options.filter((option) => option.properties.selected)
     const shown = chosen.length || field.properties.multiple ? chosen : options.slice(0, 1)
     return shown.map(text).filter(Boolean).join(', ')
@@ -1557,7 +1592,7 @@ const form: Handle = (state, node) => {
   const labels = () => {
     if (!forLabels) {
       forLabels = new Map()
-      for (const label of selectAll('label', node)) {
+      for (const label of elementsIn(node, (el) => el.tagName === 'label')) {
         const id = String(label.properties.htmlFor ?? '')
         if (id && !forLabels.has(id)) forLabels.set(id, label)
       }
@@ -1565,7 +1600,7 @@ const form: Handle = (state, node) => {
     return forLabels
   }
   const naming: Naming = { byId, up, labels }
-  const fields = selectAll(`input, select, textarea, ${ARIA_FIELDS}`, node).filter(
+  const fields = elementsIn(node, isField).filter(
     (field) => !['hidden', 'submit', 'button', 'reset', 'image'].includes(typeOf(field)),
   )
   // fields in document order, each line kept with the field it's for; radios and checkboxes sharing a name are one
