@@ -2818,7 +2818,7 @@ export const convertForm: NonNullable<CoreOptions['convertForm']> = (
           if (entered) return defaultNodeHandlers.root(state, node)
           entered = true
           state.elementById = new ById()
-          return defaultNodeHandlers.root(state, { type: 'root', children: [hast] })
+          return joined(defaultNodeHandlers.root(state, { type: 'root', children: [hast] }))
         },
       },
     },
@@ -2853,11 +2853,28 @@ const converted = (tree: HastRoot, elements: Handlers): MdastRoot => {
             }
           }
           collect(copy)
-          return defaultNodeHandlers.root(state, copy)
+          return joined(defaultNodeHandlers.root(state, copy))
         },
       },
     },
   ) as MdastRoot
+}
+// a tree's adjacent texts as one, all through it, as toMdast's last pass joins them: there each join splices the list
+// and reads the joined text again, quadratic in a run of texts (text between comments, or between inline elements
+// Markdown has no node for). joined here first, in one pass, that pass finds none to join
+const joined = <T extends MdastNodes>(node: T): T => {
+  if (!('children' in node)) return node
+  const kids = node.children as MdastNodes[]
+  let kept = 0
+  for (const kid of kids) {
+    const last = kids[kept - 1]
+    if (kid.type === 'text' && last?.type === 'text') {
+      last.value += kid.value
+      if (last.position && kid.position) last.position.end = kid.position.end
+    } else kids[kept++] = joined(kid)
+  }
+  kids.length = kept
+  return node
 }
 const copied = <T extends HastRoot | HastRoot['children'][number]>(node: T): T =>
   (node.type === 'text'

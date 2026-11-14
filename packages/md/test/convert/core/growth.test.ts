@@ -22,9 +22,9 @@ const timed = (path: Path, read: () => string) => {
 }
 // how the time grows with eight times as many, which a loaded machine slows alike: about 8x when it's linear, about
 // 64x when each one reads all the others
-const grows = (path: Path, read: (n: number) => string) => {
-  const small = timed(path, () => read(1000))
-  const large = timed(path, () => read(8000))
+const grows = (path: Path, read: (n: number) => string, n = 1000) => {
+  const small = timed(path, () => read(n))
+  const large = timed(path, () => read(8 * n))
   return { ratio: large.best / small.best, written: large.written }
 }
 
@@ -117,4 +117,19 @@ test('a table whose spans pad it a little is still a grid, on both paths', () =>
   expect(core).toBe(
     '| a | b    | c |\n| - | ---- | - |\n| r | wide |   |\n|   | 1    |   |\n|   | 2    |   |\n',
   )
+})
+
+// a run of text between comments, or between inline elements Markdown has no node for: toMdast's last pass joined each
+// to the one before by splicing the list, ~11s at 64000 between comments. the tree pipeline joins them first
+const between = (split: string) => (n: number) =>
+  htmlToMarkdown(
+    `<main><p>${Array.from({ length: n }, (_, i) => `a${i}${split}`).join('')}</p></main>`,
+  ).markdown
+test.each([
+  ['comments', '<!-- c -->'],
+  ['inline elements', '<span>b</span>'],
+])('a run of text between thousands of %s, on the tree pipeline, in linear time', (_, split) => {
+  const { ratio, written } = grows('hast', between(split), 2000)
+  expect(ratio).toBeLessThan(24)
+  expect(written).toMatch(split.startsWith('<!') ? /^a0a1a2[^]*a15999\n$/ : /^a0ba1b[^]*a15999b\n$/)
 })
