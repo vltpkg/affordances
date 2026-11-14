@@ -4,6 +4,7 @@ import type { Options } from '../../../src/index.ts'
 import { htmlToMarkdown as coreMarkdown } from '../../../src/convert/core/index.ts'
 import { htmlToMarkdown, readPage } from '../../../src/index.ts'
 import { markerPages } from './marker-fuzz.ts'
+import { onBoth } from './support/paths.ts'
 
 // md-core against the tree pipeline, on what markers keep and leave out
 const same = (html: string) =>
@@ -28,14 +29,8 @@ test('on an element that is not a marker, data-affordances-md keeps nothing hidd
 
 // a page through readPage on both paths: md-core must write exactly what the tree pipeline does, without declining
 const both = (html: string, options: Options = {}) => {
-  forcePath('hast')
-  const tree = htmlToMarkdown(html, options).markdown
-  forcePath('strict')
-  try {
-    return [htmlToMarkdown(html, options).markdown, tree]
-  } finally {
-    forcePath(undefined)
-  }
+  const { core, tree } = onBoth(() => htmlToMarkdown(html, options).markdown, 'strict')
+  return [core, tree]
 }
 const at = {
   url: 'https://example.test/page',

@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from 'vitest'
 import { declines, forcePath } from '../../../src/convert/path.ts'
 import { readPage } from '../../../src/index.ts'
+import { onBoth } from './support/paths.ts'
 
 afterEach(() => {
   forcePath(undefined)
@@ -20,12 +21,8 @@ const read = (html: string, fills: (Record<string, string> | undefined)[]) => {
   const page = readPage(html, at)
   return { slots: page.slots, markdown: fills.map((fill) => page.markdown(fill).markdown) }
 }
-const both = (html: string, fills: (Record<string, string> | undefined)[] = [undefined]) => {
-  forcePath('hast')
-  const tree = read(html, fills)
-  forcePath('strict')
-  return { core: read(html, fills), tree }
-}
+const both = (html: string, fills: (Record<string, string> | undefined)[] = [undefined]) =>
+  onBoth(() => read(html, fills), 'strict')
 
 test.each([
   [
@@ -121,12 +118,9 @@ test('a slot md-core cannot tell prune keeps is declined, never written differen
     // a skeleton table goes whole
     `<table><tr><th>A</th></tr><tr><td>${slot('a', '')}</td></tr></table>`,
   ]) {
-    forcePath('hast')
-    const tree = readPage(html).markdown({ a: 'FILL' }).markdown
-    forcePath('core')
-    declines.clear()
-    expect(readPage(html).markdown({ a: 'FILL' }).markdown).toBe(tree)
-    expect(declines.size).toBe(1)
+    const { core, tree, declined } = onBoth(() => readPage(html).markdown({ a: 'FILL' }).markdown)
+    expect(core).toBe(tree)
+    expect(declined).toHaveLength(1)
   }
 })
 
@@ -169,16 +163,11 @@ test.each([
     ["slot inside an element md-core can't judge"],
   ],
 ])('a slot in a link around its content: %s', (_, html, why) => {
-  forcePath('hast')
-  const page = readPage(html, at)
-  const tree = [page.slots, page.markdown({ a: 'FILL' }).markdown]
-  forcePath('core')
-  declines.clear()
-  const core = readPage(html, at)
-  expect({
-    read: [core.slots, core.markdown({ a: 'FILL' }).markdown],
-    declined: [...declines.keys()],
-  }).toEqual({
+  const { core, tree, declined } = onBoth(() => {
+    const page = readPage(html, at)
+    return [page.slots, page.markdown({ a: 'FILL' }).markdown]
+  })
+  expect({ read: core, declined }).toEqual({
     read: tree,
     declined: why,
   })
@@ -214,16 +203,11 @@ test.each([
   ['a textarea in a header cell', `<math><th><textarea>${slot('a')}`],
   ['a datalist in a button in a heading', `<h2><button><datalist><${slot('a')}`],
 ])('a slot under a value md-core declines: %s', (_, html) => {
-  forcePath('hast')
-  const page = readPage(html, at)
-  const tree = [page.slots, page.markdown({ a: 'FILL' }).markdown]
-  forcePath('core')
-  declines.clear()
-  const core = readPage(html, at)
-  expect({
-    read: [core.slots, core.markdown({ a: 'FILL' }).markdown],
-    declined: [...declines.keys()],
-  }).toEqual({
+  const { core, tree, declined } = onBoth(() => {
+    const page = readPage(html, at)
+    return [page.slots, page.markdown({ a: 'FILL' }).markdown]
+  })
+  expect({ read: core, declined }).toEqual({
     read: tree,
     declined: ["slot inside an element md-core can't judge"],
   })
@@ -233,16 +217,11 @@ test.each([
 // a shown panel's tab takes out is never counted
 test('a slot in a shown tablist inside an <AgentMain> is declined, never counted', () => {
   const html = `<affordances-md data-mode="main"><div role="tablist"><button role="tab" id="t3">x</button>${slot('b', 'y')}</div><section data-affordances-md="show" aria-labelledby="t3">p</section></affordances-md>`
-  forcePath('hast')
-  const page = readPage(html, at)
-  const tree = [page.slots, page.markdown({ b: 'FILL' }).markdown]
-  forcePath('core')
-  declines.clear()
-  const core = readPage(html, at)
-  expect({
-    read: [core.slots, core.markdown({ b: 'FILL' }).markdown],
-    declined: [...declines.keys()],
-  }).toEqual({
+  const { core, tree, declined } = onBoth(() => {
+    const page = readPage(html, at)
+    return [page.slots, page.markdown({ b: 'FILL' }).markdown]
+  })
+  expect({ read: core, declined }).toEqual({
     read: tree,
     declined: ['slot inside a tablist'],
   })

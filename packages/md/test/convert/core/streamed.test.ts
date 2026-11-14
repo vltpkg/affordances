@@ -11,6 +11,7 @@ import { corpusPages, fixturePages } from './emit-pages.ts'
 import { generate } from './parse-fuzz.ts'
 import { treePages } from './tree-fuzz.ts'
 import { nestedStreamedPages } from './streamed-fuzz.ts'
+import { onBoth } from './support/paths.ts'
 
 afterEach(() => {
   forcePath(undefined)
@@ -31,14 +32,7 @@ const read = (html: string) => {
   const { markdown, ...rest } = page
   return JSON.stringify([rest, markdown().markdown, markdown({ a: 'F' }).markdown])
 }
-const both = (html: string) => {
-  forcePath('hast')
-  const tree = read(html)
-  forcePath('core')
-  declines.clear()
-  const core = read(html)
-  return { core, tree, declined: [...declines.keys()] }
-}
+const both = (html: string) => onBoth(() => read(html))
 
 test.each([
   [

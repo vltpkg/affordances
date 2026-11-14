@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from 'vitest'
 import { forcePath } from '../../../src/convert/path.ts'
 import { readPage } from '../../../src/index.ts'
+import { onBoth } from './support/paths.ts'
 
 afterEach(() => forcePath(undefined))
 
@@ -9,12 +10,8 @@ const at = {
   link: (url: URL) => `${url.origin}${url.pathname}.md`,
 }
 // a page's markdown on both paths, md-core's in strict mode, with fills if given
-const both = (html: string, fills?: Record<string, string>) => {
-  forcePath('hast')
-  const tree = readPage(html, at).markdown(fills).markdown
-  forcePath('strict')
-  return { core: readPage(html, at).markdown(fills).markdown, tree }
-}
+const both = (html: string, fills?: Record<string, string>) =>
+  onBoth(() => readPage(html, at).markdown(fills).markdown, 'strict')
 
 const values = (fields: string) => `<form data-affordances-md="values">${fields}</form>`
 test.each([

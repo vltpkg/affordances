@@ -1,27 +1,11 @@
 import { afterEach, expect, test } from 'vitest'
 import { declines, forcePath } from '../../../src/convert/path.ts'
-import { htmlToMarkdown, readPage, type Options } from '../../../src/index.ts'
+import { both } from './support/paths.ts'
 
 afterEach(() => {
   forcePath(undefined)
   declines.clear()
 })
-
-// a malformed page through md on both paths (htmlToMarkdown, and readPage with a fill): what md-core writes, what the
-// tree pipeline writes, and why md-core declined it, if it did
-const read = (html: string, options: Options) => {
-  const page = readPage(html, options)
-  const { markdown, ...rest } = page
-  return JSON.stringify([htmlToMarkdown(html, options), rest, markdown({ a: 'F' })])
-}
-const both = (html: string, options: Options = {}) => {
-  forcePath('hast')
-  const tree = read(html, options)
-  forcePath('core')
-  declines.clear()
-  const core = read(html, options)
-  return { core, tree, declined: [...declines.keys()] }
-}
 
 // a <template> in svg or math has children and no content; hast-util-from-parse5 used to throw on one
 test.each([
