@@ -66,6 +66,17 @@ test.each([
     '<s><u><div><del><dd>x',
     'strikethrough and list',
   ],
+  // a span the tree pipeline reads as another number: hast reads "1e3" as 1000 and "0x10" as 16, md-core as html does
+  [
+    'a rowspan in exponent notation',
+    '<table><tr><td rowspan="1e1">a</td><td>b</td></tr><tr><td>c</td></tr></table>',
+    'span the tree pipeline reads as another number',
+  ],
+  [
+    'a colspan in hex',
+    '<table><tr><th colspan="0x3">a</th></tr><tr><td>b</td><td>c</td><td>d</td></tr></table>',
+    'span the tree pipeline reads as another number',
+  ],
   [
     'a search form in a cell',
     '<table><tr><td><form><input name="q"><button>Go</button></form></td></tr></table>',
@@ -93,6 +104,8 @@ test('what real pages have still converts on md-core: a strikethrough in a list 
     '<main><ul><li><s>$20</s> $15</li></ul></main>',
     '<main><a href="/p"><header>Title</header><p>Body</p></a></main>',
     '<main><h2>About</h2><pre>a\nb</pre></main>',
+    // spans both paths read alike, even odd ones
+    '<table><tr><td rowspan="2" colspan=" 2">a</td><td colspan="2.5">b</td></tr><tr><td rowspan="0">c</td><td colspan="-1">d</td><td rowspan="x" colspan="">e</td></tr></table>',
   ]) {
     const { core, tree, declined } = both(html)
     expect({ core, declined }).toEqual({ core: tree, declined: [] })

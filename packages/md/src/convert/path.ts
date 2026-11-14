@@ -35,7 +35,11 @@ export const declined = (why: string) => {
 // the declines that only keep md-core's markdown byte for byte the tree pipeline's: what md-core writes there instead
 // shows nothing hidden, no value, no fill, no marker. if the tree pipeline then throws on the page, md-core's own
 // markdown is the answer. every other reason (and any new one, until it's tagged here) keeps the tree pipeline's error
-export const PARITY = new Set(['strikethrough and list', 'text split in a nobr'])
+export const PARITY = new Set([
+  'strikethrough and list',
+  'text split in a nobr',
+  'span the tree pipeline reads as another number',
+])
 // and the rest, each tagged: what md-core declines there guards hidden text, values, fills, markers or the flight
 // check, or can't be shown not to. a test fails on any reason in neither list
 export const SECURITY = new Set([

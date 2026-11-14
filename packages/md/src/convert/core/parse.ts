@@ -324,6 +324,15 @@ let formInCell = false
 // keeps the whitespace either side of one as two runs, which md-core reads as one text (nowrap: there may be none)
 let nowrap = false
 let nowrapSplit = false
+// whether a cell's rowspan or colspan reads as another number on the tree pipeline: md-core reads it as html does
+// (parseInt: "1e3" is 1), hast as a number first where it is one (Number: "1e3" is 1000, "0x10" is 16)
+let spanDiffers = false
+const spanReads = (value: string | undefined) => {
+  if (value === undefined) return false
+  const number = Number(value)
+  const tree = Number.parseInt(String(value && !Number.isNaN(number) ? number : value), 10) || 1
+  return tree !== (Number.parseInt(value, 10) || 1)
+}
 const nowrapOpen = () => {
   for (let i = stack.length - 1; i >= 0; i--) {
     const open = stack[i]!
@@ -403,6 +412,13 @@ const make = (name: string, id: number, ns: number, attrs: string, flags: number
         formInSplit = true
   if (id === FORM && !formInCell)
     for (const open of stack) if (open.id === TD || open.id === TH) formInCell = true
+  if (
+    (id === TD || id === TH) &&
+    flags & (FLAG.rowspan | FLAG.colspan) &&
+    !spanDiffers &&
+    (spanReads(attr(el, 'rowspan')) || spanReads(attr(el, 'colspan')))
+  )
+    spanDiffers = true
   if (id === NOBR || ((id === TD || id === TH) && flags & FLAG.nowrap)) nowrap = true
   else if (nowrap && !nowrapSplit && DROP[id] && nowrapOpen()) nowrapSplit = true
   if (id === TEMPLATE && attrs !== '') {
@@ -3312,6 +3328,7 @@ const parsing = (input: string, nonce: string | undefined, moves: boolean): Docu
   formInCell = false
   nowrap = false
   nowrapSplit = false
+  spanDiffers = false
   pruned.clear()
   reordered = false
   deepest = 0
@@ -3367,6 +3384,7 @@ const parsing = (input: string, nonce: string | undefined, moves: boolean): Docu
     formInSplit,
     formInCell,
     nowrapSplit,
+    spanDiffers,
     cut: cutAt < 0 ? undefined : cutAt,
     lost,
   }

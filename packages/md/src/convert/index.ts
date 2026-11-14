@@ -2737,6 +2737,11 @@ const DECLINES: { why: string; holds: (doc: CoreDocument, options: Options) => b
   { why: 'form in a table cell', holds: (doc) => doc.formInCell },
   // text that doesn't wrap, split by a comment or a dropped element: the tree pipeline keeps both sides' whitespace
   { why: 'text split in a nobr', holds: (doc) => doc.nowrapSplit },
+  // a cell's rowspan or colspan the tree pipeline reads as another number ("1e3", "0x10"): its grid is another shape
+  {
+    why: 'span the tree pipeline reads as another number',
+    holds: (doc) => doc.spanDiffers,
+  },
   // a strikethrough the tree pipeline writes outside a paragraph
   { why: 'strikethrough and list', holds: (doc) => doc.struck && struckList(doc.root) },
   // an element named like a selector, which the tree pipeline renames (to a script, a link, a main): it decides

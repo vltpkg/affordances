@@ -92,6 +92,8 @@ export interface Document {
   formInCell: boolean
   // whether a comment or a dropped element splits text in what doesn't wrap
   nowrapSplit: boolean
+  // whether a cell's rowspan or colspan reads as another number on the tree pipeline
+  spanDiffers: boolean
   // where a page nesting deeper than md reads is cut (the tag that takes it past CUT), if it is: what md reads is the
   // page up to there, parsed again
   cut: number | undefined
