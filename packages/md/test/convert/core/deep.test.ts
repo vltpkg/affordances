@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from 'vitest'
 import { CUT, DEPTH } from '../../../src/convert/depth.ts'
 import { declines, forcePath } from '../../../src/convert/path.ts'
+import { flightStripper, readStreamed } from '../../../src/convert/index.ts'
 import { htmlToMarkdown, readPage } from '../../../src/index.ts'
 
 afterEach(() => {
@@ -227,4 +228,76 @@ test('generated deep pages are cut, or not, the same on both paths', { timeout: 
   // some are cut and some aren't
   expect(cut).toBeGreaterThan(10)
   expect(cut).toBeLessThan(50)
+})
+
+// a page's flight data and streamed boundaries are read on all of it, before what's nested past DEPTH is read as text:
+// a push or a boundary nested deeper reads as it does shallow. past CUT, the flight data is checked against the pushes
+// before the cut, and the page says it's cut
+const push = (row: string) => `<script>self.__next_f.push(${JSON.stringify([1, row])})</script>`
+const streamedRead = (html: string, options = {}) => {
+  const strip = flightStripper()
+  const lean = strip.write(html) + strip.end()
+  const page = readStreamed(lean, strip.swapped(), options)
+  return [page.markdown().markdown, page.errors, page.cut]
+}
+const swapShallow = '<div hidden id="S:0"><p>moved</p></div><script>$RC("B:0","S:0")</script>'
+const boundary = '<!--$?--><template id="B:0"></template><p>Loading...</p><!--/$-->'
+test.each([
+  ['a push after a cut', nest('div', 600) + push('0:x\n'), ['top\n', [], true]],
+  [
+    'a digest push after a cut',
+    nest('div', 600) + push('5:E{"digest":"DIG"}\n'),
+    ['top\n', ['DIG'], true],
+  ],
+  [
+    'a push nested past DEPTH',
+    nest('div', DEPTH + 12, `deep words${push('0:x\n')}`),
+    ['top\n\ndeep words\n\nafter\n', [], undefined],
+  ],
+  [
+    'a boundary nested past DEPTH, its segment shallow',
+    nest('div', DEPTH + 12, boundary) + swapShallow,
+    ['top\n\nmoved\n\nafter\n', [], undefined],
+  ],
+  [
+    'a boundary and its segment nested past DEPTH',
+    nest('div', DEPTH + 12, boundary + swapShallow),
+    ['top\n\nmoved\n\nafter\n', [], true],
+  ],
+  [
+    'a json-ld script past DEPTH',
+    nest('div', DEPTH + 12, 'words<script type="application/ld+json">{"a":1}</script>'),
+    ['top\n\nwords\n\nafter\n\n```json\n{\n  "a": 1\n}\n```\n', [], undefined],
+  ],
+])('%s reads as it does shallow, the same on both paths', (_, html, expected) => {
+  for (const path of ['core', 'hast'] as const) {
+    forcePath(path)
+    const page = readPage(html, { jsonLd: true })
+    expect([path, page.markdown().markdown, page.errors, page.cut]).toEqual([path, ...expected])
+    expect([path, ...streamedRead(html, { jsonLd: true })]).toEqual([path, ...expected])
+  }
+})
+
+// past DEPTH, a block's text is a line of its own and a <br> ends one, as each lays out: never run into the next,
+// or into the text before the nest
+test.each([
+  ['blocks', nest('div', DEPTH + 10, '<div>alpha</div><div>beta</div>'), 'alpha beta'],
+  [
+    'paragraphs',
+    nest('div', DEPTH + 10, '<p>Two words</p><p>Next para</p>'),
+    'Two words Next para',
+  ],
+  ['a break', nest('div', DEPTH + 10, 'alpha<br>beta'), 'alpha beta'],
+  ['inline elements', nest('div', DEPTH + 10, 'a<b>b</b><i>c</i> <em>d</em>'), 'abc d'],
+  [
+    'a block after text outside the nest',
+    `<main>shown${'<span>'.repeat(DEPTH + 10)}<p>moved</p>${'</span>'.repeat(DEPTH + 10)}</main>`,
+    'shown moved',
+  ],
+])('%s past DEPTH keep their text apart, the same on both paths', (_, html, text) => {
+  forcePath('hast')
+  const tree = read(html)
+  forcePath('core')
+  expect(read(html)).toEqual(tree)
+  expect(tree[0]).toBe(html.startsWith('<main><p>top') ? `top\n\n${text}\n\nafter\n` : `${text}\n`)
 })

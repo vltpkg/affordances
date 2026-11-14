@@ -26,15 +26,23 @@ vi.mock('../src/convert/index.ts', async (original) => {
 const site = 'https://shop.test'
 const ROUTE = '/x/[pkg]'
 let body = '<h1>express</h1>'
+// what's after the page's <main>, and the cache-control the page answers with
+let after = ''
+let cacheControl: string | undefined
 beforeEach(() => {
   body = '<h1>express</h1>'
+  after = ''
+  cacheControl = undefined
   vi.stubGlobal(
     'fetch',
     async () =>
       new Response(
-        `<html><head><title>Express</title></head><body><main>${body}</main></body></html>`,
+        `<html><head><title>Express</title></head><body><main>${body}</main>${after}</body></html>`,
         {
-          headers: { 'content-type': 'text/html' },
+          headers: {
+            'content-type': 'text/html',
+            ...(cacheControl && { 'cache-control': cacheControl }),
+          },
         },
       ),
   )
@@ -99,3 +107,51 @@ test('a page parse5 throws on answers 502, private, no-store, through the route'
   expect(await get()).toEqual([502, 'private, no-store', false])
   error.mockRestore()
 })
+
+// a page cut short is never served as complete or cached, whatever the page's own cache-control: each way a page nests
+// too deep. and a push or a boundary nested deep reads as it does shallow, so the page is whole (a stalled stream's
+// partial page is next.test's)
+const nested = (n: number, inner: string, tag = 'div') =>
+  `<${tag}>`.repeat(n) + inner + `</${tag}>`.repeat(n)
+const flightPush = (row: string) =>
+  `<script>self.__next_f.push(${JSON.stringify([1, row])})</script>`
+const suspended = '<!--$?--><template id="B:0"></template><p>FALLBACK</p><!--/$-->'
+const segment = '<div hidden id="S:0"><p>MOVED</p></div><script>$RC("B:0","S:0")</script>'
+test.each([
+  ['a plain page', '<p>words</p>', '', 'public, max-age=60', null],
+  ['a cut past 512', nested(600, 'deep'), '', 'private, no-store', '1'],
+  [
+    'a flatten past 128 leaving something out',
+    nested(140, '<span class="x">said</span>'),
+    '',
+    'private, no-store',
+    '1',
+  ],
+  ['a cut dropping a push', nested(600, 'deep'), flightPush('0:x\n'), 'private, no-store', '1'],
+  ['a cut dropping a boundary', nested(600, suspended), segment, 'private, no-store', '1'],
+  ['a cut dropping a segment', suspended + nested(600, segment), '', 'private, no-store', '1'],
+  ['a push past 128', nested(140, `words${flightPush('0:x\n')}`), '', 'public, max-age=60', null],
+  [
+    'a boundary past 128, its segment shallow',
+    nested(140, suspended),
+    segment,
+    'public, max-age=60',
+    null,
+  ],
+])(
+  '%s: the route answers with its cache-control and partial header',
+  async (_, main, rest, cache, partial) => {
+    cacheControl = 'public, max-age=60'
+    body = `<h1>express</h1>${main}`
+    after = rest
+    const response = await createMdHandler()(new Request(`${site}/x/express.md`))
+    const text = await response.text()
+    expect([
+      response.status,
+      response.headers.get('cache-control'),
+      response.headers.get('x-affordances-md-partial'),
+    ]).toEqual([200, cache, partial])
+    // a page served whole never shows a fallback (a partial one may: its segment was cut)
+    expect(!partial && text.includes('FALLBACK')).toBe(false)
+  },
+)

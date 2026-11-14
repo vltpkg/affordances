@@ -1,7 +1,7 @@
 import { attr, parseAttrs } from './attr.ts'
 import { decode } from './entities.ts'
 import { resolveStreamed } from './streamed.ts'
-import { CUT, DEPTH, PLAIN as STRUCTURE } from '../depth.ts'
+import { CUT, DEPTH, LINES, PLAIN as STRUCTURE } from '../depth.ts'
 import { FLAG, flagOf, NEVER, type Document, type Element, type Head, type Node } from './types.ts'
 
 // html to a Document in one scan, as a browser with scripting off reads it. the tokenizer jumps between '<' with
@@ -53,6 +53,8 @@ const set = (names: string) => {
 }
 // what an element too deep to read keeps the text of: elements that are only structure (the tree pipeline's PLAIN)
 const FLAT = set(STRUCTURE.join(' '))
+// and of those, the blocks, which start and end a line of that text
+const LINE = set(LINES.join(' '))
 
 const A = T('a')
 const ADDRESS = T('address')
@@ -454,51 +456,82 @@ const addKid = (parent: El, kid: Node) => {
   }
 }
 // what an element nested DEPTH deep keeps, as the tree pipeline's flattenDeep keeps it: the text inside it, through
-// elements that are only structure, and nothing of anything else; and whether anything else was there (react's boundary
-// comments aside, which aren't elements to the tree pipeline)
-let flatLost = false
-const flatText = (nodes: Node[]) => {
+// elements that are only structure, with a line between blocks, and the scripts there (json-ld is read after); and
+// whether anything else was there (react's boundary comments and what md never reads aside)
+const flatText = (nodes: Node[]): [text: string, kept: El[], lost: boolean] => {
   let text = ''
-  const todo: [Node[], number][] = [[nodes, 0]]
+  let lost = false
+  const kept: El[] = []
+  const line = () => {
+    if (!text.endsWith('\n')) text += '\n'
+  }
+  // each list, where in it, and whether it's a block's
+  const todo: [Node[], number, boolean][] = [[nodes, 0, false]]
   while (todo.length) {
     const top = todo[todo.length - 1]!
-    const [list, at] = top
+    const [list, at, block] = top
     if (at === list.length) {
       todo.pop()
+      if (block) line()
       continue
     }
     top[1]++
     const node = list[at]!
-    if (typeof node === 'string') text += node
-    else if ((node as El).ns === HTML && FLAT[(node as El).id] === 1 && node.attrs === '')
-      todo.push([node.kids, 0])
-    // what's in svg or math, and what md never reads (a script, a template), md reads nothing of anyway, on either path
-    else if (node.tag !== '#comment' && (node as El).ns === HTML && !DROP[(node as El).id])
-      flatLost = true
+    if (typeof node === 'string') {
+      text += node
+      continue
+    }
+    const el = node as El
+    // what's in svg or math md reads nothing of anyway, on either path
+    if (el.ns !== HTML || el.tag === '#comment') continue
+    if (el.id === BR) line()
+    else if (el.id === SCRIPT) kept.push(el)
+    else if (FLAT[el.id] === 1 && el.attrs === '') {
+      const opens = LINE[el.id] === 1
+      if (opens) line()
+      todo.push([el.kids, 0, opens])
+    } else if (!DROP[el.id]) lost = true
   }
-  return text
+  return [text, kept, lost]
 }
 // the page with everything nested deeper than md reads as text, as the tree pipeline flattens it, without recursing;
-// whether that left anything out
+// whether that left anything out. what md never reads (a template, an svg) is left as it is: it leaves the tree with
+// everything inside below. and what the parser still holds that's no longer in the tree (the page's mains, and what
+// its head is read from) leaves with it
 const flatten = (root: El) => {
-  flatLost = false
-  // and whether the element is in what md never reads: flattened too, but nothing there is lost
-  const todo: [El, number, boolean][] = [[root, 0, false]]
+  let lost = false
+  const deep = new Set<El>()
+  const scriptsKept = new Set<El>()
+  const todo: [El, number][] = [[root, 0]]
   while (todo.length) {
-    const [el, depth, never] = todo.pop()!
+    const [el, depth] = todo.pop()!
     if (depth === DEPTH && el !== root) {
+      deep.add(el)
       if (!el.kids.some((kid) => typeof kid !== 'string')) continue
-      const before: boolean = flatLost
-      const text = flatText(el.kids)
-      if (never) flatLost = before
-      el.kids = text ? [text] : []
+      const [text, kept, left] = flatText(el.kids)
+      if (left) lost = true
+      for (const script of kept) {
+        script.up = el
+        scriptsKept.add(script)
+      }
+      // and they leave the tree once the head is read, as any script does
+      if (kept.length) pruned.add(el)
+      el.kids = text ? [text, ...kept] : kept
       continue
     }
     for (const kid of el.kids)
-      if (typeof kid !== 'string')
-        todo.push([kid as El, depth + 1, never || DROP[(kid as El).id] === 1])
+      if (typeof kid !== 'string' && !DROP[(kid as El).id]) todo.push([kid as El, depth + 1])
   }
-  return flatLost
+  if (deep.size) {
+    const gone = (el: El) => {
+      if (scriptsKept.has(el)) return false
+      for (let up = el.up; up; up = up.up) if (deep.has(up)) return true
+      return false
+    }
+    watched = watched.filter((el) => !gone(el))
+    mains = mains.filter((el) => !gone(el))
+  }
+  return lost
 }
 // the deepest element in the tree, as elements were put in place
 let deepest = 0
@@ -3282,9 +3315,6 @@ export const parse = (input: string, nonce?: string, moves = true): Document => 
   commentOpen = -1
   tokenize()
   onEof()
-  // a page nested deeper than md reads is read as text there, as the tree pipeline reads it, before anything else reads
-  // the tree (what was moved after it was put in place may be deeper than it was then: then it's walked to find out)
-  const lost = (deepest > DEPTH || reordered) && flatten(doc)
   const scriptTexts = readScripts()
   // a swapped flight push's nonce is only for the flight check: what else reads a script's text (a json-ld block, a
   // foreign title) reads it empty, as the page reads without its flight data
@@ -3297,11 +3327,14 @@ export const parse = (input: string, nonce?: string, moves = true): Document => 
   // react's streamed boundaries moved into place, as the tree pipeline moves them, before anything reads the page
   // (next streams a dynamic page's metadata into the body): or why md-core can't
   // only a page with an instruction can move anything: a template's, or a script's $RC, $RR or $RS
-  const streamed =
+  const moving =
     templated && moves && (instructed || scripts.some((el) => textOf(el).includes('$R')))
-      ? moveStreamed()
-      : undefined
+  const streamed = moving ? moveStreamed() : undefined
   afterMoves?.(doc, [...mains, ...scripts, ...withIds])
+  // a page nested deeper than md reads is read as text there, as the tree pipeline reads it, once its flight data is
+  // checked and its boundaries are moved (which read the whole page) and before anything else reads it. what was moved,
+  // or put in place after something was made, may be deeper than it was made: then it's walked to find out
+  const lost = (deepest > DEPTH || reordered || moving) && flatten(doc)
   const head = readHead()
   // the dropped elements leave the tree, and the text either side of one is one text
   for (const el of pruned) {

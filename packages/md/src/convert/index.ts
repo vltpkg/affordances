@@ -1215,7 +1215,8 @@ const shallow = (page: string) => {
 }
 
 // html as a tree, parsed as hast-util-from-html parses it (scripting off) but without each node's place in the source:
-// nothing reads it, and working it out costs more than the parse (most of a conversion, on a page of many lines)
+// nothing reads it, and working it out costs more than the parse (most of a conversion, on a page of many lines). and
+// the source it's made of: the page, or what of it is read
 const fromHtml = (page: string) => {
   // a page nesting deeper than md reads is read up to where it does, as md-core reads it: the cut md-core found when it
   // read this page and declined it, or, once parse5 nests past CUT, md-core's parser asked now (only it can tell where,
@@ -1228,14 +1229,28 @@ const fromHtml = (page: string) => {
     if (!known) cut = parseCore(page, undefined, false).cut
     document = parseHtml(cutAt(page, cut), { scriptingEnabled: false })
   }
-  // a page nested deeper than md reads is read as text there, before anything recurses over it, as md-core reads it
-  const lost = flattenDeep(document as never)
   const foreign = renameForeignTemplates(document)
   const tree = fromParse5(document) as HastRoot
   if (foreign.size) restoreForeignTemplates(document, tree, foreign)
   // and whether it was cut, which the page says (readTree)
-  if (cut !== undefined || lost) tree.data = { ...tree.data, cut: true } as never
+  if (cut !== undefined) tree.data = { ...tree.data, cut: true } as never
+  return { tree, source: cutAt(page, cut) }
+}
+// a page's tree with its streamed boundaries moved into place, and then, as md-core reads it, what's nested deeper
+// than md reads read as text: both read the whole page first. and whether that left something out, which the page says
+const settled = (tree: HastRoot, streamed: ReturnType<typeof resolveStreamed>) => {
+  streamed.resolve()
+  if (flattenDeep(tree as never)) tree.data = { ...tree.data, cut: true } as never
   return tree
+}
+// the swaps in what of a page is read: a page cut where it nests too deep has only the pushes before the cut (both
+// paths cut it at the same tag, which a push's script can't be inside), and its flight data is checked against those
+const keptOf = (source: string, page: string, swapped: Swapped): Swapped => {
+  if (source === page) return swapped
+  let count = 0
+  for (let at = source.indexOf(swapped.nonce); at >= 0; at = source.indexOf(swapped.nonce, at + 1))
+    count++
+  return { ...swapped, count }
 }
 // a <template> in svg or math is an element like any other there, with children and no content, but
 // hast-util-from-parse5 reads every template's content and throws on one without. so it's converted under another
@@ -1282,10 +1297,10 @@ const restoreForeignTemplates = (document: Parse5Tree, tree: HastRoot, renamed: 
 // a page's html with its flight pushes taken out, parsed: the tree and the error rows' digests, or why they can't be
 // trusted
 const strippedTree = (html: string, swapped: Swapped) => {
-  const tree = fromHtml(html)
+  const { tree, source } = fromHtml(html)
   const streamed = resolveStreamed(tree)
   const texts = streamed.scripts.map(scriptText)
-  const reason = untrusted(texts, swapped)
+  const reason = untrusted(texts, keptOf(source, html, swapped))
   // a swapped push's nonce is only for the check: anything else that reads a script's text (a json-ld block, a
   // foreign title) reads it empty, as the page reads without its flight data
   streamed.scripts.forEach((script, i) => {
@@ -2454,14 +2469,10 @@ const corePage = (
 // the tree pipeline's read of a page
 const treePage = (html: string, lean: string, swapped: Swapped, options: Options) => {
   const { tree, streamed, reason } = strippedTree(lean, swapped)
-  if (!reason) {
-    streamed.resolve()
-    return readTree({ tree, errors: swapped.errors }, options)
-  }
+  if (!reason) return readTree({ tree: settled(tree, streamed), errors: swapped.errors }, options)
   // swaps that can't be trusted: the page as sent, as parse5 reads it, and an error of its own (private, never a status)
-  const sent = fromHtml(html)
-  resolveStreamed(sent).resolve()
-  return readTree({ tree: sent, errors: [''] }, options)
+  const { tree: sent } = fromHtml(html)
+  return readTree({ tree: settled(sent, resolveStreamed(sent)), errors: [''] }, options)
 }
 
 // an error md didn't foresee, on one path or the other, never decides a page alone: when md-core throws, the tree
@@ -2574,8 +2585,7 @@ export const readStreamed = (html: string, swapped: Swapped, options: Options = 
     tree: () => {
       const { tree, streamed, reason } = strippedTree(html, swapped)
       if (reason) throw new FlightDataError(reason)
-      streamed.resolve()
-      return readTree({ tree, errors: swapped.errors }, options)
+      return readTree({ tree: settled(tree, streamed), errors: swapped.errors }, options)
     },
     insist: () => readCore(html, swapped, options, true)?.page,
   })
@@ -2713,7 +2723,7 @@ const readCore = (
   if (doc.cut !== undefined) doc = parseCore(source, swapped.nonce)
   // cut, or with something nested too deep left out
   const cut = source !== html || doc.lost
-  const reason = untrusted(doc.scripts, swapped)
+  const reason = untrusted(doc.scripts, keptOf(source, html, swapped))
   // react's streamed boundaries, which the tree pipeline moves into place: md-core doesn't, and declines the page
   if (doc.streamed) {
     declined(doc.streamed)
