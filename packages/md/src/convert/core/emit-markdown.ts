@@ -1505,8 +1505,13 @@ const directListText = (node: Md, parent: Md | undefined) => {
 
 const listItem = (node: Md, parent: Md | undefined) => {
   let bullet = bulletCurrent || '-'
-  if (parent && parent.type === LIST && parent.ordered)
-    bullet = (parent.depth > -1 ? parent.depth : 1) + parent.kids.indexOf(node) + bullet
+  if (parent && parent.type === LIST && parent.ordered) {
+    // where it is in the list: containerFlow's index of what it's writing, found again only when that isn't it (an
+    // indexOf for each item of a long ordered list is quadratic)
+    const at = indexStack[indexStack.length - 1] ?? -1
+    const index = parent.kids[at] === node ? at : parent.kids.indexOf(node)
+    bullet = (parent.depth > -1 ? parent.depth : 1) + index + bullet
+  }
   const size = bullet.length + 1
   enter('listItem')
   const pad = ' '.repeat(size)

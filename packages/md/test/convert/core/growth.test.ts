@@ -202,16 +202,19 @@ test.each(Object.entries(boundaries))(
 )
 
 // a form of thousands of labelled fields, and a tablist of thousands of tabs: selectAll checked each match against
-// every one before it (~3.5s at 64000 fields). md finds them in one walk. at these sizes a quadratic shows only from
-// about 16000 up, so 8000 against 64000 is held to 16x, not 24x: linear is ~6-11x here, the old walk ~21-28x
-const SELECTED = 16
+// every one before it (~3.5s at 64000 fields). md finds them in one walk. and an ordered list of thousands of items
+// holding blocks: md-core found each item's number with an indexOf. at these sizes a quadratic shows only from about
+// 16000 up, so 8000 against 64000 is held to 16x, not 24x: linear is ~6-11x here, the old code ~21-28x
+const LATE = 16
 const labelled = (n: number) =>
   `<main><form>${join(n, (i) => `<label for=f${i}></label><input id=f${i}>`)}</form></main>`
+const numbered = (n: number) => `<main><ol>${'<li><pre>c</pre></li>'.repeat(n)}</ol></main>`
 const tablist = (n: number) =>
   `<main><div role=tablist>${join(n, () => '<b role=tab></b>')}<b role=tab id=t>T</b></div><section role=tabpanel data-affordances-md=show aria-labelledby=t>P</section></main>`
 test.each([
   ['a form of thousands of labelled fields, on md', labelled, undefined],
   ['a tablist of thousands of tabs, on the tree pipeline', tablist, 'hast'],
+  ['an ordered list of thousands of items holding blocks, on md-core', numbered, 'strict'],
 ] as const)(
   '%s, in linear time',
   (_, page, path) => {
@@ -221,9 +224,9 @@ test.each([
     const ratio = ratioOf(
       () => took(() => readPage(small).markdown()),
       () => took(() => readPage(large).markdown()),
-      SELECTED,
+      LATE,
     )
-    expect(ratio).toBeLessThan(SELECTED)
+    expect(ratio).toBeLessThan(LATE)
   },
   60_000,
 )
