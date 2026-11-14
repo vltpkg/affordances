@@ -2618,6 +2618,11 @@ const readCore = (
     declined('form in a table cell')
     return undefined
   }
+  // text that doesn't wrap, split by a comment or a dropped element: the tree pipeline keeps both sides' whitespace
+  if (doc.nowrapSplit) {
+    declined('text split in a nobr')
+    return undefined
+  }
   // a strikethrough the tree pipeline writes outside a paragraph
   if (doc.struck && struckList(doc.root)) {
     declined('strikethrough and list')

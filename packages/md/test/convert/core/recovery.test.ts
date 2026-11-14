@@ -58,6 +58,30 @@ test.each([
     '<table><tr><th>F</th></tr><tr><td><form><input aria-label="B"></form></td></tr></table>',
     'form in a table cell',
   ],
+  // text that doesn't wrap, split by a comment or a dropped element: the tree pipeline keeps both sides' whitespace
+  [
+    'a script splitting text in a nobr',
+    '<nobr><</caption>\n\n<script></script>\t[l](u)&amp',
+    'text split in a nobr',
+  ],
+  [
+    'CDATA splitting text in a nobr',
+    '<nobr>&#x0;\n\n<![CDATA[x<y]]> &#x110000;| t |',
+    'text split in a nobr',
+  ],
+  ['a comment splitting text in a nobr', '<nobr>a <!-- c --> b</nobr>', 'text split in a nobr'],
+  [
+    'a comment splitting text in a nowrap cell',
+    '<table><tr><td nowrap>a <!-- c --> b</td></tr></table>',
+    'text split in a nobr',
+  ],
+  // a strikethrough with a list item in it, inside another
+  ['a list item in nested strikethroughs', '<s><u><div><del><dd>', 'strikethrough and list'],
+  [
+    'a list item with text in nested strikethroughs',
+    '<s><u><div><del><dd>x',
+    'strikethrough and list',
+  ],
   [
     'a search form in a cell',
     '<table><tr><td><form><input name="q"><button>Go</button></form></td></tr></table>',
@@ -70,6 +94,12 @@ test.each([
 
 test('what real pages have still converts on md-core: a strikethrough in a list item, a card link with a header', () => {
   for (const html of [
+    // a link labelled by what's in the chrome inside it, and whitespace before what's only for screen readers
+    '<p><a href="/z" aria-labelledby="lbl"><header><span id="lbl">Labelled',
+    '<strong><span id="lbl">Labelled</span><span class="sr-only"><img src="/i.png" alt=""><div role="navigation">LEAK',
+    // text in a nobr with nothing splitting it, and a comment in text that wraps
+    '<nobr>plain words</nobr>',
+    '<p>a <!-- c --> b</p>',
     // chrome on a page without a main, stripped once prune has judged what's around it
     '<table><th><footer>&#x110000;',
     '<a><b><header>d',

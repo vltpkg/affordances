@@ -318,6 +318,18 @@ let formInSplit = false
 // whether a form is made inside a table cell: the tree pipeline converts the form with the table around it (a table in
 // the form flattened into the cell, the cell's spacing), which md-core's form (converted on its own) doesn't
 let formInCell = false
+// whether text in what doesn't wrap (a nobr, a nowrap cell) has a comment or a dropped element in it: the tree pipeline
+// keeps the whitespace either side of one as two runs, which md-core reads as one text (nowrap: there may be none)
+let nowrap = false
+let nowrapSplit = false
+const nowrapOpen = () => {
+  for (let i = stack.length - 1; i >= 0; i--) {
+    const open = stack[i]!
+    if (open.id === NOBR || ((open.id === TD || open.id === TH) && open.flags & FLAG.nowrap))
+      return true
+  }
+  return false
+}
 // whether the page has a strikethrough (s, strike, del)
 let struck = false
 // the elements with a dropped child among their kids, to take out at the end
@@ -389,6 +401,8 @@ const make = (name: string, id: number, ns: number, attrs: string, flags: number
         formInSplit = true
   if (id === FORM && !formInCell)
     for (const open of stack) if (open.id === TD || open.id === TH) formInCell = true
+  if (id === NOBR || ((id === TD || id === TH) && flags & FLAG.nowrap)) nowrap = true
+  else if (nowrap && !nowrapSplit && DROP[id] && nowrapOpen()) nowrapSplit = true
   if (id === TEMPLATE && attrs !== '') {
     if (flags & FLAG.id) templated = true
     // any case: html matches attribute names so
@@ -1204,6 +1218,7 @@ const onNul = () => {
 const onComment = (data = '') => {
   tok = COMMENT
   skipNL = false
+  if (nowrap && !nowrapSplit && nowrapOpen()) nowrapSplit = true
   if (mode === IN_TABLE_TEXT && cur().ns === HTML) tableTextAnything()
   if (data.charCodeAt(0) !== 36 && data !== '/$') return
   const el = make(COMMENT_TAG_NAME, COMMENT_TAG, HTML, data, 0)
@@ -3254,6 +3269,8 @@ export const parse = (input: string, nonce?: string, moves = true): Document => 
   struck = false
   formInSplit = false
   formInCell = false
+  nowrap = false
+  nowrapSplit = false
   pruned.clear()
   reordered = false
   deepest = 0
@@ -3308,6 +3325,7 @@ export const parse = (input: string, nonce?: string, moves = true): Document => 
     struck,
     formInSplit,
     formInCell,
+    nowrapSplit,
     cut: cutAt < 0 ? undefined : cutAt,
     lost,
   }

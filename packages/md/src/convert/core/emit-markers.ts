@@ -48,6 +48,8 @@ export const changed = (el: Element) =>
 // that holds a list, or one in a list with no list item between
 const STRUCK = new Set(['s', 'strike', 'del'])
 const LISTS = new Set(['ul', 'ol', 'dir', 'menu'])
+// what makes a list in a strikethrough: a list, or an item on its own (a <li> or <dd> without one)
+const LISTED = new Set([...LISTS, 'li', 'dd'])
 const holds = (el: Element, tags: Set<string>): boolean =>
   el.kids.some((kid) => typeof kid !== 'string' && (tags.has(kid.tag) || holds(kid, tags)))
 export const struckList = (root: Element): boolean => {
@@ -55,7 +57,7 @@ export const struckList = (root: Element): boolean => {
     el.kids.some(
       (kid) =>
         typeof kid !== 'string' &&
-        ((STRUCK.has(kid.tag) && (inList || holds(kid, LISTS))) ||
+        ((STRUCK.has(kid.tag) && (inList || holds(kid, LISTED))) ||
           walk(kid, LISTS.has(kid.tag) || (inList && kid.tag !== 'li'))),
     )
   return walk(root, false)
