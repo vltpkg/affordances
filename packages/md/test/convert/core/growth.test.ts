@@ -60,3 +60,20 @@ test.each([
   expect(ratio).toBeLessThan(24)
   expect(written).toMatch(/^v0\n\nv1\n\n[^]*\n\nv7999\n$/)
 })
+
+// a table of rows with a slot each: whether the table stands (it's no skeleton) is judged once, not for every slot
+const tableSlots = (n: number) => {
+  let html = '<main><table><tr><th>Name</th><th>Version</th></tr>'
+  const fills: Record<string, string> = {}
+  for (let i = 0; i < n; i++) {
+    html += `<tr><td>p${i}</td><td><affordances-md data-mode="slot" data-name="s${i}">…</affordances-md></td></tr>`
+    fills[`s${i}`] = `${i}.0`
+  }
+  return readPage(`${html}</table></main>`).markdown(fills).markdown
+}
+test('thousands of slots in a table, on md-core, in linear time', () => {
+  // each slot walked the whole table: ~65s at 16000 rows
+  const { ratio, written } = grows('strict', tableSlots)
+  expect(ratio).toBeLessThan(24)
+  expect(written).toContain('| p7999 | 7999.0  |\n')
+})

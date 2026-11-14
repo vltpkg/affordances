@@ -124,6 +124,13 @@ const linksAbove = (el: Element) => {
 const slotsIn = (doc: Document, { outer, main, strip, markers }: Content) => {
   const slots: Element[] = []
   let decline: string | undefined
+  // whether each table a slot is in stands, judged once for all its slots
+  const stands = new Map<Element, boolean>()
+  const standingOnce = (table: Element) => {
+    let known = stands.get(table)
+    if (known === undefined) stands.set(table, (known = standing(table)))
+    return known
+  }
   const walk = (parent: Element, around: Element[], unlisted = false, valued = false) => {
     for (const kid of parent.kids) {
       if (typeof kid === 'string' || isText(kid) || dropped(kid) || (strip && chrome(kid))) continue
@@ -147,7 +154,7 @@ const slotsIn = (doc: Document, { outer, main, strip, markers }: Content) => {
             decline ??= 'slot inside <a>'
         }
         for (const el of around)
-          if (el.tag === 'table' ? !standing(el) : el.tag !== 'a' && markers?.tabs.size)
+          if (el.tag === 'table' ? !standingOnce(el) : el.tag !== 'a' && markers?.tabs.size)
             decline ??= `slot inside ${el.tag === 'table' ? '<table>' : 'a tablist'}`
         slots.push(kid)
         continue
