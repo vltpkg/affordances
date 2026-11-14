@@ -1,5 +1,6 @@
 import { attr } from './attr.ts'
 import type { Element, Node } from './types.ts'
+import { Spliced } from '../shared.ts'
 
 // react streams each resolved <Suspense> boundary after the shell, hidden, with an instruction that moves it into
 // place: $RC("B:1","S:1") (or $RR, with its stylesheets) puts a segment where the boundary's fallback is, and
@@ -89,43 +90,54 @@ export const resolveStreamed = (page: Streamed): string | undefined => {
   if (page.svgTemplate) return 'streamed boundary in svg'
   for (const id of [...boundaries.values(), ...placeholders.values()])
     if (page.svgIds.has(id)) return 'streamed segment in svg'
-  for (const template of templates) {
-    const id = attr(template, 'id')!
-    const boundary = boundaries.has(id)
-    const segment = byId.get((boundary ? boundaries : placeholders).get(id) ?? '')
-    const parent = parents.get(template)
-    // a template inside a fallback that was already replaced is gone
-    const start = parent ? parent.kids.indexOf(template) : -1
-    if (!segment || !parent || start < 0) continue
-    if (!page.keeps(segment)) return 'streamed segment md-core keeps no text in'
-    // a segment's children go where the template is: one that holds the template's parent (at any depth) would be
-    // put inside itself. the tree pipeline makes that loop and never reaches it again; md-core declines it, so no move
-    // ever makes one (a segment that is the template's parent only takes its own children back). the walk goes up by
-    // every parent each element has had, so it finds all of the parent's ancestors (and maybe more, which only
-    // declines), and never takes more steps than there are elements
-    if (holds(segment, parent, parents)) return 'streamed segment holds its own template'
-    // a boundary's fallback runs from its template to the boundary's closing <!--/$-->; a placeholder is the
-    // template alone
-    let end = start + 1
-    if (boundary)
-      for (let depth = 0; end < parent.kids.length; end++) {
-        const node = parent.kids[end]!
-        if (typeof node === 'string' || node.tag !== COMMENT) continue
-        if (node.attrs.startsWith('$')) depth++
-        else if (node.attrs === '/$' && depth-- === 0) break
-      }
-    for (const node of parent.kids.slice(start, end))
-      if (typeof node !== 'string') touched.push(node)
-    for (const child of segment.kids)
-      if (typeof child !== 'string') {
-        parents.set(child, parent)
-        child.up = parent
-        touched.push(child)
-      }
-    parent.kids.splice(start, end - start, ...segment.kids)
-    segment.kids = []
+  const lists = new Spliced<Element, Node>((el) => el.kids)
+  // the moves, in page order; written back to the tree whether they're all made or md-core stops at one it can't make
+  try {
+    for (const template of templates) {
+      const id = attr(template, 'id')!
+      const boundary = boundaries.has(id)
+      const segment = byId.get((boundary ? boundaries : placeholders).get(id) ?? '')
+      const parent = parents.get(template)
+      if (!segment || !parent) continue
+      // a template inside a fallback that was already replaced is gone
+      const start = lists.find(parent, template)
+      if (!start) continue
+      if (!page.keeps(segment)) return 'streamed segment md-core keeps no text in'
+      // a segment's children go where the template is: one that holds the template's parent (at any depth) would be
+      // put inside itself. the tree pipeline makes that loop and never reaches it again; md-core declines it, so no move
+      // ever makes one (a segment that is the template's parent only takes its own children back). the walk goes up by
+      // every parent each element has had, so it finds all of the parent's ancestors (and maybe more, which only
+      // declines), and never takes more steps than there are elements
+      if (holds(segment, parent, parents)) return 'streamed segment holds its own template'
+      // a boundary's fallback runs from its template to the boundary's closing <!--/$-->; a placeholder is the
+      // template alone
+      let end = start.next
+      if (boundary)
+        for (let depth = 0; end; end = end.next) {
+          const node = end.node
+          if (typeof node === 'string' || node.tag !== COMMENT) continue
+          if (node.attrs.startsWith('$')) depth++
+          else if (node.attrs === '/$' && depth-- === 0) break
+        }
+      for (let at: typeof start | undefined = start; at !== end; at = at!.next)
+        if (typeof at!.node !== 'string') touched.push(at!.node)
+      const kids = lists.kids(segment)
+      for (const child of kids)
+        if (typeof child !== 'string') {
+          parents.set(child, parent)
+          child.up = parent
+          touched.push(child)
+        }
+      // a segment that is the template's parent takes its own children back, and then has none
+      if (segment === parent) lists.clear(parent)
+      else lists.take(start, end, kids)
+      lists.clear(segment)
+      segment.kids = []
+    }
+  } finally {
+    lists.done()
   }
-  for (const el of touched) if (el.up && !el.up.kids.includes(el)) el.up = null
+  for (const el of touched) if (el.up && !lists.has(el.up, el)) el.up = null
   return undefined
 }
 

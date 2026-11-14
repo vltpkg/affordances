@@ -196,3 +196,88 @@ export const gridFits = (rows: [colSpan: number, rowSpan: number][][]) => {
   }
   return rows.length * columns <= GRID_FACTOR * cells + GRID_SPARE
 }
+
+// the children of the parents react's streamed moves splice, as linked lists while the moves are made: a move then
+// costs what it takes out and puts in, where finding its place and splicing the array cost the whole list, quadratic
+// in boundaries in one parent. each list is written back to its parent's array, in place, once the moves are done
+type Slot<N> = {
+  node: N
+  next: Slot<N> | undefined
+  prev: Slot<N> | undefined
+  head: Slot<N> | undefined
+  out: boolean
+}
+export class Spliced<P extends object, N> {
+  readonly #kids: (parent: P) => N[]
+  // each parent's list, by an empty slot before its first child
+  readonly #lists = new Map<P, Slot<N>>()
+  // each element's slot (a text is never looked for)
+  readonly #slots = new Map<N, Slot<N>>()
+  constructor(kids: (parent: P) => N[]) {
+    this.#kids = kids
+  }
+  #list(parent: P) {
+    let head = this.#lists.get(parent)
+    if (head === undefined) {
+      head = { node: undefined as N, next: undefined, prev: undefined, head: undefined, out: false }
+      this.#lists.set(parent, head)
+      let last = head
+      for (const node of this.#kids(parent)) last = this.#after(head, last, node)
+    }
+    return head
+  }
+  #after(head: Slot<N>, slot: Slot<N>, node: N): Slot<N> {
+    const made: Slot<N> = { node, next: slot.next, prev: slot, head, out: false }
+    if (slot.next) slot.next.prev = made
+    slot.next = made
+    if (typeof node === 'object' && node !== null) this.#slots.set(node, made)
+    return made
+  }
+  // where a node is among its parent's children, or undefined where it isn't (a move took it out)
+  find(parent: P, node: N): Slot<N> | undefined {
+    const head = this.#list(parent)
+    const slot = this.#slots.get(node)
+    return slot && !slot.out && slot.head === head ? slot : undefined
+  }
+  // a parent's children as they are now
+  kids(parent: P): N[] {
+    const head = this.#lists.get(parent)
+    if (head === undefined) return [...this.#kids(parent)]
+    const kids: N[] = []
+    for (let slot = head.next; slot; slot = slot.next) kids.push(slot.node)
+    return kids
+  }
+  // the children from one up to another (or the end) taken out, and these put in their place
+  take(from: Slot<N>, to: Slot<N> | undefined, put: N[]) {
+    const head = from.head!
+    const before = from.prev!
+    for (let slot: Slot<N> | undefined = from; slot && slot !== to; slot = slot.next)
+      slot.out = true
+    before.next = to
+    if (to) to.prev = before
+    let last = before
+    for (const node of put) last = this.#after(head, last, node)
+  }
+  // a parent left with no children: the caller empties its array
+  clear(parent: P) {
+    const head = this.#lists.get(parent)
+    if (head === undefined) return
+    for (let slot = head.next; slot; slot = slot.next) slot.out = true
+    head.next = undefined
+  }
+  // whether a node is among its parent's children, once the moves are done
+  has(parent: P, node: N) {
+    const head = this.#lists.get(parent)
+    return head === undefined
+      ? this.#kids(parent).includes(node)
+      : this.find(parent, node) !== undefined
+  }
+  // each list written back to its parent
+  done() {
+    for (const [parent, head] of this.#lists) {
+      const kids = this.#kids(parent)
+      kids.length = 0
+      for (let slot = head.next; slot; slot = slot.next) kids.push(slot.node)
+    }
+  }
+}

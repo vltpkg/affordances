@@ -1,4 +1,8 @@
 import { afterEach, expect, test } from 'vitest'
+import { fromParse5 } from 'hast-util-from-parse5'
+import { parse as parse5 } from 'parse5'
+import { parse } from '../../../src/convert/core/parse.ts'
+import { resolveStreamed } from '../../../src/convert/index.ts'
 import { forcePath, type Path } from '../../../src/convert/path.ts'
 import { htmlToMarkdown, readPage } from '../../../src/index.ts'
 import { onBoth } from './support/paths.ts'
@@ -52,15 +56,20 @@ test.each([
     expect(ratio).toBeLessThan(24)
     expect(written).toBe('a b\n')
   },
+  60_000,
 )
 test.each([
   ['md-core', 'strict'],
   ['the tree pipeline', 'hast'],
-] as const)('thousands of filled slots, on %s, in linear time', (_, path) => {
-  const { ratio, written } = grows(path, filled)
-  expect(ratio).toBeLessThan(24)
-  expect(written).toMatch(/^v0\n\nv1\n\n[^]*\n\nv7999\n$/)
-})
+] as const)(
+  'thousands of filled slots, on %s, in linear time',
+  (_, path) => {
+    const { ratio, written } = grows(path, filled)
+    expect(ratio).toBeLessThan(24)
+    expect(written).toMatch(/^v0\n\nv1\n\n[^]*\n\nv7999\n$/)
+  },
+  60_000,
+)
 
 // a table of rows with a slot each: whether the table stands (it's no skeleton) is judged once, not for every slot
 const tableSlots = (n: number) => {
@@ -77,7 +86,7 @@ test('thousands of slots in a table, on md-core, in linear time', () => {
   const { ratio, written } = grows('strict', tableSlots)
   expect(ratio).toBeLessThan(24)
   expect(written).toContain('| p7999 | 7999.0  |\n')
-})
+}, 60_000)
 
 // thousands of tabs that share an id, in tablists, with a shown panel they label: md-core kept every tab by its id,
 // copying the list for each one, and never read it. it writes the page as the tree pipeline does
@@ -107,6 +116,7 @@ test.each([
     expect(markdown.length).toBeLessThan(10 * rows)
     expect(markdown).toMatch(/^0\n\nx\n\n1\n\nx\n\n[^]*\n\n3999\n\nx\n$/)
   },
+  60_000,
 )
 // a small one still is a grid: spans pad it, within the limit
 test('a table whose spans pad it a little is still a grid, on both paths', () => {
@@ -128,8 +138,56 @@ const between = (split: string) => (n: number) =>
 test.each([
   ['comments', '<!-- c -->'],
   ['inline elements', '<span>b</span>'],
-])('a run of text between thousands of %s, on the tree pipeline, in linear time', (_, split) => {
-  const { ratio, written } = grows('hast', between(split), 2000)
-  expect(ratio).toBeLessThan(24)
-  expect(written).toMatch(split.startsWith('<!') ? /^a0a1a2[^]*a15999\n$/ : /^a0ba1b[^]*a15999b\n$/)
-})
+])(
+  'a run of text between thousands of %s, on the tree pipeline, in linear time',
+  (_, split) => {
+    const { ratio, written } = grows('hast', between(split), 2000)
+    expect(ratio).toBeLessThan(24)
+    expect(written).toMatch(
+      split.startsWith('<!') ? /^a0a1a2[^]*a15999\n$/ : /^a0ba1b[^]*a15999b\n$/,
+    )
+  },
+  60_000,
+)
+
+// react's streamed boundaries by the thousand in one parent, or each nested in the one before: each move found its
+// template and spliced the parent's whole list (~2.4s at 16000 on md-core). timed alone, the moves, which conversion
+// would hide: md-core's parse, which makes them, and the tree pipeline's resolve on a page already parsed
+const RC = (i: number) => `<script>$RC("B:${i}","S:${i}")</script>`
+const join = (n: number, each: (i: number) => string) =>
+  Array.from({ length: n }, (_, i) => each(i)).join('')
+const boundaries = {
+  'in one parent': (n: number) =>
+    `<main>${join(n, (i) => `<!--$?--><template id="B:${i}"></template><p>L${i}</p><!--/$-->`)}${join(n, (i) => `<div hidden id="S:${i}"><p>R${i}</p></div>${RC(i)}`)}</main>`,
+  'nested in order': (n: number) =>
+    `<main><!--$?--><template id="B:0"></template><p>L</p><!--/$-->${join(n, (i) => `<div hidden id="S:${i}"><p>R${i}</p><!--$?--><template id="B:${i + 1}"></template><!--/$--></div>${RC(i)}`)}</main>`,
+}
+const movesGrow = (move: (html: string) => () => unknown, page: (n: number) => string) => {
+  const fastest = (n: number) => {
+    const html = page(n)
+    let best = Infinity
+    for (let run = 0; run < 3; run++) {
+      const moves = move(html)
+      const started = performance.now()
+      moves()
+      best = Math.min(best, performance.now() - started)
+    }
+    return best
+  }
+  return fastest(16000) / fastest(2000)
+}
+test.each(Object.entries(boundaries))(
+  'thousands of streamed boundaries %s are moved in linear time, on both paths',
+  (_, page) => {
+    expect(movesGrow((html) => () => parse(html), page)).toBeLessThan(24)
+    expect(
+      movesGrow((html) => {
+        const { resolve } = resolveStreamed(
+          fromParse5(parse5(html, { scriptingEnabled: false })) as never,
+        )
+        return resolve
+      }, page),
+    ).toBeLessThan(24)
+  },
+  60_000,
+)

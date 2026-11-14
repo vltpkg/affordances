@@ -42,6 +42,7 @@ import {
   LINK_SCHEMES,
   pageTitle,
   pretty,
+  Spliced,
   unbracketed,
   VALUE_ROLES,
   VALUED,
@@ -460,29 +461,38 @@ export const resolveStreamed = (tree: HastRoot) => {
   }
   const resolve = () => {
     if (!boundaries.size && !placeholders.size) return
+    const lists = new Spliced<HastRoot | Element, ElementContent>(
+      (parent) => parent.children as ElementContent[],
+    )
     // in document order, once: a segment's own templates (nested boundaries) move with it, and are reached after it
     for (const template of templates) {
       const id = String(template.properties.id)
       const boundary = boundaries.has(id)
       const segment = byId.get((boundary ? boundaries : placeholders).get(id) ?? '')
       const parent = parents.get(template)
+      if (!segment || !parent) continue
       // a template inside a fallback that was already replaced is gone
-      const start = parent ? parent.children.indexOf(template) : -1
-      if (!segment || !parent || start < 0) continue
+      const start = lists.find(parent, template)
+      if (!start) continue
       // a boundary's fallback runs from its template to the boundary's closing <!--/$-->; a placeholder is the
       // template alone
-      let end = start + 1
+      let end = start.next
       if (boundary)
-        for (let depth = 0; end < parent.children.length; end++) {
-          const node = parent.children[end]!
+        for (let depth = 0; end; end = end.next) {
+          const node = end.node
           if (node.type !== 'comment') continue
           if (node.value.startsWith('$')) depth++
           else if (node.value === '/$' && depth-- === 0) break
         }
-      for (const child of segment.children) parents.set(child, parent)
-      parent.children.splice(start, end - start, ...segment.children)
+      const kids = lists.kids(segment)
+      for (const child of kids) parents.set(child, parent)
+      // a segment that is the template's parent takes its own children back, and then has none
+      if (segment === parent) lists.clear(parent)
+      else lists.take(start, end, kids)
+      lists.clear(segment)
       segment.children = []
     }
+    lists.done()
   }
   return { scripts, resolve }
 }
