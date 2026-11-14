@@ -11,25 +11,39 @@ afterEach(() => {
   forcePath(undefined)
 })
 
-// what a page of n of something costs on one path, md-core (strict: it writes the page, never declines) or the tree
-// pipeline: the best of three, and what it wrote
-const timed = (path: Path, read: () => string) => {
-  forcePath(path)
-  let best = Infinity
-  let written = ''
-  for (let run = 0; run < 3; run++) {
-    const started = performance.now()
-    written = read()
-    best = Math.min(best, performance.now() - started)
-  }
-  return { best, written }
+// how many times as long a page of eight times as many takes, a loaded machine slowing both alike: about 8x when it's
+// linear, about 64x when each one reads all the others. each size's best of three, the two taken in turn, and measured
+// again (up to three times) while it's over the limit, which a real quadratic is every time and a busy moment isn't
+const LIMIT = 24
+const took = (read: () => unknown) => {
+  const started = performance.now()
+  read()
+  return performance.now() - started
 }
-// how the time grows with eight times as many, which a loaded machine slows alike: about 8x when it's linear, about
-// 64x when each one reads all the others
+// each argument runs its size once and says how long the part that counts took
+const ratioOf = (small: () => number, large: () => number) => {
+  let ratio = Infinity
+  for (let tries = 0; tries < 3 && ratio >= LIMIT; tries++) {
+    let one = Infinity
+    let eight = Infinity
+    for (let run = 0; run < 3; run++) {
+      one = Math.min(one, small())
+      eight = Math.min(eight, large())
+    }
+    ratio = Math.min(ratio, eight / one)
+  }
+  return ratio
+}
+// a page of n of something on one path, md-core (strict: it writes the page, never declines) or the tree pipeline,
+// against one of 8n, and what the large one wrote
 const grows = (path: Path, read: (n: number) => string, n = 1000) => {
-  const small = timed(path, () => read(n))
-  const large = timed(path, () => read(8 * n))
-  return { ratio: large.best / small.best, written: large.written }
+  forcePath(path)
+  let written = ''
+  const ratio = ratioOf(
+    () => took(() => read(n)),
+    () => took(() => (written = read(8 * n))),
+  )
+  return { ratio, written }
 }
 
 // whitespace between empty inline elements: what follows each says whether it's kept, found once for the run
@@ -53,7 +67,7 @@ test.each([
   (_, path) => {
     // each whitespace scanned to the end of the run: ~78s at 32000 on the tree pipeline
     const { ratio, written } = grows(path, spans)
-    expect(ratio).toBeLessThan(24)
+    expect(ratio).toBeLessThan(LIMIT)
     expect(written).toBe('a b\n')
   },
   60_000,
@@ -65,7 +79,7 @@ test.each([
   'thousands of filled slots, on %s, in linear time',
   (_, path) => {
     const { ratio, written } = grows(path, filled)
-    expect(ratio).toBeLessThan(24)
+    expect(ratio).toBeLessThan(LIMIT)
     expect(written).toMatch(/^v0\n\nv1\n\n[^]*\n\nv7999\n$/)
   },
   60_000,
@@ -84,7 +98,7 @@ const tableSlots = (n: number) => {
 test('thousands of slots in a table, on md-core, in linear time', () => {
   // each slot walked the whole table: ~65s at 16000 rows
   const { ratio, written } = grows('strict', tableSlots)
-  expect(ratio).toBeLessThan(24)
+  expect(ratio).toBeLessThan(LIMIT)
   expect(written).toContain('| p7999 | 7999.0  |\n')
 }, 60_000)
 
@@ -142,7 +156,7 @@ test.each([
   'a run of text between thousands of %s, on the tree pipeline, in linear time',
   (_, split) => {
     const { ratio, written } = grows('hast', between(split), 2000)
-    expect(ratio).toBeLessThan(24)
+    expect(ratio).toBeLessThan(LIMIT)
     expect(written).toMatch(
       split.startsWith('<!') ? /^a0a1a2[^]*a15999\n$/ : /^a0ba1b[^]*a15999b\n$/,
     )
@@ -162,24 +176,19 @@ const boundaries = {
   'nested in order': (n: number) =>
     `<main><!--$?--><template id="B:0"></template><p>L</p><!--/$-->${join(n, (i) => `<div hidden id="S:${i}"><p>R${i}</p><!--$?--><template id="B:${i + 1}"></template><!--/$--></div>${RC(i)}`)}</main>`,
 }
+// each run's moves are made on a fresh parse, and only the moves are timed
 const movesGrow = (move: (html: string) => () => unknown, page: (n: number) => string) => {
-  const fastest = (n: number) => {
-    const html = page(n)
-    let best = Infinity
-    for (let run = 0; run < 3; run++) {
-      const moves = move(html)
-      const started = performance.now()
-      moves()
-      best = Math.min(best, performance.now() - started)
-    }
-    return best
-  }
-  return fastest(16000) / fastest(2000)
+  const small = page(2000)
+  const large = page(16000)
+  return ratioOf(
+    () => took(move(small)),
+    () => took(move(large)),
+  )
 }
 test.each(Object.entries(boundaries))(
   'thousands of streamed boundaries %s are moved in linear time, on both paths',
   (_, page) => {
-    expect(movesGrow((html) => () => parse(html), page)).toBeLessThan(24)
+    expect(movesGrow((html) => () => parse(html), page)).toBeLessThan(LIMIT)
     expect(
       movesGrow((html) => {
         const { resolve } = resolveStreamed(
@@ -187,7 +196,7 @@ test.each(Object.entries(boundaries))(
         )
         return resolve
       }, page),
-    ).toBeLessThan(24)
+    ).toBeLessThan(LIMIT)
   },
   60_000,
 )

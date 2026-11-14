@@ -390,10 +390,8 @@ test.each(features.map((feature) => [feature[0], feature] as const))(
     for (const path of paths) {
       forcePath(path)
       const growth = growthOf(small, large)
-      expect({ path: path ?? 'md-core', growth: growth < GROWTH }).toEqual({
-        path: path ?? 'md-core',
-        growth: true,
-      })
+      // a failure says which path, and what it measured
+      expect([path ?? 'md-core', growth < GROWTH || growth]).toEqual([path ?? 'md-core', true])
     }
   },
   60_000,
