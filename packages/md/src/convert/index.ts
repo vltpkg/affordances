@@ -32,7 +32,7 @@ import type {
   MdastNode,
   Options as CoreOptions,
 } from './core/types.ts'
-import { declined, forcedPath } from './path.ts'
+import { declined, Declined, declines, forcedPath, parityOnly, takeFired } from './path.ts'
 
 export type Handlers = Record<string, Handle>
 
@@ -2426,7 +2426,8 @@ export type SlotNames = { unique: string[]; duplicate: string[] }
 export type Redirect = { status: 307 | 308; location: string }
 export type Fallback = { status: 401 | 403 | 404 }
 
-export const readPage = (html: string, options: Options = {}): Page => {
+// the page as read from all of it: the flight stripper's run, and what it swapped
+const leanOf = (html: string) => {
   // a script is a push only if its text, a run of the page as written, starts with CALL, which needs NEXT_F: a page
   // without it is what the stripper would give back, with nothing swapped. only here, where the whole page is in hand
   const strip = html.includes(NEXT_F) ? flightStripper() : undefined
@@ -2434,14 +2435,24 @@ export const readPage = (html: string, options: Options = {}): Page => {
   const swapped: Swapped = strip
     ? strip.swapped()
     : { nonce: crypto.randomUUID(), count: 0, errors: [], unreadable: false }
-  if (coreTakes(options)) {
-    const core = readCore(lean, swapped, options)
-    if (core && !core.reason) return core.page
-    // swaps that can't be trusted: the page as sent, as md-core reads it, and an error of its own. a rare path, so the
-    // page is parsed again with every push still in it as a script's text
-    const sent = core && readCore(html, { ...swapped, errors: [''] }, options)
-    if (sent) return sent.page
-  }
+  return { lean, swapped }
+}
+// md-core's read of a page, or undefined where it declines
+const corePage = (
+  html: string,
+  lean: string,
+  swapped: Swapped,
+  options: Options,
+  insist = false,
+) => {
+  const core = readCore(lean, swapped, options, insist)
+  if (core && !core.reason) return core.page
+  // swaps that can't be trusted: the page as sent, as md-core reads it, and an error of its own. a rare path, so the
+  // page is parsed again with every push still in it as a script's text
+  return (core && readCore(html, { ...swapped, errors: [''] }, options, insist)?.page) || undefined
+}
+// the tree pipeline's read of a page
+const treePage = (html: string, lean: string, swapped: Swapped, options: Options) => {
   const { tree, streamed, reason } = strippedTree(lean, swapped)
   if (!reason) {
     streamed.resolve()
@@ -2453,18 +2464,121 @@ export const readPage = (html: string, options: Options = {}): Page => {
   return readTree({ tree: sent, errors: [''] }, options)
 }
 
+// an error md didn't foresee, on one path or the other, never decides a page alone: when md-core throws, the tree
+// pipeline reads the page, as when md-core declines it; when the tree pipeline throws on a page md-core declined only to
+// stay byte-identical (PARITY, every reason that fired), md-core's own markdown is the answer. otherwise, and when both
+// throw, the first error stands. the same holds when markdown() is what throws
+const recovered = (read: {
+  core?: () => Page | undefined
+  tree: () => Page
+  insist: () => Page | undefined
+}): Page => {
+  let coreError: unknown
+  let fired: string[] = []
+  if (read.core) {
+    takeFired()
+    try {
+      const page = read.core()
+      if (page) return fallsBack(page, read.tree)
+    } catch (error) {
+      if (error instanceof Declined || error instanceof FlightDataError) throw error
+      coreError = error ?? new Error(String(error))
+    }
+    fired = takeFired()
+  }
+  const insisting = () => {
+    if (coreError !== undefined || !parityOnly(fired)) return undefined
+    const page = read.insist()
+    if (page) declines.set('tree path threw', (declines.get('tree path threw') ?? 0) + 1)
+    return page
+  }
+  let page: Page
+  try {
+    page = read.tree()
+  } catch (error) {
+    if (error instanceof FlightDataError || coreError !== undefined) throw coreError ?? error
+    const insisted = insisting()
+    if (!insisted) throw error
+    return insisted
+  }
+  return {
+    ...page,
+    markdown: (fills) => {
+      try {
+        return page.markdown(fills)
+      } catch (error) {
+        const insisted = insisting()
+        if (!insisted) throw coreError ?? error
+        return insisted.markdown(fills)
+      }
+    },
+  }
+}
+// md-core's page, read on the tree pipeline if its markdown() throws
+const fallsBack = (page: Page, tree: () => Page): Page => ({
+  ...page,
+  markdown: (fills) => {
+    try {
+      return page.markdown(fills)
+    } catch (error) {
+      if (error instanceof Declined) throw error
+      try {
+        return tree().markdown(fills)
+      } catch {
+        throw error
+      }
+    }
+  },
+})
+
+// both paths' reads of a page, recovered from what either throws
+const reading = (html: string, options: Options) => {
+  const { lean, swapped } = leanOf(html)
+  return recovered({
+    ...(coreTakes(options) && { core: () => corePage(html, lean, swapped, options) }),
+    tree: () => treePage(html, lean, swapped, options),
+    insist: () => corePage(html, lean, swapped, options, true),
+  })
+}
+
+// readPage never throws: a page md can't read at all (both paths having thrown, or the tree pipeline on a page md-core
+// declined for more than parity) is a page whose markdown() throws that first error, unchanged. its slots are none
+export const readPage = (html: string, options: Options = {}): Page => {
+  try {
+    return reading(html, options)
+  } catch (error) {
+    if (error instanceof Declined) throw error
+    return {
+      slots: { unique: [], duplicate: [] },
+      errors: [],
+      markdown: () => {
+        throw error
+      },
+    }
+  }
+}
+
 // a page whose flight pushes flightStripper took out as it streamed. the page as sent is gone, so swaps that can't be
 // trusted throw: the handler answers 502, and a caller that forgets to catch it fails closed too. not part of the
-// package's api: only the handler, which did the stripping, says a page was
-export const readStreamed = (html: string, swapped: Swapped, options: Options = {}): Page => {
-  const core = coreTakes(options) ? readCore(html, swapped, options) : undefined
-  if (core?.reason) throw new FlightDataError(core.reason)
-  if (core) return core.page
-  const { tree, streamed, reason } = strippedTree(html, swapped)
-  if (reason) throw new FlightDataError(reason)
-  streamed.resolve()
-  return readTree({ tree, errors: swapped.errors }, options)
-}
+// package's api: only the handler, which did the stripping, says a page was. what else throws reaches the handler too,
+// which answers 502 the same
+export const readStreamed = (html: string, swapped: Swapped, options: Options = {}): Page =>
+  recovered({
+    ...(coreTakes(options) && {
+      core: () => {
+        const core = readCore(html, swapped, options)
+        if (core?.reason) throw new FlightDataError(core.reason)
+        return core?.page
+      },
+    }),
+    tree: () => {
+      const { tree, streamed, reason } = strippedTree(html, swapped)
+      if (reason) throw new FlightDataError(reason)
+      streamed.resolve()
+      return readTree({ tree, errors: swapped.errors }, options)
+    },
+    insist: () => readCore(html, swapped, options, true)?.page,
+  })
 
 const readTree = (
   { tree, errors }: { tree: HastRoot; errors: string[] },
@@ -2580,6 +2694,9 @@ const readCore = (
   html: string,
   swapped: Swapped,
   options: Options,
+  // past the declines that only keep the paths byte-identical (PARITY): md-core's own markdown, for a page the tree
+  // pipeline threw on
+  insist = false,
 ): { page: Page; reason: FlightDataError['reason'] | undefined } | undefined => {
   // a page react streams boundaries into: md-core would only parse it to decline it, so it goes to the tree pipeline
   // first. a superset of md-core's own check below, which still declines whatever this misses
@@ -2619,12 +2736,12 @@ const readCore = (
     return undefined
   }
   // text that doesn't wrap, split by a comment or a dropped element: the tree pipeline keeps both sides' whitespace
-  if (doc.nowrapSplit) {
+  if (doc.nowrapSplit && !insist) {
     declined('text split in a nobr')
     return undefined
   }
   // a strikethrough the tree pipeline writes outside a paragraph
-  if (doc.struck && struckList(doc.root)) {
+  if (doc.struck && !insist && struckList(doc.root)) {
     declined('strikethrough and list')
     return undefined
   }
@@ -2790,7 +2907,7 @@ export const pageTitle = (title: string | undefined, h1: string | undefined) => 
   return new RegExp(`^${name}${separator}\\S|\\S${separator}${name}$`).test(said) ? h1 : title
 }
 
-// the page's markdown; slots fills its <AgentSlot>s
+// the page's markdown; slots fills its <AgentSlot>s. it throws where readPage's markdown() would
 export const htmlToMarkdown = (html: string, options: Options = {}): Result =>
   readPage(html, options).markdown(options.slots)
 

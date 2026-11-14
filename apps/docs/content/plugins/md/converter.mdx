@@ -42,4 +42,4 @@ for (const name of page.slots.unique) slots[name] = await readme(name)
 const { markdown } = page.markdown(slots)
 ```
 
-`htmlToMarkdown(html, { slots })` is `readPage(html, options).markdown(slots)`.
+`htmlToMarkdown(html, { slots })` is `readPage(html, options).markdown(slots)`. `readPage` never throws: if md can't convert a page at all, `markdown()` throws the error it ran into, and so does `htmlToMarkdown`. The route answers that page with a `502`, `private, no-store`.

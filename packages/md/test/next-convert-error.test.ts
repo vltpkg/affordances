@@ -92,3 +92,10 @@ test('a page nested 2,000, 20,000 and 100,000 deep, of divs or svgs, is read up 
       ]).toEqual([tag, n, 200, '1', true, true])
     }
 }, 30_000)
+
+test('a page parse5 throws on answers 502, private, no-store, through the route', async () => {
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  body = '<table><svg><select><foreignObject><select><td><article><span></ul><svg><del><form>'
+  expect(await get()).toEqual([502, 'private, no-store', false])
+  error.mockRestore()
+})

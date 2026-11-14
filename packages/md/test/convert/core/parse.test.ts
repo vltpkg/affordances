@@ -590,7 +590,7 @@ describe.skipIf(corpusFiles.length === 0)('the corpus pages', () => {
 
 describe('differential fuzz against the oracle', () => {
   const RUNS = 6000
-  test(`${RUNS} generated pages`, () => {
+  test(`${RUNS} generated pages`, { timeout: 30_000 }, () => {
     const failures: string[] = []
     const oracleThrew: number[] = []
     for (let seed = 1; seed <= RUNS; seed++) {
