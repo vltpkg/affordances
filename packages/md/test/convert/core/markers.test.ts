@@ -293,3 +293,31 @@ test('every generated page of markers in links reads as the tree pipeline does',
   forcePath(undefined)
   expect(differ).toEqual([])
 }, 30_000)
+
+// shown tab panels by the thousand, each labelled by ids that no element has, among as many elements that have one:
+// each panel finds its tabs by id once, not by a search of every element with an id
+const panelsTimed = (panels: number) => {
+  let html = '<main>'
+  for (let i = 0; i < panels; i++) html += `<p id="e${i}">x</p>`
+  for (let i = 0; i < panels; i++)
+    html += `<section role="tabpanel" data-affordances-md="show" aria-labelledby="m${i} t${i}">p${i}</section>`
+  html += `<div role="tablist"><button role="tab" id="t${panels - 1}">Last</button></div></main>`
+  let best = Infinity
+  let markdown = ''
+  declines.clear()
+  for (let run = 0; run < 3; run++) {
+    const started = performance.now()
+    markdown = readPage(html).markdown().markdown
+    best = Math.min(best, performance.now() - started)
+  }
+  return { best, markdown, declined: [...declines.keys()] }
+}
+test('thousands of shown tab panels find their tabs in linear time', () => {
+  // a search per id took ~56s at 10000 panels. measured as how the time grows with eight times the panels, which a
+  // loaded machine slows alike: about 8x when it's linear, about 64x when each id searches every element
+  const small = panelsTimed(500)
+  const large = panelsTimed(4000)
+  expect(large.best / small.best).toBeLessThan(24)
+  expect(large.declined).toEqual([])
+  expect(large.markdown).toContain('p3998\n\n**Last**\n\np3999\n')
+}, 60000)

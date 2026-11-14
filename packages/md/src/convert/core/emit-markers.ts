@@ -285,12 +285,18 @@ const tabHeadings = (root: Element, shown: Set<string>): Map<Element, string> | 
     }
     return true
   }
+  // the first element with each id, of those prune may keep
+  const byId = new Map<string, Element>()
+  for (const el of withIds) {
+    const id = attr(el, 'id')!
+    if (!never.has(el) && !byId.has(id)) byId.set(id, el)
+  }
   const headings = new Map<Element, string>()
   for (const panel of panels) {
     const names: string[] = []
     for (const id of (attr(panel, 'aria-labelledby') ?? '').split(/\s+/)) {
       if (!id) continue
-      const tab = withIds.find((el) => attr(el, 'id') === id && !never.has(el))
+      const tab = byId.get(id)
       if (!tab) continue
       if (doubtful.has(tab)) return undefined
       if (!present(tab)) continue
