@@ -124,7 +124,8 @@ const styleDisplays = (style: string | undefined, display: RegExp) =>
   style !== undefined &&
   DISPLAY.test(style) &&
   declarations(style).some(([property, value]) => property === 'display' && display.test(value))
-export const role = (el: Element) => attr(el, 'role') ?? ''
+export const role = (el: Element) => (el.flags & ROLE ? (attr(el, 'role') ?? '') : '')
+export const isTablist = (el: Element) => role(el) === 'tablist'
 const editor = (el: Element) => {
   const r = role(el)
   if (r === 'textbox' || r === 'searchbox') return true
@@ -411,11 +412,11 @@ const verbatimOf = (el: Element): Element => {
 }
 // a tablist with a tab that labels a shown panel
 const shownTablist = (el: Element) => {
-  if (!tabs || !(el.flags & ROLE) || role(el) !== 'tablist') return false
+  if (!tabs || !isTablist(el)) return false
   const walk = (parent: Element): boolean => {
     for (const kid of parent.kids) {
       if (typeof kid === 'string') continue
-      if (kid.flags & ROLE && role(kid) === 'tab' && tabs!.has(attr(kid, 'id') ?? '')) return true
+      if (role(kid) === 'tab' && tabs!.has(attr(kid, 'id') ?? '')) return true
       if (walk(kid)) return true
     }
     return false
@@ -441,7 +442,7 @@ const headed = (panel: Element): Element => {
         .split(/\s+/)
         .filter(Boolean)
         .flatMap((id) => ids().get(id) ?? [])
-        .filter((tab) => tab.flags & ROLE && role(tab) === 'tab')
+        .filter((tab) => role(tab) === 'tab')
         .map(words)
         .filter(Boolean)
         .join(' ')

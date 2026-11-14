@@ -2,6 +2,7 @@ import { attr } from './attr.ts'
 import {
   dropped,
   INLINE,
+  isTablist,
   isText,
   LABEL_HOSTS,
   marked,
@@ -41,8 +42,7 @@ const CHANGED = new Set([
   'summary',
   'dt',
 ])
-export const changed = (el: Element) =>
-  CHANGED.has(el.tag) || (el.flags & FLAG.role && attr(el, 'role') === 'tablist') || isText(el)
+export const changed = (el: Element) => CHANGED.has(el.tag) || isTablist(el) || isText(el)
 
 // a strikethrough the tree pipeline writes outside a paragraph, where md-core writes what's in it otherwise: one
 // that holds a list, or one in a list with no list item between
@@ -68,8 +68,10 @@ export const struckList = (root: Element): boolean => {
 // outside what's hidden counts (a value's too: a link's blocks are judged before its values are taken out), and so do
 // an <AgentText>'s markdown and a described image. undefined where prune could change what's there first: a tablist
 // it may take out, a shown tab panel it heads. without values, it's what a link itself is judged by once its blocks
-// are: a link whose text is all values (an <output>, a field) reads as its label, or is gone
-export const reads = (el: Element, values = true): boolean | undefined => {
+// are: a link whose text is all values (an <output>, a field) reads as its label, or is gone. and but a tag, what a
+// label reads as without it (its button): there, what's hidden is never read, an <AgentText> included, and any tab
+// panel is undefined
+export const reads = (el: Element, values = true, but?: string): boolean | undefined => {
   let said = false
   const walk = (parent: Element): boolean => {
     for (const kid of parent.kids) {
@@ -77,14 +79,15 @@ export const reads = (el: Element, values = true): boolean | undefined => {
         if (kid.trim() !== '') said = true
         continue
       }
+      if (but !== undefined && (kid.tag === but || dropped(kid))) continue
       if (isText(kid)) {
         if ((attr(kid, 'data-md') ?? '') !== '') said = true
         continue
       }
       if (dropped(kid) || (!values && valueBearing(kid))) continue
       if (
-        kid.flags & FLAG.role &&
-        (role(kid) === 'tablist' || (role(kid) === 'tabpanel' && marked(kid) === 'show'))
+        isTablist(kid) ||
+        (role(kid) === 'tabpanel' && (but !== undefined || marked(kid) === 'show'))
       )
         return false
       if (kid.tag === 'img' && attr(kid, 'alt')) said = true
@@ -124,7 +127,7 @@ const tabsIn = (tablist: Element) => {
   const walk = (parent: Element) => {
     for (const kid of parent.kids) {
       if (typeof kid === 'string') continue
-      if (kid.flags & FLAG.role && role(kid) === 'tab') ids.push(attr(kid, 'id') ?? '')
+      if (role(kid) === 'tab') ids.push(attr(kid, 'id') ?? '')
       walk(kid)
     }
   }
@@ -183,7 +186,7 @@ export const readMarkers = (root: Element): Markers => {
           if (id) (gone || under ? uncertain : found.tabs).add(id)
       }
       // a tablist and its tabs' ids, as prune reads them: every [role=tab] in it, hidden or not
-      const list = kid.flags & FLAG.role && role(kid) === 'tablist'
+      const list = isTablist(kid)
       if (list) tablists.push(tabsIn(kid))
       if (kid.flags & FLAG.role) {
         const id = role(kid) === 'tab' ? attr(kid, 'id') : undefined
@@ -247,7 +250,7 @@ const tabHeadings = (root: Element, shown: Set<string>): Map<Element, string> | 
         })
         continue
       }
-      const list = kid.flags & FLAG.role && role(kid) === 'tablist'
+      const list = isTablist(kid)
       if (list && tabsIn(kid).some((id) => shown.has(id))) {
         goneWith.set(kid, parent)
         below(kid, (el) => {
@@ -259,7 +262,7 @@ const tabHeadings = (root: Element, shown: Set<string>): Map<Element, string> | 
       visit(kid, inDoubt || kid.tag === 'a' || kid.tag === 'table')
       const at = ++clock
       done.set(kid, at)
-      if (kid.flags & FLAG.role && role(kid) === 'tabpanel' && mode(kid) === 'show') {
+      if (role(kid) === 'tabpanel' && mode(kid) === 'show') {
         panels.push(kid)
         first = Math.min(first, at)
       }
@@ -270,7 +273,7 @@ const tabHeadings = (root: Element, shown: Set<string>): Map<Element, string> | 
           below(kid, (el) => goneAt.set(el, Math.min(goneAt.get(el) ?? Infinity, at)))
         } else if (read === undefined) unsure = Math.min(unsure, at)
       }
-      if (LABEL_HOSTS.has(kid.tag) && readsBut(kid, 'button') === false)
+      if (LABEL_HOSTS.has(kid.tag) && reads(kid, true, 'button') === false)
         below(kid, (el) => {
           if (el.tag === 'button') goneAt.set(el, Math.min(goneAt.get(el) ?? Infinity, at))
         })
@@ -296,7 +299,7 @@ const tabHeadings = (root: Element, shown: Set<string>): Map<Element, string> | 
       if (!tab) continue
       if (doubtful.has(tab)) return undefined
       if (!present(tab)) continue
-      if (tab.flags & FLAG.role && role(tab) === 'tab') {
+      if (role(tab) === 'tab') {
         const said = words(tab)
         if (said) names.push(said)
       }
@@ -304,28 +307,4 @@ const tabHeadings = (root: Element, shown: Set<string>): Map<Element, string> | 
     headings.set(panel, names.join(' '))
   }
   return headings
-}
-
-// whether an element has something to read with what a tag leaves out, as reads() judges it
-const readsBut = (el: Element, tag: string): boolean | undefined => {
-  let said = false
-  const walk = (parent: Element): boolean => {
-    for (const kid of parent.kids) {
-      if (typeof kid === 'string') {
-        if (kid.trim() !== '') said = true
-        continue
-      }
-      if (kid.tag === tag || dropped(kid)) continue
-      if (isText(kid)) {
-        if ((attr(kid, 'data-md') ?? '') !== '') said = true
-        continue
-      }
-      if (kid.flags & FLAG.role && (role(kid) === 'tablist' || role(kid) === 'tabpanel'))
-        return false
-      if (kid.tag === 'img' && attr(kid, 'alt')) said = true
-      if (!walk(kid)) return false
-    }
-    return true
-  }
-  return walk(el) ? said : undefined
 }

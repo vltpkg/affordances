@@ -1439,7 +1439,7 @@ const FLOWS = new Set([
 ])
 const DECLINED = null as unknown as Md
 // how the fast path fared, for the reports: blocks written, and declined by the tag that stopped them
-export const fastStats = { taken: 0, lists: 0, declined: new Map<string, number>() }
+export const fastStats = { taken: 0, declined: new Map<string, number>() }
 const decline = (why: string) => {
   fastStats.declined.set(why, (fastStats.declined.get(why) ?? 0) + 1)
   return false
@@ -1612,7 +1612,6 @@ const directList = (el: Element): Md | undefined => {
   result.raw = directItems(read).join('\0')
   result.el = el
   fastStats.taken++
-  fastStats.lists++
   return result
 }
 const readList = (el: Element): DList | null => {

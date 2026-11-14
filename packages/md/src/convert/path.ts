@@ -13,8 +13,10 @@ export const forcePath = (path: Path | undefined, allow: string[] = []) => {
 }
 export const forcedPath = () => forced
 
-// how many pages md-core declined, by why, since the last reset
+// how many pages md-core declined, by why, since the last reset (and how many it read past a parity decline because the
+// tree pipeline threw)
 export const declines = new Map<string, number>()
+export const tally = (why: string) => declines.set(why, (declines.get(why) ?? 0) + 1)
 
 // md-core can't write this page as the tree pipeline would
 export class Declined extends Error {
@@ -26,7 +28,7 @@ export class Declined extends Error {
   }
 }
 export const declined = (why: string) => {
-  declines.set(why, (declines.get(why) ?? 0) + 1)
+  tally(why)
   if (forced === 'strict' && !allowed.has(why)) throw new Declined(why)
 }
 

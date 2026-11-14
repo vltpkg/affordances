@@ -17,8 +17,6 @@ export const attr = (el: Element, name: string): string | undefined => {
 let last: Element | undefined
 let asked = 0
 
-export const hasAttrs = (el: Element) => el.attrs !== ''
-
 const space = (c: number) => c === 32 || c === 10 || c === 9 || c === 12 || c === 13
 
 // the tokenizer lowercases ascii only, and reads a nul as U+FFFD

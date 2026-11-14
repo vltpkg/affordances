@@ -9,6 +9,7 @@ import {
   chrome,
   dropped,
   findMain,
+  isTablist,
   isText,
   made,
   marked,
@@ -18,7 +19,7 @@ import {
   setTabs,
   valueBearing,
 } from './emit-prune.ts'
-import { FLAG, type Document, type Element, type Options, type Result } from './types.ts'
+import { type Document, type Element, type Options, type Result } from './types.ts'
 
 // markdown straight from the parser's tree: what @affordances/md's htmlToMarkdown writes for the same page. one walk
 // prunes, extracts, collapses whitespace and converts (emit-prune, emit-convert) into a lean tree that's written out
@@ -98,9 +99,6 @@ const contentOf = (doc: Document, options: Options): Content => {
   return { markers, outer, main, strip }
 }
 
-// the <AgentSlot>s that reach the markdown, in page order, as @affordances/md finds them once the page is pruned and
-// extracted: not hidden, not in an <AgentText>, not in chrome that's stripped, and never one inside another. and the
-// names rendered once, which are the ones a fill can go to
 // what prune could take a slot out with: a link drops a block with nothing to read, a skeleton table goes, and so
 // does a tablist whose tab labels a shown panel. where md-core can't tell from the tree as parsed, it declines
 // what a slot can be inside for md-core to read it as the tree pipeline does: plain containers with no text rules of
@@ -112,17 +110,17 @@ const SLOT_SAFE = new Set(
     'h1 h2 h3 h4 h5 h6 em strong b i code pre tbody thead tfoot tr td button label summary details form affordances-md'
   ).split(' '),
 )
-// what takes a value out of what's inside it before a slot there is judged: a link
-const STRIPS = new Set(['a'])
 const holdsValue = (el: Element): boolean =>
   el.kids.some((kid) => typeof kid !== 'string' && (valueBearing(kid) || holdsValue(kid)))
-const isTablist = (el: Element) => (el.flags & FLAG.role) !== 0 && attr(el, 'role') === 'tablist'
 // the links an element is inside, outermost first
 const linksAbove = (el: Element) => {
   const links: Element[] = []
   for (let at = el.up; at; at = at.up) if (at.tag === 'a') links.unshift(at)
   return links
 }
+// the <AgentSlot>s that reach the markdown, in page order, as @affordances/md finds them once the page is pruned and
+// extracted: not hidden, not in an <AgentText>, not in chrome that's stripped, and never one inside another. and the
+// names rendered once, which are the ones a fill can go to
 const slotsIn = (doc: Document, { outer, main, strip, markers }: Content) => {
   const slots: Element[] = []
   let decline: string | undefined
@@ -131,15 +129,15 @@ const slotsIn = (doc: Document, { outer, main, strip, markers }: Content) => {
       if (typeof kid === 'string' || isText(kid) || dropped(kid) || (strip && chrome(kid))) continue
       if (kid.tag === 'affordances-md' && marked(kid) === 'slot') {
         // what prune makes of a slot depends on all that's around it, which md-core doesn't repeat. it reads a slot only
-        // inside what prune leaves as it is or judges as md-core does: plain containers, headings, emphasis, a table's
-        // cells, a button, a label, a summary, a tablist, and links, which keep a slot with something to read and drop
-        // one without (and a link that says nothing but values is its label, or gone with the slot). never with a value
-        // around it (its text is a value, and prune may take it out), nor in a link with one inside it, which the link
-        // takes out first. anything else declines
+        // inside what prune leaves as it is (plain containers, headings, emphasis, a table's cells, a button, a label, a
+        // summary) or what md-core judges as prune does: links, which keep a slot with something to read and drop one
+        // without (and a link that says nothing but values is its label, or gone with the slot), a table that stands,
+        // and a tablist where no tab labels a shown panel. never with a value around it (its text is a value, and prune
+        // may take it out), nor in a link with one inside it, which the link takes out first. anything else declines
+        const inLink = around.some((el) => el.tag === 'a')
         if (unlisted || valued) decline ??= "slot inside an element md-core can't judge"
-        else if (around.some((el) => STRIPS.has(el.tag)) && holdsValue(kid))
-          decline ??= 'slot holding a value'
-        else if (around.some((el) => el.tag === 'a')) {
+        else if (inLink && holdsValue(kid)) decline ??= 'slot holding a value'
+        else if (inLink) {
           const read = reads(kid)
           if (read === false) continue
           if (

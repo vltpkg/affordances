@@ -32,7 +32,7 @@ import type {
   MdastNode,
   Options as CoreOptions,
 } from './core/types.ts'
-import { declined, Declined, declines, forcedPath, PARITY } from './path.ts'
+import { declined, Declined, forcedPath, PARITY, tally } from './path.ts'
 
 export type Handlers = Record<string, Handle>
 
@@ -2504,7 +2504,7 @@ const recovered = (read: {
       if (!decline || !PARITY.has(decline.declined)) return undefined
       const got = read.insist()
       if ('declined' in got) return undefined
-      declines.set('tree path threw', (declines.get('tree path threw') ?? 0) + 1)
+      tally('tree path threw')
       return got
     },
   ])
