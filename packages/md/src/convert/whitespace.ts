@@ -117,6 +117,7 @@ const removable = (character: string) => character === ' ' || character === '\n'
 
 // whitespace: what the tree is in, for one taken from a page (md-core's form, in a <nobr> or a <pre>)
 export const minifyWhitespace = (tree: Nodes, whitespace: Whitespace = 'normal') => {
+  aheadOf = new WeakMap()
   minify(tree, { whitespace, before: undefined, after: undefined })
 }
 
@@ -156,41 +157,59 @@ const all = (parent: Parents, state: State): Result => {
   let before = state.before
   const { after, whitespace } = state
   const children = parent.children
-  let length = children.length
-  let index = -1
-  while (++index < length) {
-    const result = minify(children[index]!, {
+  // what's kept moves down over what's removed, in place: what follows, which the lookahead reads, stays where it is
+  let kept = 0
+  for (let index = 0; index < children.length; index++) {
+    const child = children[index]!
+    const result = minify(child, {
       whitespace,
       before,
       after: collapsableAfter(children, index, after),
     })
-    if (result.remove) {
-      children.splice(index, 1)
-      index--
-      length--
-    } else if (!result.ignore) {
-      before = result.stripAtStart
+    if (!result.remove) {
+      children[kept++] = child
+      if (!result.ignore) before = result.stripAtStart
     }
     // an element that contributes content somehow, a <select> or an <img>, allows whitespace again
-    if (content(children[index])) before = false
+    if (content(children[kept - 1])) before = false
   }
+  children.length = kept
+  aheadOf.delete(children)
   return { ignore: false, stripAtStart: Boolean(before || after), remove: false }
 }
 
-// whether a break comes after the node at index: true where whitespace there says nothing
+// whether a break comes after the node at index: true where whitespace there says nothing. the first node that says
+// so, past a run that doesn't (blank text, empty inline elements), is found once for the list: a scan from anywhere in
+// the run finds the same one, so a page of thousands of them is read in linear time (md-core's is the same)
 const collapsableAfter = (
   nodes: Nodes[],
   index: number,
   after?: boolean | undefined,
 ): boolean | undefined => {
-  while (++index < nodes.length) {
-    const node = nodes[index]!
-    let result = boundary(node)
-    if (result === undefined && 'children' in node && !skippable(node))
-      result = collapsableAfter(node.children, -1)
-    if (typeof result === 'boolean') return result
+  const from = index + 1
+  if (from >= nodes.length) return after
+  const first = decides(nodes[from]!)
+  if (first !== undefined) return first
+  let ahead = aheadOf.get(nodes)
+  if (ahead === undefined || from < ahead.from || from > ahead.at)
+    aheadOf.set(nodes, (ahead = scan(nodes, from)))
+  return ahead.decides ?? after
+}
+const decides = (node: Nodes): boolean | undefined => {
+  const result = boundary(node)
+  return result === undefined && 'children' in node && !skippable(node)
+    ? collapsableAfter(node.children, -1)
+    : result
+}
+// the first node after from that decides, in a list whose node at from doesn't, and so for any scan from up to it
+type Ahead = { from: number; at: number; decides: boolean | undefined }
+let aheadOf = new WeakMap<Nodes[], Ahead>()
+const scan = (nodes: Nodes[], from: number): Ahead => {
+  for (let at = from + 1; at < nodes.length; at++) {
+    const decided = decides(nodes[at]!)
+    if (decided !== undefined) return { from, at, decides: decided }
   }
-  return after
+  return { from, at: nodes.length, decides: undefined }
 }
 
 // true: whitespace around the node says nothing; false: it does; undefined: its siblings or children decide

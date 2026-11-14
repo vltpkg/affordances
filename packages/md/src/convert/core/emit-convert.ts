@@ -116,26 +116,39 @@ const SPREAD = /[\t\n\v\f\r]| {2}/
 const collapse = (value: string) =>
   SPREAD.test(value) ? value.replace(/[\t\n\v\f\r ]+/g, ' ') : value
 
-// whether whitespace at the end of nodes[index] says nothing: a block comes next (true), or content (false)
+// whether whitespace at the end of nodes[index] says nothing: a block comes next (true), or content (false). the
+// first node that says so, past a run that doesn't (blank text, empty inline elements), is found once for the list: a
+// scan from anywhere in the run finds the same one, so a page of thousands of them is read in linear time
 const collapsableAfter = (
   nodes: Node[],
   index: number,
   end: boolean | undefined,
 ): boolean | undefined => {
-  while (++index < nodes.length) {
-    const node = nodes[index]!
-    if (typeof node === 'string') {
-      if (!blank(node)) return false
-      continue
-    }
-    if (CONTENT.has(node.tag)) return false
-    if (BLOCKS.has(node.tag)) return true
-    if (!SKIPPABLE.has(node.tag)) {
-      const result = collapsableAfter(kidsOf(node), -1, undefined)
-      if (result !== undefined) return result
-    }
+  const from = index + 1
+  if (from >= nodes.length) return end
+  const first = decides(nodes[from]!)
+  if (first !== undefined) return first
+  let ahead = aheadOf.get(nodes)
+  if (ahead === undefined || from < ahead.from || from > ahead.at)
+    aheadOf.set(nodes, (ahead = scan(nodes, from)))
+  return ahead.decides ?? end
+}
+// true: whitespace before the node says nothing; false: it does; undefined: what follows it, or what's in it, decides
+const decides = (node: Node): boolean | undefined => {
+  if (typeof node === 'string') return blank(node) ? undefined : false
+  if (CONTENT.has(node.tag)) return false
+  if (BLOCKS.has(node.tag)) return true
+  return SKIPPABLE.has(node.tag) ? undefined : collapsableAfter(kidsOf(node), -1, undefined)
+}
+// the first node after from that decides, in a list whose node at from doesn't, and so for any scan from up to it
+type Ahead = { from: number; at: number; decides: boolean | undefined }
+let aheadOf = new WeakMap<Node[], Ahead>()
+const scan = (nodes: Node[], from: number): Ahead => {
+  for (let at = from + 1; at < nodes.length; at++) {
+    const decided = decides(nodes[at]!)
+    if (decided !== undefined) return { from, at, decides: decided }
   }
-  return end
+  return { from, at: nodes.length, decides: undefined }
 }
 
 // a text as whitespace leaves it, or undefined when nothing's left
@@ -208,6 +221,7 @@ export const startConvert = (options: Options, page: string | undefined) => {
   contentRoot = undefined
   contentIds = undefined
   shown = new Map()
+  aheadOf = new WeakMap()
   inTable = false
   skips = new Set()
   controls = 0
@@ -224,6 +238,7 @@ export const startConvert = (options: Options, page: string | undefined) => {
 export const endConvert = () => {
   contentRoot = contentIds = titledCode = undefined
   shown = new Map()
+  aheadOf = new WeakMap()
   skips = new Set()
   linkUrls.clear()
 }
