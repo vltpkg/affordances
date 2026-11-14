@@ -289,8 +289,6 @@ test('every generated page of markers in links reads as the tree pipeline does',
     const next = markerPages(seed)
     for (let i = 0; i < 1000; i++) {
       const { html, options } = next()
-      // a <br> before an <AgentText> waits on qitem-20261114064432-67b7577425a2ab76
-      if (/<br><affordances-md data-mode="text"/.test(html)) continue
       forcePath('hast')
       const tree = read(html, options)
       forcePath('core')

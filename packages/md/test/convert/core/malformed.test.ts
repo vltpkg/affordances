@@ -35,6 +35,32 @@ test.each([
   ['an xmp in an h2', '<h2><xmp>\n\n--'],
   ['a pre in an h1', '<h1><pre>a\nb'],
   ['a plaintext in an h2', '<h2><plaintext>\nr'],
+  // html right after a line ending is written after a space instead: a hard break before an <AgentText>
+  ['a break before an AgentText', '<br><affordances-md data-mode="text" data-md="said">'],
+  [
+    'a break before an AgentText, in a paragraph',
+    '<p>a<br><affordances-md data-mode="text" data-md="said"></affordances-md>b</p>',
+  ],
+  [
+    'a break before an empty AgentText',
+    '<p>a<br><affordances-md data-mode="text" data-md=""></affordances-md>b</p>',
+  ],
+  [
+    'a break before an empty AgentText, in emphasis',
+    '<em><br><affordances-md data-mode="text" data-md="">',
+  ],
+  [
+    'an AgentText before a break',
+    '<p><affordances-md data-mode="text" data-md="said"></affordances-md><br>b</p>',
+  ],
+  [
+    'a break before a block AgentText',
+    '<p>a<br><affordances-md data-mode="text" data-block data-md="**blk**"></affordances-md></p>',
+  ],
+  [
+    'a break before an html AgentText',
+    '<p>a<br><affordances-md data-mode="text" data-md="<sup>1</sup>">',
+  ],
 ])('fixed: %s', (_, html) => {
   for (const options of [{}, { url: 'https://site.test/a/b' }, { slots: { a: 'FILLED' } }]) {
     const { core, tree, declined } = both(html, options)

@@ -1084,6 +1084,18 @@ const phrasing = (parent: Md, before: string, after: string): Item[] => {
     const child = kids[index]!
     indexStack[indexStack.length - 1] = index
     const next = index + 1 < kids.length ? firstCharacter(peek(kids[index + 1]!, parent)) : after
+    // html right after a line ending (a hard break's, before an <AgentText>) could start an html block: what's
+    // written before it ends with a space instead, as mdast-util-to-markdown's containerPhrasing writes it
+    const previous = results[results.length - 1]
+    if (
+      typeof previous === 'string' &&
+      (before === '\r' || before === '\n') &&
+      child.type === HTML &&
+      htmlKind(child.value) !== 7
+    ) {
+      results[results.length - 1] = previous.replace(/(\r?\n|\r)$/, ' ')
+      before = ' '
+    }
     if (isAttention(child)) {
       const item = attentionItem(child)
       results.push(item)
