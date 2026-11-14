@@ -1875,8 +1875,11 @@ test('the llms handlers resolve headers once, send them everywhere, and stay pri
 
 // an app/ dir: groups, a dynamic segment, an optional catch-all, and folders that aren't urls
 let root: string
+// every dir a test made, not just the last: removed after it
+const roots: string[] = []
 const app = (files: string[]) => {
   root = mkdtempSync(join(tmpdir(), 'md-app-'))
+  roots.push(root)
   for (const file of files) {
     mkdirSync(dirname(join(root, file)), { recursive: true })
     writeFileSync(join(root, file), '')
@@ -1884,7 +1887,7 @@ const app = (files: string[]) => {
   return root
 }
 afterEach(() => {
-  if (root) rmSync(root, { recursive: true, force: true })
+  for (const dir of roots.splice(0)) rmSync(dir, { recursive: true, force: true })
   delete process.env[ROUTES_ENV]
 })
 const shop = [

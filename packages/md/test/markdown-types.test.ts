@@ -52,11 +52,14 @@ const TSC = 30_000
 const tsc = fileURLToPath(new URL('../../../node_modules/typescript/bin/tsc', import.meta.url))
 const src = fileURLToPath(new URL('../src/next/', import.meta.url))
 let root: string
+// every dir a test made, not just the last: removed after it
+const roots: string[] = []
 afterEach(() => {
-  if (root) rmSync(root, { recursive: true, force: true })
+  for (const dir of roots.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 const check = (markdown: string, config: Config = {}) => {
   root = mkdtempSync(join(tmpdir(), 'md-types-'))
+  roots.push(root)
   const files = {
     'app/package/[pkg]/page.tsx': 'export default function Page() { return null }\n',
     'app/package/[pkg]/markdown.ts': markdown,
