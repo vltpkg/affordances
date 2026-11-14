@@ -94,10 +94,8 @@ test.each([
     'prose around fields, with links and images',
     '<form><h2>Sign up</h2><p>Read <a href="/terms">the terms</a> <img src="/i.png" alt="logo"></p><input aria-label="Email"><p>Hint</p><input aria-label="Name"></form>',
   ],
-  [
-    'in a list item and a table cell',
-    '<ul><li><form><input aria-label="A"></form></li></ul><table><tr><th>F</th></tr><tr><td><form><input aria-label="B"></form></td></tr></table>',
-  ],
+  // (a form in a table cell is the tree pipeline's: recovery.test.ts)
+  ['in a list item', '<ul><li><form><input aria-label="A"></form></li></ul>'],
   ['no fields says what it says', '<form><p>Just text</p><button>Go</button></form>'],
   // in the whitespace it's in: a <nobr> doesn't wrap
   ['in a nobr', '<nobr><form><mark>text\r\n</mark><input aria-label="A"> t  u </form></nobr>'],

@@ -2613,6 +2613,11 @@ const readCore = (
     declined('form in a link or strikethrough')
     return undefined
   }
+  // a form in a table cell: the tree pipeline converts the form with the table around it
+  if (doc.formInCell) {
+    declined('form in a table cell')
+    return undefined
+  }
   // a strikethrough the tree pipeline writes outside a paragraph
   if (doc.struck && struckList(doc.root)) {
     declined('strikethrough and list')

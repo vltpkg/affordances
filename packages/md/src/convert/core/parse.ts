@@ -315,6 +315,9 @@ let selector = false
 // whether a form is made inside a link or a strikethrough: the tree pipeline splits one around the form's blocks in the
 // same pass that converts the form, which md-core's form (converted on its own) doesn't
 let formInSplit = false
+// whether a form is made inside a table cell: the tree pipeline converts the form with the table around it (a table in
+// the form flattened into the cell, the cell's spacing), which md-core's form (converted on its own) doesn't
+let formInCell = false
 // whether the page has a strikethrough (s, strike, del)
 let struck = false
 // the elements with a dropped child among their kids, to take out at the end
@@ -384,6 +387,8 @@ const make = (name: string, id: number, ns: number, attrs: string, flags: number
     for (const open of stack)
       if (open.id === A || open.id === S || open.id === STRIKE || open.tag === 'del')
         formInSplit = true
+  if (id === FORM && !formInCell)
+    for (const open of stack) if (open.id === TD || open.id === TH) formInCell = true
   if (id === TEMPLATE && attrs !== '') {
     if (flags & FLAG.id) templated = true
     // any case: html matches attribute names so
@@ -3248,6 +3253,7 @@ export const parse = (input: string, nonce?: string, moves = true): Document => 
   selector = false
   struck = false
   formInSplit = false
+  formInCell = false
   pruned.clear()
   reordered = false
   deepest = 0
@@ -3301,6 +3307,7 @@ export const parse = (input: string, nonce?: string, moves = true): Document => 
     selector,
     struck,
     formInSplit,
+    formInCell,
     cut: cutAt < 0 ? undefined : cutAt,
     lost,
   }

@@ -42,6 +42,27 @@ test.each([
   ['a break in a strikethrough in a list', '<dir><del><br>', 'strikethrough and list'],
   ['a form in a strikethrough', '<del><form><nobr>f\t', 'form in a link or strikethrough'],
   ['a form in a link', '<a href=/x><form><nobr>f\t</form></a>', 'form in a link or strikethrough'],
+  // the tree pipeline converts a form with the table around it: a table in the form is flattened into the cell
+  [
+    'a form in a cell, with a table in it',
+    '<table><td><form><table><td>out',
+    'form in a table cell',
+  ],
+  [
+    'a form in a cell, its spacing',
+    '<table><td><form><span id="lbl">Labelled</span><span class="sr-only"><button role="tab" id="t1">Tab t1',
+    'form in a table cell',
+  ],
+  [
+    'a form in a header table',
+    '<table><tr><th>F</th></tr><tr><td><form><input aria-label="B"></form></td></tr></table>',
+    'form in a table cell',
+  ],
+  [
+    'a search form in a cell',
+    '<table><tr><td><form><input name="q"><button>Go</button></form></td></tr></table>',
+    'form in a table cell',
+  ],
 ])('declined: %s', (_, html, why) => {
   const { core, tree, declined } = both(html)
   expect({ core, declined }).toEqual({ core: tree, declined: [why] })
