@@ -3268,7 +3268,15 @@ let afterMoves: ((doc: Element, held: Element[]) => void) | undefined
 export const onMoved = (check: ((doc: Element, held: Element[]) => void) | undefined) => {
   afterMoves = check
 }
+// a page as md-core reads it. nothing of it outlives the call, read or thrown: the document holds what's read
 export const parse = (input: string, nonce?: string, moves = true): Document => {
+  try {
+    return parsing(input, nonce, moves)
+  } finally {
+    letGo()
+  }
+}
+const parsing = (input: string, nonce: string | undefined, moves: boolean): Document => {
   html = input.indexOf('\r') < 0 ? input : input.replace(/\r\n?/g, '\n')
   n = html.length
   tstate = DATA
@@ -3364,7 +3372,10 @@ export const parse = (input: string, nonce?: string, moves = true): Document => 
   }
   root.tag = '#root'
   root.up = null
-  // let the page go: the tree holds slices of it, not the parse's state
+  return document
+}
+// the page let go: the tree holds slices of it, not the parse's state
+const letGo = () => {
   html = tag = tattrs = ttext = ''
   NAME_CACHE.fill('')
   stack = []
@@ -3376,5 +3387,4 @@ export const parse = (input: string, nonce?: string, moves = true): Document => 
   pruned.clear()
   pending = []
   current = doc = headEl = formEl = htmlEl = bodyEl = null as unknown as El
-  return document
 }

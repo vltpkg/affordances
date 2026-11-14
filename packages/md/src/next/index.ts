@@ -598,10 +598,17 @@ const convertPage = (options: MdHandlerOptions) => {
 // a conversion that threw, for whatever reason md didn't foresee: nothing of the page goes out, as with flight data it
 // can't read (502, private, no-store), and the error is logged once, so a bug in md never becomes the framework's
 // generic 500 or a page converted in part
+// an error as the log names it, and its cause (one, as when md tried another path and that threw too)
+const nameOf = (error: unknown) =>
+  error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+const thrownAs = (error: unknown) =>
+  error instanceof Error && error.cause !== undefined
+    ? `${nameOf(error)}, cause ${nameOf(error.cause)}`
+    : nameOf(error)
 const unconverted = (target: URL, error: unknown, headers: Headers, upstream: Response) => {
   once(
     'convert',
-    `[affordances-md] ${target.pathname} couldn't be converted (${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}), so it answers 502, private, no-store. Please report it to @affordances/md.`,
+    `[affordances-md] ${target.pathname} couldn't be converted (${thrownAs(error)}), so it answers 502, private, no-store. Please report it to @affordances/md.`,
     { production: true, level: 'error' },
   )
   return fail(
@@ -774,9 +781,10 @@ const renderPage =
       if (!(error instanceof FlightDataError)) return unconverted(target, error, headers, upstream)
       // flight data the stripper can't account for (a push it didn't take out, one it can't read, a placeholder that
       // isn't a script): what the page says can't be told, so none of it goes out. in production too, once
+      // (and, if md tried another path first and that threw, what it threw: a bug to report)
       once(
         'flight',
-        `[affordances-md] ${target.pathname}'s Flight data couldn't be read (${error.reason}), so it answers 502, private, no-store. If it's a page of Next's own, update @affordances/md or report it.`,
+        `[affordances-md] ${target.pathname}'s Flight data couldn't be read (${error.reason}${error.cause === undefined ? '' : `, cause ${nameOf(error.cause)}`}), so it answers 502, private, no-store. If it's a page of Next's own, update @affordances/md or report it.`,
         { production: true, level: 'error' },
       )
       return fail(

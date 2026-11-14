@@ -5,8 +5,9 @@ import { FlightDataError, readStreamed } from '../../src/convert/index.ts'
 import { htmlToMarkdown, readPage } from '../../src/index.ts'
 
 // errors md didn't foresee, switched on per test: md-core's parse as it reads a page (not the tree pipeline's call for
-// where to cut, which reads no further), md-core's emit (markdown()), and the tree pipeline's hast-util-from-parse5
-const boom = vi.hoisted(() => ({ parse: false, emit: false, tree: false }))
+// where to cut, which reads no further), md-core's emit (markdown()), the tree pipeline's hast-util-from-parse5 (its
+// read), and its mdast-util-to-markdown (its markdown(); md-core writes its own)
+const boom = vi.hoisted(() => ({ parse: false, emit: false, tree: false, write: false }))
 vi.mock('../../src/convert/core/parse.ts', async (original) => {
   const actual = await original<typeof import('../../src/convert/core/parse.ts')>()
   return {
@@ -38,10 +39,21 @@ vi.mock('hast-util-from-parse5', async (original) => {
   }
 })
 
+vi.mock('mdast-util-to-markdown', async (original) => {
+  const actual = await original<typeof import('mdast-util-to-markdown')>()
+  return {
+    ...actual,
+    toMarkdown: (...args: Parameters<typeof actual.toMarkdown>) => {
+      if (boom.write) throw new EvalError('tree pipeline wrote nothing')
+      return actual.toMarkdown(...args)
+    },
+  }
+})
+
 // md's own choice of path, md-core first, in both of vitest's projects
 beforeEach(() => forcePath(undefined))
 afterEach(() => {
-  boom.parse = boom.emit = boom.tree = false
+  boom.parse = boom.emit = boom.tree = boom.write = false
   declines.clear()
 })
 
@@ -101,6 +113,31 @@ test("on a page md-core declined only for parity, md-core's own markdown is the 
   expect(declines.get('tree path threw')).toBeGreaterThan(0)
 })
 
+// the error a markdown() no path can write throws, and the one that rides with it (the route logs one line)
+const failure = (html: string) => {
+  try {
+    readPage(html).markdown()
+  } catch (error) {
+    return [(error as Error).message, ((error as Error).cause as Error | undefined)?.message]
+  }
+  return []
+}
+
+test('a page no path can write throws the first error, unchanged, with the next one as its cause', () => {
+  // md-core's read throws, then the tree pipeline's markdown()
+  boom.parse = true
+  boom.write = true
+  expect(failure(plain)).toEqual(['md-core parse broke', 'tree pipeline wrote nothing'])
+  // a page md-core declined for parity: the tree pipeline's markdown() throws, then md-core's past the decline
+  boom.parse = false
+  boom.emit = true
+  expect(failure('<ul><s>*a*')).toEqual(['tree pipeline wrote nothing', 'md-core emit broke'])
+  // both reads throw
+  boom.emit = boom.write = false
+  boom.parse = boom.tree = true
+  expect(failure(plain)).toEqual(['md-core parse broke', 'tree pipeline broke'])
+})
+
 // swaps that can't be trusted fail closed on every path, md-core's past the parity declines too: a page that only kept
 // the paths byte-identical (a nobr split), where the tree pipeline then throws, is no way around the trust check
 test('a page streamed with untrusted swaps throws FlightDataError, however md reads it', () => {
@@ -138,6 +175,7 @@ test('every decline reason is tagged parity or security, and none is both', () =
   const found = new Set<string>()
   for (const source of sources) {
     for (const [, why] of source.matchAll(/\bdeclined\(\s*'([^']+)'/g)) found.add(why!)
+    for (const [, why] of source.matchAll(/\bwhy: '([^']+)'/g)) found.add(why!)
     for (const [, , why] of source.matchAll(/\bdecline\(\s*(['"])(.+?)\1\)/g)) found.add(why!)
     for (const [, , why] of source.matchAll(/decline \?\?= (['"])(.+?)\1/g)) found.add(why!)
     for (const [, why] of source.matchAll(/return '(streamed[^']*)'/g)) found.add(why!)

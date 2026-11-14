@@ -3,14 +3,22 @@ import { createMdHandler } from '../src/next/index.ts'
 import { ROUTES_ENV } from '../src/next/routes.ts'
 
 // a conversion that throws for a reason md didn't foresee: switched on per test, in readStreamed (reading the page) or
-// in the markdown it hands back (converting it)
-const boom = vi.hoisted(() => ({ in: undefined as 'read' | 'markdown' | undefined }))
+// in the markdown it hands back (converting it). the read's error has a cause, as when md tried the other path too
+const boom = vi.hoisted(() => ({ in: undefined as 'read' | 'markdown' | 'flight' | undefined }))
 vi.mock('../src/convert/index.ts', async (original) => {
   const actual = await original<typeof import('../src/convert/index.ts')>()
   return {
     ...actual,
     readStreamed: (...args: Parameters<typeof actual.readStreamed>) => {
-      if (boom.in === 'read') throw new TypeError('something md never expected')
+      // swaps that can't be trusted, found once md-core's read had thrown
+      if (boom.in === 'flight')
+        throw Object.assign(new actual.FlightDataError('count'), {
+          cause: new TypeError('md-core broke first'),
+        })
+      if (boom.in === 'read')
+        throw new TypeError('something md never expected', {
+          cause: new SyntaxError('the other path broke'),
+        })
       const page = actual.readStreamed(...args)
       return {
         ...page,
@@ -70,10 +78,22 @@ test('any error from converting a page answers 502, private, no-store, with noth
     boom.in = where
     expect([where, ...(await get())]).toEqual([where, 502, 'private, no-store', false])
   }
-  // logged once per process, in production too
+  // logged once per process, in production too, naming the error and its cause
   expect(error.mock.calls.map(([message]) => message)).toEqual([
     expect.stringMatching(
-      /^\[affordances-md\] \/x\/express couldn't be converted \(TypeError: something md never expected\), so it answers 502, private, no-store\./,
+      /^\[affordances-md\] \/x\/express couldn't be converted \(TypeError: something md never expected, cause SyntaxError: the other path broke\), so it answers 502, private, no-store\./,
+    ),
+  ])
+  error.mockRestore()
+})
+
+test("flight data that can't be read is logged with what md threw before it, if anything", async () => {
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  boom.in = 'flight'
+  expect(await get()).toEqual([502, 'private, no-store', false])
+  expect(error.mock.calls.map(([message]) => message)).toEqual([
+    expect.stringMatching(
+      /^\[affordances-md\] \/x\/express's Flight data couldn't be read \(count, cause TypeError: md-core broke first\), so it answers 502, private, no-store\./,
     ),
   ])
   error.mockRestore()

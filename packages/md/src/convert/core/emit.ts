@@ -1,10 +1,11 @@
 import { attr } from './attr.ts'
-import { convertRoot, materialize, startConvert } from './emit-convert.ts'
+import { convertRoot, endConvert, materialize, startConvert } from './emit-convert.ts'
 import { HEADING, headingText, IMAGE, Md, setext, TEXT, toMarkdown } from './emit-markdown.ts'
 import { inCells, liftBlocks, relinkMarked } from './emit-lift.ts'
 import { readMarkers, reads } from './emit-markers.ts'
 import {
   begin,
+  endPage,
   chrome,
   dropped,
   findMain,
@@ -24,7 +25,16 @@ import { FLAG, type Document, type Element, type Options, type Result } from './
 // (emit-markdown); finish adds what the page's head says.
 // a form is @affordances/md's own conversion of it, when md passes it in (options.convertForm). not here yet, where
 // they'd hook in: streamed suspense boundaries (the parser), custom handlers
+// a page's markdown. what md-core holds of the page while it writes it is let go after, written or thrown
 export const emit = (doc: Document, options: Options = {}): Result => {
+  try {
+    return write(doc, options)
+  } finally {
+    endPage()
+    endConvert()
+  }
+}
+const write = (doc: Document, options: Options): Result => {
   const { head } = doc
   const meta = (key: string) => (head.meta.get(key) ?? '').trim() || undefined
   const canonical = canonicalOf(head.canonical, options.url)
@@ -191,6 +201,16 @@ const standing = (table: Element) => {
 export const readSlots = (
   doc: Document,
   options: Options = {},
+): { unique: string[]; duplicate: string[] } | { decline: string } => {
+  try {
+    return slotsOf(doc, options)
+  } finally {
+    endPage()
+  }
+}
+const slotsOf = (
+  doc: Document,
+  options: Options,
 ): { unique: string[]; duplicate: string[] } | { decline: string } => {
   const content = contentOf(doc, options)
   if (content.markers?.decline) return { decline: content.markers.decline }

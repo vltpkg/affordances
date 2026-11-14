@@ -32,7 +32,7 @@ import type {
   MdastNode,
   Options as CoreOptions,
 } from './core/types.ts'
-import { declined, Declined, declines, forcedPath, parityOnly, takeFired } from './path.ts'
+import { declined, Declined, declines, forcedPath, PARITY } from './path.ts'
 
 export type Handlers = Record<string, Handle>
 
@@ -1184,8 +1184,9 @@ const rowScanner = () => {
   }
 }
 
-// where md-core cut the page it last read, if the tree pipeline reads that page next (md-core declined it): one page
-let parsedCut: { html: string; cut: number | undefined } | undefined
+// where md-core cut a page it parsed and then declined, for the tree pipeline reading it next: at the tag that opens
+// one element too many, or nowhere (at undefined)
+type Cut = { at: number | undefined }
 // the page up to where it nests deeper than md reads, if it does
 const cutAt = (html: string, cut: number | undefined) =>
   cut === undefined ? html : html.slice(0, cut)
@@ -1217,13 +1218,11 @@ const shallow = (page: string) => {
 // html as a tree, parsed as hast-util-from-html parses it (scripting off) but without each node's place in the source:
 // nothing reads it, and working it out costs more than the parse (most of a conversion, on a page of many lines). and
 // the source it's made of: the page, or what of it is read
-const fromHtml = (page: string) => {
+const fromHtml = (page: string, known?: Cut) => {
   // a page nesting deeper than md reads is read up to where it does, as md-core reads it: the cut md-core found when it
   // read this page and declined it, or, once parse5 nests past CUT, md-core's parser asked now (only it can tell where,
   // in a pass that never goes past the cut)
-  const known = parsedCut?.html === page ? parsedCut : undefined
-  parsedCut = undefined
-  let cut = known?.cut
+  let cut = known?.at
   let document = known ? undefined : shallow(page)
   if (!document) {
     if (!known) cut = parseCore(page, undefined, false).cut
@@ -1296,8 +1295,8 @@ const restoreForeignTemplates = (document: Parse5Tree, tree: HastRoot, renamed: 
 
 // a page's html with its flight pushes taken out, parsed: the tree and the error rows' digests, or why they can't be
 // trusted
-const strippedTree = (html: string, swapped: Swapped) => {
-  const { tree, source } = fromHtml(html)
+const strippedTree = (html: string, swapped: Swapped, cut?: Cut) => {
+  const { tree, source } = fromHtml(html, cut)
   const streamed = resolveStreamed(tree)
   const texts = streamed.scripts.map(scriptText)
   const reason = untrusted(texts, keptOf(source, html, swapped))
@@ -2452,102 +2451,115 @@ const leanOf = (html: string) => {
     : { nonce: crypto.randomUUID(), count: 0, errors: [], unreadable: false }
   return { lean, swapped }
 }
-// md-core's read of a page, or undefined where it declines
+// md-core's read of a page, or why it declines
 const corePage = (
   html: string,
   lean: string,
   swapped: Swapped,
   options: Options,
   insist = false,
-) => {
+): Page | Decline => {
   const core = readCore(lean, swapped, options, insist)
-  if (core && !core.reason) return core.page
+  if ('declined' in core) return core
+  if (!core.reason) return core.page
   // swaps that can't be trusted: the page as sent, as md-core reads it, and an error of its own. a rare path, so the
-  // page is parsed again with every push still in it as a script's text
-  return (core && readCore(html, { ...swapped, errors: [''] }, options, insist)?.page) || undefined
+  // page is parsed again with every push still in it as a script's text. its cut is the sent page's, which the tree
+  // pipeline doesn't read first
+  const sent = readCore(html, { ...swapped, errors: [''] }, options, insist)
+  return 'declined' in sent ? { declined: sent.declined } : sent.page
 }
-// the tree pipeline's read of a page
-const treePage = (html: string, lean: string, swapped: Swapped, options: Options) => {
-  const { tree, streamed, reason } = strippedTree(lean, swapped)
+// the tree pipeline's read of a page, given where md-core cut it, if md-core parsed and declined it
+const treePage = (html: string, lean: string, swapped: Swapped, options: Options, cut?: Cut) => {
+  const { tree, streamed, reason } = strippedTree(lean, swapped, cut)
   if (!reason) return readTree({ tree: settled(tree, streamed), errors: swapped.errors }, options)
   // swaps that can't be trusted: the page as sent, as parse5 reads it, and an error of its own (private, never a status)
   const { tree: sent } = fromHtml(html)
   return readTree({ tree: settled(sent, resolveStreamed(sent)), errors: [''] }, options)
 }
 
-// an error md didn't foresee, on one path or the other, never decides a page alone: when md-core throws, the tree
-// pipeline reads the page, as when md-core declines it; when the tree pipeline throws on a page md-core declined only to
-// stay byte-identical (PARITY, every reason that fired), md-core's own markdown is the answer. otherwise, and when both
-// throw, the first error stands. the same holds when markdown() is what throws
+// why md-core declines a page, and where it cut the page, if it parsed it
+type Decline = { declined: string; cut?: Cut }
+
+// an error md didn't foresee, on one path or the other, never decides a page alone. the paths, in order: md-core; the
+// tree pipeline; and md-core past the declines that only keep the two byte-identical (PARITY), on a page md-core
+// declined for one of those alone. the first that reads the page is the answer, and if its markdown() throws, the ones
+// after it read and write the page in turn
 const recovered = (read: {
-  core?: () => Page | undefined
-  tree: () => Page
-  insist: () => Page | undefined
+  core?: () => Page | Decline
+  tree: (cut: Cut | undefined) => Page
+  insist: () => Page | Decline
 }): Page => {
-  let coreError: unknown
-  let fired: string[] = []
-  if (read.core) {
-    takeFired()
-    try {
-      const page = read.core()
-      if (page) return fallsBack(page, read.tree)
-    } catch (error) {
-      if (error instanceof Declined || error instanceof FlightDataError) throw error
-      coreError = error ?? new Error(String(error))
+  const { core } = read
+  let decline: Decline | undefined
+  return firstOf([
+    core &&
+      (() => {
+        const got = core()
+        if (!('declined' in got)) return got
+        decline = got
+        return undefined
+      }),
+    () => read.tree(decline?.cut),
+    () => {
+      if (!decline || !PARITY.has(decline.declined)) return undefined
+      const got = read.insist()
+      if ('declined' in got) return undefined
+      declines.set('tree path threw', (declines.get('tree path threw') ?? 0) + 1)
+      return got
+    },
+  ])
+}
+// the page the first of these reads: each reads it, passes (undefined), or throws. a Declined or a FlightDataError is
+// md's verdict on the page, not a failure: it ends the read there and is what's thrown. any other error, the next one
+// tries, and once none is left the first error is thrown, unchanged, with the next (there are at most two) as its
+// cause, unless it has one: the route logs one line, and it names both
+const firstOf = (paths: ((() => Page | undefined) | undefined)[]): Page => {
+  // the page the first path from `from` on reads, and which path it is
+  const next = (from: number, errors: unknown[]): [Page, number] => {
+    for (let at = from; at < paths.length; at++) {
+      try {
+        const page = paths[at]?.()
+        if (page) return [page, at]
+      } catch (error) {
+        failed(error, errors)
+      }
     }
-    fired = takeFired()
+    throw caused(errors[0], errors[1])
   }
-  const insisting = () => {
-    if (coreError !== undefined || !parityOnly(fired)) return undefined
-    const page = read.insist()
-    if (page) declines.set('tree path threw', (declines.get('tree path threw') ?? 0) + 1)
-    return page
-  }
-  let page: Page
-  try {
-    page = read.tree()
-  } catch (error) {
-    if (error instanceof FlightDataError || coreError !== undefined) throw coreError ?? error
-    const insisted = insisting()
-    if (!insisted) throw error
-    return insisted
-  }
+  const errors: unknown[] = []
+  const [page, at] = next(0, errors)
   return {
     ...page,
     markdown: (fills) => {
-      try {
-        return page.markdown(fills)
-      } catch (error) {
-        const insisted = insisting()
-        if (!insisted) throw coreError ?? error
-        return insisted.markdown(fills)
+      const tried = [...errors]
+      let [writing, from] = [page, at]
+      for (;;) {
+        try {
+          return writing.markdown(fills)
+        } catch (error) {
+          failed(error, tried)
+        }
+        ;[writing, from] = next(from + 1, tried)
       }
     },
   }
 }
-// md-core's page, read on the tree pipeline if its markdown() throws
-const fallsBack = (page: Page, tree: () => Page): Page => ({
-  ...page,
-  markdown: (fills) => {
-    try {
-      return page.markdown(fills)
-    } catch (error) {
-      if (error instanceof Declined) throw error
-      try {
-        return tree().markdown(fills)
-      } catch {
-        throw error
-      }
-    }
-  },
-})
+const failed = (error: unknown, errors: unknown[]) => {
+  if (error instanceof Declined || error instanceof FlightDataError) throw caused(error, errors[0])
+  errors.push(error ?? new Error(String(error)))
+}
+const caused = (error: unknown, cause: unknown) => {
+  if (cause !== undefined && error instanceof Error && !Object.hasOwn(error, 'cause'))
+    Object.defineProperty(error, 'cause', { value: cause, writable: true, configurable: true })
+  return error
+}
 
 // both paths' reads of a page, recovered from what either throws
 const reading = (html: string, options: Options) => {
   const { lean, swapped } = leanOf(html)
   return recovered({
     ...(coreTakes(options) && { core: () => corePage(html, lean, swapped, options) }),
-    tree: () => treePage(html, lean, swapped, options),
+    tree: (cut) => treePage(html, lean, swapped, options, cut),
     insist: () => corePage(html, lean, swapped, options, true),
   })
 }
@@ -2575,15 +2587,16 @@ export const readPage = (html: string, options: Options = {}): Page => {
 // which answers 502 the same
 export const readStreamed = (html: string, swapped: Swapped, options: Options = {}): Page => {
   // md-core's read, once its swaps are trusted: its own, or one past the declines for parity (the tree pipeline threw)
-  const trusted = (insist: boolean) => {
+  const trusted = (insist: boolean): Page | Decline => {
     const core = readCore(html, swapped, options, insist)
-    if (core?.reason) throw new FlightDataError(core.reason)
-    return core?.page
+    if ('declined' in core) return core
+    if (core.reason) throw new FlightDataError(core.reason)
+    return core.page
   }
   return recovered({
     ...(coreTakes(options) && { core: () => trusted(false) }),
-    tree: () => {
-      const { tree, streamed, reason } = strippedTree(html, swapped)
+    tree: (cut) => {
+      const { tree, streamed, reason } = strippedTree(html, swapped, cut)
       if (reason) throw new FlightDataError(reason)
       return readTree({ tree: settled(tree, streamed), errors: swapped.errors }, options)
     },
@@ -2705,6 +2718,28 @@ export const mayStream = (html: string) => {
   return false
 }
 
+// what md-core declines a parsed page for, in the order it asks: the first that holds is why. md-core past the parity
+// ones (PARITY, which only keep its markdown the tree pipeline's) asks the rest
+const DECLINES: { why: string; holds: (doc: CoreDocument, options: Options) => boolean }[] = [
+  // a <main> where prune may take it out first (an empty one in a link is an empty block there): the tree pipeline
+  // finds landmarks on the pruned page, md-core on the parsed one
+  {
+    why: 'main inside what prune changes',
+    holds: (doc, options) => options.extract !== 'none' && doc.mains.some(underChanged),
+  },
+  // a form in a link or a strikethrough: the tree pipeline converts the form and splits what holds it in one pass
+  { why: 'form in a link or strikethrough', holds: (doc) => doc.formInSplit },
+  // a form in a table cell: the tree pipeline converts the form with the table around it
+  { why: 'form in a table cell', holds: (doc) => doc.formInCell },
+  // text that doesn't wrap, split by a comment or a dropped element: the tree pipeline keeps both sides' whitespace
+  { why: 'text split in a nobr', holds: (doc) => doc.nowrapSplit },
+  // a strikethrough the tree pipeline writes outside a paragraph
+  { why: 'strikethrough and list', holds: (doc) => doc.struck && struckList(doc.root) },
+  // an element named like a selector, which the tree pipeline renames (to a script, a link, a main): it decides
+  // the page, flight check and all
+  { why: 'selector tag name', holds: (doc) => doc.selector },
+]
+
 // the page as md-core reads it, and whether its flight swaps can be trusted, as the tree pipeline checks them: every
 // script's own text, where parse5 puts it. undefined when md-core declines (the tree pipeline takes it instead)
 const readCore = (
@@ -2714,71 +2749,45 @@ const readCore = (
   // past the declines that only keep the paths byte-identical (PARITY): md-core's own markdown, for a page the tree
   // pipeline threw on
   insist = false,
-): { page: Page; reason: FlightDataError['reason'] | undefined } | undefined => {
+): { page: Page; reason: FlightDataError['reason'] | undefined } | Decline => {
   // a page react streams boundaries into: md-core would only parse it to decline it, so it goes to the tree pipeline
   // first. a superset of md-core's own check below, which still declines whatever this misses
   if (mayStream(html)) {
     declined('streamed')
-    return undefined
+    return { declined: 'streamed' }
   }
-  // the first call converts the tree read here; md-core's emit prunes a tree in place, so another parses again
-  let doc: CoreDocument | undefined = parseCore(html, swapped.nonce)
+  const parsed = parseCore(html, swapped.nonce)
   // where it's cut, for the tree pipeline if md-core declines it below
-  parsedCut = { html, cut: doc.cut }
+  const cut: Cut = { at: parsed.cut }
   // a page nesting deeper than md reads is read up to where it does: parsed again, up to there
-  const source = cutAt(html, doc.cut)
-  if (doc.cut !== undefined) doc = parseCore(source, swapped.nonce)
+  const source = cutAt(html, parsed.cut)
+  const read = parsed.cut === undefined ? parsed : parseCore(source, swapped.nonce)
+  // the first call converts the tree read here; md-core's emit prunes a tree in place, so another parses again
+  let doc: CoreDocument | undefined = read
   // cut, or with something nested too deep left out
-  const cut = source !== html || doc.lost
-  const reason = untrusted(doc.scripts, keptOf(source, html, swapped))
-  // react's streamed boundaries, which the tree pipeline moves into place: md-core doesn't, and declines the page
-  if (doc.streamed) {
-    declined(doc.streamed)
-    return undefined
-  }
-  // a <main> where prune may take it out first (an empty one in a link is an empty block there): the tree pipeline
-  // finds landmarks on the pruned page, md-core on the parsed one
-  if (options.extract !== 'none' && doc.mains.some(underChanged)) {
-    declined('main inside what prune changes')
-    return undefined
-  }
-  // a form in a link or a strikethrough: the tree pipeline converts the form and splits what holds it in one pass
-  if (doc.formInSplit) {
-    declined('form in a link or strikethrough')
-    return undefined
-  }
-  // a form in a table cell: the tree pipeline converts the form with the table around it
-  if (doc.formInCell) {
-    declined('form in a table cell')
-    return undefined
-  }
-  // text that doesn't wrap, split by a comment or a dropped element: the tree pipeline keeps both sides' whitespace
-  if (doc.nowrapSplit && !insist) {
-    declined('text split in a nobr')
-    return undefined
-  }
-  // a strikethrough the tree pipeline writes outside a paragraph
-  if (doc.struck && !insist && struckList(doc.root)) {
-    declined('strikethrough and list')
-    return undefined
-  }
-  // an element named like a selector, which the tree pipeline renames (to a script, a link, a main): it decides
-  // the page, flight check and all
-  if (doc.selector) {
-    declined('selector tag name')
-    return undefined
+  const cutOff = source !== html || read.lost
+  const reason = untrusted(read.scripts, keptOf(source, html, swapped))
+  // react's streamed boundaries, which the tree pipeline moves into place: md-core doesn't, and declines the page.
+  // then the rest, past the parity ones when insisting
+  const why =
+    read.streamed ??
+    DECLINES.find((decline) => !(insist && PARITY.has(decline.why)) && decline.holds(read, options))
+      ?.why
+  if (why) {
+    declined(why)
+    return { declined: why, cut }
   }
   const coreOptions: CoreOptions = { ...(options as CoreOptions), relinkMarkdown, convertForm }
   // a marked page whose markers md-core can't read as prune does
   const slots = readSlots(doc, coreOptions)
   if ('decline' in slots) {
     declined(slots.decline)
-    return undefined
+    return { declined: slots.decline, cut }
   }
   const page: Page = {
     slots: { unique: slots.unique, duplicate: slots.duplicate },
     ...controlOf(swapped.errors),
-    ...(cut && { cut }),
+    ...(cutOff && { cut: cutOff }),
     markdown: (fills) => {
       const tree = doc ?? parseCore(source, swapped.nonce)
       doc = undefined

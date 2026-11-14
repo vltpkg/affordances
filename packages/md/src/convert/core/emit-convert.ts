@@ -234,6 +234,13 @@ export const startConvert = (options: Options, page: string | undefined) => {
   linkUrls.clear()
   setBase(page)
 }
+// and what of the page it holds let go, once it's written
+export const endConvert = () => {
+  contentRoot = contentIds = titledCode = undefined
+  shown = new Map()
+  skips = new Set()
+  linkUrls.clear()
+}
 
 const node = (type: number, kids?: Md[], value?: string) => new Md(type, kids, value)
 const textNode = (value: string) => new Md(TEXT, undefined, value)

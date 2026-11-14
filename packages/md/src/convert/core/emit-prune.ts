@@ -37,6 +37,10 @@ export const setPage = (root: Element) => {
   page = root
   byId = undefined
 }
+// and all of it let go, once the call that read the page is done
+export const endPage = () => {
+  page = fills = headings = tabs = byId = undefined
+}
 
 // an element prune made, already pruned
 export const made = (from: Element, kids: Node[], tag = from.tag): Element => {

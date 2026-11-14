@@ -27,7 +27,6 @@ export class Declined extends Error {
 }
 export const declined = (why: string) => {
   declines.set(why, (declines.get(why) ?? 0) + 1)
-  fired.push(why)
   if (forced === 'strict' && !allowed.has(why)) throw new Declined(why)
 }
 
@@ -58,13 +57,3 @@ export const SECURITY = new Set([
   'shown panel prune changes',
   "shown panel headed by a tab md-core can't place",
 ])
-// the reasons md-core declined the page being read, as they fire
-let fired: string[] = []
-export const takeFired = () => {
-  const was = fired
-  fired = []
-  return was
-}
-// whether every reason a page was declined for is parity's alone
-export const parityOnly = (reasons: string[]) =>
-  reasons.length > 0 && reasons.every((why) => PARITY.has(why))
