@@ -4,7 +4,7 @@ import type { Element, Nodes, Parents, Text } from 'hast'
 // does to a tree before converting it, with hast-util-minify-whitespace (MIT, Titus Wormer). that one builds its
 // tag-name tests again for every node it asks about, which was a quarter of a conversion; this is its algorithm,
 // rule for rule, over sets. the names are its lists'
-const BLOCKS = new Set([
+export const BLOCKS = new Set([
   'address',
   'article',
   'aside',
@@ -62,7 +62,7 @@ const BLOCKS = new Set([
   'xmp',
 ])
 // what contributes content of its own, so whitespace beside it counts: embedded content and form controls
-const CONTENT = new Set([
+export const CONTENT = new Set([
   'audio',
   'canvas',
   'embed',
@@ -78,7 +78,7 @@ const CONTENT = new Set([
   'select',
   'textarea',
 ])
-const SKIPPABLE = new Set([
+export const SKIPPABLE = new Set([
   'area',
   'base',
   'basefont',

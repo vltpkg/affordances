@@ -1,15 +1,6 @@
 import { attr } from './attr.ts'
-import {
-  dropped,
-  INLINE,
-  isTablist,
-  isText,
-  LABEL_HOSTS,
-  marked,
-  role,
-  valueBearing,
-  words,
-} from './emit-prune.ts'
+import { dropped, isTablist, isText, marked, role, valueBearing, words } from './emit-prune.ts'
+import { INLINE, LABEL_HOSTS } from '../shared.ts'
 import { FLAG, type Element } from './types.ts'
 
 // a page's markers, read from the tree as parsed, before it's converted: the <AgentMain>s, and the tabs that label a

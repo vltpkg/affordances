@@ -1,4 +1,5 @@
 import type { Element } from './types.ts'
+import { unbracketed } from '../shared.ts'
 // markdown from the emitter's lean tree, written the way mdast-util-to-markdown (MIT, Titus Wormer) writes an mdast
 // tree with @affordances/md's options: bullet -, emphasis _, strong *, rule -, fenced code, and gfm (tables, task
 // lists, strikethrough, autolink literals with their escapes kept to headings). its rules are ported one for one, over
@@ -1885,17 +1886,5 @@ export const headingText = (node: Md): string | undefined => {
     }
   }
   walk(node)
-  pieces.forEach((piece, n) => {
-    if (piece !== null) return
-    const before = pieces[n - 1]
-    const after = pieces[n + 1]
-    const open = typeof before === 'string' ? /[([<]\s*$/.exec(before)?.[0] : undefined
-    const close = typeof after === 'string' ? /^\s*([)\]>])/.exec(after) : undefined
-    if (open && close && close[1] === BRACKETS[open.trim()]) {
-      pieces[n - 1] = before!.slice(0, -open.length)
-      pieces[n + 1] = after!.slice(close[0].length)
-    }
-  })
-  return pieces.join('').replace(/\s+/g, ' ').trim() || undefined
+  return unbracketed(pieces)
 }
-const BRACKETS: Record<string, string> = { '(': ')', '[': ']', '<': '>' }

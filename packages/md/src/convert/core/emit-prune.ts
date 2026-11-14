@@ -1,5 +1,17 @@
 import { attr } from './attr.ts'
 import { FLAG, type Element, type Node } from './types.ts'
+import {
+  BOXED,
+  CHROME_ROLES,
+  CHROME_TAGS,
+  declarations,
+  hides,
+  INLINE,
+  LABEL_HOSTS,
+  LAID_OUT,
+  VALUE_ROLES,
+  VALUED,
+} from '../shared.ts'
 
 // what @affordances/md's prune and extract leave of the page, read lazily: kidsOf(el) is an element's children as
 // prune leaves them (hidden things gone, empty links named or gone, inline boxes spaced, repeated links once), kept
@@ -59,9 +71,6 @@ export const made = (from: Element, kids: Node[], tag = from.tag): Element => {
   return el
 }
 
-const CHROME_TAGS = new Set(['nav', 'header', 'footer', 'aside', 'dialog'])
-const CHROME_ROLES = new Set(['navigation', 'banner', 'contentinfo', 'complementary'])
-
 // the attributes prune reads, by their flags
 const HIDDEN = FLAG.hidden
 const ARIA_HIDDEN = FLAG['aria-hidden']
@@ -83,41 +92,11 @@ export const unhidden = (el: Element) => {
   return mode === 'only' || mode === 'show'
 }
 
-// a style attribute's declarations as [property, value], lowercased, without !important
-const codePoint = (hex: string) => {
-  const code = Number.parseInt(hex, 16)
-  return code === 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)
-    ? '\ufffd'
-    : String.fromCodePoint(code)
-}
-const cssText = (style: string) =>
-  style
-    .replace(/\/\*[\s\S]*?(\*\/|$)/g, '')
-    .replace(/\\([0-9a-f]{1,6})[ \t\n\r\f]?|\\([^\n0-9a-f])/gi, (_, hex: string, char: string) =>
-      hex ? codePoint(hex) : char,
-    )
-type Declarations = [property: string, value: string][]
-const declarations = (style: string): Declarations =>
-  cssText(style)
-    .split(';')
-    .map((declaration) => {
-      const [property = '', value = ''] = declaration
-        .split(':')
-        .map((part) => part.trim().toLowerCase())
-      return [property, value.replace(/\s*!\s*important$/, '')]
-    })
 // display: none, visibility: hidden or content-visibility: hidden, however it's written; a style that can't say
 // any of it (no such keyword, no escape, no comment) isn't parsed
 const HIDING = /none|hidden|collapse|[\\/]/i
 const styleHidden = (style: string | undefined) =>
-  style !== undefined &&
-  HIDING.test(style) &&
-  declarations(style).some(
-    ([property, keyword]) =>
-      (property === 'display' && keyword === 'none') ||
-      (property === 'visibility' && (keyword === 'hidden' || keyword === 'collapse')) ||
-      (property === 'content-visibility' && keyword === 'hidden'),
-  )
+  style !== undefined && HIDING.test(style) && hides(declarations(style))
 // whether a style's display is one of these
 const DISPLAY = /display|[\\/]/i
 const styleDisplays = (style: string | undefined, display: RegExp) =>
@@ -218,18 +197,6 @@ export const toString = (node: Node): string => {
 export const text = (node: Node | undefined) =>
   node === undefined ? '' : toString(node).replace(/\s+/g, ' ').trim()
 
-const VALUED = new Set([
-  'input',
-  'select',
-  'option',
-  'optgroup',
-  'textarea',
-  'datalist',
-  'output',
-  'meter',
-  'progress',
-])
-const VALUE_ROLES = new Set(['spinbutton', 'slider'])
 // a control whose text is a value, not a name
 export const valueBearing = (el: Element) =>
   VALUED.has(el.tag) || (mentions(el) && (VALUE_ROLES.has(role(el)) || editor(el)))
@@ -318,18 +285,6 @@ const hasDescribed = (node: Node): boolean => {
 }
 const nothingToRead = (node: Element) => !toString(node).trim() && !hasDescribed(node)
 
-export const INLINE = new Set([
-  'a',
-  'span',
-  'code',
-  'strong',
-  'em',
-  'b',
-  'i',
-  'small',
-  'time',
-  'abbr',
-])
 const isInline = (node: Node | undefined): node is Element =>
   node !== undefined && typeof node !== 'string' && INLINE.has(node.tag)
 const isBlank = (node: Node | undefined) => typeof node === 'string' && !node.trim()
@@ -372,19 +327,6 @@ const skeleton = (table: Element) => {
   return rows.every(emptyRow) || (body.length > 0 && body.every(emptyRow))
 }
 
-// headers and summaries whose text is a button's read as the button's text
-export const LABEL_HOSTS = new Set([
-  'th',
-  'h1',
-  'h2',
-  'h3',
-  'h4',
-  'h5',
-  'h6',
-  'caption',
-  'summary',
-  'dt',
-])
 const hasTag = (el: Element, tag: string): boolean => {
   for (const kid of kidsOf(el))
     if (typeof kid !== 'string' && (kid.tag === tag || hasTag(kid, tag))) return true
@@ -504,8 +446,6 @@ const literal = (el: Element): boolean => {
 }
 
 // display classes and styles: laid out side by side (flex, grid), or a box of its own
-const LAID_OUT = /^([\w-]+:)*(inline-)?(flex|grid)$/
-const BOXED = /^([\w-]+:)*(block|flex|grid)$/
 const displays = (el: Element, display: RegExp) =>
   el.attrs !== '' &&
   (classes(el).some((name) => display.test(name)) || styleDisplays(attr(el, 'style'), display))

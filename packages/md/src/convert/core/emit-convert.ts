@@ -31,6 +31,9 @@ import {
   BLOCKQUOTE,
 } from './emit-markdown.ts'
 import { attr, parseAttrs } from './attr.ts'
+import { HTML_NS, IMAGE_SCHEMES, LINK_SCHEMES } from '../shared.ts'
+// whitespace, as css lays it out
+import { BLOCKS, CONTENT, SKIPPABLE } from '../whitespace.ts'
 import {
   chrome,
   classes,
@@ -72,23 +75,6 @@ import {
 // @affordances/md's handlers. whitespace is collapsed on the way, as hast-util-minify-whitespace would before: the
 // state it carries from one text to the next (`before`), and what comes after an element, are threaded through the walk
 
-// whitespace, as css lays it out
-const BLOCKS = new Set(
-  'address article aside blockquote body br caption center col colgroup dd dialog dir div dl dt figcaption figure footer form h1 h2 h3 h4 h5 h6 head header hgroup hr html legend li listing main menu nav ol optgroup option p plaintext pre section summary table tbody td tfoot th thead tr ul wbr xmp'.split(
-    ' ',
-  ),
-)
-// what has content of its own, so whitespace beside it counts
-const CONTENT = new Set(
-  'audio canvas embed iframe img math object picture svg video button input select textarea'.split(
-    ' ',
-  ),
-)
-const SKIPPABLE = new Set(
-  'area base basefont dialog datalist head link meta noembed noframes param rp script source style template track title'.split(
-    ' ',
-  ),
-)
 const NORMAL = 0
 const NOWRAP = 1
 const PRE = 2
@@ -695,8 +681,6 @@ const shapeOf = (url: string): 'fragment' | 'path' | number | undefined => {
   if (!PLAIN.test(url) || DOT_SEGMENT.test(url.slice(match[0].length))) return undefined
   return match[0].length
 }
-const LINK_SCHEMES = new Set(['http:', 'https:', 'mailto:', 'tel:'])
-const IMAGE_SCHEMES = new Set(['http:', 'https:'])
 // whether a url's scheme is one of these, as a browser reads it; a relative url is the page's own, http(s)
 const RELATIVE = 'https://relative.invalid/'
 const allowed = (url: string, schemes: Set<string>) => {
@@ -940,7 +924,6 @@ const idsOfContent = () => {
   if (contentRoot) walk(contentRoot)
   return (contentIds = found)
 }
-const HTML_NS = 'http://www.w3.org/1999/xhtml'
 const island = (el: Element): Md[] => {
   const nodes = new Map<Element, FormNode>()
   const fills = new Map<FormNode, string>()

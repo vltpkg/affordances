@@ -20,6 +20,7 @@ import {
   valueBearing,
 } from './emit-prune.ts'
 import { type Document, type Element, type Options, type Result } from './types.ts'
+import { canonicalOf, collapsed, fenced, pageTitle, pretty, yaml } from '../shared.ts'
 
 // markdown straight from the parser's tree: what @affordances/md's htmlToMarkdown writes for the same page. one walk
 // prunes, extracts, collapses whitespace and converts (emit-prune, emit-convert) into a lean tree that's written out
@@ -217,17 +218,6 @@ const slotsOf = (
   return decline ? { decline } : { unique: [...unique], duplicate }
 }
 
-// the page's canonical, if it's an http(s) url that fits in a Link header
-const canonicalOf = (href: string | undefined, base: string | undefined) => {
-  if (!href) return undefined
-  try {
-    const url = new URL(href, base)
-    return /^https?:$/.test(url.protocol) && !/[,;]/.test(url.href) ? url.href : undefined
-  } catch {
-    return undefined
-  }
-}
-
 type Meta = {
   title: string | undefined
   description: string | undefined
@@ -235,37 +225,6 @@ type Meta = {
   image: string | undefined
   lang: string | undefined
   jsonLd: string[]
-}
-
-// frontmatter, as @affordances/md writes it
-const yaml = (data: Record<string, string | undefined>) => {
-  const lines = Object.entries(data).flatMap(([key, value]) =>
-    value ? [`${key}: ${JSON.stringify(value)}`] : [],
-  )
-  return lines.length ? `---\n${lines.join('\n')}\n---\n\n` : ''
-}
-const fenced = (lang: string, value: string) => {
-  const fence = '`'.repeat(Math.max(3, ...(value.match(/`+/g) ?? []).map((run) => run.length + 1)))
-  return `${fence}${lang}\n${value}\n${fence}`
-}
-const pretty = (raw: string) => {
-  try {
-    return JSON.stringify(JSON.parse(raw), null, 2)
-  } catch {
-    return raw
-  }
-}
-
-const TITLE_SEPARATORS = '·|–—-'
-const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-const collapsed = (value: string) => value.replace(/\s+/g, ' ').trim()
-// the page's title: its <title>, or its h1 when the <title> is the h1 and the site's name in a template
-const pageTitle = (title: string | undefined, h1: string | undefined) => {
-  const said = title === undefined ? undefined : collapsed(title)
-  if (!said || !h1) return title
-  const name = escapeRegExp(h1)
-  const separator = ` [${TITLE_SEPARATORS}] `
-  return new RegExp(`^${name}${separator}\\S|\\S${separator}${name}$`).test(said) ? h1 : title
 }
 
 // a node's text as written: its values, never an image's alt

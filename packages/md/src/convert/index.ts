@@ -22,6 +22,29 @@ import { decodeString } from 'micromark-util-decode-string'
 import { normalizeIdentifier } from 'micromark-util-normalize-identifier'
 import { visit } from 'unist-util-visit'
 import { minifyWhitespace } from './whitespace.ts'
+import {
+  BOXED,
+  canonicalOf,
+  CHROME_ROLES,
+  CHROME_TAGS,
+  collapsed,
+  declarations,
+  type Declarations,
+  fenced,
+  hides,
+  HTML_NS,
+  IMAGE_SCHEMES,
+  INLINE,
+  LABEL_HOSTS,
+  LAID_OUT,
+  LINK_SCHEMES,
+  pageTitle,
+  pretty,
+  unbracketed,
+  VALUE_ROLES,
+  VALUED,
+  yaml,
+} from './shared.ts'
 import { CUT, flattenDeep } from './depth.ts'
 import { emit as emitCore, readSlots } from './core/emit.ts'
 import { struckList, underChanged } from './core/emit-markers.ts'
@@ -73,8 +96,6 @@ const ALWAYS_DROP = new Set([
   'video',
   'source',
 ])
-const CHROME_TAGS = new Set(['nav', 'header', 'footer', 'aside', 'dialog'])
-const CHROME_ROLES = new Set(['navigation', 'banner', 'contentinfo', 'complementary'])
 
 const isElement = (node: unknown): node is Element => (node as Element)?.type === 'element'
 // asked of every element on a page, so read from its properties: a css selector over a whole page costs as much as
@@ -94,43 +115,9 @@ const mode = (node: Element) =>
 // accordion's content) marked data-affordances-md="show"
 const unhidden = (node: Element) => mode(node) === 'only' || mode(node) === 'show'
 
-// a code point a css escape names, or U+FFFD where css reads one instead: zero, a surrogate, or past the last code point
-const codePoint = (hex: string) => {
-  const code = Number.parseInt(hex, 16)
-  return code === 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)
-    ? '\ufffd'
-    : String.fromCodePoint(code)
-}
-// a style attribute as css reads it: comments gone, escapes (n\one, \6e one) decoded
-const cssText = (style: string) =>
-  style
-    .replace(/\/\*[\s\S]*?(\*\/|$)/g, '')
-    .replace(/\\([0-9a-f]{1,6})[ \t\n\r\f]?|\\([^\n0-9a-f])/gi, (_, hex: string, char: string) =>
-      hex ? codePoint(hex) : char,
-    )
-// a style attribute's declarations as [property, value], lowercased, without !important
-type Declarations = [property: string, value: string][]
-const declarations = (node: Element): Declarations =>
-  node.properties.style === undefined
-    ? []
-    : cssText(String(node.properties.style))
-        .split(';')
-        .map((declaration) => {
-          const [property = '', value = ''] = declaration
-            .split(':')
-            .map((part) => part.trim().toLowerCase())
-          return [property, value.replace(/\s*!\s*important$/, '')]
-        })
-// display: none, visibility: hidden or content-visibility: hidden in a style attribute, however it's spaced, cased,
-// commented, escaped or marked !important. opacity: 0 isn't hidden: motion libraries render it on the server as the
-// first frame of an entrance animation, so it would drop content people see a moment later
-const styleHidden = (style: Declarations) =>
-  style.some(
-    ([property, keyword]) =>
-      (property === 'display' && keyword === 'none') ||
-      (property === 'visibility' && (keyword === 'hidden' || keyword === 'collapse')) ||
-      (property === 'content-visibility' && keyword === 'hidden'),
-  )
+// a style attribute's declarations (shared.ts)
+const styleOf = (node: Element): Declarations =>
+  node.properties.style === undefined ? [] : declarations(String(node.properties.style))
 
 // what an icon or avatar link (an image without alt) is called. a link reads its own content first, so this is only
 // the name it has without any: its aria-labelledby, aria-label or title
@@ -182,26 +169,18 @@ const skeleton = (table: Element) => {
 // between, they get a space. html can't tell a css gap from a split word, so the space goes only where a letter or
 // digit meets another ($48 stays whole); links side by side are always separate, even inside a wrapper each
 // (<span><a/></span><span><a/></span>, an avatar stack)
-const INLINE = new Set(['a', 'span', 'code', 'strong', 'em', 'b', 'i', 'small', 'time', 'abbr'])
 const isInline = (node: ElementContent | undefined): node is Element =>
   isElement(node) && INLINE.has(node.tagName)
 const isBlank = (node: ElementContent | undefined) => node?.type === 'text' && !node.value.trim()
-// in a flex or grid container every child is its own box, bare text too, so a text node beside an element is
-// laid out apart from it (configure<span>vlt</span> reads configure vlt). outside one, text beside an element is
-// the same run of text (un<em>believ</em>able)
-// (display: flex in a style, or tailwind's flex, inline-grid, md:flex)
-const LAID_OUT = /^([\w-]+:)*(inline-)?(flex|grid)$/
+// display classes and styles, laid out side by side or boxed (shared.ts)
 // whether an element's class or display style is one of these displays
 const displays = (node: Element, style: Declarations, display: RegExp) =>
   [node.properties.className].flat().some((name) => display.test(String(name ?? ''))) ||
   style.some(([property, value]) => property === 'display' && display.test(value))
 const laidOut = (node: HastRoot | Element, style: Declarations) =>
   isElement(node) && displays(node, style, LAID_OUT)
-// an inline element made a box of its own (tailwind's block, flex or grid, or the same display) sits on its own line
-// or in its own box, so it's apart from what's beside it whatever the characters: a cell's <span class="block">yarn
-// (zpm)</span><span class="block">6.0.0</span> reads yarn (zpm) 6.0.0. single characters still stay together, as
-// below: a ticker stacks its digits in boxes, and $ beside 48 is a price
-const BOXED = /^([\w-]+:)*(block|flex|grid)$/
+// an inline element made a box of its own (shared.ts's BOXED) sits apart from what's beside it. single characters
+// still stay together, as below: a ticker stacks its digits in boxes, and $ beside 48 is a price
 const boxed = (node: ElementContent | undefined, style: Declarations = []) =>
   isInline(node) && displays(node, style, BOXED)
 // a run of one-character elements is one word split for styling or animation (H e l l o, an odometer's 1 2 3), so
@@ -247,10 +226,6 @@ const spaced = (
     (/[\p{L}\p{N}]$/u.test(leftWord) && /^[\p{L}\p{N}]/u.test(rightWord)) ||
     (boxes && leftWord !== '' && rightWord !== ''))
 
-// headers and summaries whose text is a button's (<th><button>Name</button></th>, a sortable column; <h3><button
-// aria-expanded>Shipping</button></h3>, an accordion): with no text outside the buttons, the buttons' text is theirs
-const LABEL_HOSTS = new Set(['th', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'caption', 'summary', 'dt'])
-
 // what an aria-labelledby can name: the first element with an id, as getElementById finds it, among what prune keeps.
 // one inside something hidden from people (display: none, hidden, aria-hidden, <AgentSkip>, <noscript>) or replaced
 // by an <AgentText> never names anything, so a name can't carry hidden text out
@@ -269,14 +244,14 @@ const ids = (root: HastRoot | Element) => {
 }
 // what prune leaves out, with everything in it. an editor (contenteditable, role=textbox) is a field like a textarea:
 // its text is what someone typed, which never leaves the page
-const dropped = (el: Element, style = declarations(el)) =>
+const dropped = (el: Element, style = styleOf(el)) =>
   ALWAYS_DROP.has(el.tagName) ||
   mode(el) === 'skip' ||
   editor(el) ||
   (!unhidden(el) &&
     ((el.properties.hidden !== undefined && el.properties.hidden !== false) ||
       String(el.properties.ariaHidden) === 'true' ||
-      styleHidden(style)))
+      hides(style)))
 
 // drop what never belongs (scripts, controls, comments) and apply skip/text/only markers, in place. code is
 // left as written: a highlighter's tokens are adjacent spans
@@ -341,7 +316,7 @@ const pruneWith = (
       child.properties = properties
     }
     if (shownTablist(child, page)) return []
-    const childStyle = declarations(child)
+    const childStyle = styleOf(child)
     styles.set(child, childStyle)
     // hidden from people means hidden from agents, unless it was marked for them
     if (dropped(child, childStyle)) return []
@@ -1268,7 +1243,7 @@ const FOREIGN_TEMPLATE = 'affordances-foreign-template'
 const renameForeignTemplates = (document: Parse5Tree) => {
   const renamed = new Set<Parse5Any>()
   const walk = (node: Parse5Any) => {
-    if (node.tagName === 'template' && node.namespaceURI !== 'http://www.w3.org/1999/xhtml') {
+    if (node.tagName === 'template' && node.namespaceURI !== HTML_NS) {
       node.tagName = node.nodeName = FOREIGN_TEMPLATE
       renamed.add(node)
     }
@@ -1377,21 +1352,6 @@ const unwrap = (el: Element, tag: string): Element => ({
   ),
 })
 
-// elements that carry a value (a textarea's text, a select's options), which never leaves the page as a name
-const VALUED = new Set([
-  'input',
-  'select',
-  'option',
-  'optgroup',
-  'textarea',
-  'datalist',
-  'output',
-  'meter',
-  'progress',
-])
-// a control whose text is a value, not a name: what someone typed or picked (an input, a select's options, a textarea,
-// a contenteditable or role=textbox editor), or what a widget shows (output, meter, progress, a slider)
-const VALUE_ROLES = new Set(['spinbutton', 'slider'])
 const valueBearing = (el: Element) =>
   VALUED.has(el.tagName) || VALUE_ROLES.has(String(el.properties.role ?? '')) || editor(el)
 const editor = (el: Element) =>
@@ -1770,8 +1730,6 @@ const scheme = (url: string) => {
     return undefined
   }
 }
-const LINK_SCHEMES = new Set(['http:', 'https:', 'mailto:', 'tel:'])
-const IMAGE_SCHEMES = new Set(['http:', 'https:'])
 
 const link: Handle = (state, node, parent) => {
   const href = String(node.properties.href ?? '').trim()
@@ -2248,7 +2206,6 @@ export const relinkMarkdown = (markdown: string, base: string, relink: Options['
 // link's destination and an image
 const CONTAINERS = new Set(['blockQuote', 'listOrdered', 'listUnordered'])
 const UNSHOWN = new Set(['resource', 'image', 'autolink', 'literalAutolink'])
-const BRACKETS: Record<string, string> = { '(': ')', '[': ']', '<': '>' }
 // the markdown's first # heading, outside any container and outside code, as markdown parses it: where it starts and
 // ends, and its text as a reader sees it, without a url it shows as itself (an autolink, a bare url) or the brackets
 // right around one. a page's heading is near its top, so it's parsed as far as the first line that can be one (# and a
@@ -2300,29 +2257,10 @@ const headingIn = (source: string) => {
       else if (t.type === 'characterReference') pieces.push(decodeString(written))
       else if (t.type === 'codeTextPadding' || t.type === 'whitespace') pieces.push(' ')
     }
-    pieces.forEach((piece, n) => {
-      if (piece !== null) return
-      const before = pieces[n - 1]
-      const after = pieces[n + 1]
-      const open = typeof before === 'string' ? /[([<]\s*$/.exec(before)?.[0] : undefined
-      const close = typeof after === 'string' ? /^\s*([)\]>])/.exec(after) : undefined
-      if (open && close && close[1] === BRACKETS[open.trim()]) {
-        pieces[n - 1] = before!.slice(0, -open.length)
-        pieces[n + 1] = after!.slice(close[0].length)
-      }
-    })
-    const shown = pieces.join('').replace(/\s+/g, ' ').trim()
-    return { start: token.start.offset, end: token.end.offset, text: shown || undefined }
+    const shown = unbracketed(pieces)
+    return { start: token.start.offset, end: token.end.offset, text: shown }
   }
   return undefined
-}
-
-// frontmatter, the handler's for a markdown.ts page too
-export const yaml = (data: Record<string, string | undefined>) => {
-  const lines = Object.entries(data).flatMap(([key, value]) =>
-    value ? [`${key}: ${JSON.stringify(value)}`] : [],
-  )
-  return lines.length ? `---\n${lines.join('\n')}\n---\n\n` : ''
 }
 
 const firstTitle = (node: HastRoot | Element): Element | undefined => {
@@ -2331,19 +2269,6 @@ const firstTitle = (node: HastRoot | Element): Element | undefined => {
     if (child.tagName === 'title') return child
     const found = firstTitle(child)
     if (found) return found
-  }
-}
-
-// the page's canonical, if it's an http(s) url that fits in a Link header: only the <head>'s, since content in the
-// body (a comment, a sanitized post) can carry a <link> too, and never one with a , or ; that would end the header's value
-// early (URL already encodes <, >, quotes and whitespace)
-const canonicalOf = (href: string | undefined, base: string | undefined) => {
-  if (!href) return undefined
-  try {
-    const url = new URL(href, base)
-    return /^https?:$/.test(url.protocol) && !/[,;]/.test(url.href) ? url.href : undefined
-  } catch {
-    return undefined
   }
 }
 
@@ -2377,6 +2302,7 @@ const head = (tree: HastRoot, base: string | undefined) => {
       if (!isElement(child)) continue
       const { tagName, properties } = child
       if (tagName === 'title' && inHead) title ??= child
+      // the canonical is only the <head>'s: content in the body (a comment, a sanitized post) can carry a <link> too
       else if (tagName === 'link' && inHead && [properties.rel].flat().join(' ') === 'canonical')
         canonical ??= child
       else if (tagName === 'html') root ??= child
@@ -2401,20 +2327,6 @@ const head = (tree: HastRoot, base: string | undefined) => {
     image: meta('property og:image'),
     lang: String(root?.properties.lang ?? '') || undefined,
     jsonLd,
-  }
-}
-
-// a fence longer than any run of backticks in what it holds, so text that isn't valid json can't close it
-const fenced = (lang: string, value: string) => {
-  const fence = '`'.repeat(Math.max(3, ...(value.match(/`+/g) ?? []).map((run) => run.length + 1)))
-  return `${fence}${lang}\n${value}\n${fence}`
-}
-
-const pretty = (raw: string) => {
-  try {
-    return JSON.stringify(JSON.parse(raw), null, 2)
-  } catch {
-    return raw
   }
 }
 
@@ -2918,29 +2830,15 @@ const emptied = <T extends HastRoot | Element>(node: T, empty: Set<Element>): T 
   return changed ? { ...node, children } : node
 }
 
-// what a site's title template puts between a page's name and the rest ("Cart · Acme", "Acme | Cart"). a colon isn't
-// one: "Cart: details" says more than "Cart"
-export const TITLE_SEPARATORS = '·|–—-'
-// text as a regular expression that matches it literally
-export const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-// the page's title: its <title>, or its h1 when the <title> is the h1 and the site's name in a template, the h1 on
-// either side, a separator between, with whitespace around it. any other <title> is the page's own, as written
-export const pageTitle = (title: string | undefined, h1: string | undefined) => {
-  const said = title === undefined ? undefined : collapsed(title)
-  if (!said || !h1) return title
-  const name = escapeRegExp(h1)
-  const separator = ` [${TITLE_SEPARATORS}] `
-  return new RegExp(`^${name}${separator}\\S|\\S${separator}${name}$`).test(said) ? h1 : title
-}
+export { escapeRegExp, pageTitle, TITLE_SEPARATORS, yaml } from './shared.ts'
 
 // the page's markdown; slots fills its <AgentSlot>s. it throws where readPage's markdown() would
 export const htmlToMarkdown = (html: string, options: Options = {}): Result =>
   readPage(html, options).markdown(options.slots)
 
-// a node's text as written, and text with its whitespace collapsed
+// a node's text as written
 const textOf = (node: MdastNodes): string =>
   'value' in node ? node.value : 'children' in node ? node.children.map(textOf).join('') : ''
-const collapsed = (value: string) => value.replace(/\s+/g, ' ').trim()
 
 const finish = (
   mdast: MdastRoot,
