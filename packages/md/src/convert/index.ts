@@ -2573,22 +2573,23 @@ export const readPage = (html: string, options: Options = {}): Page => {
 // trusted throw: the handler answers 502, and a caller that forgets to catch it fails closed too. not part of the
 // package's api: only the handler, which did the stripping, says a page was. what else throws reaches the handler too,
 // which answers 502 the same
-export const readStreamed = (html: string, swapped: Swapped, options: Options = {}): Page =>
-  recovered({
-    ...(coreTakes(options) && {
-      core: () => {
-        const core = readCore(html, swapped, options)
-        if (core?.reason) throw new FlightDataError(core.reason)
-        return core?.page
-      },
-    }),
+export const readStreamed = (html: string, swapped: Swapped, options: Options = {}): Page => {
+  // md-core's read, once its swaps are trusted: its own, or one past the declines for parity (the tree pipeline threw)
+  const trusted = (insist: boolean) => {
+    const core = readCore(html, swapped, options, insist)
+    if (core?.reason) throw new FlightDataError(core.reason)
+    return core?.page
+  }
+  return recovered({
+    ...(coreTakes(options) && { core: () => trusted(false) }),
     tree: () => {
       const { tree, streamed, reason } = strippedTree(html, swapped)
       if (reason) throw new FlightDataError(reason)
       return readTree({ tree: settled(tree, streamed), errors: swapped.errors }, options)
     },
-    insist: () => readCore(html, swapped, options, true)?.page,
+    insist: () => trusted(true),
   })
+}
 
 const readTree = (
   { tree, errors }: { tree: HastRoot; errors: string[] },

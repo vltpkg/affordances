@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { declines, forcePath, PARITY, SECURITY } from '../../src/convert/path.ts'
+import { FlightDataError, readStreamed } from '../../src/convert/index.ts'
 import { htmlToMarkdown, readPage } from '../../src/index.ts'
 
 // errors md didn't foresee, switched on per test: md-core's parse as it reads a page (not the tree pipeline's call for
@@ -98,6 +99,22 @@ test("on a page md-core declined only for parity, md-core's own markdown is the 
   expect(read).toEqual({ markdown: expect.any(String), same: read.markdown })
   expect(read.markdown).toContain('a')
   expect(declines.get('tree path threw')).toBeGreaterThan(0)
+})
+
+// swaps that can't be trusted fail closed on every path, md-core's past the parity declines too: a page that only kept
+// the paths byte-identical (a nobr split), where the tree pipeline then throws, is no way around the trust check
+test('a page streamed with untrusted swaps throws FlightDataError, however md reads it', () => {
+  boom.tree = true
+  const swapped = { nonce: crypto.randomUUID(), count: 1, errors: [], unreadable: false }
+  for (const html of ['<main><nobr>a <!-- c --> b</nobr></main>', '<main><p>a b</p></main>']) {
+    let thrown: unknown
+    try {
+      readStreamed(html, swapped).markdown()
+    } catch (error) {
+      thrown = error
+    }
+    expect([html, thrown instanceof FlightDataError && thrown.reason]).toEqual([html, 'count'])
+  }
 })
 
 // review's 82 bytes: a form in a strikethrough (security), and parse5 throws on the page
