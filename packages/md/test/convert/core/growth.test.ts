@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from 'vitest'
 import { forcePath, type Path } from '../../../src/convert/path.ts'
 import { htmlToMarkdown, readPage } from '../../../src/index.ts'
+import { onBoth } from './support/paths.ts'
 
 afterEach(() => {
   forcePath(undefined)
@@ -76,4 +77,15 @@ test('thousands of slots in a table, on md-core, in linear time', () => {
   const { ratio, written } = grows('strict', tableSlots)
   expect(ratio).toBeLessThan(24)
   expect(written).toContain('| p7999 | 7999.0  |\n')
+})
+
+// thousands of tabs that share an id, in tablists, with a shown panel they label: md-core kept every tab by its id,
+// copying the list for each one, and never read it. it writes the page as the tree pipeline does
+test('thousands of tabs with one id read on md-core as the tree pipeline reads them', () => {
+  const tabs = '<button role="tab" id="t">Tab</button>'.repeat(4000)
+  const html = `<main><div role="tablist">${tabs}</div><section role="tabpanel" data-affordances-md="show" aria-labelledby="t">Panel</section></main>`
+  const { core, tree, declined } = onBoth(() => readPage(html).markdown().markdown, 'strict')
+  expect(declined).toEqual([])
+  expect(core).toBe(tree)
+  expect(core).toContain('**Tab**\n\nPanel')
 })

@@ -130,22 +130,14 @@ export const readMarkers = (root: Element): Markers => {
   const found: Markers = { mains: [], tabs: new Set() }
   const uncertain = new Set<string>()
   const tablists: string[][] = []
-  // each [role=tab] with an id, by its id, with the tablist it's in; and the shown panels prune heads by them
-  const tabsById = new Map<string, (Element | undefined)[]>()
+  // the shown panels prune heads by their tabs
   const headedPanels: Element[] = []
   const decline = (why: string) => {
     found.decline ??= why
   }
   // under: something prune leaves out or may change is above; inLink: only links are, which keep a block they hold
   // if it has something to read and drop it if it hasn't
-  const walk = (
-    parent: Element,
-    gone: boolean,
-    under: boolean,
-    inLink = false,
-    tablist: Element | undefined = undefined,
-    inMain = false,
-  ) => {
+  const walk = (parent: Element, gone: boolean, under: boolean, inLink = false, inMain = false) => {
     for (const kid of parent.kids) {
       if (typeof kid === 'string') continue
       const text = isText(kid)
@@ -183,15 +175,11 @@ export const readMarkers = (root: Element): Markers => {
       // a tablist and its tabs' ids, as prune reads them: every [role=tab] in it, hidden or not
       const list = isTablist(kid)
       if (list) tablists.push(tabsIn(kid))
-      if (kid.flags & FLAG.role) {
-        const id = role(kid) === 'tab' ? attr(kid, 'id') : undefined
-        if (id) tabsById.set(id, [...(tabsById.get(id) ?? []), tablist])
-        if (role(kid) === 'tabpanel' && mode(kid) === 'show' && !out) headedPanels.push(kid)
-      }
+      if (role(kid) === 'tabpanel' && mode(kid) === 'show' && !out) headedPanels.push(kid)
       const changes = changed(kid)
       // still only links above, if this is one (or changes nothing) and only links were
       const onlyLinks = changes ? kid.tag === 'a' && (inLink || !under) : inLink
-      walk(kid, out || text, under || changes, onlyLinks, list ? kid : tablist, inMain || main)
+      walk(kid, out || text, under || changes, onlyLinks, inMain || main)
     }
   }
   walk(root, false, false)
