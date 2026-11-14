@@ -2685,15 +2685,21 @@ export const mayStream = (html: string) => {
   for (const [, kind, a, b] of html.matchAll(/\$R([CRS])\("([^"]+)","([^"]+)"/g))
     segments.add(kind === 'S' ? a! : b!)
   for (const [, sid] of html.matchAll(/data-sid="([^"]*)"/g)) segments.add(sid!)
-  // each svg, to its end or the page's: what's inside is at most that. an svg inside one that hasn't ended is in its
-  // stretch already, so the stretches never overlap, and one without an end is the page's last
+  // each svg, to the end that closes it or the page's: what's inside is at most that. an svg nested in it ends first,
+  // so the stretch runs on past it, the stretches never overlap, and one without an end is the page's last
   for (let at = html.indexOf('<svg'); at >= 0;) {
-    const close = html.indexOf('</svg', at)
-    const inside = html.slice(at, close < 0 ? html.length : close)
+    const tags = /<(\/?)svg/g
+    tags.lastIndex = at
+    let close = html.length
+    for (let depth = 0, tag = tags.exec(html); tag; tag = tags.exec(html))
+      if ((depth += tag[1] ? -1 : 1) === 0) {
+        close = tag.index
+        break
+      }
+    const inside = html.slice(at, close)
     if (inside.includes('<template')) return true
     for (const [, double, single, bare] of inside.matchAll(SVG_ID))
       if (segments.has(double ?? single ?? bare!)) return true
-    if (close < 0) break
     at = html.indexOf('<svg', close)
   }
   return false

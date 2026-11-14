@@ -30,6 +30,9 @@ const SVG_SHAPES = [
   '<main><svg><!--$?--><template id="B:0"></template>f<!--/$--></svg></main><div hidden id="S:0">x</div><script>$RC("B:0","S:0")</script>',
   '<main><!--$?--><template id="B:0"></template>f<!--/$--></main><svg><g id="S:0"></g></svg><script>$RC("B:0","S:0")</script>',
   '<main><template id="P:0"></template></main><svg><g id="S:1"></g></svg><template data-rsi="" data-pid="P:0" data-sid="S:1"></template>',
+  // after an svg nested in it, which ends first
+  '<main><svg><svg></svg><!--$?--><template id="B:0"></template>f<!--/$--></svg></main><div hidden id="S:0">x</div><script>$RC("B:0","S:0")</script>',
+  '<main><!--$?--><template id="B:0"></template>f<!--/$--></main><svg><svg><svg></svg></svg><g id="S:0"></g></svg><script>$RC("B:0","S:0")</script>',
 ]
 
 test('a streamed page md-core would only decline goes to the tree pipeline before md-core parses it', () => {
