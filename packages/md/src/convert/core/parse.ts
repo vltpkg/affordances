@@ -24,6 +24,11 @@ interface El extends Element {
   // how many elements are above it, the document's children at 1, as it was put in place (an element the adoption
   // agency, foster parenting or a streamed move puts somewhere else may be deeper now: the parse then counts again)
   depth: number
+  // where the last comment md-core never builds sat in it, as a count of its children then (-1 for none): the text
+  // after it is a text of its own, as it is in the tree pipeline's tree, whose spacing reads each text's own word. its
+  // last comment is the one text can meet: while a table in it is open (where fostered text goes before), its comments
+  // go in the table
+  split: number
 }
 
 const HTML = 0
@@ -401,6 +406,7 @@ const make = (name: string, id: number, ns: number, attrs: string, flags: number
     ns,
     rec: ns === SVG ? 0 : DROP[id] ? 1 : 2,
     depth: 0,
+    split: -1,
   }
   if (flags & FLAG['data-affordances-md'] || (id === 0 && name === 'affordances-md')) marked = true
   if (id === 0 && (name.includes('#') || name.includes('.'))) selector = true
@@ -562,15 +568,11 @@ const appendChild = (parent: El, el: El) => {
   adopted(parent, el)
   addKid(parent, el)
 }
-// where a comment md-core never builds sat, in each parent: the text after it is a text of its own, as it is in the
-// tree pipeline's tree, whose spacing reads each text's own word. a parent's last comment is the one text can meet:
-// while a table in it is open (where fostered text goes before), its comments go in the table
-const splits = new Map<El, number>()
 const appendText = (parent: El, text: string) => {
   if (parent.rec < 2) return
   const kids = parent.kids
   const last = kids.length - 1
-  if (last >= 0 && typeof kids[last] === 'string' && splits.get(parent) !== kids.length)
+  if (last >= 0 && typeof kids[last] === 'string' && parent.split !== kids.length)
     kids[last] += text
   else addKid(parent, text)
 }
@@ -589,8 +591,7 @@ const insertTextBefore = (parent: El, text: string, ref: El) => {
   const kids = parent.kids
   const at = kids.lastIndexOf(ref)
   if (at < 0) appendText(parent, text)
-  else if (at > 0 && typeof kids[at - 1] === 'string' && splits.get(parent) !== at)
-    kids[at - 1] += text
+  else if (at > 0 && typeof kids[at - 1] === 'string' && parent.split !== at) kids[at - 1] += text
   else kids.splice(at, 0, text)
 }
 const detach = (el: El) => {
@@ -1287,7 +1288,7 @@ const onComment = (data = '') => {
         ? (stack[0] ?? doc)
         : cur()
   if (data.charCodeAt(0) !== 36 && data !== '/$') {
-    splits.set(target, target.kids.length)
+    target.split = target.kids.length
     return
   }
   appendChild(target, make(COMMENT_TAG_NAME, COMMENT_TAG, HTML, data, 0))
@@ -3344,7 +3345,6 @@ const parsing = (input: string, nonce: string | undefined, moves: boolean): Docu
   nowrapSplit = false
   spanDiffers = false
   pruned.clear()
-  splits.clear()
   reordered = false
   deepest = 0
   tagAt = 0
@@ -3412,7 +3412,6 @@ const letGo = () => {
   mains = []
   scripts = []
   pruned.clear()
-  splits.clear()
   endAttrs()
   pending = []
   current = doc = headEl = formEl = htmlEl = bodyEl = null as unknown as El
