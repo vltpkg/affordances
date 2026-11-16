@@ -516,22 +516,20 @@ describe('the contract', () => {
     visit(node)
     for (const kid of node.kids) if (typeof kid !== 'string') walk(kid, visit)
   }
-  test('nothing NEVER names is in the tree, text is never split, and parents are right', () => {
+  test('nothing NEVER names is in the tree, text stays split where parse5 splits it, and parents are right', () => {
     const page =
       '<head><title>t</title><style>s</style></head><body>a<script>x</script>b<svg><g/></svg>c<noscript>' +
-      'n</noscript>d<template>t</template>e<iframe>i</iframe>f<video><source></video>g<object>o</object>h</body>'
+      'n</noscript>d<template>t</template>e<iframe>i</iframe>f<video><source></video>g<object>o</object>h<!-- c -->i</body>'
     const { root } = parse(page)
     expect(root.tag).toBe('#root')
     expect(root.up).toBeNull()
-    expect(root.kids).toEqual(['abcdefgh'])
+    expect(root.kids).toEqual(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'])
     const problems: string[] = []
     for (let seed = 1; seed <= 300; seed++)
       walk(parse(generate(seed)).root, (el) => {
         if (NEVER.has(el.tag)) problems.push(`${seed}: a ${el.tag}`)
-        el.kids.forEach((kid: Node, i: number) => {
+        el.kids.forEach((kid: Node) => {
           if (kid === '') problems.push(`${seed}: empty text in ${el.tag}`)
-          if (typeof kid === 'string' && typeof el.kids[i + 1] === 'string')
-            problems.push(`${seed}: split text in ${el.tag}`)
           if (typeof kid !== 'string' && kid.up !== el)
             problems.push(`${seed}: ${kid.tag}'s parent`)
         })

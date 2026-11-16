@@ -74,12 +74,8 @@ export const oracle = (html: string): Document => {
       let kid: Node | undefined
       if (child.nodeName === '#text') kid = child.value ?? ''
       else if (child.tagName && !NEVER.has(child.tagName)) kid = build(child, el, child.tagName)
-      if (kid === undefined) continue
-      // text on both sides of something dropped is one text
-      const last = el.kids.at(-1)
-      if (typeof kid === 'string' && typeof last === 'string')
-        el.kids[el.kids.length - 1] = last + kid
-      else el.kids.push(kid)
+      // text on both sides of something dropped stays two texts, as parse5 has them
+      if (kid !== undefined) el.kids.push(kid)
     }
     return el
   }

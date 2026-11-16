@@ -562,11 +562,20 @@ const appendChild = (parent: El, el: El) => {
   adopted(parent, el)
   addKid(parent, el)
 }
+// where a comment md-core never builds sat: the text after it is a text of its own, as it is in the tree pipeline's
+// tree, whose spacing reads each text's own word
+let splitIn: El | null = null
+let splitAt = -1
 const appendText = (parent: El, text: string) => {
   if (parent.rec < 2) return
   const kids = parent.kids
   const last = kids.length - 1
-  if (last >= 0 && typeof kids[last] === 'string') kids[last] += text
+  if (
+    last >= 0 &&
+    typeof kids[last] === 'string' &&
+    (parent !== splitIn || kids.length !== splitAt)
+  )
+    kids[last] += text
   else addKid(parent, text)
 }
 const insertBefore = (parent: El, el: El, ref: El) => {
@@ -584,7 +593,8 @@ const insertTextBefore = (parent: El, text: string, ref: El) => {
   const kids = parent.kids
   const at = kids.lastIndexOf(ref)
   if (at < 0) appendText(parent, text)
-  else if (at > 0 && typeof kids[at - 1] === 'string') kids[at - 1] += text
+  else if (at > 0 && typeof kids[at - 1] === 'string' && (parent !== splitIn || at !== splitAt))
+    kids[at - 1] += text
   else kids.splice(at, 0, text)
 }
 const detach = (el: El) => {
@@ -1269,8 +1279,6 @@ const onComment = (data = '') => {
   skipNL = false
   if (nowrap && !nowrapSplit && nowrapOpen()) nowrapSplit = true
   if (mode === IN_TABLE_TEXT && cur().ns === HTML) tableTextAnything()
-  if (data.charCodeAt(0) !== 36 && data !== '/$') return
-  const el = make(COMMENT_TAG_NAME, COMMENT_TAG, HTML, data, 0)
   // where the tree builder inserts a comment: the document before <html> and after the body's end, the html element
   // just after the body, else the current node
   const target =
@@ -1282,7 +1290,12 @@ const onComment = (data = '') => {
       : mode === AFTER_BODY
         ? (stack[0] ?? doc)
         : cur()
-  appendChild(target, el)
+  if (data.charCodeAt(0) !== 36 && data !== '/$') {
+    splitIn = target
+    splitAt = target.kids.length
+    return
+  }
+  appendChild(target, make(COMMENT_TAG_NAME, COMMENT_TAG, HTML, data, 0))
 }
 const COMMENT_TAG_NAME = '#comment'
 const COMMENT_TAG = T(COMMENT_TAG_NAME)
@@ -3330,6 +3343,8 @@ const parsing = (input: string, nonce: string | undefined, moves: boolean): Docu
   nowrapSplit = false
   spanDiffers = false
   pruned.clear()
+  splitIn = null
+  splitAt = -1
   reordered = false
   deepest = 0
   tagAt = 0
@@ -3361,16 +3376,10 @@ const parsing = (input: string, nonce: string | undefined, moves: boolean): Docu
   // or put in place after something was made, may be deeper than it was made: then it's walked to find out
   const lost = (deepest > DEPTH || reordered || moving) && flatten(doc)
   const head = readHead()
-  // the dropped elements leave the tree, and the text either side of one is one text
-  for (const el of pruned) {
-    const kids: Node[] = []
-    for (const kid of el.kids)
-      if (typeof kid === 'string') {
-        if (typeof kids[kids.length - 1] === 'string') kids[kids.length - 1] += kid
-        else kids.push(kid)
-      } else if (!DROP[(kid as El).id]) kids.push(kid)
-    el.kids = kids
-  }
+  // the dropped elements leave the tree, and the text either side of one stays two texts, as the tree pipeline's prune
+  // leaves them
+  for (const el of pruned)
+    el.kids = el.kids.filter((kid) => typeof kid === 'string' || !DROP[(kid as El).id])
   const root = bodyEl && !bodyGone ? bodyEl : doc
   const document: Document = {
     root,
@@ -3403,6 +3412,7 @@ const letGo = () => {
   mains = []
   scripts = []
   pruned.clear()
+  splitIn = null
   pending = []
   current = doc = headEl = formEl = htmlEl = bodyEl = null as unknown as El
 }

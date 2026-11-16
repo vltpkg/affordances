@@ -51,3 +51,36 @@ test.each([
     expect({ core, declined }).toEqual({ core: tree, declined: [] })
   }
 })
+
+// text a comment splits (react writes <!-- --> between adjacent texts), or an element md never reads: the tree
+// pipeline keeps the texts apart, so a box beside them is spaced by the nearest text's own word, not the joined one's
+test.each([
+  ['a comment, then a block span', '<p>S<!-- -->5<span class="block">pa</span></p>'],
+  ['a comment, then a flex span', '<p>S <!---->5<span class="flex">partial</span></p>'],
+  [
+    'comments in a cell',
+    '<table><tr><th>a</th></tr><tr><td>Search<!-- --> ×<!-- --> <!-- -->5<span class="block">partial</span></td></tr></table>',
+  ],
+  ['a comment, a box before', '<i class="block">pa) S</i>:<!-- --> v '],
+  ['a comment, a flex box after', '5<!---->(<b class="flex">:中文</b>'],
+  [
+    'an empty hidden svg, a box after',
+    '5 <svg viewBox="0 0 1 1" aria-hidden="true"></svg>:<b class="block">npm× </b>',
+  ],
+  [
+    'an empty hidden svg, a box before',
+    '<span class="md:flex">× ,×</span>5<svg aria-hidden="true"></svg>)',
+  ],
+  ['a box ending in a no-break space', '<i class="flex">pa&nbsp;</i>× <!-- -->5S'],
+  ['a script', '<p>S<script>x</script>5<span class="block">pa</span></p>'],
+  ['a react boundary comment', '<p>S<!--$-->5<span class="block">pa</span><!--/$--></p>'],
+  [
+    'a comment before a table, fostered text after',
+    '<p>ab<!-- --><table>cd<tr><td>x</td></tr></table></p>',
+  ],
+])('text split by %s, beside a box', (_, html) => {
+  for (const options of [{}, { url: 'https://site.test/a/b' }, { link: (url: URL) => url.href }]) {
+    const { core, tree, declined } = both(`<main>${html}</main>`, options)
+    expect({ core, declined }).toEqual({ core: tree, declined: [] })
+  }
+})
