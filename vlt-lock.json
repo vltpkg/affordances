@@ -1012,7 +1012,8 @@
     "~npm~zbsearch@4.0.1": [0,"zbsearch","sha512-lmnEEnb93QQcNv7qARDr7jBVPxYdZbZ9XdZ0dbZ0qaOvGne4jJMW4fjwPfVaUKQXv3FNWvGbDwRDgyaSb1pc8w=="],
     "~npm~zod-to-json-schema@3.25.2~peer.0cc05fb34a209ec4": [0,"zod-to-json-schema","sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA=="],
     "~npm~zod@4.6.7": [0,"zod","sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg=="],
-    "~npm~zwitch@2.0.4": [0,"zwitch","sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A=="]
+    "~npm~zwitch@2.0.4": [0,"zwitch","sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A=="],
+    "remote~https_c++registry.npmjs.org+@affordances+md+-+md-0.5.0.tgz~peer.031cf04a83ef4626": [2,"@affordances/md","sha512-08O4Og1jWy0SlYWx8rTexD3Ji2omoFxLUPa1fLvJee2BPq0yra2ssSEk/3ikmMgiatNdwghfYGUoDkm6M0kDwA==",null,null,null,null,null,{  "affordances-md": "dist/cli.js"}]
   },
   "edges": {
     "file~_d @changesets/cli": "dev ^3.0.3 ~npm~@changesets+cli@3.0.3",
@@ -1125,6 +1126,7 @@
     "workspace~packages+md-core parse5": "dev ^7.3.0 ~npm~parse5@7.3.0",
     "workspace~packages+md-core turndown-plugin-gfm": "dev ^1.0.2 ~npm~turndown-plugin-gfm@1.0.2",
     "workspace~packages+md-core turndown": "dev ^7.2.5 ~npm~turndown@7.2.5",
+    "workspace~packages+md-core @affordances/md-published": "dev https://registry.npmjs.org/@affordances/md/-/md-0.5.0.tgz remote~https_c++registry.npmjs.org+@affordances+md+-+md-0.5.0.tgz~peer.031cf04a83ef4626",
     "workspace~packages+md-core @affordances/md": "dev workspace:* workspace~packages+md",
     "workspace~packages+next next": "dev ^16.4.3 ~npm~next@16.4.3~peer.945c44dd448424f8",
     "workspace~packages+next react-dom": "dev ^19.3.1 ~npm~react-dom@19.3.1~peer.ac52619a787f06cf",
@@ -3114,6 +3116,19 @@
     "~npm~yuku-core@0.19.0 @yuku-toolchain/types": "prod ^0.19.0 ~npm~@yuku-toolchain+types@0.19.0",
     "~npm~yuku-parser@0.19.0 @yuku-toolchain/types": "prod ^0.19.0 ~npm~@yuku-toolchain+types@0.19.0",
     "~npm~yuku-parser@0.19.0 yuku-core": "prod 0.19.0 ~npm~yuku-core@0.19.0",
-    "~npm~zod-to-json-schema@3.25.2~peer.0cc05fb34a209ec4 zod": "peer ^3.25.28 || ^4 ~npm~zod@4.6.7"
+    "~npm~zod-to-json-schema@3.25.2~peer.0cc05fb34a209ec4 zod": "peer ^3.25.28 || ^4 ~npm~zod@4.6.7",
+    "remote~https_c++registry.npmjs.org+@affordances+md+-+md-0.5.0.tgz~peer.031cf04a83ef4626 next": "peerOptional >=16 MISSING",
+    "remote~https_c++registry.npmjs.org+@affordances+md+-+md-0.5.0.tgz~peer.031cf04a83ef4626 react": "peerOptional >=19 MISSING",
+    "remote~https_c++registry.npmjs.org+@affordances+md+-+md-0.5.0.tgz~peer.031cf04a83ef4626 hast-util-from-html": "prod ^2.0.3 ~npm~hast-util-from-html@2.0.3",
+    "remote~https_c++registry.npmjs.org+@affordances+md+-+md-0.5.0.tgz~peer.031cf04a83ef4626 hast-util-select": "prod ^6.0.4 ~npm~hast-util-select@6.0.4",
+    "remote~https_c++registry.npmjs.org+@affordances+md+-+md-0.5.0.tgz~peer.031cf04a83ef4626 hast-util-to-mdast": "prod ^10.1.2 ~npm~hast-util-to-mdast@10.1.2",
+    "remote~https_c++registry.npmjs.org+@affordances+md+-+md-0.5.0.tgz~peer.031cf04a83ef4626 hast-util-to-string": "prod ^3.0.1 ~npm~hast-util-to-string@3.0.1",
+    "remote~https_c++registry.npmjs.org+@affordances+md+-+md-0.5.0.tgz~peer.031cf04a83ef4626 mdast-util-gfm": "prod ^3.1.0 ~npm~mdast-util-gfm@3.1.0",
+    "remote~https_c++registry.npmjs.org+@affordances+md+-+md-0.5.0.tgz~peer.031cf04a83ef4626 mdast-util-to-markdown": "prod ^2.2.1 ~npm~mdast-util-to-markdown@2.2.1",
+    "remote~https_c++registry.npmjs.org+@affordances+md+-+md-0.5.0.tgz~peer.031cf04a83ef4626 micromark-extension-gfm": "prod ^3.0.0 ~npm~micromark-extension-gfm@3.0.0",
+    "remote~https_c++registry.npmjs.org+@affordances+md+-+md-0.5.0.tgz~peer.031cf04a83ef4626 micromark-util-decode-string": "prod ^2.0.1 ~npm~micromark-util-decode-string@2.0.1",
+    "remote~https_c++registry.npmjs.org+@affordances+md+-+md-0.5.0.tgz~peer.031cf04a83ef4626 micromark-util-normalize-identifier": "prod ^2.0.1 ~npm~micromark-util-normalize-identifier@2.0.1",
+    "remote~https_c++registry.npmjs.org+@affordances+md+-+md-0.5.0.tgz~peer.031cf04a83ef4626 micromark": "prod ^4.0.3 ~npm~micromark@4.0.3",
+    "remote~https_c++registry.npmjs.org+@affordances+md+-+md-0.5.0.tgz~peer.031cf04a83ef4626 unist-util-visit": "prod ^5.2.0 ~npm~unist-util-visit@5.2.0"
   }
 }

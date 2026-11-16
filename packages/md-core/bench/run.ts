@@ -1,6 +1,6 @@
 // speed benchmark: every tool on every corpus page, median of n timed runs per page
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { cpus } from 'node:os'
+import { cpus, loadavg } from 'node:os'
 import { parseArgs } from 'node:util'
 import { setFlagsFromString } from 'node:v8'
 import { runInNewContext } from 'node:vm'
@@ -18,8 +18,12 @@ const { values } = parseArgs({
     save: { type: 'string' },
     compare: { type: 'string' },
     'no-gc': { type: 'boolean', default: false },
+    // the commit measured, for the record: the bench can run on an export with no git
+    commit: { type: 'string' },
   },
 })
+// the machine's 1-minute load as the run starts: a recorded run starts on a quiet machine
+const load = loadavg()[0]!
 
 const runs = Number(values.runs)
 const warmup = Number(values.warmup)
@@ -40,6 +44,14 @@ if (!values['no-gc']) {
 // setup turns a page into the function that's timed; it may do untimed work first (emit needs a parsed tree)
 type Tool = { name: string; setup: (html: string) => () => unknown }
 type Status = 'ok' | 'not implemented' | `import failed: ${string}`
+
+// a dependency's version as installed, not its range in package.json
+const installed = (name: string) =>
+  (
+    JSON.parse(
+      readFileSync(new URL(`../node_modules/${name}/package.json`, import.meta.url), 'utf8'),
+    ) as { version: string }
+  ).version
 
 const tools: { tool: Tool; status: Status }[] = []
 const add = (tool: Tool, status: Status = 'ok') => tools.push({ tool, status })
@@ -96,6 +108,12 @@ if (parse && emit) {
 {
   const md = await import('@affordances/md')
   add({ name: '@affordances/md', setup: (html) => () => md.htmlToMarkdown(html, { url }).markdown })
+  // the last published @affordances/md, from npm, with the same call: the before for md's own users
+  const published = await import('@affordances/md-published')
+  add({
+    name: `@affordances/md@${installed('@affordances/md-published')}`,
+    setup: (html) => () => published.htmlToMarkdown(html, { url }).markdown,
+  })
   const mdream = await import('mdream')
   add({
     name: 'mdream',
@@ -151,6 +169,9 @@ type ToolResult = {
   pages: Record<string, Cell>
 }
 type Run = {
+  commit?: string | undefined
+  load: number
+  versions: Record<string, string>
   date: string
   node: string
   cpu: string
@@ -247,6 +268,14 @@ if (progress) process.stderr.write('\r\x1b[K')
 
 const bytes = new Map(pages.map((p) => [p.name, Buffer.byteLength(p.html)]))
 const result: Run = {
+  commit: values.commit,
+  load,
+  versions: Object.fromEntries(
+    [
+      ['published', '@affordances/md-published'],
+      ...['mdream', 'turndown', 'turndown-plugin-gfm', 'node-html-markdown'].map((n) => [n, n]),
+    ].map(([key, name]) => [key, installed(name!)]),
+  ),
   date: new Date().toISOString(),
   node: process.version,
   cpu: cpus()[0]?.model ?? 'unknown',

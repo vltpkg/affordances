@@ -15,6 +15,7 @@
   },
   "devDependencies": {
     "@affordances/md": "workspace:*",
+    "@affordances/md-published": "https://registry.npmjs.org/@affordances/md/-/md-0.5.0.tgz",
     "hast-util-from-parse5": "^8.0.3",
     "mdream": "^2.1.0",
     "node-html-markdown": "^2.0.0",

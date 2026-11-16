@@ -26,9 +26,11 @@ node bench/run.ts --json                   # machine-readable, nothing else on s
 ```
 
 Other flags: `--runs` (timed runs per page, default 20), `--warmup` (default 3), `--budget` (ms a
-slow tool may spend on one page before it stops at 3 runs, default 1000), `--no-gc`.
+slow tool may spend on one page before it stops at 3 runs, default 1000), `--no-gc`, and `--commit <sha>`, which
+records the commit measured in the json (the bench may run on an export with no git). The json also records the
+1-minute load as the run starts and each tool's installed version.
 
-Tools: md-core, `@affordances/md`, mdream, turndown with the gfm plugin, node-html-markdown. When
+Tools: md-core, `@affordances/md`, the last published `@affordances/md` from npm (a devDependency, `@affordances/md-published`, so it installs with the rest), mdream, turndown with the gfm plugin, node-html-markdown. When
 `packages/md/src/convert/core/parse.ts` (`parse(html)`) and `emit.ts` (`emit(doc, options)`) exist, `md-core parse` and
 `md-core emit` time the two stages alone; emit runs on a tree parsed outside the clock.
 
