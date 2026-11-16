@@ -1234,17 +1234,43 @@ const shallow = (page: string) => {
   }
 }
 
+// where parse5 itself nests past CUT, for a page md-core's parser read whole: at the tag that takes it there (or, for
+// an element the parser made with no tag of its own, the last tag before), so what's before it never nests that deep
+const deepAt = (page: string) => {
+  stacked = 0
+  let at = 0
+  try {
+    parseHtml(page, {
+      scriptingEnabled: false,
+      sourceCodeLocationInfo: true,
+      treeAdapter: {
+        ...counting,
+        onItemPush: (element) => {
+          at = element.sourceCodeLocation?.startOffset ?? at
+          if (++stacked > CUT) throw tooDeep
+        },
+      },
+    })
+  } catch (error) {
+    if (error === tooDeep) return at
+    throw error
+  }
+  return undefined
+}
+
 // html as a tree, parsed as hast-util-from-html parses it (scripting off) but without each node's place in the source:
 // nothing reads it, and working it out costs more than the parse (most of a conversion, on a page of many lines). and
 // the source it's made of: the page, or what of it is read
 const fromHtml = (page: string, known?: Cut) => {
   // a page nesting deeper than md reads is read up to where it does, as md-core reads it: the cut md-core found when it
   // read this page and declined it, or, once parse5 nests past CUT, md-core's parser asked now (only it can tell where,
-  // in a pass that never goes past the cut)
+  // in a pass that never goes past the cut). and parse5's own count guards it too: a page md-core read whole, which
+  // parse5 nests past CUT, is cut where parse5 does
   let cut = known?.at
-  let document = known ? undefined : shallow(page)
+  let document = cut === undefined ? shallow(page) : undefined
   if (!document) {
     if (!known) cut = parseCore(page, undefined, false).cut
+    cut ??= deepAt(page)
     document = parseHtml(cutAt(page, cut), { scriptingEnabled: false })
   }
   const foreign = renameForeignTemplates(document)
