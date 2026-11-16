@@ -562,19 +562,15 @@ const appendChild = (parent: El, el: El) => {
   adopted(parent, el)
   addKid(parent, el)
 }
-// where a comment md-core never builds sat: the text after it is a text of its own, as it is in the tree pipeline's
-// tree, whose spacing reads each text's own word
-let splitIn: El | null = null
-let splitAt = -1
+// where a comment md-core never builds sat, in each parent: the text after it is a text of its own, as it is in the
+// tree pipeline's tree, whose spacing reads each text's own word. a parent's last comment is the one text can meet:
+// while a table in it is open (where fostered text goes before), its comments go in the table
+const splits = new Map<El, number>()
 const appendText = (parent: El, text: string) => {
   if (parent.rec < 2) return
   const kids = parent.kids
   const last = kids.length - 1
-  if (
-    last >= 0 &&
-    typeof kids[last] === 'string' &&
-    (parent !== splitIn || kids.length !== splitAt)
-  )
+  if (last >= 0 && typeof kids[last] === 'string' && splits.get(parent) !== kids.length)
     kids[last] += text
   else addKid(parent, text)
 }
@@ -593,7 +589,7 @@ const insertTextBefore = (parent: El, text: string, ref: El) => {
   const kids = parent.kids
   const at = kids.lastIndexOf(ref)
   if (at < 0) appendText(parent, text)
-  else if (at > 0 && typeof kids[at - 1] === 'string' && (parent !== splitIn || at !== splitAt))
+  else if (at > 0 && typeof kids[at - 1] === 'string' && splits.get(parent) !== at)
     kids[at - 1] += text
   else kids.splice(at, 0, text)
 }
@@ -1291,8 +1287,7 @@ const onComment = (data = '') => {
         ? (stack[0] ?? doc)
         : cur()
   if (data.charCodeAt(0) !== 36 && data !== '/$') {
-    splitIn = target
-    splitAt = target.kids.length
+    splits.set(target, target.kids.length)
     return
   }
   appendChild(target, make(COMMENT_TAG_NAME, COMMENT_TAG, HTML, data, 0))
@@ -3349,8 +3344,7 @@ const parsing = (input: string, nonce: string | undefined, moves: boolean): Docu
   nowrapSplit = false
   spanDiffers = false
   pruned.clear()
-  splitIn = null
-  splitAt = -1
+  splits.clear()
   reordered = false
   deepest = 0
   tagAt = 0
@@ -3418,7 +3412,7 @@ const letGo = () => {
   mains = []
   scripts = []
   pruned.clear()
-  splitIn = null
+  splits.clear()
   endAttrs()
   pending = []
   current = doc = headEl = formEl = htmlEl = bodyEl = null as unknown as El

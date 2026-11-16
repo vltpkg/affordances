@@ -78,6 +78,19 @@ test.each([
     'a comment before a table, fostered text after',
     '<p>ab<!-- --><table>cd<tr><td>x</td></tr></table></p>',
   ],
+  // each a comment in the table after the one in its parent, then text fostered out of it: the parent's split stands
+  [
+    'a comment, then one in a table, fostered text after',
+    '<div><i class="block">pa) S</i>:<!-- --><table><!---->v<tr><td>x</td></tr></table></div>',
+  ],
+  [
+    'a comment, then one in a row, fostered text after',
+    '<div><i class="block">pa) S</i>:<!-- --><table><tr><!----><td>x</td></tr>v</table></div>',
+  ],
+  [
+    'a comment, then one in a caption, fostered text after',
+    '<div><i class="block">pa) S</i>:<!-- --><table><caption>c<!----></caption><tr><td>x</td></tr>v</table></div>',
+  ],
 ])('text split by %s, beside a box', (_, html) => {
   for (const options of [{}, { url: 'https://site.test/a/b' }, { link: (url: URL) => url.href }]) {
     const { core, tree, declined } = both(`<main>${html}</main>`, options)
