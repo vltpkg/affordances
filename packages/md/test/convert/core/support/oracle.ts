@@ -36,6 +36,7 @@ export const oracle = (html: string): Document => {
   let headTitle: string | undefined
   let anyTitle: string | undefined
   let body: P5 | undefined
+  let canonical = false
   const scan = (parent: P5, inHead: boolean, inSvg: boolean) => {
     for (const child of parent.childNodes ?? []) {
       const tag = child.tagName
@@ -43,8 +44,20 @@ export const oracle = (html: string): Document => {
       if (tag === 'title' && !inSvg) {
         if (inHead) headTitle ??= textOf(child)
         anyTitle ??= textOf(child)
-      } else if (tag === 'link' && inHead && get(child, 'rel') === 'canonical')
-        head.canonical ??= get(child, 'href')
+      } else if (
+        tag === 'link' &&
+        inHead &&
+        !canonical &&
+        // rel as hast's tokens, joined: the tree pipeline's test
+        (get(child, 'rel') ?? '')
+          .trim()
+          .split(/[ \t\n\r\f]+/)
+          .join(' ') === 'canonical'
+      ) {
+        // the first, even with no href
+        canonical = true
+        head.canonical = get(child, 'href')
+      }
       // the root's: an <html> in svg or math is a foreign element
       else if (tag === 'html' && child.namespaceURI === 'http://www.w3.org/1999/xhtml')
         head.lang ??= get(child, 'lang') || undefined

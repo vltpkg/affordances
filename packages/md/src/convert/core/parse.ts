@@ -3175,6 +3175,9 @@ const readHead = (): Head => {
   const head: Head = { meta: new Map(), jsonLd: [] }
   let headTitle: string | undefined
   let anyTitle: string | undefined
+  // the head's first canonical link, as the tree pipeline takes it: rel is one token, whatever whitespace is around it
+  // (hast splits rel into tokens, after trimming it), and the first one is the canonical even with no href
+  let canonical = false
   // made in tree order, unless something was inserted before or moved
   let order = watched
   if (reordered) {
@@ -3198,7 +3201,10 @@ const readHead = (): Head => {
       if (inHead) headTitle ??= textOf(el)
       anyTitle ??= textOf(el)
     } else if (el.tag === 'link') {
-      if (inHead && attr(el, 'rel') === 'canonical') head.canonical ??= attr(el, 'href')
+      if (inHead && !canonical && attr(el, 'rel')?.trim() === 'canonical') {
+        canonical = true
+        head.canonical = attr(el, 'href')
+      }
     } else if (el.tag === 'html' && el.ns === HTML) head.lang ??= attr(el, 'lang') || undefined
     else if (el.tag === 'meta') {
       for (const kind of ['name', 'property']) {

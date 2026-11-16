@@ -84,3 +84,29 @@ test.each([
     expect({ core, declined }).toEqual({ core: tree, declined: [] })
   }
 })
+
+// the head's canonical link, as the tree pipeline reads it: rel is one token, with any whitespace around it
+test.each([
+  ['a space before', ' canonical'],
+  ['a line ending after', 'canonical\n'],
+  ['a no-break space before', ' canonical'],
+  ['a second token', 'canonical alternate'],
+  ['another case', 'Canonical'],
+])('a canonical rel with %s', (_, rel) => {
+  const html = `<html><head><link rel="${rel}" href="https://site.test/c"></head><body><p>hi</p></body></html>`
+  const { core, tree, declined } = both(html, { url: 'https://site.test/a/b' })
+  expect({ core, declined }).toEqual({ core: tree, declined: [] })
+})
+
+// the head's first canonical link is its canonical, href or not: one without a usable href leaves the url option's
+test.each([
+  ['no href', '<link rel="canonical">'],
+  ['an empty href', '<link rel="canonical" href="">'],
+  ['a blank href', '<link rel="canonical" href=" ">'],
+  ['an href', '<link rel="canonical" href="/first">'],
+])('a first canonical with %s, then another', (_, first) => {
+  const html = `<html><head>${first}<link rel="canonical" href="/second"></head><body><p>hi</p></body></html>`
+  const { core, tree, declined } = both(html, { url: 'https://site.test/a/b' })
+  expect({ core, declined }).toEqual({ core: tree, declined: [] })
+  expect(core).not.toContain('/second')
+})
