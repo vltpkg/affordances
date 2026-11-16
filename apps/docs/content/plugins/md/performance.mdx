@@ -1,0 +1,76 @@
+---
+title: Performance
+description: How fast htmlToMarkdown converts real pages, against mdream, turndown and node-html-markdown, and why their Markdown differs.
+---
+
+This page times `htmlToMarkdown` from `@affordances/md` end to end: the call the route handler makes, from a page's HTML to its Markdown. It compares it with three other HTML-to-Markdown converters for JavaScript, on the same pages, in the same process.
+
+<PerfSummary />
+
+<PerfChart />
+
+## Totals
+
+<PerfTotals />
+
+The rows:
+
+- **`@affordances/md`** is `htmlToMarkdown(html, { url })`, as the [converter](/docs/plugins/md/converter) page documents it.
+- **Its converter alone (md-core)** is the same call without the page work around the conversion. `@affordances/md` is the whole call: it also strips Next's Flight data, checks for streamed React content, reads md's markers and slots, and summarizes forms, which the converter alone doesn't. <PerfOverhead /> The two write the same Markdown, except on the two synthetic pages, which hold forms: only the whole call writes their summaries.
+- **The last published `@affordances/md`** is the version on npm before this one, which converts with the tree pipeline, called the same way.
+- **mdream** is `htmlToMarkdown(html, { origin })`, with the same site as md's `url`, so both resolve links. As installed, mdream runs its native Rust engine: here, the platform addon `@mdream/rust-linux-x64-gnu`, at the same version. Its JavaScript engine is a separate package, `@mdream/js`.
+- **turndown** is `new TurndownService().use(gfm)` from turndown-plugin-gfm, for tables, and **node-html-markdown** is `new NodeHtmlMarkdown().translate(html)`, both with their defaults otherwise.
+
+## Why the Markdown differs
+
+The Output column is how much Markdown each tool wrote for the whole corpus, and the tools don't write the same thing. md writes what a reader of the page sees, not everything in its HTML (the [conversion](/docs/plugins/md/conversion) page has the details):
+
+- It drops what's hidden from people: anything with `hidden` or `aria-hidden`, or an inline `display: none`, `visibility: hidden` or `collapse`, or `content-visibility: hidden` style.
+- It writes a form as a list of what it asks for, each field by its label, without the values.
+- It strips the Flight data that Next.js streams into a page, and resolves streamed Suspense boundaries, so content that arrives late is in place and fallbacks aren't.
+- It adds frontmatter from the page's metadata.
+
+So some of its time goes to work the other converters don't do, and their output includes text md leaves out.
+
+What each tool does with the page's parts, called as the bench calls it. Each cell was checked with a probe page, against the tool's README at that version:
+
+| Tool                                 | GFM tables | Hidden content dropped | Form summaries | Flight data kept out | Streamed Suspense resolved | Frontmatter |
+| ------------------------------------ | ---------- | ---------------------- | -------------- | -------------------- | -------------------------- | ----------- |
+| `@affordances/md`, this and 0.5.0    | yes        | yes                    | yes            | yes                  | yes                        | yes         |
+| mdream 2.1.0                         | yes        | no (1)                 | no (2)         | yes (3)              | no (4)                     | no (5)      |
+| turndown 7.2.5 + turndown-plugin-gfm | yes        | no (6)                 | no             | no (7)               | no (4)                     | no          |
+| node-html-markdown 2.0.0             | yes        | no (8)                 | no             | yes (3)              | no (4)                     | no          |
+
+"Hidden content dropped" means `hidden`, `aria-hidden="true"` and an inline `display: none`, each dropped. md reads no stylesheet: content hidden only by a class (a rule in the page's `<style>`, or Tailwind's `hidden`, `invisible` or `sr-only`) is kept.
+
+1. mdream keeps all three. Options the bench doesn't use go further: `minimal: true` drops `hidden` and `display: none` but keeps `aria-hidden`, a `filter: { exclude: [...] }` of attribute selectors drops all three, and its Tailwind plugin removes the `hidden` and `invisible` classes.
+2. mdream writes a form's text run together. `minimal: true` removes forms entirely, and no option summarizes them.
+3. mdream and node-html-markdown drop every `<script>`, so Flight data never reaches their output. They don't read it as Flight data; they leave scripts out.
+4. The three write both the fallback and the streamed content, the content where React's hidden copy of it sits, not in the boundary's place.
+5. mdream's `frontmatter: true` (also part of `minimal`) writes the head's title and meta. The bench doesn't turn it on.
+6. turndown removes nothing by default. `remove()` with a filter function of your own could drop hidden elements; there's no built-in option.
+7. turndown writes the scripts' text into the Markdown, Flight data and React's streaming instructions included.
+8. node-html-markdown's `ignore` option takes element names, not attributes, so it has no way to drop hidden content.
+
+## Per page
+
+The median time for each page, in milliseconds. Sizes are the page's HTML. The columns are, in order, `@affordances/md`, its converter alone, the last published version, mdream, turndown and node-html-markdown.
+
+<PerfPages />
+
+## Method
+
+The corpus is ten pages, with their sizes in the per-page table. Eight are real pages from documentation sites, a wiki and a code host, with tables, code, long articles and a Next.js app's streamed output among them. They're fetched when you run the bench, not committed, because they're other sites' pages. The other two are synthetic pages the bench generates, at 50 and 200 sections.
+
+Each tool converts each page in the same Node.js process:
+
+<PerfRun />
+
+To run it yourself, from `packages/md-core` in the repository:
+
+```sh
+node bench/fetch.ts
+node bench/run.ts
+```
+
+`fetch.ts` saves the real pages to a local cache, and `run.ts` prints the same tables. Numbers on another machine will differ; the ratios between the tools are what to compare.

@@ -22,7 +22,7 @@ const { markdown, title, url, tokens } = htmlToMarkdown(html, { url: 'https://ex
 | `link`        | none     | Another URL for a link once it's absolute, such as its Markdown twin; `undefined` keeps it                        |
 | `slots`       | none     | Markdown for each `<AgentSlot name>`, in place of its children                                                    |
 
-Custom `handlers` and a function `extract` use the tree pipeline, which is slower.
+Custom `handlers` and a function `extract` use the tree pipeline, which is slower. [Performance](/docs/plugins/md/performance) times the default path against other converters.
 
 It returns the Markdown, the page's `title`, its canonical `url` (or the one you passed), and `tokens`, an estimate of the Markdown's length in tokens (characters divided by four).
 
