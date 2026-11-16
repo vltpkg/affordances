@@ -77,8 +77,8 @@ export type Options = {
   slots?: Record<string, string>
 }
 
-// url: the page's canonical url (or the one given), for a Link header
-export type Result = { markdown: string; title?: string; url?: string; tokens: number }
+// url: the page's canonical url (or the one given), for a Link header. cut: as Page's, from htmlToMarkdown
+export type Result = { markdown: string; title?: string; url?: string; tokens: number; cut?: true }
 
 // never content, whatever the page says
 // (form controls stay until conversion: the form summary and task-list items read them, then handlers drop them)
@@ -2975,8 +2975,11 @@ const emptied = <T extends HastRoot | Element>(node: T, empty: Set<Element>): T 
 export { escapeRegExp, pageTitle, TITLE_SEPARATORS, yaml } from './shared.ts'
 
 // the page's markdown; slots fills its <AgentSlot>s. it throws where readPage's markdown() would
-export const htmlToMarkdown = (html: string, options: Options = {}): Result =>
-  readPage(html, options).markdown(options.slots)
+export const htmlToMarkdown = (html: string, options: Options = {}): Result => {
+  const page = readPage(html, options)
+  const result = page.markdown(options.slots)
+  return page.cut ? { ...result, cut: true } : result
+}
 
 // a node's text as written
 const textOf = (node: MdastNodes): string =>

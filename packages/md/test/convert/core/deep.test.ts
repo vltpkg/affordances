@@ -301,3 +301,20 @@ test.each([
   expect(read(html)).toEqual(tree)
   expect(tree[0]).toBe(html.startsWith('<main><p>top') ? `top\n\n${text}\n\nafter\n` : `${text}\n`)
 })
+
+// htmlToMarkdown says a page was cut, as readPage does, on both paths
+test.each([
+  ['nested past CUT', nest('div', 2_000), true],
+  [
+    'nested past DEPTH, an image left out',
+    nest('div', DEPTH + 10, '<img src="/a.png" alt="pic">'),
+    true,
+  ],
+  ['nested past DEPTH, only text', nest('div', DEPTH + 10), undefined],
+  ['nested within DEPTH', nest('div', 40), undefined],
+])('htmlToMarkdown on a page %s says cut', (_, html, cut) => {
+  for (const path of ['core', 'hast'] as const) {
+    forcePath(path)
+    expect([path, htmlToMarkdown(html).cut, readPage(html).cut]).toEqual([path, cut, cut])
+  }
+})
