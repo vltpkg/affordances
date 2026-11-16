@@ -1,4 +1,4 @@
-import { attr } from './attr.ts'
+import { attr, endAttrs } from './attr.ts'
 import { convertRoot, endConvert, materialize, startConvert } from './emit-convert.ts'
 import { HEADING, headingText, IMAGE, Md, setext, TEXT, toMarkdown } from './emit-markdown.ts'
 import { inCells, liftBlocks, relinkMarked } from './emit-lift.ts'
@@ -35,6 +35,7 @@ export const emit = (doc: Document, options: Options = {}, read?: Read): Result 
   } finally {
     endPage()
     endConvert()
+    endAttrs()
   }
 }
 const write = (doc: Document, options: Options, read: Read | undefined): Result => {

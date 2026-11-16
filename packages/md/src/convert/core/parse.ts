@@ -1,4 +1,4 @@
-import { attr, parseAttrs } from './attr.ts'
+import { attr, endAttrs, parseAttrs } from './attr.ts'
 import { decode } from './entities.ts'
 import { resolveStreamed } from './streamed.ts'
 import { CUT, DEPTH, LINES, PLAIN as STRUCTURE } from '../depth.ts'
@@ -3419,6 +3419,7 @@ const letGo = () => {
   scripts = []
   pruned.clear()
   splitIn = null
+  endAttrs()
   pending = []
   current = doc = headEl = formEl = htmlEl = bodyEl = null as unknown as El
 }

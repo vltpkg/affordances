@@ -16,6 +16,11 @@ export const attr = (el: Element, name: string): string | undefined => {
 // the element the last questions without a map were about, and how many more there were after the first
 let last: Element | undefined
 let asked = 0
+// let go of it once the page is read, and with it the page's tree
+export const endAttrs = () => {
+  last = undefined
+  asked = 0
+}
 
 const space = (c: number) => c === 32 || c === 10 || c === 9 || c === 12 || c === 13
 
