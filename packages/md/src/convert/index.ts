@@ -134,13 +134,10 @@ type Ids = Map<string, Element> | (() => Map<string, Element>)
 // on a form of thousands of fields is quadratic; this is linear
 const elementsIn = (root: HastRoot | Element, matches: (el: Element) => boolean) => {
   const found: Element[] = []
-  const seen = new Set<Element>()
   const stack: HastNodes[] = [root]
+  // a tree: each node is under one parent, so it's met once
   for (let node = stack.pop(); node; node = stack.pop()) {
-    if (node.type === 'element' && matches(node) && !seen.has(node)) {
-      seen.add(node)
-      found.push(node)
-    }
+    if (node.type === 'element' && matches(node)) found.push(node)
     if ('children' in node) for (let i = node.children.length; i--;) stack.push(node.children[i]!)
   }
   return found
@@ -306,15 +303,9 @@ const prune = (parent: HastRoot | Element, literal = false) => {
   }
   pruneWith(parent, page, literal)
 }
-// everything marked data-affordances-md="show", in page order
-const shownPanels = (parent: HastRoot | Element, found: Element[] = []) => {
-  for (const child of parent.children) {
-    if (!isElement(child)) continue
-    if (String(child.properties.dataAffordancesMd) === 'show') found.push(child)
-    shownPanels(child, found)
-  }
-  return found
-}
+// everything under it marked data-affordances-md="show", in page order
+const shownPanels = (parent: HastRoot | Element) =>
+  elementsIn(parent, (el) => el !== parent && String(el.properties.dataAffordancesMd) === 'show')
 // what prune reads from the whole page, once it needs it: its ids, and the tabs that label a shown panel
 type Pruning = { byId: () => Map<string, Element>; tabs: () => Set<string> }
 // a tablist whose panels are shown: each panel is headed by its tab, so the tabs aren't said again
