@@ -7,7 +7,7 @@ description: What the converter keeps from a page, what it drops, and how it rea
 
 Without [markers](/docs/plugins/md/markers), the converter takes the page's outermost `<main>` or `[role=main]` (a `<main>` first, when there are both), so a `<main>` inside it, such as one in a comment, is part of it. Without one, it takes the body minus `nav`, `header`, `footer`, `aside`, dialogs, and their ARIA roles.
 
-Scripts, styles, SVG, media, iframes, and anything hidden from people with `hidden`, `aria-hidden`, or an inline `display: none`, `visibility: hidden` or `content-visibility: hidden` style (read as CSS reads it, with comments and escapes) are always dropped, unless an `<AgentOnly>` put it there or it's marked `data-affordances-md="show"` (see [Tabs and accordions](#tabs-and-accordions)).
+Scripts, styles, SVG, media, iframes, and anything hidden from people with `hidden`, `aria-hidden="true"`, or an inline `display: none`, `visibility: hidden` or `collapse`, or `content-visibility: hidden` style (read as CSS reads it, with comments and escapes) are always dropped, unless an `<AgentOnly>` put it there or it's marked `data-affordances-md="show"` (see [Tabs and accordions](#tabs-and-accordions)).
 
 ## Streamed content
 

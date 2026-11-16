@@ -25,7 +25,7 @@ The rows:
 
 The Output column is how much Markdown each tool wrote for the whole corpus, and the tools don't write the same thing. md writes what a reader of the page sees, not everything in its HTML (the [conversion](/docs/plugins/md/conversion) page has the details):
 
-- It drops what's hidden from people: anything with `hidden` or `aria-hidden`, or an inline `display: none`, `visibility: hidden` or `collapse`, or `content-visibility: hidden` style.
+- It drops what's hidden from people: anything with `hidden` or `aria-hidden="true"`, or an inline `display: none`, `visibility: hidden` or `collapse`, or `content-visibility: hidden` style.
 - It writes a form as a list of what it asks for, each field by its label, without the values.
 - It strips the Flight data that Next.js streams into a page, and resolves streamed Suspense boundaries, so content that arrives late is in place and fallbacks aren't.
 - It adds frontmatter from the page's metadata.
@@ -66,9 +66,11 @@ Each tool converts each page in the same Node.js process:
 
 <PerfRun />
 
-To run it yourself, from `packages/md-core` in the repository:
+To run it yourself, install the repository's dependencies at its root, then run the bench from `packages/md-core`:
 
 ```sh
+vlt install
+cd packages/md-core
 node bench/fetch.ts
 node bench/run.ts
 ```
