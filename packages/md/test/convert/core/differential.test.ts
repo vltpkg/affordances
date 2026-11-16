@@ -2,6 +2,7 @@ import { afterEach, expect, test } from 'vitest'
 import { page as synthetic } from '../../../../md-core/bench/corpus/synthetic.mjs'
 import { declines, forcePath } from '../../../src/convert/path.ts'
 import { htmlToMarkdown, readPage, type Options } from '../../../src/index.ts'
+import { DOCS_OPTIONS, docsPages } from './docs-fuzz.ts'
 import { generator } from './emit-fuzz.ts'
 import { treePages } from './tree-fuzz.ts'
 import { fixturePages } from './emit-pages.ts'
@@ -61,6 +62,22 @@ test('generated pages, on fixed seeds', { timeout: 30_000 }, () => {
     for (let i = 0; i < 100; i++) pages.push({ name: `seed ${seed} #${i}`, html: next() })
   }
   expect(compare(pages, { url: 'https://site.test/a/b' })).toEqual(none)
+})
+
+// pages shaped like a react docs site's: texts split by react's empty comments beside elements made boxes, head links
+// as real heads write them. 3000 pages: about 3 s
+test('generated docs pages, on fixed seeds', { timeout: 30_000 }, () => {
+  // each page under one of the options, in turn
+  const pages = DOCS_OPTIONS.map(() => [] as { name: string; html: string }[])
+  for (const seed of [1, 2, 3]) {
+    const next = docsPages(seed)
+    for (let i = 0; i < 1000; i++) {
+      const html = next()
+      pages[i % pages.length]!.push({ name: `seed ${seed} #${i} ${JSON.stringify(html)}`, html })
+    }
+  }
+  for (const [n, options] of DOCS_OPTIONS.entries())
+    expect(compare(pages[n]!, options)).toEqual(none)
 })
 
 // pages heavy on html's recovery paths, each read both ways (htmlToMarkdown, and readPage with a fill), under the
