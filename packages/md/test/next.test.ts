@@ -593,6 +593,26 @@ test('a page still streaming at the timeout is converted as far as it got, never
   ).toBe(504)
 })
 
+test('a page still streaming at the timeout and nested past the cut says both', async () => {
+  upstream = stalls([
+    '<html><head><title>Tee</title></head><body><main><h1>Tee</h1>',
+    '<!--$?--><template id="B:0"></template><p>Loading price…</p><!--/$-->',
+    `${'<div>'.repeat(2_000)}nested words`,
+  ])
+  const response = await createMdHandler({ timeout: 50 })(
+    new Request(`${site}/api/affordances/md/tee`),
+  )
+  expect(response.status).toBe(200)
+  expect(response.headers.get('cache-control')).toBe('private, no-store')
+  expect(response.headers.get(PARTIAL_HEADER)).toBe('1')
+  const markdown = await response.text()
+  expect(markdown).toContain('# Tee')
+  expect(markdown).not.toContain('nested words')
+  expect(markdown.trim()).toMatch(
+    /\n> Some of this page was still loading after 50ms and is missing or shown as its loading state\.\n\n> This page nests deeper than @affordances\/md reads, so some of it is missing\.$/,
+  )
+})
+
 test('origin override and append', async () => {
   const proxied = createMdHandler({
     origin: 'http://internal:3000',

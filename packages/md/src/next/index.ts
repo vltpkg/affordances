@@ -826,11 +826,12 @@ const renderPage =
     } catch (error) {
       return unconverted(target, error, headers, upstream)
     }
-    const page = loading
-      ? `${result.markdown}\n> Some of this page was still loading after ${timeout}ms and is missing or shown as its loading state.\n`
-      : read.cut
-        ? `${result.markdown}\n> This page nests deeper than @affordances/md reads, so some of it is missing.\n`
-        : result.markdown
+    // a page both still loading and cut says both
+    let page = result.markdown
+    if (loading)
+      page += `\n> Some of this page was still loading after ${timeout}ms and is missing or shown as its loading state.\n`
+    if (read.cut)
+      page += `\n> This page nests deeper than @affordances/md reads, so some of it is missing.\n`
     const extra = await appended
     const markdown = extra ? `${page}\n${extra.trim()}\n` : page
 
