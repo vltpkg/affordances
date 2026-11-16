@@ -2542,7 +2542,9 @@ const recovered = (read: {
 // the page the first of these reads: each reads it, passes (undefined), or throws. a Declined or a FlightDataError is
 // md's verdict on the page, not a failure: it ends the read there and is what's thrown. any other error, the next one
 // tries, and once none is left the first error is thrown, unchanged, with the next (there are at most two) as its
-// cause, unless it has one: the route logs one line, and it names both
+// cause, unless it has one: the route logs one line, and it names both. a markdown() that throws is written by the
+// next path, only if that path reads the page as the one handed out did (its slots, cut, redirect and fallback, which
+// the caller may already have acted on): otherwise the first error is thrown
 const firstOf = (paths: ((() => Page | undefined) | undefined)[]): Page => {
   // the page the first path from `from` on reads, and which path it is
   const next = (from: number, errors: unknown[]): [Page, number] => {
@@ -2570,10 +2572,14 @@ const firstOf = (paths: ((() => Page | undefined) | undefined)[]): Page => {
           failed(error, tried)
         }
         ;[writing, from] = next(from + 1, tried)
+        if (readOf(writing) !== readOf(page)) throw caused(tried[0], tried[1])
       }
     },
   }
 }
+// what a page says besides its markdown
+const readOf = ({ slots, errors, cut, redirect, fallback }: Page) =>
+  JSON.stringify([slots, errors, cut, redirect, fallback])
 const failed = (error: unknown, errors: unknown[]) => {
   if (error instanceof Declined || error instanceof FlightDataError) throw caused(error, errors[0])
   errors.push(error ?? new Error(String(error)))

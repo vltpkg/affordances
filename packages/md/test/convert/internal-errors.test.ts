@@ -7,14 +7,21 @@ import { htmlToMarkdown, readPage } from '../../src/index.ts'
 // errors md didn't foresee, switched on per test: md-core's parse as it reads a page (not the tree pipeline's call for
 // where to cut, which reads no further), md-core's emit (markdown()), the tree pipeline's hast-util-from-parse5 (its
 // read), and its mdast-util-to-markdown (its markdown(); md-core writes its own)
-const boom = vi.hoisted(() => ({ parse: false, emit: false, tree: false, write: false }))
+const boom = vi.hoisted(() => ({
+  parse: false,
+  emit: false,
+  tree: false,
+  write: false,
+  lost: false,
+}))
 vi.mock('../../src/convert/core/parse.ts', async (original) => {
   const actual = await original<typeof import('../../src/convert/core/parse.ts')>()
   return {
     ...actual,
     parse: (...args: Parameters<typeof actual.parse>) => {
       if (boom.parse && args[2] !== false) throw new TypeError('md-core parse broke')
-      return actual.parse(...args)
+      // md-core reading a page as something it left out, where the tree pipeline doesn't
+      return boom.lost ? { ...actual.parse(...args), lost: true } : actual.parse(...args)
     },
   }
 })
@@ -53,7 +60,7 @@ vi.mock('mdast-util-to-markdown', async (original) => {
 // md's own choice of path, md-core first, in both of vitest's projects
 beforeEach(() => forcePath(undefined))
 afterEach(() => {
-  boom.parse = boom.emit = boom.tree = boom.write = false
+  boom.parse = boom.emit = boom.tree = boom.write = boom.lost = false
   declines.clear()
 })
 
@@ -82,6 +89,18 @@ test('a page md-core throws on is read on the tree pipeline, at read and at mark
   boom.parse = false
   boom.emit = true
   expect(outcome(plain)).toEqual(expected)
+})
+
+// markdown() written by the tree pipeline after md-core's throws, only where it reads the page as md-core's read did
+test("md-core's markdown() error stands when the tree pipeline reads the page otherwise", () => {
+  boom.emit = boom.lost = true
+  const page = readPage(plain)
+  expect(page.cut).toBe(true)
+  expect(() => page.markdown()).toThrow('md-core emit broke')
+  expect(() => htmlToMarkdown(plain)).toThrow('md-core emit broke')
+  // the same read on both: the tree pipeline writes it
+  boom.lost = false
+  expect(readPage(plain).markdown().markdown).toBe('# Title\n\nBody\n')
 })
 
 test('when both paths throw, markdown() and htmlToMarkdown throw the first error, unchanged', () => {
