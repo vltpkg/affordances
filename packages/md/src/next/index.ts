@@ -11,6 +11,7 @@ import {
   readStreamed,
   relinkMarkdown,
   type SlotNames,
+  type Swapped,
   TITLE_SEPARATORS,
   yaml,
 } from '../convert/index.ts'
@@ -933,16 +934,106 @@ export const createMdHandler = (options: MdHandlerOptions = {}) => {
   }
 }
 
-// the literal page as it came, for a request that isn't for markdown: the person asked for a page named x.md
+// a passed-through page's body as it streams, up to maxBytes or the deadline: the bytes as they came, the html without
+// its flight pushes, and what the stripper swapped. rest is the body from there on, starting with a read the deadline
+// left waiting, so none of it is lost
+const heldPage = async (
+  body: ReadableStream<Uint8Array>,
+  deadline: Promise<void>,
+  maxBytes: number,
+) => {
+  const strip = flightStripper()
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  const late = deadline.then(() => undefined)
+  const held: Uint8Array[] = []
+  let html = ''
+  let raw = 0
+  let waiting: ReturnType<typeof reader.read> | undefined
+  try {
+    while (raw <= maxBytes) {
+      waiting = reader.read()
+      const chunk = await Promise.race([waiting, late])
+      if (!chunk) break
+      waiting = undefined
+      if (chunk.done) break
+      held.push(chunk.value)
+      raw += chunk.value.byteLength
+      html += strip.write(decoder.decode(chunk.value, { stream: true }))
+    }
+  } catch {
+    // the stream broke: the rest reads its error, as the page's own body would have
+    waiting = undefined
+  }
+  html += strip.write(decoder.decode()) + strip.end()
+  const rest = new ReadableStream<Uint8Array>({
+    start: (controller) => held.forEach((chunk) => controller.enqueue(chunk)),
+    pull: async (controller) => {
+      try {
+        const chunk = await (waiting ?? reader.read())
+        waiting = undefined
+        if (chunk.done) controller.close()
+        else controller.enqueue(chunk.value)
+      } catch (error) {
+        controller.error(error)
+      }
+    },
+    cancel: (reason) => reader.cancel(reason),
+  })
+  return { html, swapped: strip.swapped(), rest }
+}
+
+// the 404, 403 or 401 a page streamed after its shell, read as the convert path reads it: a digest in its flight data
+// that the page's scripts account for. undefined for anything else, a page whose flight data can't be trusted among
+// them: page content can't make a page answer what it wouldn't as markdown. only a page with such a digest is parsed
+const streamedFallback = (html: string, swapped: Swapped, url: URL) => {
+  if (!swapped.errors.some((digest) => fromDigest(digest))) return undefined
+  try {
+    return readStreamed(html, swapped, { url: url.href }).fallback?.status
+  } catch {
+    return undefined
+  }
+}
+
+// the literal page as it came, for a request that isn't for markdown: the person asked for a page named x.md. one
+// that streamed notFound() after its shell (a 200 of next's not-found ui) is a 404, so the handler falls to the twin,
+// and forbidden() or unauthorized() its status, private: what a markdown request for it answers. so a 200 html page is
+// read before it's answered, up to maxBytes and under the timeout, and then answered as it came, held bytes and the
+// rest; past either it's decided on what was read, as the convert path decides on a page still loading
 const literalPage = async (request: Request, page: string, options: MdHandlerOptions) => {
   const target = pageUrl(request, options, page + new URL(request.url).search)
   if (!target) return fail(400, 'Not a page on this site')
-  const passed = await passPage(request, target, options)
-  if (passed.status === 404) void passed.body?.cancel().catch(() => {})
-  // its Link, which md()'s rules leave off a url ending in .md, since there it would be a twin's too
-  else if (passed.ok && passed.headers.get('content-type')?.includes('text/html'))
-    passed.headers.append('link', `<${mdPath(page)}>; ${LINK}`)
-  return passed
+  const { timeout = TIMEOUT, maxBytes = 16 * MIB } = options
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeout)
+  })
+  try {
+    const passed = await passPage(request, target, options)
+    if (passed.status === 404) void passed.body?.cancel().catch(() => {})
+    if (
+      passed.status !== 200 ||
+      !passed.headers.get('content-type')?.includes('text/html') ||
+      !passed.body
+    )
+      return passed
+    const headers = new Headers(passed.headers)
+    // its Link, which md()'s rules leave off a url ending in .md, since there it would be a twin's too
+    headers.append('link', `<${mdPath(page)}>; ${LINK}`)
+    const { html, swapped, rest } = await heldPage(passed.body, deadline, maxBytes)
+    const status = streamedFallback(html, swapped, target)
+    if (status === 404) {
+      void rest.cancel().catch(() => {})
+      return fail(404, HTTP_ERRORS[404]!)
+    }
+    if (status) {
+      passed.headers.set('cache-control', 'private, no-store')
+      return new Response(rest, { status, headers: passed.headers })
+    }
+    return new Response(rest, { status: 200, headers })
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 // a route's params from its folder names, as next gives them to page.tsx: [x] is a string, [...x] a string[], and

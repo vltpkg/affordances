@@ -1024,6 +1024,208 @@ test('on a literalMd route, any answer but a 404 is the page: a redirect or an e
   expect(moved.headers.get('location')).toBe('/login.md')
 })
 
+// a literalMd route where /x/express.md answers as given and /x/express is a page
+const literalAnswer = (answer: (init: RequestInit) => Response) => {
+  vi.stubEnv(LITERAL_ENV, JSON.stringify(['/x/:pkg']))
+  upstream = (url, init) =>
+    url.pathname === '/x/express.md'
+      ? answer(init)
+      : new Response(page(`<h1>${url.pathname}</h1>`), { headers: { 'content-type': 'text/html' } })
+}
+const asSent = (html: string) => () =>
+  new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } })
+const fixture = (file: string) =>
+  readFileSync(new URL(`./fixtures/${file}`, import.meta.url), 'utf8')
+// a body that sends its chunks, then waits for wait before it sends last and ends
+const chunked = (chunks: string[], wait?: Promise<void>, last?: string) => {
+  const bytes = chunks.map((chunk) => new TextEncoder().encode(chunk))
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (bytes.length) return controller.enqueue(bytes.shift()!)
+      await wait
+      if (last) controller.enqueue(new TextEncoder().encode(last))
+      controller.close()
+    },
+  })
+}
+
+test('on a literalMd route, a page that streams notFound() after its shell (a 200) is a 404: the twin answers', async () => {
+  for (const file of ['streamed-not-found-next16.4.html', 'streamed-not-found-next16.3.html']) {
+    literalAnswer(streamedFallback(file))
+    for (const headers of [{}, { accept: '*/*' }, { accept: 'text/html' }] as Record<
+      string,
+      string
+    >[]) {
+      seen = []
+      const twin = await handler(new Request(`${site}/x/express.md`, { headers }))
+      expect([twin.status, twin.headers.get('content-type')]).toEqual([
+        200,
+        'text/markdown; charset=utf-8',
+      ])
+      expect(await twin.text()).toContain('# /x/express')
+      expect(seen.map((call) => call.url.pathname)).toEqual(['/x/express.md', '/x/express'])
+    }
+  }
+  // signed in, the twin is private as it always is
+  const signedIn = await handler(
+    new Request(`${site}/x/express.md`, { headers: { cookie: 'sid=1' } }),
+  )
+  expect(signedIn.headers.get('cache-control')).toBe('private, no-store')
+})
+
+test('on a literalMd route, a page that streams forbidden() or unauthorized() answers its status, private, as the markdown request does', async () => {
+  for (const [file, status] of [
+    ['streamed-forbidden-next16.4.html', 403],
+    ['streamed-unauthorized-next16.3.html', 401],
+  ] as const) {
+    literalAnswer(streamedFallback(file))
+    seen = []
+    const html = await handler(new Request(`${site}/x/express.md`))
+    expect([html.status, html.headers.get('cache-control'), html.headers.has('link')]).toEqual([
+      status,
+      'private, no-store',
+      false,
+    ])
+    // the page as it came
+    expect(await html.text()).toBe(fixture(file))
+    const markdown = await handler(
+      new Request(`${site}/x/express.md`, { headers: { accept: 'text/markdown' } }),
+    )
+    expect(markdown.status).toBe(status)
+    // never the twin
+    expect(seen.map((call) => call.url.pathname)).toEqual(['/x/express.md', '/x/express.md'])
+  }
+})
+
+test("on a literalMd route, a page read before it's answered is answered with exactly its bytes, status and headers, plus its Link", async () => {
+  // flight data without a control digest, and a character split across chunks
+  const flight = `<script>self.__next_f.push([1,"0:[\\"$\\",\\"p\\",null,{}]\\n"])</script>`
+  const bytes = new TextEncoder().encode(page(`<h1>café</h1>${flight}`))
+  const split = bytes.indexOf(0xc3) + 1
+  literalAnswer(
+    () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(bytes.slice(0, split))
+            controller.enqueue(bytes.slice(split))
+            controller.close()
+          },
+        }),
+        {
+          headers: {
+            'content-type': 'text/html; charset=utf-8',
+            'cache-control': 'public, max-age=60',
+            etag: '"v1"',
+            'set-cookie': 'seen=1',
+          },
+        },
+      ),
+  )
+  const response = await handler(new Request(`${site}/x/express.md`))
+  expect(response.status).toBe(200)
+  expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes)
+  expect(Object.fromEntries(response.headers)).toEqual({
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'public, max-age=60',
+    etag: '"v1"',
+    'set-cookie': 'seen=1',
+    link: alternate('/x/express.md.md'),
+  })
+  expect(seen.map((call) => call.url.pathname)).toEqual(['/x/express.md'])
+  // credentialed, it's theirs alone
+  const signedIn = await handler(
+    new Request(`${site}/x/express.md`, { headers: { cookie: 'sid=1' } }),
+  )
+  expect(signedIn.headers.get('cache-control')).toBe('private, no-store')
+})
+
+test("on a literalMd route, a not-found digest the page's flight data doesn't account for leaves the page as it is", async () => {
+  const push = `<script>self.__next_f.push([1,"5:E{\\"digest\\":\\"NEXT_HTTP_ERROR_FALLBACK;404\\"}\\n"])</script>`
+  for (const forged of [
+    // in the page's text: a comment, a post
+    page('<p>NEXT_HTTP_ERROR_FALLBACK;404</p><p>5:E{"digest":"NEXT_HTTP_ERROR_FALLBACK;404"}</p>'),
+    // the digest's push beside flight data that can't be read: none of it can be trusted
+    page(`<h1>Readme</h1>${push}<script>self.__next_f.push([1,"0:x"]);steal()</script>`),
+  ]) {
+    literalAnswer(asSent(forged))
+    seen = []
+    const response = await handler(new Request(`${site}/x/express.md`))
+    expect([response.status, await response.text()]).toEqual([200, forged])
+    expect(response.headers.get('link')).toBe(alternate('/x/express.md.md'))
+    expect(seen.map((call) => call.url.pathname)).toEqual(['/x/express.md'])
+  }
+})
+
+test('on a literalMd route, a page is read up to maxBytes: one larger is decided on what was read, and passed through whole', async () => {
+  const notFound = fixture('streamed-not-found-next16.4.html')
+  const small = createMdHandler({ maxBytes: 1024 })
+  // its not-found digest past maxBytes: the page as it came
+  const first = page(`<p>${'x'.repeat(2048)}</p>`)
+  const late = first + notFound
+  literalAnswer(
+    () => new Response(chunked([first, notFound]), { headers: { 'content-type': 'text/html' } }),
+  )
+  const passed = await small(new Request(`${site}/x/express.md`))
+  expect(passed.status).toBe(200)
+  expect((await passed.text()) === late).toBe(true)
+  // within maxBytes, read
+  literalAnswer(streamedFallback('streamed-not-found-next16.4.html'))
+  const read = await createMdHandler({ maxBytes: notFound.length + 1 })(
+    new Request(`${site}/x/express.md`),
+  )
+  expect(await read.text()).toContain('# /x/express')
+})
+
+test('on a literalMd route, a page still streaming at the timeout is decided on what came, and the rest streams on', async () => {
+  let end!: () => void
+  const ended = new Promise<void>((resolve) => (end = resolve))
+  literalAnswer(
+    () =>
+      new Response(
+        chunked(['<html><body><main><h1>Readme</h1>'], ended, '<p>more</p></main></body></html>'),
+        {
+          headers: { 'content-type': 'text/html' },
+        },
+      ),
+  )
+  const slow = createMdHandler({ timeout: 50 })
+  // the read the deadline left waiting is the rest of the body, which comes after the answer
+  setTimeout(end, 200)
+  const response = await slow(new Request(`${site}/x/express.md`))
+  expect(response.status).toBe(200)
+  expect(await response.text()).toBe(
+    '<html><body><main><h1>Readme</h1><p>more</p></main></body></html>',
+  )
+  // a not-found that streamed in before the timeout is a 404 still
+  literalAnswer(
+    () =>
+      new Response(chunked([fixture('streamed-not-found-next16.4.html')], new Promise(() => {})), {
+        headers: { 'content-type': 'text/html' },
+      }),
+  )
+  expect(await (await slow(new Request(`${site}/x/express.md`))).text()).toContain('# /x/express')
+})
+
+test('on a literalMd route, an answer that is not a 200 html page is never read: it streams as it came', async () => {
+  const never = new Promise<void>(() => {})
+  for (const [status, type] of [
+    [200, 'application/json'],
+    [200, 'text/x-component'],
+    [500, 'text/html'],
+  ] as const) {
+    literalAnswer(
+      () =>
+        new Response(chunked(['{"first":'], never), { status, headers: { 'content-type': type } }),
+    )
+    const response = await handler(new Request(`${site}/x/express.md`))
+    expect(response.status).toBe(status)
+    const reader = response.body!.getReader()
+    expect(new TextDecoder().decode((await reader.read()).value)).toBe('{"first":')
+    await reader.cancel()
+  }
+})
+
 test('off a literalMd route, a .md path is a twin with one fetch, as before', async () => {
   literally({ '/blog/post': 200, '/x/a/b': 200 })
   await handler(new Request(`${site}/blog/post.md`))

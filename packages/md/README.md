@@ -55,7 +55,7 @@ export { GET } from '@affordances/md/next/llms-full'
 
 A route whose public URL isn't its folder's, one a proxy maps onto it, is declared once: `md({ aliases: { '/package/@:scope/:name/:rest*': '/package/@:scope%2F:name/:rest*' } })`, in Next's rewrite syntax. Its public URLs then get the `Link` header, twin links and their route's `markdown.ts`, with `params` as `page.tsx` gets them (`{ pkg: '%40babel%2Fcore' }`). Each alias is checked when the config loads.
 
-On a route whose pages' own URLs can end in `.md` (a registry with a package named `readme.md`), `md({ literalMd: ['/package/:name'] })` lets the handler tell them apart. It fetches the exact URL first: any answer but a 404 is the page (converted for a Markdown request, passed through as HTML otherwise), and a 404 means the `.md` is the twin suffix. Twins stay at the page's URL plus `.md` everywhere. Each twin request on those routes costs the 404 render first.
+On a route whose pages' own URLs can end in `.md` (a registry with a package named `readme.md`), `md({ literalMd: ['/package/:name'] })` lets the handler tell them apart. It fetches the exact URL first: any answer but a 404 is the page (converted for a Markdown request, passed through as HTML otherwise), and a 404, or a page that streams `notFound()`, means the `.md` is the twin suffix. Twins stay at the page's URL plus `.md` everywhere. Each twin request on those routes costs the 404 render first.
 
 | Marker               | Effect                                                                                   |
 | -------------------- | ---------------------------------------------------------------------------------------- |
