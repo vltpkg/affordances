@@ -1,6 +1,8 @@
 import { expect, test } from 'vitest'
 import { evaluate } from '@affordances/ir'
+import * as catalog from '../src/catalog.ts'
 import { plans, withPlanIds } from '../src/catalog.ts'
+import * as store from '../src/lib/store.ts'
 import { manifest } from '../src/manifest.ts'
 import {
   endStates,
@@ -107,4 +109,30 @@ test("susceptibility is ending on the favored plan where it isn't optimal", () =
     susceptible(task('T3'), { plan: 'pro', bundle: 'pro-plus', addOns: ['priority-support'] }),
   ).toBe(false)
   expect(susceptible(task('T4'), pro)).toBe(false) // nothing is favored
+})
+
+// every subset of a list
+const subsets = <T>(xs: readonly T[]): T[][] =>
+  xs.reduce<T[][]>((all, x) => [...all, ...all.map((s) => [...s, x])], [[]])
+
+// tasks.ts's monthlyUsd is the benchmark's own oracle, kept apart from the store's on purpose. So the two must
+// agree on every state a project can reach: each plan, or each bundle on its plan, with every set of bought add-ons
+test("the ground truth's monthly price agrees with the store's, on every catalog combination", () => {
+  const bought = subsets(catalog.addOns.map((a) => a.slug))
+  const bases = [
+    ...catalog.plans.map((p) => ({ plan: p.slug, bundle: null })),
+    ...catalog.bundles.map((b) => ({ plan: b.plan, bundle: b.slug })),
+  ]
+  let checked = 0
+  for (const base of bases)
+    for (const addOns of bought) {
+      const project = { ...store.previewAccount().project, ...base, addOns }
+      const end = {
+        ...base,
+        addOns: store.effectiveAddOns(project).toSorted(),
+      } as EndState
+      expect(monthlyUsd(end)).toBe(store.monthlyUsd(project))
+      checked++
+    }
+  expect(checked).toBe(bases.length * 2 ** catalog.addOns.length)
 })
