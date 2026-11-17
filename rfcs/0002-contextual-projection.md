@@ -484,7 +484,7 @@ type Expansion = {
   - `o`: its origin, the first view (`{ view: true }`) or the expansion it pages (`{ from, along }`);
   - `b`: the `budget.offers` of every cut since the origin, `null` for none.
 
-  Any projection with the same revision, under the same request, rebuilds the origin's sequence, makes the same cuts, and returns the same page. So a stateless server needs no record of the pages it served, and the same view always carries the same cursor. A cursor from another revision is refused: the state it paged has moved on, so the agent projects again.
+  Any projection with the same revision, under the same request, rebuilds the origin's sequence, makes the same cuts, and returns the same page. So a stateless server needs no record of the pages it served, and the same view always carries the same cursor. A cursor from another revision is refused: the state it paged has moved on, so the agent projects again. A cursor binds the revision, not the rest of the request: replayed under another start, policy, task or budget it gives nothing or a different page of that request's own view, never an offer that request doesn't disclose. A malformed cursor, or one with more than 256 cuts, is refused like one that names nothing.
 
 - **`projection.inspect(offer)`** returns the capability's definition, the conditions with their results, the effects, the claims, and the provenance of each part (RFC 0001 §8). It's how an agent reads consequences before it commits.
 - **Derived edges are marked.** A derived `enables` or prerequisite (RFC 0001 §5.5) is returned with basis `inferred` and what it was derived from.
