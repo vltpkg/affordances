@@ -98,11 +98,21 @@ const canonically = (a: CapabilityOffer, b: CapabilityOffer) => {
 }
 
 // §4.2: a capability takes input when its input schema declares a property, or isn't an object schema
-const takes = (c: CapabilityDefinition) => {
+// what the runtime fills in itself is never the caller's to give: the target's key at targetAt, and each bound
+// reference's key at its at (§8.1 step 4; code review 8). Only a top-level property can be left out this way
+const topLevel = (pointer: string) => {
+  const keys = pointer.split('/').slice(1)
+  return keys.length === 1 ? keys[0]!.replaceAll('~1', '/').replaceAll('~0', '~') : undefined
+}
+const takes = (c: CapabilityDefinition, bound: Record<string, string> = {}) => {
   const input = c.input as { type?: unknown; properties?: Obj } | boolean | undefined
   if (input === undefined) return false
   if (typeof input !== 'object') return true
-  return input.type !== 'object' || Object.keys(input.properties ?? {}).length > 0
+  if (input.type !== 'object') return true
+  const filled = new Set<string | undefined>()
+  if (c.target && c.targetAt) filled.add(topLevel(c.targetAt))
+  for (const r of c.references ?? []) if (bound[r.name] !== undefined) filled.add(topLevel(r.at))
+  return Object.keys(input.properties ?? {}).some((k) => !filled.has(k))
 }
 
 // a path the context doesn't supply (RFC 0001 §3.1's missing): its root isn't there, or the root's attribute isn't.
@@ -258,7 +268,7 @@ export const createRuntime = ({
       // conditions, then requirements, then availability in RFC 0002 §4.2's order
       // a guard that threw, or returned something else, is null: unknown
       const guardsRun: { condition: string; value: boolean | string | null }[] = []
-      const takesInput = takes(c)
+      const takesInput = takes(c, bound)
       // why each condition is unknown when it is: only for input, or for something else
       const forInput = new Set<string>()
       // authorization never reads the input (RFC 0001 §3.2), so its guards never wait on it

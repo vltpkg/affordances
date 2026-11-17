@@ -505,6 +505,36 @@ describe('guards at projection time (§4.2)', () => {
 })
 
 describe('the M3 close-out code review', () => {
+  test('8: an input the runtime fills itself isn’t one the caller owes: such a capability can be available', async () => {
+    // cancel takes only the plan's id, which targetAt fills from the offer, and a guard that passes
+    const manifest = fresh()
+    const cancel = manifest.capabilities[2]!
+    cancel.input = {
+      type: 'object',
+      properties: { planId: { type: 'string' } },
+      required: ['planId'],
+    }
+    cancel.targetAt = '/planId'
+    cancel.preconditions = [
+      { id: 'active', description: 'The plan is active on the account', guard: true },
+    ]
+    // and subscribe, whose project reference is bound from the start, still owes its seats
+    const p = await testRuntime({
+      manifest,
+      resources: { 'hosting.plan': table(plansState()), 'hosting.project': table(projectsState()) },
+      handlers: { ...handlers(), 'hosting.plan.cancel': { guards: { active: () => true } } },
+    }).project({ principal: member, start: fromProject })
+    expect(offer(p.offers, 'hosting.plan.cancel@hosting.plan:pro').availability).toEqual({
+      status: 'available',
+    })
+    expect(
+      offer(p.offers, 'hosting.plan.subscribe@hosting.plan:pro?project=p1').availability,
+    ).toEqual({
+      status: 'needs-input',
+      inputs: ['input.seats'],
+    })
+  })
+
   // a value that isn't I-JSON, or isn't plain data, is no attribute: that instance's attributes are unknown (§2.1)
   class Money {
     constructor(readonly cents: number) {}
