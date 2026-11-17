@@ -27,7 +27,7 @@ export const subscribe = defineAction({
   effects: ['project', 'plans'],
   run: async ({ plan, projectId }, ctx) => {
     const sid = ctx.session?.id ?? (await ensureSession())
-    const result = store.subscribePlan(sid, projectId, plan)
+    const result = store.subscribePlan(store.account(sid).id, projectId, plan)
     revalidatePath('/', 'layout')
     return result
   },
@@ -41,7 +41,7 @@ export const subscribeBundle = defineAction({
   effects: ['project', 'bundles'],
   run: async ({ bundle, projectId }, ctx) => {
     const sid = ctx.session?.id ?? (await ensureSession())
-    const result = store.subscribeBundle(sid, projectId, bundle)
+    const result = store.subscribeBundle(store.account(sid).id, projectId, bundle)
     revalidatePath('/', 'layout')
     return result
   },

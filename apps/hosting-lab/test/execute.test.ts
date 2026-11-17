@@ -69,7 +69,7 @@ test("an execution's changes are the caller's view's, under its policy and budge
     ['s_chg_two', 2, []],
   ] as const) {
     const { id } = store.account(sid).project
-    store.subscribePlan(sid, id, 'p2')
+    store.subscribePlan(store.account(sid).id, id, 'p2')
     const cancelOffer = `hosting.subscription.cancel@hosting.project:${id}`
     const view = `?start=hosting.project:${id}&policy=resource${offers ? `&offers=${offers}` : ''}`
     const read = async (): Promise<{ offers: { id: string }[] }> =>
@@ -148,14 +148,15 @@ const v0Cancel = defineAction({
   name: 'cancel',
   state: overview,
   ...checkedBy,
-  run: ({ projectId }, ctx) => store.cancel(ctx.session!.id, projectId),
+  run: ({ projectId }, ctx) => store.cancel(store.account(ctx.session!.id).id, projectId),
 })
 const v0Subscribe = defineAction({
   capability: subscribe,
   name: 'subscribe',
   state: overview,
   ...checkedBy,
-  run: ({ plan, projectId }, ctx) => store.subscribePlan(ctx.session!.id, projectId, plan),
+  run: ({ plan, projectId }, ctx) =>
+    store.subscribePlan(store.account(ctx.session!.id).id, projectId, plan),
 })
 const handler = createHandler({
   manifest: {
@@ -183,7 +184,7 @@ test("v0's agent path: refused while the condition is false, and runs once it's 
     error: { code: 'unavailable', message: expect.stringContaining('paid plan') },
   })
   expect(store.account('s_v0').project.renewsAs).toBe('hobby')
-  store.subscribePlan('s_v0', id, 'p2')
+  store.subscribePlan(store.account('s_v0').id, id, 'p2')
   expect((await v0({ action: 'cancel', input: { projectId: id } }, 's_v0')).delta).toMatchObject({
     ok: true,
   })
@@ -211,7 +212,7 @@ test("v0's agent path: without confirm, v0's own confirm_required with the runti
 test('a cookie call needs a matching Origin, for execute and expand', async () => {
   const sid = 's_origin'
   const { id } = store.account(sid).project
-  store.subscribePlan(sid, id, 'p2')
+  store.subscribePlan(store.account(sid).id, id, 'p2')
   const body = JSON.stringify({
     offer: `hosting.subscription.cancel@hosting.project:${id}`,
     input: { projectId: id },

@@ -1,11 +1,25 @@
 import { getSessionId } from './session.ts'
-import { account, effectiveAddOns, monthlyUsd, planBySlug, type Account } from './store.ts'
+import {
+  account,
+  effectiveAddOns,
+  findAccount,
+  monthlyUsd,
+  planBySlug,
+  previewAccount,
+  type Account,
+} from './store.ts'
 
-// what a page shows for the caller: their account, or a fresh one before they've done anything
+// what v0's state loaders read for a caller: their account, or an unsaved preview. A read never makes an account
 export const accountFor = (sid: string | null | undefined): Account =>
-  sid ? account(sid) : account('anonymous-preview')
+  (sid ? findAccount(sid) : undefined) ?? previewAccount()
 
-export const currentAccount = async () => accountFor(await getSessionId())
+// what a page renders for the person: the UI's own use of their cookie session, which the proxy gives every page
+// request (src/proxy.ts). So the page makes the account, and the project its forms name is the one their actions
+// act on. Agent-facing reads (v0's graph, the projection routes) never do
+export const currentAccount = async () => {
+  const sid = await getSessionId()
+  return sid ? account(sid) : previewAccount()
+}
 
 export const summary = (a: Account) => {
   const plan = planBySlug(a.project.plan)

@@ -16,7 +16,7 @@ export const addAddOn = defineAction({
   effects: ['addOns'],
   run: async ({ projectId, addOn }, ctx) => {
     const sid = ctx.session?.id ?? (await ensureSession())
-    const result = store.addAddOn(sid, projectId, addOn)
+    const result = store.addAddOn(store.account(sid).id, projectId, addOn)
     revalidatePath('/', 'layout')
     return result
   },
@@ -30,7 +30,7 @@ export const removeAddOn = defineAction({
   effects: ['addOns'],
   run: async ({ projectId, addOn }, ctx) => {
     const sid = ctx.session?.id ?? (await ensureSession())
-    const result = store.removeAddOn(sid, projectId, addOn)
+    const result = store.removeAddOn(store.account(sid).id, projectId, addOn)
     revalidatePath('/', 'layout')
     return result
   },

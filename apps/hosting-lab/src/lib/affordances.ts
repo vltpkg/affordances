@@ -1,10 +1,10 @@
 import { createAffordances } from '@affordances/next'
 
-// an agent sends `Authorization: Bearer <sid>`; a browser sends the sid cookie
+import { sessionOf } from './principal.ts'
+
+// an agent sends `Authorization: Bearer <sid>`; a browser sends the sid cookie (src/lib/principal.ts)
 const auth = (request: Request) => {
-  const bearer = request.headers.get('authorization')?.match(/^Bearer (\S+)$/)?.[1]
-  const cookie = request.headers.get('cookie')?.match(/(?:^|;\s*)sid=([^;]+)/)?.[1]
-  const id = bearer ?? cookie
+  const id = sessionOf(request)
   return id ? { id } : null
 }
 

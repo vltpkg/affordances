@@ -5,7 +5,7 @@ import {
   type ProjectionRequest,
 } from '@affordances/runtime'
 import { runtime } from './runtime.ts'
-import { bearerOf, principalOf } from './principal.ts'
+import { credentialOf, principalOf } from './principal.ts'
 
 // what the agent-facing routes answer: views, and one offer's details, never a projection (RFC 0002 §11). A
 // projection holds every offer the principal may see; a view is what the policy discloses, with what it left out
@@ -28,9 +28,8 @@ const refuse = (status: number, message: string) => json({ error: message }, sta
 // matches the site, so a cross-site page can't make a signed-in browser run one. A bearer call is exempt. Checked
 // here, for every POST, rather than left to the framework or the cookie's SameSite
 const crossSite = (request: Request): Response | undefined => {
-  // exempt only when the bearer is what authenticates the call, as sessionOf reads it
-  if (bearerOf(request)) return
-  if (!request.headers.has('cookie')) return
+  // only a call the cookie authenticates needs the Origin, as credentialOf reads it
+  if (credentialOf(request).via !== 'cookie') return
   const origin = request.headers.get('origin')
   if (origin && origin === new URL(request.url).origin) return
   return refuse(

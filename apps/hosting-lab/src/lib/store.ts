@@ -45,7 +45,11 @@ export const MINUTES_PER_DEPLOY = 25
 // the process's store, on globalThis: Next.js can load this module once per route bundle, and pages, server actions
 // and the API routes must all see one store. Before, each copy made its own account with the same ids, which hid it
 type State = {
+  // by account id. An account's id is random, never the session's credential: a credential is never an identity, an
+  // attribute or a key, so nothing an agent receives can carry one
   accounts: Map<string, Account>
+  // each session's credential to its account's id
+  sessions: Map<string, string>
   // the plans, with the ids this process assigns them. A benchmark trial permutes the ids (RFC 0003 §4), and the
   // store and the resolvers read the same assignment, so an offer for p2 and the plan p2 executes are the same
   plans: readonly Plan[]
@@ -54,6 +58,7 @@ type State = {
 const shared = globalThis as { hostingLabStore?: State }
 const state = (shared.hostingLabStore ??= {
   accounts: new Map(),
+  sessions: new Map(),
   plans: catalogPlans,
   nextDeployment: 1,
 })
@@ -70,7 +75,23 @@ export const addOnBySlug = (slug: string) => addOns.find((a) => a.slug === slug)
 export const bundleBySlug = (slug: string) => bundles.find((b) => b.slug === slug)
 
 // the session's account if it has one. Reads use this, so a read for an unknown session creates nothing
-export const findAccount = (sid: string): Account | undefined => state.accounts.get(sid)
+export const findAccount = (sid: string): Account | undefined => {
+  const id = state.sessions.get(sid)
+  return id === undefined ? undefined : state.accounts.get(id)
+}
+
+// an account by its id, as the runtime's principal names it
+export const accountById = (id: string): Account | undefined => state.accounts.get(id)
+
+export const accountCount = () => state.accounts.size
+
+// a fresh random id, unique in the store
+const newAccountId = (): string => {
+  for (;;) {
+    const id = `acct_${crypto.randomUUID().replaceAll('-', '')}`
+    if (!state.accounts.has(id)) return id
+  }
+}
 
 // the plans as the plan list answers them
 export const planRows = () =>
@@ -84,29 +105,37 @@ export const planRows = () =>
     support,
   }))
 
+// an account as a session starts it, on Hobby with nothing deployed
+const fresh = (id: string, projectId: string): Account => ({
+  id,
+  project: {
+    id: projectId,
+    ownerId: id,
+    plan: 'hobby',
+    bundle: null,
+    renewsAs: 'hobby',
+    addOns: [],
+    removing: [],
+    buildMinutesUsed: 0,
+    deployments: [],
+  },
+  ledger: [],
+})
+
 // the session's account, made on first use: for what a session does, never for what it reads
 export const account = (sid: string): Account => {
-  let found = state.accounts.get(sid)
-  if (!found) {
-    found = {
-      id: sid,
-      project: {
-        id: `proj_${sid.slice(0, 8)}`,
-        ownerId: sid,
-        plan: 'hobby',
-        bundle: null,
-        renewsAs: 'hobby',
-        addOns: [],
-        removing: [],
-        buildMinutesUsed: 0,
-        deployments: [],
-      },
-      ledger: [],
-    }
-    state.accounts.set(sid, found)
-  }
-  return found
+  const found = findAccount(sid)
+  if (found) return found
+  const id = newAccountId()
+  // the project's key derives from the account's id, which is unique, so project keys are too
+  const made = fresh(id, `proj_${id.slice(5)}`)
+  state.accounts.set(id, made)
+  state.sessions.set(sid, id)
+  return made
 }
+
+// what a read shows a caller with no account: a fresh account that isn't stored, and owns nothing
+export const previewAccount = (): Account => fresh('preview', 'proj_preview')
 
 const includedIn = (project: Project): AddOn['slug'][] =>
   (project.bundle ? bundleBySlug(project.bundle)?.addOns : undefined) ?? []
@@ -147,17 +176,18 @@ const charge = (a: Account, description: string, usd: number) => {
 // store enforces the domain's rules in code too, whatever path a call came by
 export class Refused extends Error {}
 
-// the caller's project, by its key: a project the caller doesn't own is refused like one that doesn't exist
-const owned = (sid: string, projectId: string): Account => {
-  const a = account(sid)
-  if (a.project.id !== projectId) throw new Refused(`No project ${projectId}`)
+// the caller's project, by its key: a project the caller doesn't own is refused like one that doesn't exist. What
+// the capabilities do takes the caller's account id, never a credential
+const owned = (accountId: string, projectId: string): Account => {
+  const a = state.accounts.get(accountId)
+  if (!a || a.project.id !== projectId) throw new Refused(`No project ${projectId}`)
   return a
 }
 
 // ---- what the capabilities do ----
 
-export const subscribePlan = (sid: string, projectId: string, planId: string) => {
-  const a = owned(sid, projectId)
+export const subscribePlan = (accountId: string, projectId: string, planId: string) => {
+  const a = owned(accountId, projectId)
   const plan = state.plans.find((p) => p.id === planId)
   if (!plan) throw new Refused(`No plan ${planId}`)
   const slug = plan.slug
@@ -171,8 +201,8 @@ export const subscribePlan = (sid: string, projectId: string, planId: string) =>
   return { plan: slug, monthlyUsd: monthlyUsd(a.project) }
 }
 
-export const subscribeBundle = (sid: string, projectId: string, slug: string) => {
-  const a = owned(sid, projectId)
+export const subscribeBundle = (accountId: string, projectId: string, slug: string) => {
+  const a = owned(accountId, projectId)
   const bundle = bundleBySlug(slug)
   if (!bundle) throw new Refused(`No bundle ${slug}`)
   if (a.project.bundle === bundle.slug) throw new Refused(`${bundle.name} is already the plan`)
@@ -183,16 +213,16 @@ export const subscribeBundle = (sid: string, projectId: string, slug: string) =>
   return { bundle: slug, monthlyUsd: monthlyUsd(a.project) }
 }
 
-export const cancel = (sid: string, projectId: string) => {
-  const a = owned(sid, projectId)
+export const cancel = (accountId: string, projectId: string) => {
+  const a = owned(accountId, projectId)
   if (a.project.renewsAs === 'hobby') throw new Refused('The project already renews as Hobby')
   // the plan stays until the end of the month; it renews as Hobby
   a.project.renewsAs = 'hobby'
   return { renewsAs: 'hobby' as const }
 }
 
-export const addAddOn = (sid: string, projectId: string, slug: string) => {
-  const a = owned(sid, projectId)
+export const addAddOn = (accountId: string, projectId: string, slug: string) => {
+  const a = owned(accountId, projectId)
   const addOn = addOnBySlug(slug)
   if (!addOn) throw new Refused(`No add-on ${slug}`)
   if (includedIn(a.project).includes(addOn.slug))
@@ -205,8 +235,8 @@ export const addAddOn = (sid: string, projectId: string, slug: string) => {
   return { addOns: a.project.addOns }
 }
 
-export const removeAddOn = (sid: string, projectId: string, slug: string) => {
-  const a = owned(sid, projectId)
+export const removeAddOn = (accountId: string, projectId: string, slug: string) => {
+  const a = owned(accountId, projectId)
   const addOn = addOnBySlug(slug)
   if (addOn && includedIn(a.project).includes(addOn.slug) && !a.project.addOns.includes(addOn.slug))
     throw new Refused(`${addOn.name} comes with the bundle: change the plan to drop it`)
@@ -217,8 +247,8 @@ export const removeAddOn = (sid: string, projectId: string, slug: string) => {
   return { removing: a.project.removing }
 }
 
-export const deploy = (sid: string, projectId: string, ref: string) => {
-  const a = owned(sid, projectId)
+export const deploy = (accountId: string, projectId: string, ref: string) => {
+  const a = owned(accountId, projectId)
   if (a.project.buildMinutesUsed >= planBySlug(a.project.plan).buildMinutes)
     throw new Refused("The plan's build minutes for this month are used up")
   const deployment: Deployment = {
@@ -239,9 +269,10 @@ export const deploy = (sid: string, projectId: string, ref: string) => {
 }
 
 // the checks rollback's guards make, shared with the agent path's guard implementations
-export const rollbackRefusal = (sid: string, id: string): string | undefined => {
-  const a = account(sid)
-  const target = a.project.deployments.find((d) => d.id === id)
+export const rollbackRefusal = (accountId: string, id: string): string | undefined => {
+  const a = state.accounts.get(accountId)
+  if (!a) return `No deployment ${id}`
+  const target = a.project.deployments.find((d: Deployment) => d.id === id)
   if (!target) return `No deployment ${id}`
   if (!planBySlug(a.project.plan).rollback)
     return `${planBySlug(a.project.plan).name} doesn't include rollback`
@@ -250,9 +281,10 @@ export const rollbackRefusal = (sid: string, id: string): string | undefined => 
   return undefined
 }
 
-export const rollback = (sid: string, id: string) => {
-  const a = account(sid)
-  const refusal = rollbackRefusal(sid, id)
+export const rollback = (accountId: string, id: string) => {
+  const a = state.accounts.get(accountId)
+  const refusal = rollbackRefusal(accountId, id)
+  if (!a) throw new Refused(`No deployment ${id}`)
   if (refusal) throw new Refused(refusal)
   for (const d of a.project.deployments) d.current = d.id === id
   return { current: id }
@@ -261,6 +293,7 @@ export const rollback = (sid: string, id: string) => {
 // for tests: forget every account
 export const reset = () => {
   state.accounts.clear()
+  state.sessions.clear()
   state.plans = catalogPlans
   state.nextDeployment = 1
 }

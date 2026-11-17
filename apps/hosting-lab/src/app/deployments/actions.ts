@@ -17,7 +17,7 @@ export const deploy = defineAction({
   effects: ['deployments', 'buildMinutes'],
   run: async ({ projectId, ref }, ctx) => {
     const sid = ctx.session?.id ?? (await ensureSession())
-    const result = store.deploy(sid, projectId, ref)
+    const result = store.deploy(store.account(sid).id, projectId, ref)
     revalidatePath('/', 'layout')
     return result
   },
@@ -32,12 +32,17 @@ export const rollback = defineAction({
   effects: ['deployments'],
   // the same checks the runtime's handlers make (src/lib/guards.ts)
   guards: {
-    planHasRollback: ({ ctx }) => planHasRollback(ctx.session?.id),
-    owns: ({ input, ctx }) => ownsDeployment(ctx.session?.id, input?.deployment),
+    planHasRollback: ({ ctx }) =>
+      planHasRollback(ctx.session ? store.findAccount(ctx.session.id) : undefined),
+    owns: ({ input, ctx }) =>
+      ownsDeployment(
+        ctx.session ? store.findAccount(ctx.session.id) : undefined,
+        input?.deployment,
+      ),
   },
   run: async ({ deployment }, ctx) => {
     const sid = ctx.session?.id ?? (await ensureSession())
-    const result = store.rollback(sid, deployment)
+    const result = store.rollback(store.account(sid).id, deployment)
     revalidatePath('/', 'layout')
     return result
   },

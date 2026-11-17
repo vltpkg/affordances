@@ -16,7 +16,7 @@ export const cancel = defineAction({
   effects: ['project'],
   run: async ({ projectId }, ctx) => {
     const sid = ctx.session?.id ?? (await ensureSession())
-    const result = store.cancel(sid, projectId)
+    const result = store.cancel(store.account(sid).id, projectId)
     revalidatePath('/', 'layout')
     return result
   },

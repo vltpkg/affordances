@@ -54,7 +54,7 @@ test('the definitions include declared and derived relations, every derived one 
 
 test('resolvers show a caller only their own project and deployments', async () => {
   const mine = store.account(sid).project.id
-  store.deploy(sid, mine, 'main')
+  store.deploy(store.account(sid).id, mine, 'main')
   const other = principalFor('s_other')
   expect(await resolvers['hosting.project']!.load(mine, other)).toBeNull()
   expect(await resolvers['hosting.deployment']!.list!(other, { capability: 'x' })).toEqual([])

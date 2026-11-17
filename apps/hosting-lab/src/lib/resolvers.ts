@@ -1,12 +1,14 @@
 import type { Principal, ResourceResolver } from '@affordances/runtime'
 import { addOns, bundles } from '../catalog.ts'
-import { currentPlans, findAccount, projectAttributes } from './store.ts'
+import { accountById, currentPlans, findAccount, projectAttributes, type Account } from './store.ts'
 
 // how the runtime reads the store (RFC 0002 §2.1), one resolver per resource type the manifest declares. A caller
 // sees only their own project and its deployments: anything else loads as null, as if it didn't exist. Reads look
 // accounts up and never make one
 
-const sidOf = (principal: Principal) => (principal.authenticated ? principal.subject : undefined)
+// the caller's account, by the id the principal carries: a principal never carries the session's credential
+export const accountOf = (principal: Principal): Account | undefined =>
+  principal.authenticated && principal.subject ? accountById(principal.subject) : undefined
 
 // rows read when asked, so a plan-id assignment made after the resolvers exist still applies
 const catalog = <T extends Record<string, unknown>>(
@@ -26,34 +28,34 @@ export const resolvers: Record<string, ResourceResolver> = {
   'hosting.bundle': catalog(() => bundles, 'slug'),
   'hosting.project': {
     load: async (key, principal) => {
-      const sid = sidOf(principal)
-      const project = sid ? findAccount(sid)?.project : undefined
+      const project = accountOf(principal)?.project
       return project && project.id === key ? { attributes: projectAttributes(project) } : null
     },
     list: async (principal) => {
-      const sid = sidOf(principal)
-      const project = sid ? findAccount(sid)?.project : undefined
+      const project = accountOf(principal)?.project
       return project ? [project.id] : []
     },
   },
   'hosting.deployment': {
     load: async (key, principal) => {
-      const sid = sidOf(principal)
-      const project = sid ? findAccount(sid)?.project : undefined
+      const project = accountOf(principal)?.project
       const d = project?.deployments.find((x) => x.id === key)
       return d && project
         ? { attributes: { id: d.id, projectId: project.id, status: d.status, current: d.current } }
         : null
     },
     list: async (principal) => {
-      const sid = sidOf(principal)
-      return (sid ? findAccount(sid)?.project.deployments : undefined)?.map((d) => d.id) ?? []
+      return accountOf(principal)?.project.deployments.map((d) => d.id) ?? []
     },
   },
 }
 
-// the principal the runtime sees for a session: signed in, identified for approvals, with the declared attribute
-export const principalFor = (sid: string | null): Principal =>
-  sid
-    ? { authenticated: true, subject: sid, attributes: { id: sid } }
-    : { authenticated: false, attributes: {} }
+// the principal the runtime sees for a session: signed in, and named by its account's id, for approvals and the
+// declared attribute. A session without an account yet is signed in but owns nothing. No credential, no principal
+export const principalFor = (sid: string | null): Principal => {
+  if (!sid) return { authenticated: false, attributes: {} }
+  const a = findAccount(sid)
+  return a
+    ? { authenticated: true, subject: a.id, attributes: { id: a.id } }
+    : { authenticated: true, attributes: {} }
+}

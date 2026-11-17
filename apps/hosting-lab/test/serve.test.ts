@@ -68,7 +68,7 @@ test('a stale `seen` revision is marked, and the current one is not', async () =
   expect(
     (await (await get(`?seen=${first.revision}`, { authorization: 'Bearer s_seen' })).json()).stale,
   ).toBeUndefined()
-  store.addAddOn('s_seen', store.account('s_seen').project.id, 'daily-backups')
+  store.addAddOn(store.account('s_seen').id, store.account('s_seen').project.id, 'daily-backups')
   expect(
     (await (await get(`?seen=${first.revision}`, { authorization: 'Bearer s_seen' })).json()).stale,
   ).toBe(true)

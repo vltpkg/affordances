@@ -1,16 +1,21 @@
 import type { Principal } from '@affordances/runtime'
 import { principalFor } from './resolvers.ts'
 
-// the caller's session from a request, as the app's v0 auth reads it: an agent sends `Authorization: Bearer <sid>`,
-// a browser sends the sid cookie
-// the bearer token, when the request carries one: `Bearer ` and nothing else isn't one
-export const bearerOf = (request: Request): string | undefined =>
-  request.headers.get('authorization')?.match(/^Bearer (\S+)$/)?.[1]
+// which credential authenticates a request, read once for every route: an agent sends `Authorization: Bearer
+// <sid>`, a browser sends the sid cookie. A bearer header that names no single token (`Bearer `, `Bearer a b`)
+// authenticates nothing, so the cookie does, and the cookie's rules apply (src/lib/serve.ts, crossSite)
+export type Credential =
+  | { session: string; via: 'bearer' | 'cookie' }
+  | { session: null; via: null }
 
-export const sessionOf = (request: Request): string | null => {
-  const bearer = bearerOf(request)
+export const credentialOf = (request: Request): Credential => {
+  const bearer = request.headers.get('authorization')?.match(/^Bearer (\S+)$/)?.[1]
+  if (bearer) return { session: bearer, via: 'bearer' }
   const cookie = request.headers.get('cookie')?.match(/(?:^|;\s*)sid=([^;]+)/)?.[1]
-  return bearer ?? cookie ?? null
+  if (cookie) return { session: cookie, via: 'cookie' }
+  return { session: null, via: null }
 }
+
+export const sessionOf = (request: Request): string | null => credentialOf(request).session
 
 export const principalOf = (request: Request): Principal => principalFor(sessionOf(request))
