@@ -6,8 +6,15 @@ export type RouteEntry = {
   route: string
   // paths relative to the project root, without extension
   state?: string
-  actions?: { file: string; exports: { local: string; name: string }[] }
+  actions?: { file: string; exports: ActionExport[] }
 }
+
+// an action as codegen reads it from source: its export, its route-local name, and its capability id when it has
+// one (RFC 0001 §10.1's migration form)
+export type ActionExport = { local: string; name: string; id?: string }
+
+// RFC 0001 §6.1's identifier
+const ID = /^[a-z][A-Za-z0-9]*(\.[a-z][A-Za-z0-9]*)*$/
 
 export class CodegenError extends Error {
   override name = 'AffordancesCodegenError'
@@ -38,7 +45,7 @@ const parseActions = (file: string, source: string) => {
   if (!body.some((node) => node.type === 'ExpressionStatement' && node.directive === 'use server'))
     throw new CodegenError(`${file}: actions files must start with 'use server'`)
 
-  const found: { local: string; name: string }[] = []
+  const found: ActionExport[] = []
   for (const node of body) {
     if (node.type !== 'ExportNamedDeclaration') continue
     const declaration = node.declaration as Node | null
@@ -51,16 +58,26 @@ const parseActions = (file: string, source: string) => {
       if (callName !== 'defineAction') continue
       const local = (declarator.id as Node).name as string
       const config = (init.arguments as Node[])[0]
-      const nameProp =
+      const prop = (key: string) =>
         config?.type === 'ObjectExpression'
           ? (config.properties as Node[]).find(
-              (p) => p.type === 'Property' && (p.key as Node).name === 'name',
+              (p) => p.type === 'Property' && (p.key as Node).name === key,
             )
           : undefined
-      const value = nameProp?.value as Node | undefined
+      const value = prop('name')?.value as Node | undefined
       if (value?.type !== 'Literal' || typeof value.value !== 'string')
         throw new CodegenError(`${file}: ${local} needs a string literal \`name\``)
-      found.push({ local, name: value.value })
+      // an id is optional, and read like the name: a literal, so the build never imports the app
+      const idProp = prop('id')
+      const idValue = idProp?.value as Node | undefined
+      if (idProp && (idValue?.type !== 'Literal' || typeof idValue.value !== 'string'))
+        throw new CodegenError(`${file}: ${local}'s \`id\` must be a string literal`)
+      const id = idValue?.value as string | undefined
+      if (id !== undefined && (!ID.test(id) || id.length > 128))
+        throw new CodegenError(
+          `${file}: ${local}'s id ${JSON.stringify(id)} isn't an identifier: dotted lowercase-first segments, like 'commerce.cart.addItem'`,
+        )
+      found.push({ local, name: value.value, ...(id !== undefined && { id }) })
     }
   }
   return found
@@ -103,6 +120,15 @@ export const scan = (root: string): RouteEntry[] => {
     }
   }
   walk(appDir, [])
+  // an identity is the app's, not a route's: one capability id names one action
+  const ids = new Map<string, string>()
+  for (const { route, actions } of entries)
+    for (const { id, name } of actions?.exports ?? []) {
+      if (id === undefined) continue
+      const seen = ids.get(id)
+      if (seen) throw new CodegenError(`${id} is the id of both ${seen} and ${name} on ${route}`)
+      ids.set(id, `${name} on ${route}`)
+    }
   return entries.toSorted((a, b) => a.route.localeCompare(b.route))
 }
 
@@ -140,4 +166,100 @@ export const generate = (root: string, options: { name?: string } = {}) => {
   mkdirSync(path.dirname(out), { recursive: true })
   if (!existsSync(out) || readFileSync(out, 'utf8') !== code) writeFileSync(out, code)
   return entries
+}
+
+// RFC 0001 §10.1: a v0 action without a capability id gets a suggestion, never an identity. Only an id written in
+// source reaches a manifest; writeIds is the codemod that writes the suggestions, for the developer to review
+export type MissingId = {
+  code: 'W_NO_ID'
+  route: string
+  file: string
+  local: string
+  name: string
+  suggested: string
+}
+
+// one identifier segment from free text: camelCase, starting with a lowercase letter
+const segment = (text: string) => {
+  const words = text.split(/[^A-Za-z0-9]+/).filter(Boolean)
+  const joined = words.map((w, i) => (i ? w[0]!.toUpperCase() + w.slice(1) : w)).join('')
+  const lower = joined.charAt(0).toLowerCase() + joined.slice(1)
+  return /^[a-z]/.test(lower) ? lower : `r${lower}`
+}
+const parts = (route: string, withParams: boolean) =>
+  route
+    .split('/')
+    .filter(Boolean)
+    .flatMap((s) => {
+      const param = s.match(/^\[{1,2}(?:\.\.\.)?([^\]]+)\]{1,2}$/)
+      return param ? (withParams ? [segment(param[1]!)] : []) : [segment(s)]
+    })
+
+// the route's static segments and the action's name: /products/[slug] and addToCart give products.addToCart
+export const suggestId = (route: string, name: string, withParams = false) =>
+  [...parts(route, withParams), segment(name)].join('.')
+
+export const missingIds = (entries: RouteEntry[]): MissingId[] => {
+  const taken = new Set(
+    entries.flatMap((e) => e.actions?.exports.flatMap((x) => (x.id ? [x.id] : [])) ?? []),
+  )
+  const out: MissingId[] = []
+  for (const { route, actions } of entries)
+    for (const x of actions?.exports ?? []) {
+      if (x.id) continue
+      // two routes with the same static segments: name the params too, then number what's left
+      let suggested = suggestId(route, x.name)
+      if (taken.has(suggested)) suggested = suggestId(route, x.name, true)
+      for (let n = 2; taken.has(suggested); n++) suggested = `${suggestId(route, x.name, true)}${n}`
+      taken.add(suggested)
+      out.push({
+        code: 'W_NO_ID',
+        route,
+        file: actions!.file,
+        local: x.local,
+        name: x.name,
+        suggested,
+      })
+    }
+  return out
+}
+
+// writes each suggestion into its defineAction, as `id: '…',` after the name, in the file's own indentation
+export const writeIds = (root: string): MissingId[] => {
+  const missing = missingIds(scan(root))
+  // Map.groupBy is ES2024; packages target ES2023 and Node 20
+  const byFile = new Map<string, MissingId[]>()
+  for (const m of missing) byFile.set(m.file, [...(byFile.get(m.file) ?? []), m])
+  for (const [file, list] of byFile) {
+    const abs = findFile(path.join(root, path.dirname(file)), path.basename(file))!
+    let source = readFileSync(abs, 'utf8')
+    const { program } = parseSync(abs, source)
+    const inserts: [number, string][] = []
+    for (const node of program.body as unknown as Node[]) {
+      const declaration = (node.type === 'ExportNamedDeclaration' && node.declaration) as
+        | Node
+        | false
+      if (!declaration || declaration.type !== 'VariableDeclaration') continue
+      for (const declarator of declaration.declarations as Node[]) {
+        const want = list.find((m) => m.local === (declarator.id as Node).name)
+        const config = ((declarator.init as Node)?.arguments as Node[] | undefined)?.[0]
+        const name = (config?.properties as Node[] | undefined)?.find(
+          (p) => p.type === 'Property' && (p.key as Node).name === 'name',
+        )
+        if (!want || !name) continue
+        const end = name.end as number
+        const comma = source.slice(end).match(/^\s*,/)
+        const after = end + (comma ? comma[0].length : 0)
+        const lineStart = source.lastIndexOf('\n', name.start as number) + 1
+        const indent = source.slice(lineStart, name.start as number)
+        const onItsOwnLine = /^\s*$/.test(indent)
+        const text = `${comma ? '' : ','}${onItsOwnLine ? `\n${indent}` : ' '}id: '${want.suggested}',`
+        inserts.push([after, text])
+      }
+    }
+    for (const [at, text] of inserts.toSorted(([a], [b]) => b - a))
+      source = source.slice(0, at) + text + source.slice(at)
+    writeFileSync(abs, source)
+  }
+  return missing
 }

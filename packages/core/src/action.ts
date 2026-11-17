@@ -33,6 +33,12 @@ export type ActionConfig<
   State extends Entities,
 > = {
   name: string
+  /**
+   * @experimental The capability's identifier, 'commerce.cart.addItem' (RFC 0001 §6.1): the migration form for a
+   * v0 action (RFC 0001 §10.1), for `@affordances/ir`, which isn't published yet. A string literal, so codegen reads
+   * it without importing the app. It changes nothing at run time or on v0's wire.
+   */
+  id?: string
   description: string
   input: Schema
   // the route's state, so guard and summary are typed against it

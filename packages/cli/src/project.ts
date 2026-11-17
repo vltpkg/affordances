@@ -1,5 +1,13 @@
 import { Effect, FileSystem, Path } from 'effect'
-import { CodegenError, findAppDir, generate } from '@affordances/next/codegen'
+import {
+  CodegenError,
+  findAppDir,
+  generate,
+  missingIds,
+  scan,
+  writeIds,
+  type MissingId,
+} from '@affordances/next/codegen'
 import { API_PATH } from '@affordances/next/config'
 import { Codegen, NoApp } from './errors.ts'
 
@@ -24,6 +32,18 @@ const manifest = (root: string) =>
       error instanceof CodegenError
         ? new Codegen({ message: error.message })
         : new Codegen({ message: String(error) }),
+  })
+
+// v0 actions without a capability id, each with a suggested one (RFC 0001 §10.1); --write puts them in source
+export const ids = (root: string, write: boolean) =>
+  Effect.gen(function* () {
+    yield* appDir(root)
+    const missing: MissingId[] = yield* Effect.try({
+      try: () => (write ? writeIds(root) : missingIds(scan(root))),
+      catch: (error) =>
+        new Codegen({ message: error instanceof CodegenError ? error.message : String(error) }),
+    })
+    return { missing, written: write }
   })
 
 // regenerates .affordances/manifest.ts, as withAffordances does when next loads the config
