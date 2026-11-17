@@ -1,27 +1,28 @@
 import type { Principal, ResourceResolver } from '@affordances/runtime'
-import { addOns, bundles, plans } from '../catalog.ts'
-import { account, projectAttributes } from './store.ts'
+import { addOns, bundles } from '../catalog.ts'
+import { account, currentPlans, projectAttributes } from './store.ts'
 
 // how the runtime reads the store (RFC 0002 §2.1), one resolver per resource type the manifest declares. A caller
 // sees only their own project and its deployments: anything else loads as null, as if it didn't exist
 
 const sidOf = (principal: Principal) => (principal.authenticated ? principal.subject : undefined)
 
+// rows read when asked, so a plan-id assignment made after the resolvers exist still applies
 const catalog = <T extends Record<string, unknown>>(
-  rows: readonly T[],
+  rows: () => readonly T[],
   key: keyof T,
 ): ResourceResolver => ({
   load: async (k) => {
-    const row = rows.find((r) => r[key] === k)
+    const row = rows().find((r) => r[key] === k)
     return row ? { attributes: { ...row } } : null
   },
-  list: async () => rows.map((r) => String(r[key])),
+  list: async () => rows().map((r) => String(r[key])),
 })
 
 export const resolvers: Record<string, ResourceResolver> = {
-  'hosting.plan': catalog(plans, 'id'),
-  'hosting.addOn': catalog(addOns, 'slug'),
-  'hosting.bundle': catalog(bundles, 'slug'),
+  'hosting.plan': catalog(currentPlans, 'id'),
+  'hosting.addOn': catalog(() => addOns, 'slug'),
+  'hosting.bundle': catalog(() => bundles, 'slug'),
   'hosting.project': {
     load: async (key, principal) => {
       const sid = sidOf(principal)

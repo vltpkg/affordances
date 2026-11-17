@@ -1,5 +1,6 @@
 import { Button } from '@affordances/ui/components/button'
-import { bundles, plans } from '@/catalog'
+import { bundles } from '@/catalog'
+import { currentPlans } from '@/lib/store'
 import { usd } from '@/components/usd'
 import { currentAccount } from '@/lib/view'
 import { subscribe, subscribeBundle } from './actions'
@@ -13,7 +14,7 @@ const Page = async () => {
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold">Plans</h1>
       <ul className="grid gap-4 sm:grid-cols-3">
-        {plans.map((p) => {
+        {currentPlans().map((p) => {
           const current = p.slug === project.plan && !project.bundle
           return (
             <li key={p.id} className="flex flex-col gap-2 rounded-md border p-4">

@@ -1,4 +1,12 @@
-import { addOns, bundles, plans, type AddOn, type Bundle, type Plan } from '../catalog.ts'
+import {
+  addOns,
+  bundles,
+  plans as catalogPlans,
+  withPlanIds,
+  type AddOn,
+  type Bundle,
+  type Plan,
+} from '../catalog.ts'
 
 // the hosting provider's state, in memory: one account per session, each with one project. Every change the
 // manifest declares is observable here: the project's plan and renewal, its add-ons and bundle, its deployments,
@@ -34,6 +42,14 @@ export type Account = { id: string; project: Project; ledger: Charge[] }
 export const MINUTES_PER_DEPLOY = 25
 
 const accounts = new Map<string, Account>()
+
+// the plans, with the ids this process assigns them. A benchmark trial permutes the ids (RFC 0003 §4), and the
+// store and the resolvers read the same assignment, so an offer for p2 and the plan p2 executes are the same
+let plans: readonly Plan[] = catalogPlans
+export const currentPlans = () => plans
+export const setPlanIds = (order: readonly [string, string, string]) => {
+  plans = withPlanIds(order)
+}
 let nextDeployment = 1
 
 const now = () => new Date().toISOString()
@@ -207,5 +223,6 @@ export const rollback = (sid: string, id: string) => {
 // for tests: forget every account
 export const reset = () => {
   accounts.clear()
+  plans = catalogPlans
   nextDeployment = 1
 }

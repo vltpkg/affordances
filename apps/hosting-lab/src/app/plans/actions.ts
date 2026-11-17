@@ -2,7 +2,6 @@
 
 import { revalidatePath } from 'next/cache'
 import { defineAction } from '@/lib/affordances'
-import { plans as catalog } from '@/catalog'
 import { ensureSession } from '@/lib/session'
 import * as store from '@/lib/store'
 import {
@@ -16,15 +15,17 @@ export const listPlans = defineAction({
   capability: listCapability,
   name: 'listPlans',
   run: () =>
-    catalog.map(({ slug, name, priceUsd, buildMinutes, bandwidthGb, rollback, support }) => ({
-      slug,
-      name,
-      priceUsd,
-      buildMinutes,
-      bandwidthGb,
-      rollback,
-      support,
-    })),
+    store
+      .currentPlans()
+      .map(({ slug, name, priceUsd, buildMinutes, bandwidthGb, rollback, support }) => ({
+        slug,
+        name,
+        priceUsd,
+        buildMinutes,
+        bandwidthGb,
+        rollback,
+        support,
+      })),
 })
 
 export const subscribe = defineAction({
