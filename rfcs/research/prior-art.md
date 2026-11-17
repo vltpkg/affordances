@@ -566,7 +566,7 @@ Checking availability belongs to the runtime (XState's `can`), never to the IR. 
 
 **What it models:** a page registers JavaScript-backed tools with `document.modelContext.registerTool()`, and the browser mediates agents' calls to them.
 
-- **Tool fields:** `name`, `title`, `description`, `inputSchema`, `outputSchema`, an `execute` callback and annotations.
+- **Tool fields:** `name`, `title`, `description`, `inputSchema`, `outputSchema`, an `execute` callback and annotations. The name rule is normative: `registerTool()`'s steps reject a name that isn't 1-128 characters of `[A-Za-z0-9_.-]` with an `InvalidStateError` (<https://webmachinelearning.github.io/webmcp/>, §4.2, `registerTool()` step 9).
 - **Annotations:** `readOnlyHint`, `untrustedContentHint`, `consequentialHint` and `debugging` (for developer tooling). `consequentialHint` is defined as "executing the tool will result in consequential actions that are significant, real-world, or non-reversible, ex: booking a flight, transferring money" (index.bs).
 - **Provenance:** the browser stamps each registered tool with its `origin`.
 - **The README's stance on static manifests:** "Static manifests prevent web developers from dynamically adding, updating, or removing tools based on the active page state or user authentication status" (Alternatives Considered). It also advises "dynamically registering and unregistering them based on the active page state … to avoid overloading the agent's context window" (Imperative Tool Registration).
