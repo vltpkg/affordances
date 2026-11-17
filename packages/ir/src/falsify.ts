@@ -151,10 +151,8 @@ const set = (target: Record<string, unknown>, path: string, value: unknown) => {
   node[keys.at(-1)!] = value
 }
 
-// the context that makes expr false, by root; references under their names
-export const falsifying = (expr: Expr): Context | undefined => {
-  const assignments = witness(expr, false)
-  if (!assignments) return undefined
+// assignments as a context, by root; references under their names
+const contextOf = (assignments: Assignment[]): Context => {
   const context: Context & Record<string, unknown> = {}
   for (const [path, value] of assignments) {
     const [root, ...rest] = path.split('.')
@@ -167,11 +165,37 @@ export const falsifying = (expr: Expr): Context | undefined => {
   return context
 }
 
-// every declarative precondition and authorization condition in a manifest, with the context that makes it false
-export type ConformanceCase = { capability: Id; condition: string; context: Context | undefined }
+// the context that makes expr false
+export const falsifying = (expr: Expr): Context | undefined => {
+  const assignments = witness(expr, false)
+  return assignments && contextOf(assignments)
+}
+
+// every declarative precondition and authorization condition in a manifest, each with a context in which it alone
+// is false: every other declarative condition of the capability is true there. Under rule 5 unknown refuses too, so
+// a context that left the others unknown would get a refusal from a binding that never enforces the one under test.
+// When no such context exists (the condition implies another), the case still makes it false and says isolated:
+// false, so a kit knows the refusal can't be attributed to it. Guards aren't cases: for a declarative case, the kit
+// forces the capability's guards to pass (RFC 0002 R5)
+export type ConformanceCase = {
+  capability: Id
+  condition: string
+  context: Context | undefined
+  isolated: boolean
+}
 export const conformanceCases = (m: CapabilityManifest): ConformanceCase[] =>
-  m.capabilities.flatMap((c) =>
-    [...(c.preconditions ?? []), ...(c.authorization?.conditions ?? [])].flatMap((x) =>
-      'expr' in x ? [{ capability: c.id, condition: x.id, context: falsifying(x.expr) }] : [],
-    ),
-  )
+  m.capabilities.flatMap((c) => {
+    const declarative = [
+      ...(c.preconditions ?? []),
+      ...(c.authorization?.conditions ?? []),
+    ].flatMap((x) => ('expr' in x ? [{ id: x.id, expr: x.expr }] : []))
+    return declarative.map((p) => {
+      const alone = merge([
+        witness(p.expr, false),
+        ...declarative.filter((q) => q.id !== p.id).map((q) => witness(q.expr, true)),
+      ])
+      if (alone)
+        return { capability: c.id, condition: p.id, context: contextOf(alone), isolated: true }
+      return { capability: c.id, condition: p.id, context: falsifying(p.expr), isolated: false }
+    })
+  })

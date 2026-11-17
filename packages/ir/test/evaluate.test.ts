@@ -252,3 +252,100 @@ describe('falsifying', () => {
     expect(falsifying({ eq: [{ value: 1 }, { value: 1 }] })).toBeUndefined()
   })
 })
+
+describe('fail closed, never open (review of M2e)', () => {
+  test.each([
+    [
+      'an inherited key is never supplied',
+      { exists: 'target.constructor' } as Expr,
+      { target: {} },
+    ],
+    ['nor toString', { exists: 'target.toString' } as Expr, { target: {} }],
+    [
+      'a reference named after an inherited key',
+      { exists: 'constructor.name' } as Expr,
+      { references: {} },
+    ],
+  ])('%s: unknown', (_, e, context) => expect(evaluate(e, context)).toBe('unknown'))
+
+  test.each([
+    ['le', { le: [{ path: 'input.q' }, { value: 5 }] } as Expr],
+    ['ge', { ge: [{ path: 'input.q' }, { value: 5 }] } as Expr],
+    ['eq', { eq: [{ path: 'input.q' }, { path: 'input.q' }] } as Expr],
+    ['ne', { ne: [{ path: 'input.q' }, { value: 5 }] } as Expr],
+    ['in', { in: [{ path: 'input.q' }, { value: [5] }] } as Expr],
+  ])('NaN and Infinity order as nothing: %s is unknown', (_, e) => {
+    expect(evaluate(e, { input: { q: Number.NaN } })).toBe('unknown')
+    expect(evaluate(e, { input: { q: Number.POSITIVE_INFINITY } })).toBe('unknown')
+  })
+})
+
+// a capability's declarative conditions, and a one-capability manifest to hold some
+const declared = (m: CapabilityManifest, capability: string) => {
+  const c = m.capabilities.find((x) => x.id === capability)!
+  return [...(c.preconditions ?? []), ...(c.authorization?.conditions ?? [])].flatMap((x) =>
+    'expr' in x ? [x] : [],
+  )
+}
+const capability = (preconditions: { id: string; expr: Expr }[]): CapabilityManifest => ({
+  schemaVersion: '0.1',
+  namespace: 'urn:x',
+  provenance: { source: 'o', basis: 'declared' },
+  sources: [{ id: 'o', role: 'owner', name: 'o' }],
+  resources: [],
+  capabilities: [
+    {
+      id: 'a.b',
+      kind: 'action',
+      description: 'x',
+      preconditions: preconditions.map((p) => ({ ...p, description: p.id })),
+    },
+  ],
+})
+
+describe('conformanceCases isolate the condition under test', () => {
+  test.each(readdirSync(new URL('../fixtures/valid', import.meta.url)))(
+    'in %s, each isolated case leaves exactly its condition false and the rest true',
+    (file) => {
+      const m = fixture(file)
+      for (const c of conformanceCases(m).filter((x) => x.isolated)) {
+        const seen = declared(m, c.capability).map((x) => [x.id, evaluate(x.expr, c.context!)])
+        expect(seen, `${c.capability} ${c.condition}`).toEqual(
+          declared(m, c.capability).map((x) => [x.id, x.id !== c.condition]),
+        )
+      }
+    },
+  )
+  test("review's two conditions: each falsified alone, the other true", () => {
+    const p1: Expr = { gt: [{ path: 'target.count' }, { value: 0 }] }
+    const p2: Expr = { eq: [{ path: 'target.status' }, { value: 'open' }] }
+    const cases = conformanceCases(
+      capability([
+        { id: 'p1', expr: p1 },
+        { id: 'p2', expr: p2 },
+      ]),
+    )
+    expect(
+      cases.map((c) => [
+        c.condition,
+        c.isolated,
+        evaluate(p1, c.context!),
+        evaluate(p2, c.context!),
+      ]),
+    ).toEqual([
+      ['p1', true, false, true],
+      ['p2', true, true, false],
+    ])
+  })
+  test('a condition that implies another can only be falsified with it: not isolated', () => {
+    const [first] = conformanceCases(
+      capability([
+        { id: 'few', expr: { gt: [{ path: 'target.count' }, { value: 0 }] } },
+        // whenever few is false, many is false too
+        { id: 'many', expr: { gt: [{ path: 'target.count' }, { value: -5 }] } },
+      ]),
+    ).filter((c) => c.condition === 'many')
+    expect(first!.isolated).toBe(false)
+    expect(evaluate({ gt: [{ path: 'target.count' }, { value: -5 }] }, first!.context!)).toBe(false)
+  })
+})

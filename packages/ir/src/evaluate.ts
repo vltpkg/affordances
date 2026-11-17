@@ -28,12 +28,16 @@ const resolve = (path: Path, scope: Scope): Resolved => {
       ? scope.item
       : root === 'target' || root === 'input' || root === 'principal'
         ? scope.context[root]
-        : scope.context.references?.[root!]
+        : // a reference's own entry only: never one Object.prototype has
+          scope.context.references && Object.hasOwn(scope.context.references, root!)
+          ? scope.context.references[root!]
+          : undefined
   if (value === undefined) return MISSING
   for (const [n, key] of rest.entries()) {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) return ABSENT
     // a root's own attribute the application didn't supply is missing; a key deeper in a supplied value is absent
-    if (!(key in value)) return n === 0 && !whole ? MISSING : ABSENT
+    // own keys only: an inherited one (constructor, toString) was never supplied
+    if (!Object.hasOwn(value, key)) return n === 0 && !whole ? MISSING : ABSENT
     value = (value as Obj)[key]
   }
   return value === null || value === undefined ? ABSENT : { kind: 'value', value }
@@ -54,10 +58,13 @@ const isScalar = (v: unknown): v is Scalar =>
 const compareValues = (op: string, a: unknown, b: unknown): Truth => {
   if (op === 'in') {
     if (!Array.isArray(b) || !isScalar(a)) return 'unknown'
+    if (typeof a === 'number' && !Number.isFinite(a)) return 'unknown'
     return b.some((m) => m === a)
   }
-  // a mismatch at run time is unknown, never false (§3.1)
+  // a mismatch at run time is unknown, never false (§3.1); so is a number that isn't finite, which orders as nothing
   if (!isScalar(a) || !isScalar(b) || typeof a !== typeof b) return 'unknown'
+  if (typeof a === 'number' && (!Number.isFinite(a) || !Number.isFinite(b as number)))
+    return 'unknown'
   if (op === 'eq') return a === b
   if (op === 'ne') return a !== b
   if (typeof a !== 'number' && typeof a !== 'string') return 'unknown'
