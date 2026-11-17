@@ -1,6 +1,6 @@
 # RFC 0001: The semantic capability IR
 
-- **Status:** accepted (2026-11-17); amended 2026-11-17: §3.1, §5.5 and §6.3 (quantifiers and `count` after the guard survey, with route parameters mapped into input by bindings); §2.3, §3.1, §3.2, §5.5, §6.4 and §9 (declared principal attributes, missing against absent, the roots authorization conditions and claims read, and composition, for RFC 0002); §12.1 (v0's agent path fails closed on declarative preconditions); §7.2 and §7.3 (empty `extensions` dropped, and `W_PATH_UNCHECKED`, from M2b's review); §3.2 (how a summary renders strings); §12.1 and §12.2 (`definePrincipal`)
+- **Status:** accepted (2026-11-17); amended 2026-11-17: §3.1, §5.5 and §6.3 (quantifiers and `count` after the guard survey, with route parameters mapped into input by bindings); §2.3, §3.1, §3.2, §5.5, §6.4 and §9 (declared principal attributes, missing against absent, the roots authorization conditions and claims read, and composition, for RFC 0002); §12.1 (v0's agent path fails closed on declarative preconditions); §7.2 and §7.3 (empty `extensions` dropped, and `W_PATH_UNCHECKED`, from M2b's review); §3.2 (how a summary renders strings); §12.1 and §12.2 (`definePrincipal`); §2.2 (`targetAt`, for bindings without offers)
 - **Package:** `@affordances/ir` (private until published)
 - **Depends on:** [terminology](./research/terminology.md), [repo audit](./research/repo-audit.md), [prior art](./research/prior-art.md)
 
@@ -150,6 +150,7 @@ type CapabilityDefinition = {
   title?: string
   description: string
   target?: Id // the resource it reads or changes; absent for global ones like site search
+  targetAt?: JSONPointer // where in the input the target's key is, for bindings that carry no offer: '/planId'
   references?: Reference[] // other resources it takes as input
   input?: JSONSchema // absent: takes no input; events never have one
   output?: JSONSchema // for an event, its payload
@@ -183,6 +184,14 @@ type Reference = {
 - **The target** is the one resource whose state the capability reads (a query) or changes (an action): the `operatesOn` relation (terminology §4.1).
 - **A reference** is a resource the capability takes as input without acting on it: the product in `commerce.cart.addItem`, whose target is the cart.
 - **What a projection does with both:** it uses targets and references to offer a capability from either resource. That is the `supports` view, which the terminology keeps derived, not stored (terminology §4.2).
+
+**`targetAt`: the target's key in the input.**
+
+- **Why it exists:** a projection's offer names its target (RFC 0002), but a binding that carries no offer has only the input to go on. v0's `run(input)` and one MCP tool per capability (§6.1) are two. Bindings map transport details into the input (§6.3), and `targetAt` says which input property holds the target's key, as `references[].at` does for a reference.
+- **The rules:**
+  - it needs a `target` (`E_SCHEMA` without one);
+  - it names a property of the input schema (`E_PATH`).
+- **At execution,** an offer's target and the input's key must agree. When the input omits the key, it's filled from the offer, and a key that differs is refused (RFC 0002).
 
 **Why `target`.** It reads well in paths (`target.count`), which is where developers write it most. It is not Schema.org's `target` (an entry point, a binding in our terms) or RFC 8288's link target, and it's not a DOM event's `target`. The relation it stores is `operatesOn` (terminology §4.1), and the field keeps the shorter name.
 
@@ -633,7 +642,7 @@ The canonical form is what composition compares, what the digest hashes, and wha
 | `E_DUPLICATE_ID`      | two definitions share an identifier; or two sources, or two claims; or, within one capability, two conditions (across `preconditions` and `authorization.conditions`) or two references                                     |
 | `E_UNRESOLVED`        | a local reference names no definition: `target`, a reference's `resource`, `contains`, an effect's `resource` or `compensatedBy`, `deprecated.replacedBy`, a relation's ends, a claim's `subject`, a binding's `capability` |
 | `E_KIND`              | a kind rule is broken (a query with effects, a safe action, an event with input)                                                                                                                                            |
-| `E_PATH`              | a condition or summary path doesn't name a declared attribute or input property, or a reference is named after a root (§3.1)                                                                                                |
+| `E_PATH`              | a condition or summary path doesn't name a declared attribute or input property, a reference is named after a root (§3.1), or a reference's `at` or `targetAt` doesn't name an input property                               |
 | `E_KEY`               | a resource's `key` isn't one of its declared `attributes` (when it declares any)                                                                                                                                            |
 | `E_DEPTH`             | a quantifier nested more than two levels deep (§3.1)                                                                                                                                                                        |
 | `E_TYPE`              | a comparison whose operand types the schemas show to be incompatible, a `null` literal in one, or a quantifier or `count` over a path that isn't array-typed (§3.1)                                                         |
@@ -1214,6 +1223,7 @@ export type CapabilityDefinition = Attributed & {
   title?: string
   description: string
   target?: Id
+  targetAt?: JSONPointer
   references?: Reference[]
   input?: JSONSchema
   output?: JSONSchema
@@ -1330,7 +1340,7 @@ export type ValidationIssue = {
 | `Source`               | `role` enum                                                                                                                                                                                                                                                                                                                                                                           |
 | `Provenance`           | `basis` enum. `if: { properties: { basis: { const: "verified" } } }, then: { required: ["evidence"], properties: { evidence: { minItems: 1 } } }`, and the same for `imported` and `observed`                                                                                                                                                                                         |
 | `ResourceDefinition`   | `required: ["id", "description", "key"]`; `contains` is an array of unique `Id`s                                                                                                                                                                                                                                                                                                      |
-| `CapabilityDefinition` | `required: ["id", "kind", "description"]`. With `kind: "query"`: `effects` absent or `maxItems: 0`, and `safe` not `false`. With `kind: "action"`: `safe` not `true`. With `kind: "event"`: no `input`, `preconditions`, `confirmation` or `effects`. `confirmation` requires `summary`                                                                                               |
+| `CapabilityDefinition` | `required: ["id", "kind", "description"]`. `targetAt` requires `target`. With `kind: "query"`: `effects` absent or `maxItems: 0`, and `safe` not `false`. With `kind: "action"`: `safe` not `true`. With `kind: "event"`: no `input`, `preconditions`, `confirmation` or `effects`. `confirmation` requires `summary`                                                                 |
 | `Condition`            | `required: ["id", "description"]`; `oneOf` with `expr`, or with `guard: { const: true }`                                                                                                                                                                                                                                                                                              |
 | `Expr`                 | `oneOf` of single-key objects (`minProperties: 1`, `maxProperties: 1`). Comparison values are `prefixItems` of two `Operand`s, with `items: false` and `minItems: 2`; `all` and `any` have `minItems: 1`; `some` and `every` take an object with `of` (a `Path`) and `where` (an `Expr`), both required, `additionalProperties: false`. The nesting limit is `validate`'s (`E_DEPTH`) |
 | `Operand`              | `oneOf` `{ path }`, `{ value }` and `{ count }`; `path` and `count` match `^(item\|(target\|input\|principal\|item\|[a-z][A-Za-z0-9]*)(\.[A-Za-z0-9_]+)+)$`, so bare `item` is a path                                                                                                                                                                                                 |
