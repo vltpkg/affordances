@@ -1,0 +1,157 @@
+import type { Basis, CapabilityManifest, Id } from '@affordances/ir'
+
+// RFC 0002's projection types (§2-§7), as the RFC states them. Execution's (§8) arrive with M3d
+
+export type Revision = string // 'sha256-…', a projection revision
+export type OfferRevision = string // 'sha256-…', an offer revision
+export type OfferId = string
+export type ChoiceSetId = string
+export type PolicyId = string
+export type RelevanceMethodId = string
+
+// §2: what the agent says, none of it trusted, none of it able to change availability
+export type ProjectionRequest = {
+  principal: Principal // resolved by the application, never sent by the agent
+  start?: ResourceRef | Id // a resource instance, or a capability or resource type to start from
+  task?: Task
+  seen?: Revision
+  policy?: PolicyId
+  budget?: Budget
+}
+export type ResourceRef = { type: Id; key: string }
+export type Task = { statement: string }
+export type Budget = { offers?: number; depth?: number }
+
+// §3
+export type Principal = {
+  authenticated: boolean
+  subject?: string // for approval tokens only: never echoed, never in a revision
+  attributes: Record<string, unknown>
+}
+
+// §2.1: how the runtime learns what the application knows
+export type ResourceResolver = {
+  load(
+    key: string,
+    principal: Principal,
+  ): Promise<{ attributes: Record<string, unknown>; version?: string } | null>
+  list?(principal: Principal, scope: { capability: Id }): Promise<string[]>
+}
+
+// §4.1
+export type CapabilityOffer = {
+  id: OfferId
+  capability: Id
+  target?: ResourceRef
+  with?: Record<string, string>
+  revision: OfferRevision
+  availability: Availability
+  conditions: ConditionResult[]
+  requirements: Requirements
+  consequential: boolean
+  claims: ClaimView[]
+  relevance: Relevance
+  alternatives: { count: number }
+  choiceSet?: ChoiceSetId
+}
+
+// §4.2
+export type Availability =
+  | { status: 'available' }
+  | { status: 'needs-input'; inputs: string[] }
+  | { status: 'needs-authorization' }
+  | { status: 'unavailable'; because: string[] }
+  | { status: 'unknown'; because: string[] }
+export type ConditionResult = {
+  id: string
+  description: string
+  value: true | false | 'unknown'
+  detail?: string
+}
+
+// §4.3
+export type Requirements = {
+  authorization: 'met' | 'unmet' | 'unknown' | 'none-declared'
+  confirmation?: { summary: string }
+}
+
+// §4.4
+export type Relevance =
+  | { level: 'undetermined' }
+  | { level: 'direct' | 'related' | 'unrelated'; basis: RelevanceBasis[] }
+export type RelevanceBasis =
+  | { kind: 'start'; detail: string }
+  | { kind: 'relation'; relation: string; from: Id }
+  | { kind: 'task-text'; matched: string[] }
+
+// §4.5
+export type ClaimView = {
+  id: string
+  kind: 'recommendation' | 'benefit' | 'estimate' | 'assessment'
+  statement: string
+  quantity?: { value: number; unit: string }
+  source: { id: string; name: string; role: 'owner' | 'tool' | 'third-party' }
+  basis: Basis
+}
+
+// §5
+export type ChoiceSet = {
+  id: ChoiceSetId
+  capability: Id
+  over: Id
+  members: OfferId[]
+  order: OrderBasis
+}
+
+// §6
+export type DiscoveryPolicy = {
+  id: PolicyId
+  description: string
+  scope: 'exhaustive' | 'start' | 'neighborhood'
+  depth?: number
+  order: OrderMethod
+  relevance?: RelevanceMethodId
+  claims: 'shown' | 'omitted'
+  budget?: Budget
+}
+export type OrderMethod = 'canonical' | 'relevance' | { byClaim: 'recommendation' }
+export type View = {
+  revision: Revision
+  policy: PolicyId
+  stale?: true
+  offers: CapabilityOffer[]
+  choiceSets: ChoiceSet[]
+  order: OrderBasis
+  omitted: Omitted
+}
+export type Omitted = {
+  offers: number
+  choiceSets: number
+  claims: number
+  expand: Expansion[]
+}
+export type OrderBasis =
+  | { by: 'canonical' }
+  | { by: 'relevance'; method: RelevanceMethodId }
+  | { by: 'claim'; kind: 'recommendation'; source: string }
+export type Expansion = {
+  from: OfferId | ChoiceSetId | ResourceRef
+  along: 'alternatives' | 'members' | 'relations' | 'contains' | 'enables' | 'more'
+  count: number
+}
+
+// §11
+export type Projection = {
+  revision: Revision
+  // every offer the principal may see, in canonical order: what views and expansions draw from (M3c)
+  offers: CapabilityOffer[]
+  choiceSets: ChoiceSet[]
+  view(): View
+  // throws: a projection is runtime-internal, and only views are wire-visible (§11)
+  toJSON(): never
+}
+
+export type Runtime = {
+  manifest: CapabilityManifest
+  project(request: ProjectionRequest): Promise<Projection>
+}

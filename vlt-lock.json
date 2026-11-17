@@ -1149,6 +1149,7 @@
     "workspace~packages+react zod": "dev ^4.6.7 ~npm~zod@4.6.7",
     "workspace~packages+react @affordances/core": "dev workspace:* workspace~packages+core",
     "workspace~packages+react @affordances/protocol": "prod workspace:* workspace~packages+protocol",
+    "workspace~packages+runtime @affordances/ir": "prod workspace:* workspace~packages+ir",
     "workspace~packages+ui @tailwindcss/postcss": "dev ^4.3.3 ~npm~@tailwindcss+postcss@4.3.3",
     "workspace~packages+ui @types/react-dom": "dev ^19.3.0 ~npm~@types+react-dom@19.3.0~peer.f18d9ecf01787eaa",
     "workspace~packages+ui @types/react": "dev ^19.3.0 ~npm~@types+react@19.3.0",
