@@ -297,6 +297,7 @@ export const Binding = z
     protocol: z.string(),
     address: z.record(z.string(), z.string()).refine((a) => Object.keys(a).length > 0, {
       message: 'a binding has an address',
+      params: { code: 'E_SCHEMA' },
     }),
     extensions: Extensions.optional(),
   })

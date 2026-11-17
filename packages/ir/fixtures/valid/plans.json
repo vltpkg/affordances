@@ -2,19 +2,33 @@
   "schemaVersion": "0.1",
   "namespace": "https://hosting.example/capabilities",
   "title": "A hosting provider with three plans",
-  "provenance": { "source": "host", "basis": "declared" },
+  "provenance": {
+    "source": "host",
+    "basis": "declared"
+  },
   "principal": {
     "description": "A signed-in account",
     "attributes": {
       "type": "object",
       "properties": {
-        "plan": { "type": "string" },
-        "orgIds": { "type": "array", "items": { "type": "string" } }
+        "plan": {
+          "type": "string"
+        },
+        "orgIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     }
   },
   "sources": [
-    { "id": "host", "role": "owner", "name": "Example Host" },
+    {
+      "id": "host",
+      "role": "owner",
+      "name": "Example Host"
+    },
     {
       "id": "monitor",
       "role": "third-party",
@@ -31,17 +45,30 @@
       "attributes": {
         "type": "object",
         "properties": {
-          "slug": { "type": "string" },
-          "priceUsd": { "type": "number" },
+          "slug": {
+            "type": "string"
+          },
+          "priceUsd": {
+            "type": "number"
+          },
           "regions": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "code": { "type": "string" },
+                "code": {
+                  "type": "string"
+                },
                 "zones": {
                   "type": "array",
-                  "items": { "type": "object", "properties": { "up": { "type": "boolean" } } }
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "up": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -56,9 +83,18 @@
       "attributes": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" },
-          "orgId": { "type": "string" },
-          "domains": { "type": "array", "items": { "type": "string" } }
+          "id": {
+            "type": "string"
+          },
+          "orgId": {
+            "type": "string"
+          },
+          "domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
         }
       }
     }
@@ -70,43 +106,85 @@
       "description": "List every plan, with its price and limits",
       "safe": true,
       "effects": [],
-      "output": { "type": "array" }
+      "output": {
+        "type": "array"
+      }
     },
     {
       "id": "hosting.plan.subscribe",
       "kind": "action",
       "description": "Subscribe a project to this plan",
       "target": "hosting.plan",
-      "references": [{ "name": "project", "resource": "hosting.project", "at": "/projectId" }],
+      "references": [
+        {
+          "name": "project",
+          "resource": "hosting.project",
+          "at": "/projectId"
+        }
+      ],
       "input": {
         "type": "object",
         "properties": {
-          "projectId": { "type": "string" },
-          "seats": { "type": "array", "items": { "type": "integer" } }
+          "projectId": {
+            "type": "string"
+          },
+          "seats": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          }
         },
         "required": ["projectId"]
       },
       "authorization": {
-        "principal": "authenticated",
-        "conditions": [
-          {
-            "id": "member",
-            "description": "The caller belongs to the project's organization",
-            "expr": { "in": [{ "path": "project.orgId" }, { "path": "principal.orgIds" }] }
-          }
-        ]
+        "principal": "authenticated"
       },
-      "confirmation": { "summary": "Subscribe to {target.slug} for {target.priceUsd} USD a month" },
+      "confirmation": {
+        "summary": "Subscribe to {target.slug} for {target.priceUsd} USD a month"
+      },
       "preconditions": [
+        {
+          "id": "member",
+          "description": "The caller belongs to the project's organization",
+          "expr": {
+            "in": [
+              {
+                "path": "project.orgId"
+              },
+              {
+                "path": "principal.orgIds"
+              }
+            ]
+          }
+        },
         {
           "id": "notCurrent",
           "description": "The project isn't already on this plan",
-          "expr": { "ne": [{ "path": "principal.plan" }, { "path": "target.slug" }] }
+          "expr": {
+            "ne": [
+              {
+                "path": "principal.plan"
+              },
+              {
+                "path": "target.slug"
+              }
+            ]
+          }
         },
         {
           "id": "hasDomain",
           "description": "The project has a domain",
-          "expr": { "gt": [{ "count": "project.domains" }, { "value": 0 }] }
+          "expr": {
+            "gt": [
+              {
+                "count": "project.domains"
+              },
+              {
+                "value": 0
+              }
+            ]
+          }
         },
         {
           "id": "regionUp",
@@ -117,7 +195,16 @@
               "where": {
                 "every": {
                   "of": "item.zones",
-                  "where": { "eq": [{ "path": "item.up" }, { "value": true }] }
+                  "where": {
+                    "eq": [
+                      {
+                        "path": "item.up"
+                      },
+                      {
+                        "value": true
+                      }
+                    ]
+                  }
                 }
               }
             }
@@ -129,11 +216,24 @@
           "expr": {
             "every": {
               "of": "input.seats",
-              "where": { "le": [{ "path": "item" }, { "value": 50 }] }
+              "where": {
+                "le": [
+                  {
+                    "path": "item"
+                  },
+                  {
+                    "value": 50
+                  }
+                ]
+              }
             }
           }
         },
-        { "id": "billing", "description": "The billing account is in good standing", "guard": true }
+        {
+          "id": "billing",
+          "description": "The billing account is in good standing",
+          "guard": true
+        }
       ],
       "effects": [
         {
@@ -149,7 +249,9 @@
       "kind": "action",
       "description": "Cancel the project's plan",
       "target": "hosting.plan",
-      "authorization": { "principal": "authenticated" },
+      "authorization": {
+        "principal": "authenticated"
+      },
       "effects": [
         {
           "category": "financial",
@@ -162,7 +264,14 @@
       "id": "hosting.deployment.failed",
       "kind": "event",
       "description": "A deployment failed",
-      "output": { "type": "object", "properties": { "projectId": { "type": "string" } } }
+      "output": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string"
+          }
+        }
+      }
     }
   ],
   "relations": [
@@ -179,20 +288,38 @@
       "subject": "hosting.plan.subscribe",
       "kind": "recommendation",
       "statement": "Recommended for production projects",
-      "applies": { "eq": [{ "path": "target.slug" }, { "value": "pro" }] },
-      "provenance": { "source": "host", "basis": "declared" }
+      "applies": {
+        "eq": [
+          {
+            "path": "target.slug"
+          },
+          {
+            "value": "pro"
+          }
+        ]
+      },
+      "provenance": {
+        "source": "host",
+        "basis": "declared"
+      }
     },
     {
       "id": "proUptime",
       "subject": "hosting.plan.subscribe",
       "kind": "assessment",
       "statement": "Monthly uptime on Pro",
-      "quantity": { "value": 99.9, "unit": "percent" },
+      "quantity": {
+        "value": 99.9,
+        "unit": "percent"
+      },
       "provenance": {
         "source": "monitor",
         "basis": "verified",
         "evidence": [
-          { "description": "Monthly report", "href": "https://monitor.example/reports/2026-10" }
+          {
+            "description": "Monthly report",
+            "href": "https://monitor.example/reports/2026-10"
+          }
         ]
       }
     }
@@ -201,13 +328,22 @@
     {
       "capability": "hosting.plan.subscribe",
       "protocol": "mcp",
-      "address": { "tool": "hosting.plan.subscribe" }
+      "address": {
+        "tool": "hosting.plan.subscribe"
+      }
     },
     {
       "capability": "hosting.plan.subscribe",
       "protocol": "affordances/v0",
-      "address": { "route": "/plans/[slug]", "action": "subscribe" }
+      "address": {
+        "route": "/plans/[slug]",
+        "action": "subscribe"
+      }
     }
   ],
-  "extensions": { "https://hosting.example/ext/region": { "default": "eu" } }
+  "extensions": {
+    "https://hosting.example/ext/region": {
+      "default": "eu"
+    }
+  }
 }
