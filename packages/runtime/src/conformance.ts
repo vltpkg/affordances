@@ -42,6 +42,18 @@ export type ConformanceResult = {
 
 const KEY = 'conformance'
 
+// q goes down with p: no state makes p false and q true, so a refusal for q can be pinned on p. A condition the
+// greedy drop gave up for some other reason can't stand in for p (review of the code-review fixes, a)
+const implied = (c: CapabilityDefinition, p: string, q: string) => {
+  if (p === q) return true
+  const exprOf = (id: string) =>
+    [...(c.authorization?.conditions ?? []), ...(c.preconditions ?? [])].find(
+      (x) => x.id === id && 'expr' in x,
+    ) as { expr: Expr } | undefined
+  const [a, b] = [exprOf(p), exprOf(q)]
+  return !!a && !!b && falsifying({ any: [a.expr, { not: b.expr }] }) === undefined
+}
+
 export const conformance = async (fixture: ConformanceFixture): Promise<ConformanceResult[]> => {
   const { manifest } = fixture.options
   const handlers = fixture.options.handlers ?? {}
@@ -168,7 +180,9 @@ export const conformance = async (fixture: ConformanceFixture): Promise<Conforma
       condition: k.condition,
       kind: 'declarative',
       isolated: k.isolated,
-      pass: k.isolated ? named : refusedBy !== undefined && falseIds.has(refusedBy),
+      pass: k.isolated
+        ? named
+        : refusedBy !== undefined && falseIds.has(refusedBy) && implied(c, k.condition, refusedBy),
       got,
     })
   }

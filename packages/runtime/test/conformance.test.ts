@@ -77,6 +77,15 @@ const free = (store: Store, type: string): ResourceResolver => ({
   },
 })
 
+// a resolver that says every plan costs 5, whatever was arranged
+const priced = (store: Store, type: string): ResourceResolver => ({
+  load: async (key) => {
+    const attributes = store[type]?.[key]
+    if (!attributes) return null
+    return { attributes: type === 'hosting.plan' ? { ...attributes, priceUsd: 5 } : attributes }
+  },
+})
+
 describe('rule 5’s conformance kit (§9, R5)', () => {
   test('every declared precondition of a conformant application refuses in the state that falsifies it', async () => {
     const { fixture, runs } = await application(honest)
@@ -149,6 +158,39 @@ describe('rule 5’s conformance kit (§9, R5)', () => {
     delete open.options.manifest.capabilities[1]!.authorization
     const b = (await conformance(open)).filter((r) => !r.isolated)
     expect(b.map((r) => [r.condition, r.pass])).toEqual(b.map((r) => [r.condition, false]))
+  })
+
+  test('a non-isolated case never passes on a condition its own doesn’t imply (review a)', async () => {
+    // slugIsX and slugIsY can't both hold, so priced can't be isolated, and the greedy drop gives up slugIsX, which
+    // priced doesn't imply. A resolver that says every plan costs 5 ignores priced, so only slugIsX refuses
+    const { fixture } = await application(priced)
+    // just these three, so nothing else gets in the way of the drop
+    fixture.options.manifest.capabilities[1]!.preconditions = []
+    fixture.options.manifest.capabilities[1]!.preconditions!.push(
+      {
+        id: 'priced',
+        description: 'Not free',
+        expr: { gt: [{ path: 'target.priceUsd' }, { value: 0 }] },
+      },
+      {
+        id: 'slugIsX',
+        description: 'Plan x',
+        expr: { eq: [{ path: 'target.slug' }, { value: 'x' }] },
+      },
+      {
+        id: 'slugIsY',
+        description: 'Plan y',
+        expr: { eq: [{ path: 'target.slug' }, { value: 'y' }] },
+      },
+    )
+    const r = (await conformance(fixture)).find((x) => x.condition === 'priced')!
+    expect(r.isolated).toBe(false)
+    expect(r.got).toMatchObject({
+      status: 'refused',
+      code: 'precondition',
+      condition: { id: 'slugIsX' },
+    })
+    expect(r.pass).toBe(false)
   })
 
   test('a resolver that misreports state fails conformance: the capability ran when it should have refused', async () => {
