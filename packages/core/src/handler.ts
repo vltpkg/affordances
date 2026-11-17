@@ -106,7 +106,9 @@ const describe = async (
   const descriptor: ActionDescriptor = { ...summarize(action), available: true }
   if (meta.expose !== 'public' && !ctx.session)
     return { ...descriptor, available: false, reason: 'Requires a session' }
-  const result = meta.guard ? await meta.guard({ input: undefined, state, ctx }) : true
+  const result = meta.guard
+    ? await meta.guard({ input: undefined, state, ctx, listing: true })
+    : true
   return result === true
     ? descriptor
     : { ...descriptor, available: false, ...(result && { reason: result }) }

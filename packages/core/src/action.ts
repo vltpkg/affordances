@@ -54,6 +54,8 @@ export type ActionConfig<
     ctx: Ctx<Session>
     // on a call, whether v0's client sent confirm: true. A capability's runtime check reads it (RFC 0001 §12.1)
     confirmed?: boolean
+    // true only when the graph lists the action, never on a call: a call's validated input can be undefined too
+    listing?: boolean
   }) => GuardResult | Promise<GuardResult>
   // what a `confirm` action will do, shown to the person before they approve it
   summary?: (args: {

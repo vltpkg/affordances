@@ -263,6 +263,11 @@ describe('what comes from the capability', () => {
     const wipe = defineAction({ capability: unauthorized, name: 'wipe', run: () => 'wiped' })
     expect(wipe[AFFORDANCES].expose).toBeUndefined()
     expect((await graph(handlerFor([wipe]), 'a')).actions).toEqual([])
+    // nor callable: v0 doesn't know an action without expose (spec.md, expose)
+    expect(await call(handlerFor([wipe]), { action: 'wipe', confirm: true })).toMatchObject({
+      ok: false,
+      error: { code: 'not_found' },
+    })
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('declares no authorization'))
     warn.mockRestore()
   })
@@ -600,6 +605,71 @@ describe('a capability checked by the runtime', () => {
     expect(
       await call(handlerFor([described]), { action: 'checkout', input: { cart: 'c1' } }),
     ).toMatchObject({ error: { message: 'The cart has items' } })
+  })
+
+  test('a call whose input validates to undefined is still checked, whatever the schema', async () => {
+    // a call that omits input, against schemas that accept that: only the graph lists, and every call checks
+    // every schema shape that accepts a missing input and has a JSON Schema (a capability's input needs one)
+    for (const input of [
+      z.object({ n: z.number() }).optional(),
+      z.object({ n: z.number() }).partial().optional(),
+      z.object({}).optional(),
+      z.object({ n: z.number() }).nullish(),
+      z.any(),
+      z.unknown(),
+    ]) {
+      const boxes = defineCapability({
+        id: 'commerce.cart.wipe',
+        kind: 'action',
+        description: 'Wipe the boxes',
+        input,
+        authorization: { principal: 'authenticated' },
+        preconditions: {
+          allClosed: when.eq('principal.attributes.open', false).because('Every box is closed'),
+        },
+      } as never)
+      let checks = 0
+      const refusing: CheckRuntime = {
+        check: async () => {
+          checks++
+          return {
+            status: 'refused',
+            code: 'precondition',
+            condition: { id: 'allClosed', description: 'Every box is closed' },
+            revision: 'sha256-r',
+          }
+        },
+        // the projection can't settle it: open, for the graph
+        project: async () => ({
+          offers: [
+            {
+              capability: 'commerce.cart.wipe',
+              availability: { status: 'unknown', because: ['allClosed'] },
+            },
+          ],
+        }),
+      }
+      const ran = vi.fn()
+      const wipe = defineAction({
+        capability: boxes,
+        name: 'wipe',
+        state: product,
+        runtime: refusing,
+        principal,
+        run: () => {
+          ran()
+          return 'wiped'
+        },
+      } as never)
+      expect((await graph(handlerFor([wipe]), 'a')).actions[0]).toMatchObject({ available: true })
+      expect(checks).toBe(0)
+      expect(await call(handlerFor([wipe]), { action: 'wipe' })).toMatchObject({
+        ok: false,
+        error: { code: 'unavailable', message: 'Every box is closed' },
+      })
+      expect(checks).toBe(1)
+      expect(ran).not.toHaveBeenCalled()
+    }
   })
 
   test('with a runtime there is no fail-closed warning, and the UI path is unchanged', async () => {

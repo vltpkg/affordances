@@ -230,12 +230,15 @@ export const fromCapability = <
       state: State
       ctx: Ctx<Session>
       confirmed?: boolean
+      listing?: boolean
     }): Promise<GuardResult> => {
       // listing the graph, with no input: the offers' availability, from one projection per load. Only what's
       // settled closes an action: unavailable, or another principal's. Needs-input and unknown (a condition on the
       // input or a reference, which a start-less projection can't bind) stay open, as the graph is advice and the
       // call is checked
-      if (args.input === undefined) {
+      // only the handler's graph says it's listing. A call's input is what the author's schema validates it to,
+      // which can be undefined, and a call always checks (rule 5)
+      if (args.listing) {
         let listing = listings.get(args.state)
         if (!listing) {
           listing = Promise.resolve(principalOf(args.ctx)).then((principal) =>
