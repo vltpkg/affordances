@@ -218,7 +218,7 @@ type DriverResult = {
 | `invoke`  | `{ offer: string; input?: object; approval?: string }`                                                                                      | an `ExecutionResult` (RFC 0002 §8.3)                       |
 
 - **Identical across conditions.** The tool names, descriptions and input schemas are byte-identical in every condition. The harness, not the agent, sets the policy and budget, and the agent can't pass a policy. What differs is only what the runtime returns, under the condition's policy and fixture.
-- **How results render:** each tool returns its RFC 0002 value as JSON text, in RFC 8785 canonical form, indented two spaces. The S control alone changes this rendering (§3.2).
+- **How results render:** each tool returns its RFC 0002 value as JSON text: members in RFC 8785 order, then pretty-printed with a two-space indent (`JSON.stringify(JSON.parse(canonicalJson(value)), null, 2)`), so the bytes are deterministic. The S control alone changes this rendering (§3.2).
 - **The task statement** is passed to the runtime as `task` (RFC 0002 §2), so relevance can read it. It's the same text the prompt holds.
 - **Two records of each call:** the harness records every tool call and response at the tool server, and the driver keeps its own trace. The two are compared, and a mismatch marks the trial.
 
