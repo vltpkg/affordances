@@ -708,6 +708,9 @@ export type Runtime = {
 
 export type Projection = {
   revision: Revision
+  // everything the principal may see, in canonical order: what views and expansions draw from. Runtime-internal
+  offers: CapabilityOffer[]
+  choiceSets: ChoiceSet[]
   view(): View // the first view, under the request's policy and budget
   expand(expansion: Pick<Expansion, 'from' | 'along'>, options?: { budget?: Budget }): Promise<View>
   inspect(offer: OfferId): Promise<OfferDetails>
@@ -779,6 +782,11 @@ export type ApprovalToken = string
 - **`handlers` is typed from the manifest.**
   - **Coverage:** every query and action capability needs a handler (a query's handler returns its output), and every declared guard needs an implementation, so a missing one is a type error. `createRuntime` checks the same at startup, for manifests loaded as JSON.
   - **Inside Next.js:** `defineAction({ capability, guards })` (RFC 0001 §12.1) registers exactly this.
+- **A projection is runtime-internal, and only views are wire-visible.**
+  - **What it holds:** a `Projection` carries every offer and choice set the principal may see, including what a policy leaves out of a view.
+  - **Why it never leaves the runtime:** serializing it would hand an agent what the policy omitted. That breaks the disclosure invariant's bookkeeping (§6.3), and it would erase the difference between the benchmark's conditions (§6.1).
+  - **The rule:** an agent-facing surface, such as an MCP server, an HTTP binding or the benchmark's harness, sends `View`s, from `view()` and `expand`, and `OfferDetails` from `inspect`, never a `Projection`.
+  - **How it's enforced:** `toJSON` on a projection throws, so accidental serialization fails loudly.
 - **No principal resolver.** Requests carry a resolved `Principal`. The binding or adapter that receives an HTTP request resolves it (§2.1), so the runtime stays transport-free.
 - **`createRuntime` refuses to start** if any capability requires confirmation and no `seenTokens` store is given (§8.2).
 - **Dependencies:** `@affordances/ir`, and Web Crypto for digests and approval tokens. No Next.js, React or MCP.
