@@ -362,9 +362,14 @@ const principal = (ctx: { session: Session | null }) => ({
 describe('a capability checked by the runtime', () => {
   let count: number
   let requests: CheckRequest[]
+  let projections: number
+  // what the stand-in's projection lists for the capability, as RFC 0002 §4.2's availability
+  let listed: { status: string; because?: readonly string[] }[]
   beforeEach(() => {
     count = 0
     requests = []
+    projections = 0
+    listed = [{ status: 'available' }]
   })
   const runtime: CheckRuntime = {
     check: async (request) => {
@@ -379,7 +384,7 @@ describe('a capability checked by the runtime', () => {
           detail: 'The cart is empty',
           revision: 'sha256-r',
         }
-      if (request.offer.startsWith('commerce.cart.checkout') && !request.confirmed)
+      if (request.offer === 'commerce.cart.checkout' && !request.confirmed)
         return {
           status: 'refused',
           code: 'confirmation_required',
@@ -390,6 +395,15 @@ describe('a capability checked by the runtime', () => {
         status: 'ok',
         revision: 'sha256-r',
         ...(request.confirmed && { confirmation: request.confirmed }),
+      }
+    },
+    project: async () => {
+      projections++
+      return {
+        offers: listed.map((availability) => ({
+          capability: 'commerce.cart.checkout',
+          availability,
+        })),
       }
     },
   }
@@ -433,9 +447,9 @@ describe('a capability checked by the runtime', () => {
       error: { code: 'unavailable', message: 'The cart is empty' },
     })
     expect(ran).not.toHaveBeenCalled()
-    // the offer names the target at targetAt, for the principal from v0's session
+    // the capability's id, with the input that names the target at targetAt, for the principal from v0's session
     expect(requests.at(-1)).toMatchObject({
-      offer: 'commerce.cart.checkout@commerce.cart:c1',
+      offer: 'commerce.cart.checkout',
       input: { cart: 'c1' },
       principal: { authenticated: true, subject: 'a' },
     })
@@ -476,98 +490,84 @@ describe('a capability checked by the runtime', () => {
     expect(requests.at(-1)).not.toHaveProperty('approval')
   })
 
-  test('listing the graph, a refusal only the call settles leaves the action available', async () => {
-    count = 2
-    const untargeted = defineCapability({
-      id: 'commerce.cart.checkoutAll',
-      kind: 'action',
-      description: 'Place every order',
-      input: keyed,
-      authorization: { principal: 'authenticated' },
-    })
-    for (const code of ['invalid_input', 'confirmation_required'] as const) {
-      const listing = defineAction({
-        capability: untargeted,
-        name: 'checkoutAll',
-        state: product,
-        runtime: { check: async () => ({ status: 'refused', code, revision: 'sha256-r' }) },
-        principal,
-        run: () => 'ordered',
-      })
-      expect((await graph(handlerFor([listing]), 'a')).actions[0]).toMatchObject({
-        available: true,
-      })
-    }
-    // a condition on the input can't be settled without one; one on the target can
-    const quantity = defineCapability({
-      id: 'commerce.cart.checkoutSome',
-      kind: 'action',
-      description: 'Place some orders',
-      input: z.object({ count: z.number().int().optional() }),
-      authorization: { principal: 'authenticated' },
-      preconditions: { some: when.gt('input.count', 0).because('At least one order') },
-    })
-    // `some` reads the input; a refusal naming any other condition stands
-    for (const [id, available] of [
-      ['some', true],
-      ['closed', false],
+  test("listing the graph reads the offers' availability from the projection", async () => {
+    const { checked } = action()
+    for (const [offers, expected] of [
+      [[{ status: 'available' }], { available: true }],
+      // what the call settles, the input, doesn't rule it out
+      [[{ status: 'needs-input' }], { available: true }],
+      // nor does a condition the projection can't settle without the call's input or references
+      [[{ status: 'unknown', because: ['notEmpty'] }], { available: true }],
+      // one open offer among closed ones is enough
+      [
+        [{ status: 'unavailable', because: ['notEmpty'] }, { status: 'available' }],
+        { available: true },
+      ],
+      [
+        [{ status: 'unavailable', because: ['notEmpty'] }],
+        { available: false, reason: 'The cart has items' },
+      ],
+      [
+        [{ status: 'needs-authorization' }],
+        { available: false, reason: 'commerce.cart.checkout needs another principal' },
+      ],
+      // no offer for it: nothing to say, so v0's own guards answer, and the call is checked
+      [[], { available: true }],
     ] as const) {
-      const listing = defineAction({
-        capability: quantity,
-        name: 'checkoutSome',
-        state: product,
-        runtime: {
-          check: async () => ({
-            status: 'refused',
-            code: 'precondition',
-            condition: { id, description: id },
-            revision: 'sha256-r',
-          }),
-        },
-        principal,
-        run: () => 'ordered',
-      })
-      expect((await graph(handlerFor([listing]), 'a')).actions[0]).toMatchObject({ available })
+      listed = [...offers]
+      expect((await graph(handlerFor([checked]), 'a')).actions[0]).toMatchObject(expected)
     }
-    // what the call itself can't change is shown as unavailable
-    const refused = defineAction({
-      capability: untargeted,
-      name: 'checkoutAll',
+    // listing never checks: the check is for the call
+    expect(requests).toHaveLength(0)
+  })
+
+  test('one projection per graph load, whatever it lists; a call checks once, between its two loads', async () => {
+    count = 2
+    const { checked } = action()
+    const again = defineAction({
+      capability: checkout,
+      name: 'checkoutAgain',
       state: product,
-      runtime: {
-        check: async () => ({
-          status: 'refused',
-          code: 'unauthorized',
-          detail: 'Only the cart owner',
-          revision: 'sha256-r',
-        }),
-      },
+      runtime,
       principal,
       run: () => 'ordered',
     })
-    expect((await graph(handlerFor([refused]), 'a')).actions[0]).toMatchObject({
-      available: false,
-      reason: 'Only the cart owner',
+    await graph(handlerFor([checked, again]), 'a')
+    expect(projections).toBe(1)
+    projections = 0
+    await call(handlerFor([checked, again]), {
+      action: 'checkout',
+      input: { cart: 'c1' },
+      confirm: true,
     })
+    // the graph before the call, and the graph after it, which projects afresh
+    expect(projections).toBe(2)
+    expect(requests).toHaveLength(1)
   })
 
-  test('the offer names the target key percent-encoded, as the runtime names it', async () => {
+  test('the offer is the capability id, and any key reaches the runtime as written, in the input', async () => {
     count = 2
     const { checked } = action()
-    for (const [key, encoded] of [
-      ['pro?project=x', 'pro%3Fproject%3Dx'],
-      ['50%41', '50%2541'],
-      ['a@b:c&d', 'a%40b%3Ac%26d'],
-    ]) {
+    // generated keys, with the characters an offer id treats as structure among them
+    const alphabet = 'ab?&@:%=/~ 1é'
+    const keys = Array.from({ length: 50 }, (_, i) =>
+      Array.from(
+        { length: 1 + (i % 9) },
+        (__, j) => alphabet[(i * 7 + j * 3) % alphabet.length],
+      ).join(''),
+    )
+    for (const key of keys) {
       await call(handlerFor([checked]), { action: 'checkout', input: { cart: key }, confirm: true })
-      expect(requests.at(-1)!.offer).toBe(`commerce.cart.checkout@commerce.cart:${encoded}`)
-      // and it decodes back to the input's key, as the runtime's parseOfferId reads it
-      expect(decodeURIComponent(requests.at(-1)!.offer.split(':').slice(1).join(':'))).toBe(key)
+      expect(requests.at(-1)).toMatchObject({
+        offer: 'commerce.cart.checkout',
+        input: { cart: key },
+      })
     }
   })
 
   test("a refusal reads the condition's description when the runtime gives no detail", async () => {
     const quiet: CheckRuntime = {
+      ...runtime,
       check: async () => ({
         status: 'refused',
         code: 'precondition',

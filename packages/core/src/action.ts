@@ -52,6 +52,8 @@ export type ActionConfig<
     input: StandardSchemaV1.InferOutput<Schema> | undefined
     state: State
     ctx: Ctx<Session>
+    // on a call, whether v0's client sent confirm: true. A capability's runtime check reads it (RFC 0001 §12.1)
+    confirmed?: boolean
   }) => GuardResult | Promise<GuardResult>
   // what a `confirm` action will do, shown to the person before they approve it
   summary?: (args: {

@@ -33,7 +33,7 @@ export type CheckPrincipal = {
 /** @experimental What v0's agent path asks the projection runtime before it runs an action. */
 export type CheckRequest = {
   principal: CheckPrincipal
-  // `capability@type:key`, or the capability's id when it has no target
+  // the capability's id: the runtime names the target from the input at the capability's targetAt
   offer: string
   input?: unknown
   ifRevision?: string
@@ -60,8 +60,18 @@ export type CheckResult =
       confirmation?: { summary: string }
       revision: string
     }
+/** @experimental The offers of a projection, as v0's graph listing reads them. In process only, never sent. */
+export type ListedOffers = {
+  readonly offers: readonly {
+    readonly capability: string
+    readonly availability: { readonly status: string; readonly because?: readonly string[] }
+  }[]
+}
 /** @experimental The part of the projection runtime defineAction uses. */
-export type CheckRuntime = { check(request: CheckRequest): Promise<CheckResult> }
+export type CheckRuntime = {
+  check(request: CheckRequest): Promise<CheckResult>
+  project(request: { principal: CheckPrincipal; policy?: string }): Promise<ListedOffers>
+}
 
 /** @experimental See the note at the top of this file. */
 export type BindableCapability<Guards extends string = string, Input = unknown> = {
@@ -80,6 +90,8 @@ export type BindableCapability<Guards extends string = string, Input = unknown> 
     readonly confirmation?: { readonly summary: string }
   }
   readonly schemas: { readonly input?: StandardSchemaV1; readonly output?: StandardSchemaV1 }
+  // the confirmation summary for an input, rendered by ir's one renderer when the capability requires confirmation
+  readonly summary?: (input: unknown) => string
   readonly '~guards'?: Guards
   readonly '~input'?: Input
 }
@@ -117,7 +129,7 @@ export type CapabilityActionConfig<
   // the route-local name v0's graph lists the action under
   name: string
   state?: StateDef<State>
-  // v0's confirmation summary, as a function; otherwise the capability's template is filled in from the input
+  // v0's confirmation summary, as a function; otherwise the capability's own, rendered from the input by ir
   summary?: (args: { input: CapabilityInput<C>; state: State }) => string | Promise<string>
   message?: (args: { input: CapabilityInput<C>; output: Output }) => string
   effects?: (keyof State & string)[]
@@ -136,10 +148,9 @@ export type CapabilityActionConfig<
     : // exactly one implementation per guard the capability declares (RFC 0001 §12.1, rule 5)
       { guards: { [K in CapabilityGuards<C>]: GuardFn<CapabilityInput<C>, Session, State> } })
 
-// the agent calls whose v0 client set confirm: true, by their ctx. The handler marks a call before its guard runs,
-// so the check can say v0 confirmed it without the guard's public arguments changing. That's sound because the
-// handler makes a fresh ctx for every call (handler.ts), so one call's confirm never reaches another's
-export const confirmedCalls = new WeakSet<object>()
+// one projection per graph load, for every action it lists. Each load reads its state afresh, so the state object
+// names the load: the graph after a call projects again
+const listings = new WeakMap<object, Promise<ListedOffers>>()
 
 const dev = () => process.env.NODE_ENV !== 'production'
 
@@ -154,54 +165,6 @@ const NO_INPUT: StandardSchemaV1<unknown, Record<string, never>> & {
     jsonSchema: { input: () => ({ type: 'object', properties: {}, additionalProperties: false }) },
   },
 }
-
-// a JSON pointer's reference tokens (RFC 6901)
-const tokens = (pointer: string) =>
-  pointer
-    .split('/')
-    .slice(1)
-    .map((t) => t.replaceAll('~1', '/').replaceAll('~0', '~'))
-
-// whether a condition's expression reads the input: listing without one, such a condition can't be settled
-const readsInput = (expr: unknown): boolean =>
-  Array.isArray(expr)
-    ? expr.some(readsInput)
-    : expr !== null && typeof expr === 'object'
-      ? Object.entries(expr).some(([k, v]) =>
-          k === 'path' && typeof v === 'string'
-            ? v === 'input' || v.startsWith('input.')
-            : readsInput(v),
-        )
-      : false
-
-const at = (value: unknown, path: string[]) =>
-  path.reduce<unknown>(
-    (v, key) =>
-      v !== null && typeof v === 'object' ? (v as Record<string, unknown>)[key] : undefined,
-    value,
-  )
-
-// RFC 8785's JSON text, for a value in a summary: object members sorted by UTF-16 code units
-const canonical = (value: unknown): string =>
-  Array.isArray(value)
-    ? `[${value.map(canonical).join(',')}]`
-    : value !== null && typeof value === 'object'
-      ? `{${Object.keys(value)
-          .filter((k) => (value as Record<string, unknown>)[k] !== undefined)
-          .toSorted()
-          .map((k) => `${JSON.stringify(k)}:${canonical((value as Record<string, unknown>)[k])}`)
-          .join(',')}}`
-      : JSON.stringify(value)
-
-// the capability's `{path}` template (RFC 0001 §3.2): a string as written, any other value as its JSON text. v0 has only the input, so other roots read "unknown",
-// as an unresolved placeholder does; `{{` and `}}` are literal braces
-const fill = (template: string, input: unknown) =>
-  template.replace(/\{\{|\}\}|\{([A-Za-z0-9_.]+)\}/g, (match, path: string | undefined) => {
-    if (!path) return match[0]!
-    const [root, ...rest] = path.split('.')
-    const value = root === 'input' ? at(input, rest) : undefined
-    return value === undefined ? 'unknown' : typeof value === 'string' ? value : canonical(value)
-  })
 
 const exposeOf = (def: BindableCapability['definition']): Expose | undefined =>
   def.confirmation
@@ -250,39 +213,49 @@ export const fromCapability = <
   // with a runtime, it evaluates every condition the capability declares before v0's own run (RFC 0001 §12.1)
   const runtime = config.runtime
   const principalOf = config.principal
+  const described = conditions.map((c) => [c.id, c.description] as const)
+  const reasonOf = (because: readonly string[] | undefined) =>
+    (because ?? []).map((id) => described.find(([c]) => c === id)?.[1] ?? id).join('; ') ||
+    `${def.id} is unavailable right now`
+
   const checked =
     runtime &&
     principalOf &&
-    (async (args: { input: unknown; state: State; ctx: Ctx<Session> }): Promise<GuardResult> => {
-      const listing = args.input === undefined
-      const key = def.targetAt && !listing ? at(args.input, tokens(def.targetAt)) : undefined
-      // listing a targeted capability, v0 has no input to name the target, so the graph's availability for it is
-      // v0's guards only: advice, as the graph always is. The call itself is checked
-      if (listing && def.target) return v0Guards(args)
+    (async (args: {
+      input: unknown
+      state: State
+      ctx: Ctx<Session>
+      confirmed?: boolean
+    }): Promise<GuardResult> => {
+      // listing the graph, with no input: the offers' availability, from one projection per load. Only what's
+      // settled closes an action: unavailable, or another principal's. Needs-input and unknown (a condition on the
+      // input or a reference, which a start-less projection can't bind) stay open, as the graph is advice and the
+      // call is checked
+      if (args.input === undefined) {
+        let listing = listings.get(args.state)
+        if (!listing) {
+          listing = Promise.resolve(principalOf(args.ctx)).then((principal) =>
+            runtime.project({ principal, policy: 'exhaustive' }),
+          )
+          listings.set(args.state, listing)
+        }
+        const offers = (await listing).offers.filter((o) => o.capability === def.id)
+        const open = ['available', 'needs-input', 'unknown']
+        // no offer, nothing to say: the graph is advice, and the call is checked
+        if (!offers.length || offers.some((o) => open.includes(o.availability.status)))
+          return v0Guards(args)
+        const first = offers[0]!.availability
+        return first.status === 'needs-authorization'
+          ? `${def.id} needs another principal`
+          : reasonOf(first.because)
+      }
       const result = await runtime.check({
         principal: await principalOf(args.ctx),
-        // the key percent-encoded, as the runtime's offerId does (RFC 0002 §4.1): `?`, `&`, `@` and `%` are an id's
-        // structure, so a raw key containing them would name a different offer
-        offer:
-          def.target && typeof key === 'string'
-            ? `${def.id}@${def.target}:${encodeURIComponent(key)}`
-            : def.id,
-        ...(!listing && { input: args.input }),
-        ...(confirmedCalls.has(args.ctx) && { confirmed: { basis: 'v0-client-flag' as const } }),
+        offer: def.id,
+        input: args.input,
+        ...(args.confirmed && { confirmed: { basis: 'v0-client-flag' as const } }),
       })
       if (result.status === 'ok') return v0Guards(args)
-      // listing, without input: what the call itself would settle doesn't rule the action out. That's the input,
-      // the confirmation, and a condition on the input, which is unknown without one (rule 5 refuses unknown)
-      const onInput = declarative.find((c) => c.id === result.condition?.id)
-      if (
-        listing &&
-        (result.code === 'invalid_input' ||
-          result.code === 'confirmation_required' ||
-          (result.code === 'precondition' &&
-            onInput &&
-            readsInput((onInput as { expr: unknown }).expr)))
-      )
-        return v0Guards(args)
       // v0's own confirm_required, with the summary, so the agent resends with confirm: true once approved
       if (result.code === 'confirmation_required')
         throw new AffordancesError(
@@ -313,7 +286,7 @@ export const fromCapability = <
       `[affordances] ${config.name}: ${def.id} declares no authorization, so agents can't reach it`,
     )
   const schema = config.capability.schemas.input ?? NO_INPUT
-  const template = def.confirmation?.summary
+  const render = config.capability.summary
   return {
     // the capability's id, as the migration form's `id` carries it (RFC 0001 §10.1)
     id: def.id,
@@ -325,7 +298,7 @@ export const fromCapability = <
     requires: conditions.length ? conditions.map((c) => c.description).join('; ') : undefined,
     guard: guard as Config<Output, Session, State>['guard'],
     summary: (config.summary ??
-      (template && (({ input }: { input: unknown }) => fill(template, input)))) as Config<
+      (render && (({ input }: { input: unknown }) => render(input)))) as Config<
       Output,
       Session,
       State

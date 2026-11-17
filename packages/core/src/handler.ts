@@ -18,7 +18,6 @@ import {
   type Auth,
   type Ctx,
 } from './action.ts'
-import { confirmedCalls } from './capability.ts'
 import { AffordancesError, RedirectSignal } from './errors.ts'
 import { compile, match, sort } from './route.ts'
 
@@ -193,8 +192,9 @@ export const createHandler = (options: HandlerOptions) => {
     const input = await validate(meta.input, body.data.input)
     const before = await load(route, url, ctx)
     // a capability's check tells the runtime that v0's client confirmed (RFC 0001 §12.1)
-    if (body.data.confirm === true) confirmedCalls.add(ctx)
-    const guard = meta.guard ? await meta.guard({ input, state: before.state, ctx }) : true
+    const guard = meta.guard
+      ? await meta.guard({ input, state: before.state, ctx, confirmed: body.data.confirm === true })
+      : true
     if (guard !== true)
       throw new AffordancesError('unavailable', guard || `${meta.name} is unavailable right now`)
 

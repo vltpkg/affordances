@@ -28,6 +28,7 @@ export {
   type CheckRequest,
   type CheckResult,
   type CheckRuntime,
+  type ListedOffers,
   type GuardFn,
 } from './capability.ts'
 export { AffordancesError, redirect } from './errors.ts'
