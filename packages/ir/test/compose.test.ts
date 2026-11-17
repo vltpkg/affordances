@@ -91,8 +91,10 @@ describe('compose', () => {
     const tool = { id: 'compiler', role: 'tool' as const, name: 'A compiler' }
     const inferred = { source: 'compiler', basis: 'inferred' as const }
     const a = { ...m, sources: [...m.sources, tool], capabilities: m.capabilities.slice(0, 2) }
+    // b declares no principal: one declared under two attributions would conflict (rule 3)
+    const { principal: _, ...noPrincipal } = m
     const b = {
-      ...m,
+      ...noPrincipal,
       sources: [...m.sources, tool],
       provenance: inferred,
       resources: [],
@@ -319,4 +321,45 @@ describe('W_UNCONFIRMED_ENABLES', () => {
     const issues = validate(enables('commerce.order.refund', 'commerce.cart.checkout')).issues
     expect(issues.map((i) => `${i.code} ${i.at}`)).toContain('W_UNCONFIRMED_ENABLES /relations/0')
   })
+})
+
+test("the principal keeps its fragment's attribution when the defaults differ (rule 3)", () => {
+  const m = fixture('plans.json')
+  const tool = { id: 'compiler', role: 'tool' as const, name: 'A compiler' }
+  const inferred = { source: 'compiler', basis: 'inferred' as const }
+  // b declares the principal under its own default; a doesn't declare one
+  const { principal, ...withoutPrincipal } = m
+  const a = { ...withoutPrincipal, sources: [...m.sources, tool] }
+  const b = {
+    ...m,
+    sources: [...m.sources, tool],
+    provenance: inferred,
+    resources: [],
+    capabilities: [],
+    claims: [],
+    relations: [],
+    bindings: [],
+  }
+  for (const order of [
+    [a, b],
+    [b, a],
+  ]) {
+    const result = compose(order)
+    if (!result.ok) throw new Error(JSON.stringify(result.issues))
+    expect(result.manifest.principal!.attributes).toEqual(principal!.attributes)
+    // composed under a's default, declared, the principal still says it was inferred
+    expect(result.manifest.principal!.provenance ?? result.manifest.provenance).toEqual(inferred)
+  }
+})
+
+test('one principal declared under two attributions is E_CONFLICT (rule 3)', () => {
+  const m = fixture('plans.json')
+  const tool = { id: 'compiler', role: 'tool' as const, name: 'A compiler' }
+  const b = {
+    ...m,
+    sources: [...m.sources, tool],
+    provenance: { source: 'compiler', basis: 'inferred' as const },
+  }
+  const result = compose([{ ...m, sources: [...m.sources, tool] }, b])
+  expect(result.issues.map((i) => `${i.code} ${i.at}`)).toContain('E_CONFLICT /principal')
 })

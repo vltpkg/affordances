@@ -73,9 +73,10 @@ export const compose = (fragments: CapabilityManifest[]): Composition => {
   // relations and bindings have no identity of their own: united, and exact duplicates collapse in normalize
   const relations = parts.flatMap((f) => (f.relations ?? []).map((r) => explicit(r, f.provenance)))
   const bindings = parts.flatMap((f) => f.bindings ?? [])
+  // the principal keeps its fragment's attribution, as definitions do (rule 3)
   const principal = single(
     'principal',
-    parts.map((f) => f.principal),
+    parts.map((f) => f.principal && explicit(f.principal, f.provenance)),
   )
   const title = single(
     'title',
