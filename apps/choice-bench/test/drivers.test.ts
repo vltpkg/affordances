@@ -59,13 +59,31 @@ describe('the drivers (RFC 0003 §5.1)', () => {
       const env = trialEnv()
       expect(
         Object.keys(env).filter(
-          (k) => k.startsWith('OPENRIG_') || k === 'CLAUDECODE' || k === 'CLAUDE_CODE_PLUGIN_DIRS',
+          (k) =>
+            !/^(PATH|HOME|USER|LOGNAME|SHELL|LANG|LC_|TZ|TMPDIR|XDG_|CLAUDE_CONFIG_DIR|CLAUDE_CODE_TMPDIR|CODEX_HOME|SSL_CERT_FILE|NODE_EXTRA_CA_CERTS)/.test(
+              k,
+            ),
         ),
       ).toEqual([])
       expect([env.CLAUDE_CONFIG_DIR, env.CLAUDE_CODE_TMPDIR]).toEqual(['/c', '/t'])
     } finally {
       process.env = saved
     }
+  })
+
+  test('codex: a collaboration call goes in the trace under its own name, so the harness can mark the trial', () => {
+    const base = recorded('codex-exec.jsonl')
+    const spawn = JSON.stringify({
+      type: 'item.started',
+      item: {
+        id: 'item_9',
+        type: 'collab_tool_call',
+        tool: 'spawn_agent',
+        arguments: { task: 'x' },
+      },
+    })
+    const r = codex({ ...base, lines: [...base.lines, { at: 99, text: spawn }] }, 'v')
+    expect(r.trace.map((c) => c.name)).toEqual(['lookup', 'spawn_agent'])
   })
 
   test('codex keeps code mode on: with it off, MCP tools vanish (found in M5a’s smoke run)', () => {

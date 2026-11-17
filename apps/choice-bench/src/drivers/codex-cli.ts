@@ -91,6 +91,20 @@ export const parse = (
   for (const { at, text } of ran.lines) {
     const event = json(text)
     const item = event?.item as Record<string, unknown> | undefined
+    // any other tool call codex makes, its collaboration tools (spawn_agent and the rest) above all, goes in the trace
+    // under its own name, so the harness can mark the trial and the pilot can count them (review of M5a)
+    if (
+      item &&
+      item.type !== 'mcp_tool_call' &&
+      /tool_call|collab/.test(String(item.type)) &&
+      event!.type === 'item.started'
+    )
+      trace.push({
+        name: String(item.tool ?? item.name ?? item.type),
+        input: item.arguments ?? item,
+        resultBytes: 0,
+        ms: 0,
+      })
     if (item?.type === 'mcp_tool_call') {
       const id = String(item.id)
       if (event!.type === 'item.started') {

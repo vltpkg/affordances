@@ -67,12 +67,13 @@ export const runCli = (
     })
   })
 
-// the environment a trial's CLI gets: this machine's, without the seat it was started from. The OpenRig and Claude
-// Code session variables load the seat's plugins, hooks and messaging into the trial, so they're dropped (RFC 0003
-// §5.3, isolation). Authentication's own (CLAUDE_CONFIG_DIR, CODEX_HOME, HOME) stays
-const SEAT = /^(OPENRIG_|CLAUDECODE$|CLAUDE_PID$|CLAUDE_EFFORT$|CLAUDE_CODE_(?!TMPDIR))/
+// the environment a trial's CLI gets: only what running and authenticating need, nothing of the seat it was started
+// from (RFC 0003 §5.3, isolation). An allow-list, so a variable nobody thought of can't carry the seat's plugins,
+// hooks or messaging into a trial (review of M5a)
+const ALLOWED =
+  /^(PATH|HOME|USER|LOGNAME|SHELL|LANG|LC_[A-Z]+|TZ|TMPDIR|XDG_[A-Z_]+|CLAUDE_CONFIG_DIR|CLAUDE_CODE_TMPDIR|CODEX_HOME|SSL_CERT_FILE|NODE_EXTRA_CA_CERTS)$/
 export const trialEnv = (): NodeJS.ProcessEnv =>
-  Object.fromEntries(Object.entries(process.env).filter(([k]) => !SEAT.test(k)))
+  Object.fromEntries(Object.entries(process.env).filter(([k]) => ALLOWED.test(k)))
 
 // a CLI's version, as it reports it, recorded with every trial (M5a)
 export const versionOf = (command: string) =>
