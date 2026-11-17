@@ -180,7 +180,7 @@ Canonical order is by the resource key (RFC 0002 §6.4), and position effects ar
 A **driver** runs one agent on one prompt with a fixed set of tools, and returns a trace. The roadmap's M5a builds them, and this is their shape:
 
 - `claude -p`, for Claude models;
-- `codex exec`, for Codex's default model, in the pilot (§8).
+- `codex exec -m`, for one Codex model, in the pilot (§8).
 
 There are no API keys in the environment, and the interface has a slot for an AI SDK provider if there are.
 
@@ -393,9 +393,9 @@ at the most demanding rates, near 0.4 against 0.6. All four contrasts, with Holm
 - **The models:**
   - **Confirmatory:** `claude-sonnet-5-5` and `claude-haiku-5-5`, through `claude -p --model`. Both run every pilot condition, and the confirmatory run.
   - **Exploratory cells:** `claude-sonnet-5-5`.
-  - **In the pilot only:** `claude-opus-5-5` through `claude -p --model`, and Codex's default model through `codex exec`, on A, C and S on T3, at 5 trials each. Their 30 trials come from the margin, so the confirmatory and exploratory budgets are unchanged. They're exploratory, never confirmatory. Codex's are confounded with its driver (§14).
+  - **In the pilot only:** `claude-opus-5-5` through `claude -p --model`, and one Codex model through `codex exec -m`, on A, C and S on T3, at 5 trials each. Their 30 trials come from the margin, so the confirmatory and exploratory budgets are unchanged. They're exploratory, never confirmatory. Codex's are confounded with its driver (§14).
 - **Pinned:**
-  - **Model ids:** each Claude model is named by its exact id, never an alias. Codex's default is recorded as the id its CLI reports for the trial.
+  - **Model ids:** every model is named by its exact id, never an alias or a server-side default: Claude's with `--model`, and Codex's with `-m`. The Codex id is chosen before the pilot and recorded with it, since `codex exec --json` doesn't report the model it ran.
   - **CLI versions:** each trace records the CLI's name and version (§9), and a run holds them fixed. A version that changes mid-run is recorded, and results are reported per version.
 - **What the pilot is for:**
   - measuring the variance and the tokens per trial;
