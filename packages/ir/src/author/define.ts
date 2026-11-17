@@ -120,12 +120,16 @@ export const definePrincipal = <const S extends StandardSchemaV1>(spec: {
 type ReferenceSpec = { readonly resource: DefinedResource; readonly at: string }
 type Roots = 'target' | 'input' | 'principal' | 'item'
 
+// a root that holds nothing is left out, rather than typed never: an object with a never property is never, which
+// would erase every other root's paths too
+type Root<K extends string, V> = [V] extends [never] ? {} : { [k in K]: V }
+
 // what each path root holds, for one capability
-type Context<T, I, P, Refs> = {
-  target: AttributesOf<T>
-  input: Infer<I>
-  principal: AttributesOf<P>
-} & { [K in keyof Refs]: Refs[K] extends ReferenceSpec ? AttributesOf<Refs[K]['resource']> : never }
+type Context<T, I, P, Refs> = Root<'target', AttributesOf<T>> &
+  Root<'input', Infer<I>> &
+  Root<'principal', AttributesOf<P>> & {
+    [K in keyof Refs]: Refs[K] extends ReferenceSpec ? AttributesOf<Refs[K]['resource']> : never
+  }
 
 type ConditionSpec<Paths extends string> = Declared<Paths> | Guard
 
@@ -186,7 +190,9 @@ export const defineCapability = <
   // authorization conditions read only the principal and the target (RFC 0001 §3.2)
   const Auth extends Record<
     string,
-    ConditionSpec<ContextPaths<Pick<Context<T, I, P, Refs>, 'target' | 'principal'>>>
+    ConditionSpec<
+      ContextPaths<Root<'target', AttributesOf<T>> & Root<'principal', AttributesOf<P>>>
+    >
   > = {},
 >(spec: {
   id: Id
@@ -206,7 +212,8 @@ export const defineCapability = <
   authorization?: { principal: AuthorizationRequirement['principal']; conditions?: Auth }
   // presence means required; `{path}` placeholders fill in at run time (RFC 0001 §3.2)
   confirmation?: { summary: string }
-  effects?: readonly EffectSpec<ContextPaths<Context<T, I, P, Refs>>>[]
+  // what an effect establishes reads only the target (RFC 0001 §4)
+  effects?: readonly EffectSpec<ContextPaths<Root<'target', AttributesOf<T>>>>[]
   deprecated?: { replacedBy?: DefinedCapability | Id; reason?: string }
 }): DefinedCapability<GuardIds<Pre> | GuardIds<Auth>, Infer<I>, Infer<O>> => {
   const converted = [spec.input && 'input', spec.output && 'output'].filter((f) => f !== undefined)

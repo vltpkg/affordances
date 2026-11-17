@@ -312,6 +312,41 @@ test('condition paths are checked against attributes, input, references and the 
     key: 'nope',
     attributes: z.object({ id: z.string() }),
   })
+  defineCapability({
+    ...base,
+    input: z.object({ productId: z.string() }),
+    references: { product: { resource: product, at: 'productId' } },
+    effects: [
+      {
+        category: 'state',
+        change: 'update',
+        resource: cart,
+        description: 'x',
+        // @ts-expect-error what an effect establishes reads only the target (RFC 0001 §4)
+        establishes: when.exists('product.slug'),
+      },
+    ],
+  })
+  // no input and no principal: the target's paths still type, and nothing else's
+  const targetOnly = defineCapability({
+    ...base,
+    preconditions: { a: when.ne('target.count', 0).because('not empty') },
+    effects: [
+      {
+        category: 'state',
+        change: 'update',
+        resource: cart,
+        description: 'x',
+        establishes: when.eq('target.count', 0),
+      },
+    ],
+  })
+  expect(targetOnly.definition.preconditions).toHaveLength(1)
+  defineCapability({
+    ...base,
+    // @ts-expect-error there's no input to read
+    preconditions: { a: when.eq('input.sku', 'x').because('no input') },
+  })
   // and the valid forms compile: nested quantifiers, bare item over scalars, counts, paths on both sides
   const valid = defineCapability({
     ...base,
