@@ -463,12 +463,9 @@ export const executor = (deps: ExecutionDeps) => {
     const handler = handlers[r.c.id]
     if (!handler?.run) throw new Error(`no handler runs ${r.c.id}`)
     // the caller's projection, before: what changes are measured against (§8.3)
-    const view: ProjectionRequest = { principal: request.principal }
-    const start = request.start ?? r.target
+    const view: ProjectionRequest = { ...request.view, principal: request.principal }
+    const start = view.start ?? r.target
     if (start !== undefined) view.start = start
-    if (request.policy !== undefined) view.policy = request.policy
-    if (request.task !== undefined) view.task = request.task
-    if (request.budget !== undefined) view.budget = request.budget
     const projected = (await deps.project(view)).view()
     const before = await snapshot(request.principal, r.c, r.target)
     // 9. run the application's handler

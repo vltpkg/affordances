@@ -81,10 +81,8 @@ const problems = async (c: Case): Promise<string[]> => {
       principal: request.principal,
       offer: o.id,
       input: {},
-      ...(request.start === undefined ? {} : { start: request.start }),
-      ...(request.policy === undefined ? {} : { policy: request.policy }),
-      ...(request.task === undefined ? {} : { task: request.task }),
-      ...(request.budget === undefined ? {} : { budget: request.budget }),
+      // the caller's projection request, whole (simplify C2)
+      view: { ...request, principal: undefined } as never,
     } as never)
     if (result.status === 'refused') {
       if (offersIn(result).length) found.push(`execute ${o.id}: a refusal carries offers`)

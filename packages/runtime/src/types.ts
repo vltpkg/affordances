@@ -207,12 +207,9 @@ export type ExecutionRequest = {
   input?: unknown
   approval?: ApprovalToken
   ifRevision?: OfferRevision
-  // where the caller's projection starts, so changes compare like with like (§8.3); the target unless given
-  start?: ResourceRef | Id
-  // the rest of the caller's projection request: changes are of the view it shows (§8.3, review of M3e)
-  policy?: PolicyId
-  task?: Task
-  budget?: Budget
+  // the caller's projection request, whole: changes are of the view it shows (§8.3). Its start is the target's when
+  // it names none (simplify C2)
+  view?: Omit<ProjectionRequest, 'principal'>
 }
 export type RefusalCode =
   | 'not_found'
@@ -260,7 +257,7 @@ export type ExecutionResult =
 
 // §8.1 steps 1-7 without running, for a binding that runs its own handler, as v0's agent path does (M3d, C3.1).
 // It never makes, reads or takes an approval token: v0's confirm is v0's own, recorded with its basis
-export type CheckRequest = Omit<ExecutionRequest, 'approval'> & {
+export type CheckRequest = Omit<ExecutionRequest, 'approval' | 'view'> & {
   confirmed?: { basis: 'v0-client-flag' }
 }
 export type CheckResult =

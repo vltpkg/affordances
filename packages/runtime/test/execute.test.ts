@@ -683,8 +683,7 @@ describe('what an execution changed (§8.4, M3e)', () => {
       await rt.execute({
         principal: member,
         offer: cancelPro,
-        policy: 'progressive',
-        task: { statement: 'a plan' },
+        view: { policy: 'progressive', task: { statement: 'a plan' } },
       }),
     )
     const added = r.changes.added
