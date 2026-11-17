@@ -55,6 +55,8 @@ const invalid: [string, (m: Manifest) => void][] = [
   ['a path with no attribute', (m) => (subscribe(m).preconditions[1].expr.ne[0].path = 'target')],
   ['a reference named after a root', (m) => (subscribe(m).references[0].name = 'item')],
   ['a reference with a non-pointer at', (m) => (subscribe(m).references[0].at = 'projectId')],
+  ['targetAt without a target', (m) => delete subscribe(m).target],
+  ['a targetAt that is not a pointer', (m) => (subscribe(m).targetAt = 'planId')],
   ['verified without evidence', (m) => delete m.claims[1].provenance.evidence],
   [
     'imported with empty evidence',

@@ -133,6 +133,9 @@
             "items": {
               "type": "integer"
             }
+          },
+          "planId": {
+            "type": "string"
           }
         },
         "required": ["projectId"]
@@ -242,7 +245,8 @@
           "reversibility": "compensable",
           "compensatedBy": "hosting.plan.cancel"
         }
-      ]
+      ],
+      "targetAt": "/planId"
     },
     {
       "id": "hosting.plan.cancel",

@@ -55,6 +55,7 @@ namespace Spec {
     title?: string
     description: string
     target?: Id
+    targetAt?: JSONPointer
     references?: Reference[]
     input?: JSONSchema
     output?: JSONSchema

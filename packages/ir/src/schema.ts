@@ -224,6 +224,8 @@ export const CapabilityDefinition = z
     title: z.string().optional(),
     description: z.string(),
     target: Id.optional(),
+    // where in the input the target's key is, for bindings that carry no offer (RFC 0001 §2.2)
+    targetAt: JSONPointer.optional(),
     references: z.array(Reference).optional(),
     input: JSONSchema.optional(),
     output: JSONSchema.optional(),
@@ -241,6 +243,13 @@ export const CapabilityDefinition = z
   .superRefine((c, ctx) => {
     const kind = (path: string, message: string) =>
       ctx.addIssue({ code: 'custom', path: [path], message, params: { code: 'E_KIND' } })
+    if (c.targetAt !== undefined && c.target === undefined)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['targetAt'],
+        message: 'targetAt says where the target is: it needs a target',
+        params: { code: 'E_SCHEMA' },
+      })
     if (c.kind === 'query') {
       if (c.safe === false) kind('safe', 'a query is safe')
       if (c.effects?.length) kind('effects', 'a query has no effects')

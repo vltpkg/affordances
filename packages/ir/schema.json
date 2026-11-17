@@ -275,6 +275,9 @@
         "target": {
           "$ref": "#/$defs/Id"
         },
+        "targetAt": {
+          "$ref": "#/$defs/JSONPointer"
+        },
         "references": {
           "type": "array",
           "items": {
@@ -376,6 +379,22 @@
                 "const": false
               }
             }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "targetAt": true
+            },
+            "required": ["targetAt"]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "target": true
+            },
+            "required": ["target"]
           }
         },
         {

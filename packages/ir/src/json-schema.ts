@@ -29,6 +29,11 @@ const conditional: Record<string, Schema[]> = {
       { properties: { kind: { const: 'action' } } },
       { properties: { safe: { const: false } } },
     ),
+    // targetAt needs a target
+    ifThen(
+      { type: 'object', properties: { targetAt: true }, required: ['targetAt'] },
+      { type: 'object', properties: { target: true }, required: ['target'] },
+    ),
     // a false subschema: the property must not be there
     ifThen(
       { properties: { kind: { const: 'event' } } },

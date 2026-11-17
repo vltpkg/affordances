@@ -275,6 +275,30 @@ const cases: [string, ValidationIssue['code'], string, (m: M) => void][] = [
     },
   ],
   [
+    'targetAt without a target',
+    'E_SCHEMA',
+    '/capabilities/1/targetAt',
+    (m) => delete sub(m).target,
+  ],
+  [
+    'a targetAt the input lacks',
+    'E_PATH',
+    '/capabilities/1/targetAt',
+    (m) => (sub(m).targetAt = '/plan'),
+  ],
+  [
+    'a targetAt with no input',
+    'E_PATH',
+    '/capabilities/2/targetAt',
+    (m) => (m.capabilities[2].targetAt = '/planId'),
+  ],
+  [
+    'a reference at the input lacks',
+    'E_PATH',
+    '/capabilities/1/references/0/at',
+    (m) => (sub(m).references[0].at = '/project'),
+  ],
+  [
     'a key that is not an attribute',
     'E_KEY',
     '/resources/0/key',

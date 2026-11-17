@@ -315,6 +315,19 @@ export const validate = (input: unknown): Validation => {
     c.references?.forEach((r, j) =>
       resolves(r.resource, `${at}/references/${j}/resource`, 'resource'),
     )
+    // a reference's at, and targetAt, name a property of the input: where the key is (§2.2)
+    const inInput = (into: string, where: string) => {
+      const keys = into
+        .split('/')
+        .slice(1)
+        .map((k) => k.replaceAll('~1', '/').replaceAll('~0', '~'))
+      let node: Node = c.input
+      for (const key of keys) node = child(node, key)
+      if (!c.input || !keys.length || node === undefined || node === INVALID)
+        report('E_PATH', where, `${into} isn't a property of ${c.id}'s input`)
+    }
+    c.references?.forEach((r, j) => inInput(r.at, `${at}/references/${j}/at`))
+    if (c.targetAt !== undefined) inInput(c.targetAt, `${at}/targetAt`)
     unique(
       [
         ...(c.preconditions ?? []).map((x, j): [string, string] => [
