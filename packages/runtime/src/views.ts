@@ -213,8 +213,25 @@ export const views = (args: {
   }
   const firstScope = scope()
 
-  // 'more' continues a sequence after its last shown offer: each page remembers what it was cut from
-  const sequences = new Map<OfferId, OfferId[]>()
+  // 'more' continues a page with the offers it couldn't hold. its cursor is opaque and names exactly those offers,
+  // so two pages never share one (review of M3c), and the same view asked for twice has the same bytes
+  const sequences = new Map<string, OfferId[]>()
+  const cursorFor = (rest: OfferId[]) => {
+    const key = JSON.stringify(rest)
+    let hash = 0xcbf29ce484222325n
+    for (const unit of new TextEncoder().encode(key))
+      hash = ((hash ^ BigInt(unit)) * 0x100000001b3n) & 0xffffffffffffffffn
+    // FNV-1a names it; a collision between two different rests takes the next suffix
+    for (let n = 0; ; n++) {
+      const cursor = `more:${hash.toString(36)}${n ? `.${n}` : ''}`
+      const held = sequences.get(cursor)
+      if (!held) {
+        sequences.set(cursor, rest)
+        return cursor
+      }
+      if (JSON.stringify(held) === key) return cursor
+    }
+  }
 
   // one page of a sequence: up to the budget, choice sets whole, and the rest counted and expandable (§6.3)
   const page = (sequence: OfferId[], budget: Budget | undefined, extra: Expansion[] = []): View => {
@@ -237,10 +254,7 @@ export const views = (args: {
     for (const set of skippedSets)
       expand.push({ from: set, along: 'members', count: sets.get(set)!.members.length })
     if (cut.length) {
-      // the sequence goes on after the last offer shown, or from its start when nothing fit
-      const cursor = shown.at(-1) ?? sequence[0]!
-      sequences.set(cursor, cut)
-      expand.push({ from: cursor, along: 'more', count: cut.length })
+      expand.push({ from: cursorFor(cut), along: 'more', count: cut.length })
     }
     for (const id of shown) {
       const missing = [...partners(byId.get(id)!.capability)].flatMap((p) =>

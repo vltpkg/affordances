@@ -214,6 +214,33 @@ describe('budgets', () => {
 })
 
 describe('expansion and inspection (§6.5)', () => {
+  test('two pages that end on the same offer keep their own next pages (review of M3c)', async () => {
+    const p = await runtime().project({
+      principal: member,
+      policy: 'exhaustive',
+      budget: { offers: 4 },
+    })
+    const first = p.view()
+    // cancel's three plans and list fit; the rest is the next page
+    expect(first.offers.at(-1)!.id).toBe('hosting.plan.list')
+    const more = first.omitted.expand.find((e) => e.along === 'more')!
+    // another page ending on the same offer: the alternatives of a trial, one at a time
+    // a page of another expansion that also ends on list: list is related to subscribe, so it's in their union
+    await p.expand(
+      { from: 'hosting.plan.subscribe@hosting.plan:pro', along: 'relations' },
+      { budget: { offers: 1 } },
+    )
+    await p.expand(
+      { from: 'hosting.plan.subscribe@hosting.plan:pro', along: 'alternatives' },
+      { budget: { offers: 1 } },
+    )
+    const next = await p.expand(more)
+    expect(next.offers).toHaveLength(more.count)
+    expect(typeof more.from === 'string' && more.from.startsWith('more:')).toBe(true)
+    // and asking for the same view again gives the same bytes
+    expect(JSON.stringify(p.view())).toBe(JSON.stringify(first))
+  })
+
   test('an offer shown without its alternatives says so, and one expansion returns them all', async () => {
     const strict: DiscoveryPolicy = {
       id: 'subscribeOnly',
@@ -342,6 +369,10 @@ describe('the disclosure invariant', () => {
           const key = JSON.stringify([e.from, e.along])
           if (seen.has(key)) continue
           seen.add(key)
+          // without a budget, an expansion returns exactly what its entry counted, whatever was expanded before
+          const full = await p.expand(e)
+          if (full.offers.length !== e.count)
+            fail(`${key} returned ${full.offers.length} of ${e.count}`)
           const next = await p.expand(e, { budget: request.budget })
           // an expansion with something to give shows it, or says where it is
           if (e.count > 0 && next.offers.length + next.omitted.expand.length === 0)
