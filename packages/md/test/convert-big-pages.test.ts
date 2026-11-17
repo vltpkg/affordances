@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { htmlToMarkdown, readPage } from '../src/index.ts'
+import { clockCheck } from './convert/core/support/timing.ts'
 
 // what a big page costs to read: next's flight data is dropped before parsing, the head is read in one walk, and a
 // filled slot's own children aren't converted. none of it may change what the markdown says
@@ -84,7 +85,8 @@ test('a filled slot’s children are left out, and the page can be converted aga
   const started = performance.now()
   expect(big.markdown({ table: 'Filled' }).markdown).toBe('# Results\n\nFilled\n')
   // generous for a loaded machine: converting the fallback instead takes seconds
-  expect(performance.now() - started).toBeLessThan(1500)
+  const took = performance.now() - started
+  clockCheck('a filled big fallback under 1.5s', () => expect(took).toBeLessThan(1500))
 })
 
 test('converting works on a copy: the page reads the same every time, user handlers and all', () => {

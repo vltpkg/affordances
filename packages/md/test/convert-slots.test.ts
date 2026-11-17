@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { htmlToMarkdown, readPage } from '../src/index.ts'
+import { clockCheck } from './convert/core/support/timing.ts'
 
 // <AgentSlot name> and links in a marker's markdown
 const page = (body: string) => `<html><body><main>${body}</main></body></html>`
@@ -219,7 +220,9 @@ test('a fill with thousands of links converts in linear time', () => {
   // 64x when each link copies the whole fill
   const small = fillTimed(1000)
   const large = fillTimed(8000)
-  expect(large.best / small.best).toBeLessThan(24)
+  clockCheck('links: 8x the fill under 24x the time', () =>
+    expect(large.best / small.best).toBeLessThan(24),
+  )
   expect(large.markdown).toContain(
     '- [l](https://example.test/p/7999.md) [https://example.test/q7999](https://example.test/q7999.md)',
   )
