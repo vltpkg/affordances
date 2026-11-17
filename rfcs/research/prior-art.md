@@ -479,7 +479,7 @@ Each item is a gap the specifications above can't express (our analysis):
 **What the IR can carry without becoming an engine:**
 
 1. preconditions and effects over a declared state vocabulary, with the frame rule (PDDL);
-2. prerequisite edges that don't trigger anything (Arazzo `dependsOn`);
+2. prerequisite edges that don't trigger anything (Arazzo `dependsOn`), whether stored or derived from conditions;
 3. optional lifecycle states per resource type, with each capability naming the states it moves between (SCXML transitions, XState `stateIn`), as annotations, with no interpreter;
 4. named, parameterized predicates with `and`, `or` and `not`, evaluated by the runtime (XState);
 5. vocabulary profiles that consumers can decline (PDDL `:requirements`).
@@ -743,61 +743,61 @@ The only channel for consequence is a free-text sentence on a control the author
 
 **Adopt** means take the concept as it is. **Modify** means take the idea, changed as noted. **Reject** means leave it out of the IR.
 
-| Concept                                                       | Source                             | Verdict | Reason                                                                                                       |
-| ------------------------------------------------------------- | ---------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------ |
-| Abstract operation separate from its protocol binding         | WoT TD, ALPS, OWL-S, Schema.org    | adopt   | One capability, many bindings: HTTP, Server Action, MCP tool, UI steps. Bindings are explicit, typed objects |
-| Binding inferred from a URI scheme, or HTTP default methods   | WoT TD                             | reject  | Implicit, and TD 2.0 removed it                                                                              |
-| Class-level capabilities vs instance-level offers             | Hydra, WoT Thing Models, ALPS      | adopt   | The manifest/projection split                                                                                |
-| Profiles without URLs; the server chooses what appears        | ALPS                               | adopt   | The manifest holds no routes or URLs; the projection decides disclosure                                      |
-| `safe` and `idempotent`, false by default                     | WoT TD, RFC 9110 §9.2.1-9.2.2      | adopt   | Clear definitions and conservative defaults, on every capability                                             |
-| An absent property means "no claim"                           | WoT TD (`synchronous`)             | adopt   | Behavioral properties are true, false or unknown, never silently false                                       |
-| One enum for safety (`safe`/`idempotent`/`unsafe`)            | ALPS                               | modify  | Keep the words, as independent properties with an unknown state                                              |
-| Consequence flags (`consequentialHint`, `isConsequential`)    | WebMCP, OpenAPI tooling            | modify  | Declare the finer properties (financial, reversible, external) and derive "consequential" on export          |
-| Tool annotations as context-free booleans                     | MCP                                | modify  | Export to them; import them only as unverified claims                                                        |
-| Preconditions and effects over a declared state vocabulary    | PDDL, OWL-S                        | adopt   | Inspectable and evaluable without code                                                                       |
-| Conditions as free-form logic in any rule language            | OWL-S                              | reject  | Can't be validated or evaluated generically; hurt adoption                                                   |
-| Named, parameterized predicates with `and`/`or`/`not`         | XState                             | adopt   | The serialized shape of a condition                                                                          |
-| Guards as closures or scripts                                 | XState, SCXML                      | reject  | Not portable. Such conditions are marked opaque and enforced by the runtime                                  |
-| Conditions must have no side effects                          | SCXML §5.9.1                       | adopt   | Strengthened to a requirement                                                                                |
-| A condition that errors counts as false                       | SCXML                              | modify  | It's `unknown`, with a reason: never "available"                                                             |
-| The frame rule: unmentioned state persists                    | STRIPS/PDDL                        | adopt   | Makes declared effects checkable against observed ones                                                       |
-| Derived "enables" edges (an effect meets a precondition)      | PDDL                               | adopt   | As relations with inferred provenance, distinct from declared ones                                           |
-| Feature levels (`:requirements`)                              | PDDL                               | adopt   | Vocabulary profiles a consumer can decline                                                                   |
-| "Physics, not advice"                                         | PDDL 2.1                           | adopt   | Availability is physics; recommendation is advice, carried as an attributed claim                            |
-| Conditional outcomes, each with its own output and effect     | OWL-S `Result`                     | adopt   | Per-outcome effects (success, failure, partial)                                                              |
-| True vs believed vs recorded                                  | OWL-S §5.2                         | adopt   | The basis of the provenance levels                                                                           |
-| Selective advertising                                         | OWL-S §4.1                         | modify  | Discoverability is a separate concept, as an explicit, inspectable policy                                    |
-| A non-triggering prerequisite edge                            | Arazzo `dependsOn`                 | adopt   | The meaning of `requires`                                                                                    |
-| Ordered steps, `goto`, `retry`, `end`                         | Arazzo, SCXML, OWL-S               | reject  | Workflow control. Arazzo is an export target for a chosen path                                               |
-| Lifecycle states named by capabilities                        | SCXML, XState `stateIn`            | modify  | As annotations, with no interpreter                                                                          |
-| Links as context, type, target and attributes                 | RFC 8288                           | adopt   | The shape of a relation                                                                                      |
-| Registered relation tokens plus URI extensions                | RFC 8288                           | adopt   | A small closed core plus namespaced extensions                                                               |
-| Typed link from a response to a next operation                | OpenAPI Link Object                | modify  | Generalized to `produces`/`requires` over resource types; explicitly not availability                        |
-| Absence as the only unavailability signal                     | Siren, HAL                         | reject  | Unavailable offers stay visible, with a reason                                                               |
-| JSON Schema for input, output and template variables          | Hyper-Schema, MCP, AI SDK, v0      | adopt   | One schema language, and direct export                                                                       |
-| HTML input types, micro-syntax inputs, the TD `DataSchema`    | Siren, Schema.org, WoT TD          | reject  | JSON Schema instead                                                                                          |
-| Declarative usability over instance data (`templateRequired`) | Hyper-Schema                       | modify  | Generalized into named conditions over resource, caller and authorization                                    |
-| "Advisory", "hint", "may be inconsistent" markers             | Hyper-Schema, Hydra, HAL           | modify  | Replaced by explicit provenance on each claim                                                                |
-| Action types as cross-site semantic identity                  | Schema.org                         | modify  | An optional external type IRI on a capability, without JSON-LD processing                                    |
-| Domain outcomes (`object`, `result`)                          | Schema.org                         | adopt   | As `operatesOn` and `produces`                                                                               |
-| `actionStatus`                                                | Schema.org                         | modify  | For an invocation's lifecycle, never for availability                                                        |
-| A tool list that varies by authorization, not by connection   | MCP                                | adopt   | Projection is a function of declared context                                                                 |
-| Deterministic ordering                                        | MCP                                | adopt   | Stable projections for caching and comparison. Order isn't a ranking unless the policy declares one          |
-| A static manifest as a basis for trust                        | (rejected by MCP SEP-2127, WebMCP) | reject  | The IR is a declaration. Projection evaluates context; execution re-checks authorization                     |
-| Progressive discovery: catalog, then inspect, then execute    | MCP guidance, AI SDK, UI SDK       | adopt   | As a declared discovery policy of the runtime, not a meta-tool                                               |
-| Truncation with an explicit "more" marker                     | UI SDK                             | adopt   | Disclosure states what it left out                                                                           |
-| Approval as data with a reason                                | AI SDK                             | adopt   | The runtime's approval decisions are recorded                                                                |
-| Approval policy on the definition (`needsApproval`)           | AI SDK (deprecated)                | reject  | The IR declares properties; policy derives approval from them                                                |
-| Definition digests (`fingerprintTools`)                       | AI SDK                             | adopt   | Content digests let consumers pin definitions                                                                |
-| Signed, canonicalized documents (JWS over JCS)                | A2A                                | adopt   | Integrity of a deterministic manifest                                                                        |
-| Claims grouped and signed per contributor                     | AI Catalog Trust Manifest          | adopt   | The model for attributable claims                                                                            |
-| Third-party changes merged into the description               | OpenAPI Overlay                    | modify  | Keep third-party claims separate, with their author                                                          |
-| Effects observed after the fact, with their source            | UI SDK `act`, `subscribe`          | adopt   | As observed evidence, kept separate from declared effects                                                    |
-| Actions inferred from method names                            | UI SDK                             | reject  | At most an inferred import, never a declaration                                                              |
-| Rotating, build-scoped handles as identity                    | Next.js action IDs                 | reject  | Identity is the IR's; handles are binding details                                                            |
-| Reverse-DNS namespaces with verified ownership                | MCP Registry                       | adopt   | For manifest and capability namespaces                                                                       |
-| `Link` header or `describedby` pointing to the manifest       | Hydra, RFC 8288, llms.txt          | adopt   | Discovery without a new well-known path                                                                      |
-| RDF, OWL or JSON-LD as the base model                         | Hydra, OWL-S, WoT TD               | reject  | Plain JSON with optional IRIs; a JSON-LD context can be offered later for interop                            |
+| Concept                                                       | Source                             | Verdict | Reason                                                                                                           |
+| ------------------------------------------------------------- | ---------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------- |
+| Abstract operation separate from its protocol binding         | WoT TD, ALPS, OWL-S, Schema.org    | adopt   | One capability, many bindings: HTTP, Server Action, MCP tool, UI steps. Bindings are explicit, typed objects     |
+| Binding inferred from a URI scheme, or HTTP default methods   | WoT TD                             | reject  | Implicit, and TD 2.0 removed it                                                                                  |
+| Class-level capabilities vs instance-level offers             | Hydra, WoT Thing Models, ALPS      | adopt   | The manifest/projection split                                                                                    |
+| Profiles without URLs; the server chooses what appears        | ALPS                               | adopt   | The manifest holds no routes or URLs; the projection decides disclosure                                          |
+| `safe` and `idempotent`, false by default                     | WoT TD, RFC 9110 §9.2.1-9.2.2      | modify  | Keep the definitions, on every capability. An absent value is no claim (next row); enforcement reads it as false |
+| An absent property means "no claim"                           | WoT TD (`synchronous` only)        | adopt   | Extended to every behavioral property: true, false or unknown. Enforcement treats unknown as the cautious value  |
+| One enum for safety (`safe`/`idempotent`/`unsafe`)            | ALPS                               | modify  | Keep the words, as independent properties with an unknown state                                                  |
+| Consequence flags (`consequentialHint`, `isConsequential`)    | WebMCP, OpenAPI tooling            | modify  | Declare the finer properties (financial, reversible, external) and derive "consequential" on export              |
+| Tool annotations as context-free booleans                     | MCP                                | modify  | Export to them; import them only as unverified claims                                                            |
+| Preconditions and effects over a declared state vocabulary    | PDDL, OWL-S                        | adopt   | Inspectable and evaluable without code                                                                           |
+| Conditions as free-form logic in any rule language            | OWL-S                              | reject  | Can't be validated or evaluated generically; hurt adoption                                                       |
+| Named, parameterized predicates with `and`/`or`/`not`         | XState                             | adopt   | The serialized shape of a condition                                                                              |
+| Guards as closures or scripts                                 | XState, SCXML                      | reject  | Not portable. Such conditions are marked opaque and enforced by the runtime                                      |
+| Conditions must have no side effects                          | SCXML §5.9.1                       | adopt   | Strengthened to a requirement                                                                                    |
+| A condition that errors counts as false                       | SCXML                              | modify  | It's `unknown`, with a reason: never "available"                                                                 |
+| The frame rule: unmentioned state persists                    | STRIPS/PDDL                        | adopt   | Makes declared effects checkable against observed ones                                                           |
+| Derived "enables" edges (an effect meets a precondition)      | PDDL                               | adopt   | As relations with inferred provenance, distinct from declared ones                                               |
+| Feature levels (`:requirements`)                              | PDDL                               | adopt   | Vocabulary profiles a consumer can decline                                                                       |
+| "Physics, not advice"                                         | PDDL 2.1                           | adopt   | Availability is physics; recommendation is advice, carried as an attributed claim                                |
+| Conditional outcomes, each with its own output and effect     | OWL-S `Result`                     | adopt   | Per-outcome effects (success, failure, partial)                                                                  |
+| True vs believed vs recorded                                  | OWL-S §5.2                         | adopt   | The basis of the provenance levels                                                                               |
+| Selective advertising                                         | OWL-S §4.1                         | modify  | Discoverability is a separate concept, as an explicit, inspectable policy                                        |
+| A non-triggering prerequisite edge                            | Arazzo `dependsOn`                 | adopt   | The meaning of `requires`                                                                                        |
+| Ordered steps, `goto`, `retry`, `end`                         | Arazzo, SCXML, OWL-S               | reject  | Workflow control. Arazzo is an export target for a chosen path                                                   |
+| Lifecycle states named by capabilities                        | SCXML, XState `stateIn`            | modify  | As annotations, with no interpreter                                                                              |
+| Links as context, type, target and attributes                 | RFC 8288                           | adopt   | The shape of a relation                                                                                          |
+| Registered relation tokens plus URI extensions                | RFC 8288                           | adopt   | A small closed core plus namespaced extensions                                                                   |
+| Typed link from a response to a next operation                | OpenAPI Link Object                | modify  | Generalized to `produces`/`requires` over resource types; explicitly not availability                            |
+| Absence as the only unavailability signal                     | Siren, HAL                         | reject  | Unavailable offers stay visible, with a reason                                                                   |
+| JSON Schema for input, output and template variables          | Hyper-Schema, MCP, AI SDK, v0      | adopt   | One schema language, and direct export                                                                           |
+| HTML input types, micro-syntax inputs, the TD `DataSchema`    | Siren, Schema.org, WoT TD          | reject  | JSON Schema instead                                                                                              |
+| Declarative usability over instance data (`templateRequired`) | Hyper-Schema                       | modify  | Generalized into named conditions over resource, caller and authorization                                        |
+| "Advisory", "hint", "may be inconsistent" markers             | Hyper-Schema, Hydra, HAL           | modify  | Replaced by explicit provenance on each claim                                                                    |
+| Action types as cross-site semantic identity                  | Schema.org                         | modify  | An optional external type IRI on a capability, without JSON-LD processing                                        |
+| Domain outcomes (`object`, `result`)                          | Schema.org                         | adopt   | As `operatesOn` and `produces`                                                                                   |
+| `actionStatus`                                                | Schema.org                         | modify  | For an invocation's lifecycle, never for availability                                                            |
+| A tool list that varies by authorization, not by connection   | MCP                                | adopt   | Projection is a function of declared context                                                                     |
+| Deterministic ordering                                        | MCP                                | adopt   | Stable projections for caching and comparison. Order isn't a ranking unless the policy declares one              |
+| A static manifest as a basis for trust                        | (rejected by MCP SEP-2127, WebMCP) | reject  | The IR is a declaration. Projection evaluates context; execution re-checks authorization                         |
+| Progressive discovery: catalog, then inspect, then execute    | MCP guidance, AI SDK, UI SDK       | adopt   | As a declared discovery policy of the runtime, not a meta-tool                                                   |
+| Truncation with an explicit "more" marker                     | UI SDK                             | adopt   | Disclosure states what it left out                                                                               |
+| Approval as data with a reason                                | AI SDK                             | adopt   | The runtime's approval decisions are recorded                                                                    |
+| Approval policy on the definition (`needsApproval`)           | AI SDK (deprecated)                | reject  | The IR declares properties; policy derives approval from them                                                    |
+| Definition digests (`fingerprintTools`)                       | AI SDK                             | adopt   | Content digests let consumers pin definitions                                                                    |
+| Signed, canonicalized documents (JWS over JCS)                | A2A                                | adopt   | Integrity of a deterministic manifest                                                                            |
+| Claims grouped and signed per contributor                     | AI Catalog Trust Manifest          | adopt   | The model for attributable claims                                                                                |
+| Third-party changes merged into the description               | OpenAPI Overlay                    | modify  | Keep third-party claims separate, with their author                                                              |
+| Effects observed after the fact, with their source            | UI SDK `act`, `subscribe`          | adopt   | As observed evidence, kept separate from declared effects                                                        |
+| Actions inferred from method names                            | UI SDK                             | reject  | At most an inferred import, never a declaration                                                                  |
+| Rotating, build-scoped handles as identity                    | Next.js action IDs                 | reject  | Identity is the IR's; handles are binding details                                                                |
+| Reverse-DNS namespaces with verified ownership                | MCP Registry                       | adopt   | For manifest and capability namespaces                                                                           |
+| `Link` header or `describedby` pointing to the manifest       | Hydra, RFC 8288, llms.txt          | adopt   | Discovery without a new well-known path                                                                          |
+| RDF, OWL or JSON-LD as the base model                         | Hydra, OWL-S, WoT TD               | reject  | Plain JSON with optional IRIs; a JSON-LD context can be offered later for interop                                |
 
 ## 6. Research deliverables
 
@@ -833,7 +833,7 @@ This section is input for the terminology document, not a decision.
 - **Offer.**
   - **Collision:** schema.org's `Offer` is a commercial offer, with `addOn` for bundled extras.
   - **Why it matters:** in a store, "the offer" is ambiguous, and the benchmark's fixtures are a store.
-  - **Prefer:** `ActionOffer` in full in types and docs, or "opportunity" (what a caller can do here and now).
+  - **Prefer:** a qualified name, never a bare `Offer`. Queries are offered as well as actions, so `CapabilityOffer` fits better than `ActionOffer`.
 - **Effect.**
   - **The good:** PDDL and OWL-S use it in the planning sense, which is right.
   - **Collision:** v0's `effects` lists entity keys for deltas.
