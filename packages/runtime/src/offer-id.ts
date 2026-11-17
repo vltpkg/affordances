@@ -1,4 +1,4 @@
-import type { Id } from '@affordances/ir'
+import { Id } from '@affordances/ir'
 import type { OfferId, ResourceRef } from './types.ts'
 
 // RFC 0002 §4.1: the capability, then @ and the target's type and key, then the bound references in canonical
@@ -14,13 +14,14 @@ export const offerId = ({ capability, target, with: bound }: OfferParts): OfferI
   return id
 }
 
-const ID = /^[a-z][A-Za-z0-9]*(?:\.[a-z][A-Za-z0-9]*)*$/
+// ir's Id: the identifier syntax, 128 characters at most (RFC 0001 §6.1)
+const isId = (s: string | undefined) => s !== undefined && Id.safeParse(s).success
 // the parts of an id an agent sent, or undefined when it isn't one
 export const parseOfferId = (id: string): OfferParts | undefined => {
   const match = id.match(/^([^@?]+)(?:@([^:?]+):([^?]*))?(?:\?(.*))?$/)
   if (!match) return
   const [, capability, type, key, query] = match
-  if (!ID.test(capability!) || (type !== undefined && !ID.test(type))) return
+  if (!isId(capability) || (type !== undefined && !isId(type))) return
   const parts: OfferParts = { capability: capability! }
   try {
     if (type !== undefined) parts.target = { type, key: decodeURIComponent(key!) }

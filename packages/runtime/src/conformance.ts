@@ -3,6 +3,7 @@ import {
   evaluate,
   falsifying,
   fitContext,
+  putPointer,
   type CapabilityDefinition,
   type Context,
   type Expr,
@@ -90,7 +91,7 @@ export const conformance = async (fixture: ConformanceFixture): Promise<Conforma
         ...context.references?.[r.name],
         [keyOf(r.resource)]: key,
       })
-      put(input, r.at, key)
+      putPointer(input, r.at, key)
     }
     const principal: Principal = {
       ...fixture.principal,
@@ -192,17 +193,4 @@ export const conformance = async (fixture: ConformanceFixture): Promise<Conforma
     }
   }
   return results
-}
-
-const put = (value: Record<string, unknown>, pointer: string, item: unknown) => {
-  const keys = pointer
-    .split('/')
-    .slice(1)
-    .map((k) => k.replaceAll('~1', '/').replaceAll('~0', '~'))
-  let node = value
-  for (const key of keys.slice(0, -1)) {
-    if (node[key] === null || typeof node[key] !== 'object') node[key] = {}
-    node = node[key] as Record<string, unknown>
-  }
-  node[keys.at(-1)!] = item
 }

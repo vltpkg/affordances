@@ -1,7 +1,13 @@
 import {
+  all,
+  byCanonical,
   canonicalJson,
+  compare,
   digest,
+  digestOf,
   evaluate,
+  localId,
+  resolvePath,
   validate,
   type CapabilityDefinition,
   type CapabilityManifest,
@@ -11,7 +17,6 @@ import {
   type Truth,
 } from '@affordances/ir'
 import { attributesFor } from './data.ts'
-import { digestOf } from './digest.ts'
 import { executor } from './execute.ts'
 import { render } from './render.ts'
 import { offerId } from './offer-id.ts'
@@ -59,18 +64,9 @@ type Loaded =
 // one instance as a revision reads it (§7): a resolver that threw has no version, which no version string equals
 type Read = { type: Id; key: string; version?: string }
 
-// RFC 8785 bytes in code-point order: canonical order's tie-break (RFC 0001 §7.2)
-const byBytes = (a: unknown, b: unknown) => {
-  const x = canonicalJson(a)
-  const y = canonicalJson(b)
-  return x < y ? -1 : x > y ? 1 : 0
-}
-const codePoints = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
-// §7: instances sorted by type, then key
+// §7: instances sorted by type, then key, in UTF-16 code units, ties broken by RFC 8785 bytes (RFC 0001 §7.2)
 const byRead = (a: Read, b: Read) =>
-  codePoints(a.type, b.type) || codePoints(a.key, b.key) || byBytes(a, b)
-const all = (values: Truth[]): Truth =>
-  values.includes(false) ? false : values.includes('unknown') ? 'unknown' : true
+  compare(a.type, b.type) || compare(a.key, b.key) || byCanonical(a, b)
 
 // the paths an expression reads, a quantifier's `of` included
 const paths = (expr: Expr): string[] => {
@@ -93,8 +89,8 @@ const order = (o: CapabilityOffer) => [
 ]
 const canonically = (a: CapabilityOffer, b: CapabilityOffer) => {
   const [x, y] = [order(a), order(b)]
-  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return codePoints(x[i] as string, y[i] as string)
-  return byBytes(x[3], y[3])
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return compare(x[i] as string, y[i] as string)
+  return byCanonical(x[3], y[3])
 }
 
 // §4.2: a capability takes input when its input schema declares a property, or isn't an object schema
@@ -116,14 +112,11 @@ const takes = (c: CapabilityDefinition, bound: Record<string, string> = {}) => {
 }
 
 // a path the context doesn't supply (RFC 0001 §3.1's missing): its root isn't there, or the root's attribute isn't.
-// inside a value supplied whole, an omitted key is absent instead, and input and item are supplied whole
-const missing = (path: string, context: Context) => {
-  const [root, attribute] = path.split('.')
-  if (root === 'input' || root === 'item') return false
-  const value =
-    root === 'target' || root === 'principal' ? context[root] : context.references?.[root!]
-  return value === undefined || (attribute !== undefined && !Object.hasOwn(value, attribute))
-}
+// input and item are supplied whole, so a key they lack is absent, never missing
+const missing = (path: string, context: Context) =>
+  !path.startsWith('input.') &&
+  !/^item\b/.test(path) &&
+  resolvePath(path, context).kind === 'missing'
 
 // terminology §2.4: derived, never declared
 const consequential = (c: CapabilityDefinition) =>
@@ -174,8 +167,7 @@ export const createRuntime = ({
       `${confirming.id} requires confirmation: give createRuntime approvalKeys and seenTokens`,
     )
   // a definition's own id, for a Ref that may name it with the manifest's namespace (RFC 0001 §2)
-  const local = (ref: string) =>
-    ref.startsWith(`${manifest.namespace}#`) ? ref.slice(manifest.namespace.length + 1) : ref
+  const local = (ref: string) => localId(manifest, ref)
   const types = new Map(manifest.resources.map((r) => [r.id, r]))
   const attributesOf = attributesFor(manifest)
   const sources = new Map(manifest.sources.map((s) => [s.id, s]))
@@ -190,7 +182,9 @@ export const createRuntime = ({
         [local(r.from), local(r.to)],
         [local(r.to), local(r.from)],
       ] as const)
-        partners.set(a, (partners.get(a) ?? new Set()).add(b))
+        // a relation to another manifest's definition has no partner here
+        if (a !== undefined && b !== undefined)
+          partners.set(a, (partners.get(a) ?? new Set()).add(b))
   const manifestDigest = digest(manifest)
 
   // what one request reads, shared by projection and execution: the principal's declared attributes, the instances
@@ -401,7 +395,7 @@ export const createRuntime = ({
         revision: await digestOf({
           ...base,
           resources: reads,
-          guards: guardsRun.toSorted((a, b) => codePoints(a.condition, b.condition)),
+          guards: guardsRun.toSorted((a, b) => compare(a.condition, b.condition)),
         }),
         availability,
         conditions,
@@ -472,7 +466,7 @@ export const createRuntime = ({
       set.members.push(o.id)
       sets.set(o.choiceSet, set)
     }
-    const choiceSets = [...sets.values()].toSorted((a, b) => codePoints(a.id, b.id))
+    const choiceSets = [...sets.values()].toSorted((a, b) => compare(a.id, b.id))
 
     // §7: every instance this projection read, sorted by type and key
     const everyRead: Read[] = []
@@ -487,9 +481,9 @@ export const createRuntime = ({
       resources: everyRead,
       guards: guardLog.toSorted(
         (a, b) =>
-          codePoints(a.capability, b.capability) ||
-          codePoints(a.condition, b.condition) ||
-          byBytes(a, b),
+          compare(a.capability, b.capability) ||
+          compare(a.condition, b.condition) ||
+          byCanonical(a, b),
       ),
     })
 
@@ -521,7 +515,6 @@ export const createRuntime = ({
     resources,
     project: (request) => project(request),
     handlers,
-    local,
     session,
     approval: { keys: approvalKeys, store: seenTokens, ttlMs: approvalTtlMs, now },
   })

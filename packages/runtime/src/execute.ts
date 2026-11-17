@@ -1,5 +1,9 @@
 import {
+  base64url,
   canonicalJson,
+  digestOf,
+  getPointer,
+  putPointer,
   evaluate,
   inputIssues,
   normalize,
@@ -10,7 +14,6 @@ import {
   type Id,
 } from '@affordances/ir'
 import { attributesFor } from './data.ts'
-import { digestOf } from './digest.ts'
 import { offerId, parseOfferId } from './offer-id.ts'
 import { render } from './render.ts'
 import type {
@@ -46,7 +49,6 @@ export type ExecutionDeps = {
   resources: Record<Id, ResourceResolver>
   project: (request: ProjectionRequest) => Promise<Projection>
   handlers: Record<Id, Handler>
-  local: (ref: string) => string
   session: (principal: Principal) => Promise<{
     attributes: Obj
     base: { manifest: string; principal: string }
@@ -73,37 +75,6 @@ const withDetail = (detail: string | undefined) =>
     : detail.length > DETAIL
       ? { detail: detail.slice(0, DETAIL), detailTruncated: true as const }
       : { detail }
-
-// RFC 6901 pointers into a value the caller sent
-const keysOf = (pointer: string) =>
-  pointer
-    .split('/')
-    .slice(1)
-    .map((k) => k.replaceAll('~1', '/').replaceAll('~0', '~'))
-const at = (value: unknown, pointer: string) => {
-  let node = value
-  for (const key of keysOf(pointer))
-    node =
-      node !== null && typeof node === 'object' && Object.hasOwn(node, key)
-        ? (node as Obj)[key]
-        : undefined
-  return node
-}
-const put = (value: Obj, pointer: string, item: unknown) => {
-  const keys = keysOf(pointer)
-  let node = value
-  for (const key of keys.slice(0, -1)) {
-    if (node[key] === null || typeof node[key] !== 'object') node[key] = {}
-    node = node[key] as Obj
-  }
-  node[keys.at(-1)!] = item
-}
-
-const base64url = (bytes: Uint8Array) =>
-  btoa(String.fromCharCode(...bytes))
-    .replaceAll('+', '-')
-    .replaceAll('/', '_')
-    .replace(/=+$/, '')
 
 // an HMAC-SHA-256 over a call's canonical bytes
 const sign = async (key: CryptoKey, call: Obj) =>
@@ -208,7 +179,7 @@ export const executor = (deps: ExecutionDeps) => {
       target = parts.target
     } else if (c.target) {
       // a caller that skipped projection names the target in the input (§8.1, step 4)
-      const key = c.targetAt ? at(input, c.targetAt) : undefined
+      const key = c.targetAt ? getPointer(input, c.targetAt) : undefined
       if (typeof key !== 'string')
         return refuse('not_found', withDetail(`${c.id} needs a ${c.target} to act on`))
       target = { type: c.target, key }
@@ -285,10 +256,10 @@ export const executor = (deps: ExecutionDeps) => {
       key: string,
       what: string,
     ): Refusal | undefined | Promise<Refusal> => {
-      const given = at(input, pointer)
+      const given = getPointer(input, pointer)
       if (given === undefined) {
         if (input === undefined) input = {}
-        if (input !== null && typeof input === 'object') put(input as Obj, pointer, key)
+        if (input !== null && typeof input === 'object') putPointer(input as Obj, pointer, key)
         return
       }
       if (given !== key)
@@ -314,7 +285,7 @@ export const executor = (deps: ExecutionDeps) => {
 
     // 5. references: each key the input names is loaded, and one that resolves to nothing refuses
     for (const r of c.references ?? []) {
-      const key = at(input, r.at)
+      const key = getPointer(input, r.at)
       if (typeof key !== 'string') continue
       const loaded = await s.load(r.resource, key)
       if (loaded.state === 'none')

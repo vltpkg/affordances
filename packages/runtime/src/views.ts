@@ -1,4 +1,4 @@
-import { derive, type CapabilityManifest, type Id } from '@affordances/ir'
+import { derive, localId, type CapabilityManifest, type Id } from '@affordances/ir'
 import type {
   Budget,
   CapabilityOffer,
@@ -91,11 +91,13 @@ export const views = (args: {
 
   // relations between capabilities, declared and derived, both ways, with what each is (§6.5)
   const derived = derive(manifest)
-  const local = (ref: string) =>
-    ref.startsWith(`${manifest.namespace}#`) ? ref.slice(manifest.namespace.length + 1) : ref
+  const local = (ref: string) => localId(manifest, ref)
   const edges: { from: Id; to: Id; relation: string }[] = []
-  for (const r of manifest.relations ?? [])
-    edges.push({ from: local(r.from), to: local(r.to), relation: r.type })
+  for (const r of manifest.relations ?? []) {
+    const [from, to] = [local(r.from), local(r.to)]
+    // a relation to another manifest's definition has no offer here to reach
+    if (from !== undefined && to !== undefined) edges.push({ from, to, relation: r.type })
+  }
   for (const e of derived)
     if (e.relation === 'enables' || e.relation === 'prerequisite') edges.push(e)
   const capabilityIds = new Set(manifest.capabilities.map((c) => c.id))
