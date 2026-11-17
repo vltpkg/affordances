@@ -164,10 +164,11 @@ const STATUS: Record<string, number> = {
   confirmation_required: 409,
 }
 
-// POST /api/projection/execute { offer, input?, approval?, ifRevision?, start? }: run an offer, every check first
-// (RFC 0002 §8.1). A capability that requires confirmation is refused with its summary and an approval token, the
-// first time; sending the same call with that token runs it, once. `start` is the caller's view's start (`type:key`
-// or an id), so the result's changes compare with that view (§8.3); the target's, unless given
+// POST /api/projection/execute { offer, input?, approval?, ifRevision?, start?, policy?, task?, offers? }: run an
+// offer, every check first (RFC 0002 §8.1). A capability that requires confirmation is refused with its summary and
+// an approval token, the first time; sending the same call with that token runs it, once. start, policy, task and
+// offers are the caller's view's request, as GET /api/projection takes them, so the result's changes are that view
+// before and after (§8.3), and disclose only what it does
 export const serveExecute = async (request: Request): Promise<Response> => {
   const body = (await request.json().catch(() => undefined)) as Record<string, unknown> | undefined
   if (!body || typeof body !== 'object') return refuse(400, 'The body is a JSON object')
@@ -179,13 +180,18 @@ export const serveExecute = async (request: Request): Promise<Response> => {
     return refuse(400, 'ifRevision is an offer revision')
   if (start !== undefined && (typeof start !== 'string' || !start))
     return refuse(400, 'start is type:key, or a capability or resource type id')
+  const view = projectionOf(request, body)
+  if (typeof view === 'string') return refuse(400, view)
   const result = await runtime.execute({
-    principal: principalOf(request),
+    principal: view.principal,
     offer,
     input,
     approval,
     ifRevision,
-    start: startOf(start),
+    start: view.start,
+    policy: view.policy,
+    task: view.task,
+    budget: view.budget,
   })
   return json(
     result,

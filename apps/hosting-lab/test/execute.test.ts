@@ -1,6 +1,6 @@
 import { createAffordances, createHandler } from '@affordances/core'
 import { beforeEach, expect, test } from 'vitest'
-import { serveExecute } from '../src/lib/serve.ts'
+import { serveExecute, serveView } from '../src/lib/serve.ts'
 import { checkedBy } from '../src/lib/runtime.ts'
 import * as store from '../src/lib/store.ts'
 import { cancel, subscribe } from '../src/manifest.ts'
@@ -44,7 +44,6 @@ test('a consequential call is refused with its summary and a token, runs once wi
   // what changed, compared with the caller's view from the project (RFC 0002 §8.3)
   expect(succeeded.changes).toBeDefined()
   expect(succeeded.revision).toMatch(/^sha256-/)
-  expect((await execute({ ...call, start: 7 }, 's_exec')).status).toBe(400)
   expect(store.account('s_exec').project.plan).toBe('pro')
 
   // the same token again: it has run
@@ -55,6 +54,59 @@ test('a consequential call is refused with its summary and a token, runs once wi
   expect(
     (await execute({ ...call, approval: refused.confirmation.approval }, 's_thief')).status,
   ).not.toBe(200)
+  expect((await execute({ ...call, start: 7 }, 's_exec')).status).toBe(400)
+  expect((await execute({ ...call, policy: 'secret' }, 's_exec')).status).toBe(400)
+  expect((await execute({ ...call, offers: 0 }, 's_exec')).status).toBe(400)
+})
+
+const ids = (v: { offers: { id: string }[] }) => new Set(v.offers.map((o) => o.id))
+
+test("an execution's changes are the caller's view's, under its policy and budget", async () => {
+  // cancelling makes the cancel offer unavailable. The project's whole view shows that; a two-offer view, which
+  // doesn't hold the cancel offer, reports nothing it didn't show
+  for (const [sid, offers, expected] of [
+    ['s_chg_all', undefined, [true]],
+    ['s_chg_two', 2, []],
+  ] as const) {
+    const { id } = store.account(sid).project
+    store.subscribePlan(sid, id, 'p2')
+    const cancelOffer = `hosting.subscription.cancel@hosting.project:${id}`
+    const view = `?start=hosting.project:${id}&policy=resource${offers ? `&offers=${offers}` : ''}`
+    const read = async (): Promise<{ offers: { id: string }[] }> =>
+      (
+        await serveView(
+          new Request(`https://hosting.test/api/projection${view}`, {
+            headers: { authorization: `Bearer ${sid}` },
+          }),
+        )
+      ).json()
+    const before = await read()
+    const result = await (
+      await execute(
+        {
+          offer: cancelOffer,
+          input: { projectId: id },
+          start: `hosting.project:${id}`,
+          policy: 'resource',
+          ...(offers && { offers }),
+        },
+        sid,
+      )
+    ).json()
+    expect(result).toMatchObject({ status: 'succeeded' })
+    const after = await read()
+    const shown = new Set([...ids(before), ...ids(after)])
+    const { added, removed, changed } = result.changes as {
+      added: { id: string }[]
+      removed: string[]
+      changed: { id: string }[]
+    }
+    // every offer in changes is one the caller's view shows, before or after: changes never widen a view
+    for (const o of added) expect(ids(after)).toContain(o.id)
+    for (const r of removed) expect(ids(before)).toContain(r)
+    for (const c of changed) expect(shown).toContain(c.id)
+    expect(changed.filter((c) => c.id === cancelOffer).map(() => true)).toEqual(expected)
+  }
 })
 
 test('a precondition refuses with its condition; unknown offers and bad bodies are refused', async () => {
