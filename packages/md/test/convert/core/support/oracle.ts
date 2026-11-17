@@ -100,6 +100,7 @@ export const oracle = (html: string): Document => {
     head,
     mains,
     scripts: [],
+    unrun: [],
     marked,
     streamed: undefined,
     selector: false,

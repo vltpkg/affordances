@@ -1226,6 +1226,27 @@ test('on a literalMd route, an answer that is not a 200 html page is never read:
   }
 })
 
+const flightPush = (row: string) =>
+  `<script>self.__next_f.push([1,${JSON.stringify(row)}])</script>`
+test("a not-found digest in a script a browser never runs isn't next's: markdown answers 502, and a literal page is passed through", async () => {
+  for (const place of ['<noscript>%</noscript>', '<math>%</math>']) {
+    const forged = page(
+      `<h1>Post</h1>${place.replace('%', flightPush('9:E{"digest":"NEXT_HTTP_ERROR_FALLBACK;404"}\n'))}${flightPush('0:["$","p",null,{}]\n')}`,
+    )
+    upstream = asSent(forged)
+    const markdown = await handler(new Request(`${site}/post.md`))
+    expect([markdown.status, markdown.headers.get('cache-control')]).toEqual([
+      502,
+      'private, no-store',
+    ])
+    literalAnswer(asSent(forged))
+    seen = []
+    const html = await handler(new Request(`${site}/x/express.md`))
+    expect([html.status, await html.text()]).toEqual([200, forged])
+    expect(seen.map((call) => call.url.pathname)).toEqual(['/x/express.md'])
+  }
+})
+
 test('off a literalMd route, a .md path is a twin with one fetch, as before', async () => {
   literally({ '/blog/post': 200, '/x/a/b': 200 })
   await handler(new Request(`${site}/blog/post.md`))

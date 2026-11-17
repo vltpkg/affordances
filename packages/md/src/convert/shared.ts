@@ -99,6 +99,7 @@ export const LINK_SCHEMES = new Set(['http:', 'https:', 'mailto:', 'tel:'])
 export const IMAGE_SCHEMES = new Set(['http:', 'https:'])
 
 export const HTML_NS = 'http://www.w3.org/1999/xhtml'
+export const MATHML_NS = 'http://www.w3.org/1998/Math/MathML'
 
 // a heading's text from its pieces, a url shown as itself being null: without the url, nor the brackets right around it
 const BRACKETS: Record<string, string> = { '(': ')', '[': ']', '<': '>' }

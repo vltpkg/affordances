@@ -73,9 +73,12 @@ export interface Document {
   // every <main> and every element whose role attribute is exactly 'main', in tree order, wherever it is in the
   // root's tree (hidden or not: the emitter decides which one counts)
   mains: Element[]
-  // the own text of every script element in the document, any namespace, in no particular order: what the flight
+  // the own text of every script element in the document a browser runs, in no particular order: what the flight
   // check reads, as it would read each script in parse5's tree
   scripts: string[]
+  // the same for each script a browser never runs, in a <noscript> or in mathml: a push or a streamed instruction in one
+  // makes the page's flight data untrusted
+  unrun: string[]
   // whether any element is an <affordances-md> marker or has data-affordances-md: only then are markers looked for
   marked: boolean
   // why md-core can't move react's streamed boundaries into place as the tree pipeline does, if it can't (a

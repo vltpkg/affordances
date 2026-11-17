@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { expect, test } from 'vitest'
 import { fromHtml } from 'hast-util-from-html'
+import { parse as parseHtml } from 'parse5'
 import { visit } from 'unist-util-visit'
 import {
   CALL,
@@ -209,6 +210,32 @@ const parse5Pushes = (html: string) => {
 }
 const PUSH_TEXT =
   /^\s*(?:\(self\.__next_f\s*=\s*self\.__next_f\s*\|\|\s*\[\]\)|self\.__next_f)\.push\(/
+// whether parse5 puts a push in a script a browser never runs: in a <noscript> (text, with scripting on) or in mathml
+type Parse5Node = {
+  tagName?: string
+  namespaceURI?: string
+  value?: string
+  childNodes?: Parse5Node[]
+}
+const unrunPush = (html: string) => {
+  const walk = (parent: Parse5Node, hidden: boolean): boolean =>
+    (parent.childNodes ?? []).some((node) => {
+      if (!node.tagName) return false
+      const own = (node.childNodes ?? []).map((kid) => kid.value ?? '').join('')
+      if (
+        node.tagName === 'script' &&
+        (hidden || node.namespaceURI === 'http://www.w3.org/1998/Math/MathML') &&
+        PUSH_TEXT.test(own)
+      )
+        return true
+      return walk(
+        node,
+        hidden ||
+          (node.tagName === 'noscript' && node.namespaceURI === 'http://www.w3.org/1999/xhtml'),
+      )
+    })
+  return walk(parseHtml(html, { scriptingEnabled: false }) as Parse5Node, false)
+}
 
 test('the stripper swaps exactly the pushes parse5 finds as scripts, over every fixture and every context', () => {
   const real = push('6:E{"digest":"NEXT_HTTP_ERROR_FALLBACK;403"}\n')
@@ -223,9 +250,18 @@ test('the stripper swaps exactly the pushes parse5 finds as scripts, over every 
     for (const sizes of [[html.length], [1], [2], [7, 3, 31], [4096, 13]]) {
       const { kept, swapped } = stream(html, sizes)
       expect([html, sizes, swapped.count]).toEqual([html, sizes, parse5Pushes(html)])
-      // the swaps hold: every nonce is a script, and no script still holds a push
-      const page = readStreamed(kept, swapped)
-      expect([html, page.markdown().markdown]).toEqual([html, readPage(html).markdown().markdown])
+      // the swaps hold: every nonce is a script, and no script still holds a push. one where a browser never runs it
+      // is never next's: the swaps aren't trusted, so the route answers 502
+      let streamed: string
+      try {
+        streamed = readStreamed(kept, swapped).markdown().markdown
+      } catch (error) {
+        streamed = `threw ${(error as { reason?: string }).reason}`
+      }
+      expect([html, streamed]).toEqual([
+        html,
+        unrunPush(html) ? 'threw unrun' : readPage(html).markdown().markdown,
+      ])
     }
 }, 30_000)
 
@@ -239,8 +275,6 @@ const PLACEMENTS = [
   body(
     `<script type="application/ld+json">${LD}</script><script type="application/ld+json">${PUSHED_TEXT}</script>`,
   ),
-  body(`<math><title><script>${PUSHED_TEXT}</script></title></math><p>x</p>`),
-  `<html><head><title>Page</title></head><body><math><title>A<script>${PUSHED_TEXT}</script>B</title></math><p>x</p></body></html>`,
   body(
     `<svg><title><script>${PUSHED_TEXT}</script></title></svg><math><mi><script>${PUSHED_TEXT}</script></mi></math>`,
   ),
@@ -258,6 +292,19 @@ test.each(PLACEMENTS)('a push read as text leaves no placeholder in the markdown
       expect(streamed).not.toContain(swapped.nonce)
       expect(streamed).toBe(expected)
     }
+  }
+})
+
+// a script in mathml's <title> is mathml's, which a browser never runs: its push isn't next's, so the page's flight
+// data isn't trusted. readPage reads the page as it was sent, with an error of its own; the route's read throws
+test.each([
+  body(`<math><title><script>${PUSHED_TEXT}</script></title></math><p>x</p>`),
+  `<html><head><title>Page</title></head><body><math><title>A<script>${PUSHED_TEXT}</script>B</title></math><p>x</p></body></html>`,
+])('a push in a mathml title is never trusted: %s', (html) => {
+  expect(readPage(html).errors).toEqual([''])
+  for (const sizes of [[html.length], [1], [7, 3, 31]]) {
+    const { kept, swapped } = stream(html, sizes)
+    expect(() => readStreamed(kept, swapped)).toThrow(expect.objectContaining({ reason: 'unrun' }))
   }
 })
 

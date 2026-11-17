@@ -306,6 +306,8 @@ let watched: El[] = []
 let mains: El[] = []
 // every script element, in any namespace: the flight check reads each one's text
 let scripts: El[] = []
+// the scripts in the document a browser never runs (unrunAt): never an instruction for the streamed moves
+let unrunScripts = new Set<El>()
 // whether the page has a marker, or an element with data-affordances-md
 let marked = false
 // whether the page has a <template id>, which a streamed boundary or placeholder moves into place through, and an
@@ -3219,17 +3221,36 @@ const readHead = (): Head => {
 }
 
 // each script's own text (its text children, not what's in an element inside it, which svg allows), for the scripts
-// in the document: not in a template's content, or a body a frameset threw out
-const readScripts = (): string[] =>
-  scripts.flatMap((el) => {
+// in the document: not in a template's content, or a body a frameset threw out. those a browser never runs (unrunAt)
+// apart, found in the same walk up
+const readScripts = () => {
+  const texts: string[] = []
+  const unrun: string[] = []
+  for (const el of scripts) {
     let top: El = el
-    for (let up = el.up; up; top = up, up = up.up)
-      if (up.id === TEMPLATE && up.ns === HTML) return []
-    if (top !== doc) return []
+    let hidden = el.ns === MATH
+    let content = false
+    for (let up = el.up; up && !content; top = up, up = up.up)
+      if (up.id === TEMPLATE && up.ns === HTML) content = true
+      else if (up.id === NOSCRIPT && up.ns === HTML) hidden = true
+    if (content || top !== doc) continue
     let text = ''
     for (const kid of el.kids) if (typeof kid === 'string') text += kid
-    return [text]
-  })
+    if (hidden) {
+      unrun.push(text)
+      unrunScripts.add(el)
+    } else texts.push(text)
+  }
+  return { texts, unrun }
+}
+// a script or template a browser never runs or reads as one, which this parse (scripting off) makes an element: in a
+// <noscript>, whose content a browser with scripting on reads as text, or in mathml, where a script isn't html's (in
+// <mi> or an html annotation-xml it is, and runs). a flight push or a streamed instruction there is page content's
+const unrunAt = (el: El) => {
+  if (el.ns === MATH) return true
+  for (let up = el.up; up; up = up.up) if (up.id === NOSCRIPT && up.ns === HTML) return true
+  return false
+}
 
 // whether an element is in the document as the tree pipeline's walk finds it: not in an html template's content (the
 // walk doesn't go there), not in a body a frameset threw out
@@ -3265,7 +3286,8 @@ const moveStreamed = () => {
   const why = resolveStreamed({
     root: doc,
     // in tree order, which foster parenting and the adoption agency can make other than the order they were made in
-    scripts: inTreeOrder(scripts.filter(inDocument)),
+    scripts: inTreeOrder(scripts.filter((el) => inDocument(el) && !unrunScripts.has(el))),
+    unrun: (el) => unrunAt(el as El),
     textOf: (el) => textOf(el as El),
     content: (el) => (el as El).id === TEMPLATE && (el as El).ns === HTML,
     keeps: (el) => (el as El).rec >= 2,
@@ -3332,6 +3354,7 @@ const parsing = (input: string, nonce: string | undefined, moves: boolean): Docu
   watched = []
   mains = []
   scripts = []
+  unrunScripts = new Set()
   marked = false
   templated = false
   instructed = false
@@ -3385,7 +3408,8 @@ const parsing = (input: string, nonce: string | undefined, moves: boolean): Docu
     root,
     head,
     mains: readMains(root),
-    scripts: scriptTexts,
+    scripts: scriptTexts.texts,
+    unrun: scriptTexts.unrun,
     marked,
     streamed,
     selector,
@@ -3411,6 +3435,7 @@ const letGo = () => {
   withIds = []
   mains = []
   scripts = []
+  unrunScripts = new Set()
   pruned.clear()
   endAttrs()
   pending = []

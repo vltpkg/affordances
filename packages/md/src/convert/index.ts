@@ -35,6 +35,7 @@ import {
   gridFits,
   hides,
   HTML_NS,
+  MATHML_NS,
   IMAGE_SCHEMES,
   INLINE,
   LABEL_HOSTS,
@@ -447,9 +448,12 @@ const pruneWith = (
 // what resolveStreamed moves a segment by, as it's written in the html: a script's $RC or $RR (a boundary) or $RS (a
 // placeholder), or the external runtime's templates for them. md's pre-check scans for the same
 const STREAMED = ['$RC("', '$RR("', '$RS("', 'data-rci', 'data-rri', 'data-rsi']
-export const resolveStreamed = (tree: HastRoot) => {
+// unrun: the scripts and templates a browser never runs or reads as one (fromHtml's), which move nothing and aren't the
+// page's scripts: their own list, for the flight check
+export const resolveStreamed = (tree: HastRoot, unrun: Set<Element> = new Set()) => {
   // one walk: the instructions, every id, each element's parent, and the scripts
   const scripts: Element[] = []
+  const unrunScripts: Element[] = []
   const instructions: Element[] = []
   const templates: Element[] = []
   const byId = new Map<string, Element>()
@@ -460,10 +464,13 @@ export const resolveStreamed = (tree: HastRoot) => {
       parents.set(node, parent)
       const id = node.properties.id
       if (id != null) byId.set(String(id), node)
-      if (node.tagName === 'script') scripts.push(node)
+      if (node.tagName === 'script') (unrun.has(node) ? unrunScripts : scripts).push(node)
       if (node.tagName === 'template') {
         if (id != null) templates.push(node)
-        if (node.properties.dataBid != null || node.properties.dataPid != null)
+        if (
+          (node.properties.dataBid != null || node.properties.dataPid != null) &&
+          !unrun.has(node)
+        )
           instructions.push(node)
       }
       walk(node)
@@ -517,7 +524,7 @@ export const resolveStreamed = (tree: HastRoot) => {
     }
     lists.done()
   }
-  return { scripts, resolve }
+  return { scripts, unrun: unrunScripts, resolve }
 }
 
 // the elements that are, in page order, with none inside another: one walk that stops at each
@@ -1055,9 +1062,10 @@ export const flightStripper = () => {
 }
 
 // why a page's swapped flight data can't be trusted: a nonce that didn't parse as a script's whole text, a push left
-// in a script (a swap the stripper missed), or a push or error row that can't be read
+// in a script (a swap the stripper missed), a push or error row that can't be read, or a push or streamed instruction
+// in a script a browser never runs (unrun)
 export class FlightDataError extends Error {
-  readonly reason: 'count' | 'unswapped' | 'push' | 'row'
+  readonly reason: 'count' | 'unswapped' | 'push' | 'row' | 'unrun'
   constructor(reason: FlightDataError['reason']) {
     super(`the page's flight data can't be read (${reason})`)
     this.name = 'FlightDataError'
@@ -1067,7 +1075,18 @@ export class FlightDataError extends Error {
 // a script's own text: an svg script can hold elements, and another script's text isn't its own
 const scriptText = (script: Element) =>
   script.children.map((child) => (child.type === 'text' ? child.value : '')).join('')
-const untrusted = (scripts: string[], swapped: Swapped): FlightDataError['reason'] | undefined => {
+// a streamed boundary's instruction, $RC, $RR, $RS or $RX, as a script calls it
+const INSTRUCTED = /\$R[CRSX]\("/
+// unrun: the text of each script a browser never runs, in a <noscript> (read as text with scripting on) or mathml (not
+// html's script). md reads them as scripts, with scripting off, so a push or an instruction there is page content's,
+// put past a sanitizer that parses as a browser does, never next's: the whole page's flight data is untrusted
+const untrusted = (
+  scripts: string[],
+  swapped: Swapped,
+  unrun: string[],
+): FlightDataError['reason'] | undefined => {
+  if (unrun.some((text) => text === swapped.nonce || PUSHED.test(text) || INSTRUCTED.test(text)))
+    return 'unrun'
   let count = 0
   for (const text of scripts) {
     if (text === swapped.nonce) count += 1
@@ -1264,12 +1283,13 @@ const fromHtml = (page: string, known?: Cut) => {
     cut ??= deepAt(page)
     document = parseHtml(cutAt(page, cut), { scriptingEnabled: false })
   }
-  const foreign = renameForeignTemplates(document)
+  const { renamed, unrun } = foreignOf(document)
   const tree = fromParse5(document) as HastRoot
-  if (foreign.size) restoreForeignTemplates(document, tree, foreign)
+  const unrunEls =
+    renamed.size || unrun.size ? restoreForeign(document, tree, renamed, unrun) : new Set<Element>()
   // and whether it was cut, which the page says (readTree)
   if (cut !== undefined) tree.data = { ...tree.data, cut: true } as never
-  return { tree, source: cutAt(page, cut) }
+  return { tree, source: cutAt(page, cut), unrun: unrunEls }
 }
 // a page's tree with its streamed boundaries moved into place, and then, as md-core reads it, what's nested deeper
 // than md reads read as text: both read the whole page first. and whether that left something out, which the page says
@@ -1301,20 +1321,35 @@ type Parse5Any = {
   content?: Parse5Any
 }
 const FOREIGN_TEMPLATE = 'affordances-foreign-template'
-const renameForeignTemplates = (document: Parse5Tree) => {
+// in the same walk, the scripts and templates a browser never runs or reads as one, though this parse (scripting off)
+// makes them elements: inside a <noscript>, whose content a browser with scripting on reads as text, or in mathml,
+// where a script isn't html's (in <mi> or an html annotation-xml it is, and runs). one flag down the walk, so O(1) each
+const foreignOf = (document: Parse5Tree) => {
   const renamed = new Set<Parse5Any>()
-  const walk = (node: Parse5Any) => {
-    if (node.tagName === 'template' && node.namespaceURI !== HTML_NS) {
+  const unrun = new Set<Parse5Any>()
+  const walk = (node: Parse5Any, hidden: boolean) => {
+    const name = node.tagName
+    if ((name === 'script' || name === 'template') && (hidden || node.namespaceURI === MATHML_NS))
+      unrun.add(node)
+    if (name === 'template' && node.namespaceURI !== HTML_NS) {
       node.tagName = node.nodeName = FOREIGN_TEMPLATE
       renamed.add(node)
     }
-    for (const child of node.childNodes ?? []) walk(child)
-    if (node.content) walk(node.content)
+    const inside = hidden || (name === 'noscript' && node.namespaceURI === HTML_NS)
+    for (const child of node.childNodes ?? []) walk(child, inside)
+    if (node.content) walk(node.content, inside)
   }
-  walk(document as unknown as Parse5Any)
-  return renamed
+  walk(document as unknown as Parse5Any, false)
+  return { renamed, unrun }
 }
-const restoreForeignTemplates = (document: Parse5Tree, tree: HastRoot, renamed: Set<Parse5Any>) => {
+// the renamed templates named back, and the unrun elements as the tree's
+const restoreForeign = (
+  document: Parse5Tree,
+  tree: HastRoot,
+  renamed: Set<Parse5Any>,
+  unrun: Set<Parse5Any>,
+) => {
+  const found = new Set<Element>()
   const walk = (from: Parse5Any, to: HastRoot | Element) => {
     const kids = from.childNodes ?? []
     for (let i = 0; i < kids.length; i++) {
@@ -1322,20 +1357,22 @@ const restoreForeignTemplates = (document: Parse5Tree, tree: HastRoot, renamed: 
       const made = to.children[i]
       if (!made || made.type !== 'element') continue
       if (renamed.has(node)) made.tagName = 'template'
+      if (unrun.has(node)) found.add(made)
       walk(node, made)
       if (node.content && made.content) walk(node.content, made.content)
     }
   }
   walk(document as unknown as Parse5Any, tree)
+  return found
 }
 
 // a page's html with its flight pushes taken out, parsed: the tree and the error rows' digests, or why they can't be
 // trusted
 const strippedTree = (html: string, swapped: Swapped, cut?: Cut) => {
-  const { tree, source } = fromHtml(html, cut)
-  const streamed = resolveStreamed(tree)
+  const { tree, source, unrun } = fromHtml(html, cut)
+  const streamed = resolveStreamed(tree, unrun)
   const texts = streamed.scripts.map(scriptText)
-  const reason = untrusted(texts, keptOf(source, html, swapped))
+  const reason = untrusted(texts, keptOf(source, html, swapped), streamed.unrun.map(scriptText))
   // a swapped push's nonce is only for the check: anything else that reads a script's text (a json-ld block, a
   // foreign title) reads it empty, as the page reads without its flight data
   streamed.scripts.forEach((script, i) => {
@@ -2494,8 +2531,8 @@ const treePage = (html: string, lean: string, swapped: Swapped, options: Options
   const { tree, streamed, reason } = strippedTree(lean, swapped, cut)
   if (!reason) return readTree({ tree: settled(tree, streamed), errors: swapped.errors }, options)
   // swaps that can't be trusted: the page as sent, as parse5 reads it, and an error of its own (private, never a status)
-  const { tree: sent } = fromHtml(html)
-  return readTree({ tree: settled(sent, resolveStreamed(sent)), errors: [''] }, options)
+  const { tree: sent, unrun } = fromHtml(html)
+  return readTree({ tree: settled(sent, resolveStreamed(sent, unrun)), errors: [''] }, options)
 }
 
 // why md-core declines a page, and where it cut the page, if it parsed it
@@ -2798,7 +2835,7 @@ const readCore = (
   let doc: CoreDocument | undefined = read
   // cut, or with something nested too deep left out
   const cutOff = source !== html || read.lost
-  const reason = untrusted(read.scripts, keptOf(source, html, swapped))
+  const reason = untrusted(read.scripts, keptOf(source, html, swapped), read.unrun)
   // react's streamed boundaries, which the tree pipeline moves into place: md-core doesn't, and declines the page.
   // then the rest, past the parity ones when insisting
   const why =

@@ -14,8 +14,11 @@ import { Spliced } from '../shared.ts'
 export type Streamed = {
   // the whole document, the head's elements too
   root: Element
-  // every script in the document, and all the text inside one
+  // every script in the document a browser runs, and all the text inside one
   scripts: Element[]
+  // whether an element is one a browser never runs or reads as one (in a <noscript>, or in mathml), which is no
+  // instruction
+  unrun: (el: Element) => boolean
   textOf: (el: Element) => string
   // whether an element is an html <template>, whose children are its content (the tree pipeline's walk never enters)
   content: (el: Element) => boolean
@@ -56,7 +59,10 @@ export const resolveStreamed = (page: Streamed): string | undefined => {
     if (id !== undefined) byId.set(id, node)
     if (node.tag === 'template') {
       if (id !== undefined) templates.push(node)
-      if (attr(node, 'data-bid') !== undefined || attr(node, 'data-pid') !== undefined)
+      if (
+        (attr(node, 'data-bid') !== undefined || attr(node, 'data-pid') !== undefined) &&
+        !page.unrun(node)
+      )
         instructions.push(node)
     }
     if (!page.content(node)) stack.push([node, 0])
