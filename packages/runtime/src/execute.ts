@@ -9,16 +9,16 @@ import {
   normalize,
   type CapabilityDefinition,
   type CapabilityManifest,
+  type Condition,
   type Context,
-  type Expr,
   type Id,
   renderSummary as render,
 } from '@affordances/ir'
-import { attributesFor } from './data.ts'
+import { decideCondition, instancesOf } from './decide.ts'
+import type { Loaded, Session } from './session.ts'
 import { offerId, parseOfferId } from './offer-id.ts'
 import type {
   ApprovalToken,
-  CapabilityOffer,
   CheckRequest,
   CheckResult,
   ExecutionRequest,
@@ -38,10 +38,6 @@ import type {
 } from './types.ts'
 
 type Obj = Record<string, unknown>
-type Loaded =
-  | { state: 'found'; attributes: Obj; version?: string }
-  | { state: 'none' }
-  | { state: 'failed' }
 
 // what execution needs from the runtime: the definitions, the handlers, and a per-request session (project.ts)
 export type ExecutionDeps = {
@@ -49,16 +45,7 @@ export type ExecutionDeps = {
   resources: Record<Id, ResourceResolver>
   project: (request: ProjectionRequest) => Promise<Projection>
   handlers: Record<Id, Handler>
-  session: (principal: Principal) => Promise<{
-    attributes: Obj
-    base: { manifest: string; principal: string }
-    load: (type: Id, key: string) => Promise<Loaded>
-    offerOn: (
-      c: CapabilityDefinition,
-      target: ResourceRef | undefined,
-      bind?: Record<string, string>,
-    ) => Promise<CapabilityOffer | undefined>
-  }>
+  session: (principal: Principal) => Promise<Session>
   approval: {
     keys?: { current: CryptoKey; previous?: CryptoKey }
     store?: TokenStore
@@ -103,7 +90,6 @@ export const executor = (deps: ExecutionDeps) => {
   const { manifest, handlers, approval } = deps
   const definitions = new Map(manifest.capabilities.map((c) => [c.id, c]))
   const canonical = new Map(normalize(manifest).capabilities.map((c) => [c.id, c]))
-  const checked = attributesFor(manifest)
 
   // §8.2: HMAC-SHA-256 over the canonical call. The token carries only its expiry, its nonce and the MAC, so it
   // echoes nothing about the caller; verifying recomputes the MAC from the call being made
@@ -149,6 +135,8 @@ export const executor = (deps: ExecutionDeps) => {
         refs: Record<string, { key: string; attributes: Obj } | undefined>
         revision: string
         confirmed?: true
+        // the walk's session, whose loads the before snapshot reuses
+        load: (type: Id, key: string) => Promise<Loaded>
       }
   > => {
     const s = await deps.session(request.principal)
@@ -205,30 +193,23 @@ export const executor = (deps: ExecutionDeps) => {
     // a guard at execution: with the input, execution-only ones included
     const refs: Record<string, { key: string; attributes: Obj } | undefined> = {}
     // authorization never reads the input (RFC 0001 §3.2), so its guards get none, as at projection (code review 5)
-    const decide = async (
-      x: { id: string; description: string; expr?: Expr },
-      authorizing = false,
-    ) => {
-      if (x.expr) {
-        const value = evaluate(x.expr, context)
-        return {
-          value,
-          detail: value === 'unknown' ? `${x.description}: couldn't be checked` : undefined,
-        }
-      }
-      try {
-        const value = await handlers[c.id]!.guards![x.id]!({
+    const decide = async (x: Condition, authorizing = false) => {
+      const d = await decideCondition(
+        x,
+        context,
+        handlers[c.id]?.guards?.[x.id],
+        {
           input: authorizing ? undefined : (input as Obj | undefined),
           target: targetArg,
           refs,
           principal: request.principal,
-        })
-        if (value === true) return { value: true as const }
-        if (typeof value === 'string') return { value: false as const, detail: value }
-        return { value: value === false ? (false as const) : ('unknown' as const) }
-      } catch {
-        return { value: 'unknown' as const, detail: `${x.description}: couldn't be checked` }
-      }
+        },
+        { withInput: true },
+      )
+      // an unknown refuses (rule 5), saying it couldn't be checked when nothing says more
+      return d.value === 'unknown' && d.detail === undefined
+        ? { value: d.value, detail: `${x.description}: couldn't be checked` }
+        : d
     }
 
     // 2. authorization, on the principal and the target only (RFC 0001 §3.2)
@@ -240,7 +221,7 @@ export const executor = (deps: ExecutionDeps) => {
     if (c.authorization.principal === 'authenticated' && !request.principal.authenticated)
       return refuse('unauthorized', withDetail(`${c.id} needs a signed-in caller`))
     for (const x of c.authorization.conditions ?? []) {
-      const { value, detail } = await decide(x as never, true)
+      const { value, detail } = await decide(x, true)
       if (value !== true)
         return refuse('unauthorized', {
           condition: { id: x.id, description: x.description },
@@ -299,7 +280,7 @@ export const executor = (deps: ExecutionDeps) => {
 
     // 6. every precondition: false and unknown both refuse (RFC 0001, rule 5)
     for (const x of c.preconditions ?? []) {
-      const { value, detail } = await decide(x as never)
+      const { value, detail } = await decide(x)
       if (value !== true)
         return refuse('precondition', {
           condition: { id: x.id, description: x.description },
@@ -319,14 +300,19 @@ export const executor = (deps: ExecutionDeps) => {
         // v0's own confirm, recorded with its basis: never an approval (C3.1)
         if (!request.confirmed)
           return refuse('confirmation_required', { confirmation: { summary } })
-        return { status: 'ready', c, input, target, refs, revision: now, confirmed: true }
+        return {
+          status: 'ready',
+          c,
+          input,
+          target,
+          refs,
+          revision: now,
+          confirmed: true,
+          load: s.load,
+        }
       }
       if (!request.principal.subject)
         return refuse('unauthorized', withDetail('Approval needs an identified caller'))
-      if (!approval.keys || !approval.store)
-        throw new Error(
-          `${c.id} requires confirmation: give createRuntime approvalKeys and seenTokens`,
-        )
       const call = {
         offer: offerId({
           capability: c.id,
@@ -340,12 +326,12 @@ export const executor = (deps: ExecutionDeps) => {
       }
       const verified = request.approval ? await verify(request.approval, call) : undefined
       // a token for another call, an expired one, or one already used: a fresh one, for this exact call
-      if (!verified || !(await approval.store.claim(verified.nonce, verified.expiresAt)))
+      if (!verified || !(await approval.store!.claim(verified.nonce, verified.expiresAt)))
         return refuse('confirmation_required', {
           confirmation: { summary, ...(await issue(call)) },
         })
     }
-    return { status: 'ready', c, input, target, refs, revision: now }
+    return { status: 'ready', c, input, target, refs, revision: now, load: s.load }
   }
 
   const check = async (request: CheckRequest): Promise<CheckResult> => {
@@ -366,36 +352,31 @@ export const executor = (deps: ExecutionDeps) => {
     return props ? new Set(Object.keys(props)) : undefined
   }
   type Seen = Map<string, { type: Id; key: string; attributes: Obj }>
-  const snapshot = async (principal: Principal, c: CapabilityDefinition, target?: ResourceRef) => {
+  // through a session's load, so what the checks just read isn't read again; after the run, a fresh session's
+  const snapshot = async (
+    load: (type: Id, key: string) => Promise<Loaded>,
+    principal: Principal,
+    c: CapabilityDefinition,
+    target?: ResourceRef,
+  ) => {
     const seen: Seen = new Map()
-    // an instance whose load threw can't be compared: it's left out of both sides
+    // an instance whose load failed can't be compared: it's left out of both sides
     const unseen = new Set<string>()
     const types = new Set<Id>()
     if (c.target) types.add(c.target)
     for (const e of c.effects ?? []) if (e.category === 'state') types.add(e.resource)
     for (const type of [...types].toSorted()) {
-      const keys = new Set<string>()
-      if (target?.type === type) keys.add(target.key)
-      try {
-        for (const key of (await deps.resources[type]!.list?.(principal, { capability: c.id })) ??
-          [])
-          keys.add(key)
-      } catch {
-        // a list that throws: only the target is observed
-      }
+      const keys = await instancesOf(
+        deps.resources[type]!,
+        principal,
+        c.id,
+        target?.type === type ? target.key : undefined,
+      )
       for (const key of keys) {
         const where = canonicalJson([type, key])
-        try {
-          const found = await deps.resources[type]!.load(key, principal)
-          // attributes that aren't plain data fitting the schema can't be compared: as a load that threw
-          if (found) {
-            const attributes = checked(type, found.attributes)
-            if (attributes) seen.set(where, { type, key, attributes })
-            else unseen.add(where)
-          }
-        } catch {
-          unseen.add(where)
-        }
+        const loaded = await load(type, key)
+        if (loaded.state === 'found') seen.set(where, { type, key, attributes: loaded.attributes })
+        else if (loaded.state === 'failed') unseen.add(where)
       }
     }
     return { seen, unseen }
@@ -460,19 +441,19 @@ export const executor = (deps: ExecutionDeps) => {
     const { confirmed: _ignored, ...rest } = request as ExecutionRequest & { confirmed?: unknown }
     const r = await walk(rest, 'execute')
     if (r.status === 'refused') return r
-    const handler = handlers[r.c.id]
-    if (!handler?.run) throw new Error(`no handler runs ${r.c.id}`)
+    // createRuntime refuses to start without a run for every query and action (§11)
+    const handler = handlers[r.c.id]!
     // the caller's projection, before: what changes are measured against (§8.3)
     const view: ProjectionRequest = { ...request.view, principal: request.principal }
     const start = view.start ?? r.target
     if (start !== undefined) view.start = start
     const projected = (await deps.project(view)).view()
-    const before = await snapshot(request.principal, r.c, r.target)
+    const before = await snapshot(r.load, request.principal, r.c, r.target)
     // 9. run the application's handler
     let output: unknown
     let failure: string | undefined
     try {
-      output = await handler.run(r.input, {
+      output = await handler.run!(r.input, {
         principal: request.principal,
         target: r.target,
         refs: r.refs,
@@ -483,7 +464,13 @@ export const executor = (deps: ExecutionDeps) => {
       failure = 'The action failed.'
     }
     // 10. observe: what changed, against what was declared, and the view after, a partial effect included
-    const seen = observe(r.c, before, await snapshot(request.principal, r.c, r.target), r.target)
+    const fresh = await deps.session(request.principal)
+    const seen = observe(
+      r.c,
+      before,
+      await snapshot(fresh.load, request.principal, r.c, r.target),
+      r.target,
+    )
     const after = (await deps.project(view)).view()
     const observed = { ...seen, revision: after.revision, changes: compare(projected, after) }
     if (failure !== undefined) return { status: 'failed', message: failure, ...observed }

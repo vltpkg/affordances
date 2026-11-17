@@ -11,6 +11,7 @@ import {
   validate,
   type CapabilityDefinition,
   type CapabilityManifest,
+  type Condition,
   type Context,
   type Expr,
   type Id,
@@ -18,6 +19,8 @@ import {
   renderSummary as render,
 } from '@affordances/ir'
 import { attributesFor } from './data.ts'
+import { decideCondition, instancesOf } from './decide.ts'
+import type { Loaded, Read, Session } from './session.ts'
 import { executor } from './execute.ts'
 import { offerId } from './offer-id.ts'
 import { BUILT_IN, views } from './views.ts'
@@ -44,7 +47,7 @@ export type RuntimeOptions = {
   manifest: CapabilityManifest
   // one per resource type the manifest declares (RFC 0002 §2.1)
   resources: Record<Id, ResourceResolver>
-  // by capability id: an implementation for each guard it declares (§11). execution's run arrives with M3d
+  // by capability id: a run for each query and action, and an implementation for each guard it declares (§11)
   handlers?: Record<Id, Handler>
   policies?: DiscoveryPolicy[] // added to the built-in four (§6.1)
   defaultPolicy?: PolicyId // 'resource' unless set
@@ -55,14 +58,13 @@ export type RuntimeOptions = {
 }
 
 type Obj = Record<string, unknown>
-// what a projection read of one instance: its attributes, none (it doesn't exist, or the principal may not see it),
-// or a resolver that threw, whose attributes are then unknown (§2.1)
-type Loaded =
-  | { state: 'found'; attributes: Obj; version?: string }
-  | { state: 'none' }
-  | { state: 'failed' }
-// one instance as a revision reads it (§7): a resolver that threw has no version, which no version string equals
-type Read = { type: Id; key: string; version?: string }
+
+// an instance as a revision reads it (§7): its resolver's version, or the digest of its attributes when it gives none
+const read = async (type: Id, key: string, loaded: Loaded): Promise<Read | undefined> => {
+  if (loaded.state === 'none') return
+  if (loaded.state === 'failed') return { type, key }
+  return { type, key, version: loaded.version ?? (await digestOf(loaded.attributes)) }
+}
 
 // §7: instances sorted by type, then key, in UTF-16 code units, ties broken by RFC 8785 bytes (RFC 0001 §7.2)
 const byRead = (a: Read, b: Read) =>
@@ -189,7 +191,7 @@ export const createRuntime = ({
 
   // what one request reads, shared by projection and execution: the principal's declared attributes, the instances
   // loaded (each once), the guards run, and an offer computed as a projection computes it
-  const session = async (principal: Principal) => {
+  const session = async (principal: Principal): Promise<Session> => {
     // the declared attributes only: anything else is ignored (§3)
     const attributes = Object.fromEntries(
       declared
@@ -223,11 +225,6 @@ export const createRuntime = ({
         loads.set(at, loaded)
       }
       return loaded
-    }
-    const read = async (type: Id, key: string, loaded: Loaded): Promise<Read | undefined> => {
-      if (loaded.state === 'none') return
-      if (loaded.state === 'failed') return { type, key }
-      return { type, key, version: loaded.version ?? (await digestOf(loaded.attributes)) }
     }
     // every guard run at projection time, for the projection's revision (§7)
     const guardLog: { capability: Id; condition: string; value: boolean | string | null }[] = []
@@ -266,13 +263,19 @@ export const createRuntime = ({
       // why each condition is unknown when it is: only for input, or for something else
       const forInput = new Set<string>()
       // authorization never reads the input (RFC 0001 §3.2), so its guards never wait on it
-      const result = async (
-        x: { id: string; description: string; expr?: Expr },
-        authorizing = false,
-      ): Promise<ConditionResult> => {
+      const result = async (x: Condition, authorizing = false): Promise<ConditionResult> => {
         const r: ConditionResult = { id: x.id, description: x.description, value: 'unknown' }
-        if (x.expr) {
-          r.value = evaluate(x.expr, context)
+        // §4.2: a guard runs with no input, unless it's execution-only; a throw is unknown
+        const d = await decideCondition(
+          x,
+          context,
+          handlers[c.id]?.guards?.[x.id],
+          { input: undefined, target: targetArg, refs, principal },
+          { withInput: false },
+        )
+        r.value = d.value
+        if (d.detail !== undefined) r.detail = d.detail
+        if ('expr' in x) {
           // needs-input only when every path that's missing is on the input (review of M3a)
           const reading = paths(x.expr)
           if (
@@ -283,26 +286,15 @@ export const createRuntime = ({
             forInput.add(x.id)
           return r
         }
-        // §4.2: a guard runs with no input, unless it's execution-only; a throw is unknown
-        const guard = handlers[c.id]?.guards?.[x.id]
-        if (!guard || guard.executionOnly) return r
-        let value: boolean | string | null
-        try {
-          value = await guard({ input: undefined, target: targetArg, refs, principal })
-          if (typeof value !== 'boolean' && typeof value !== 'string') value = null
-        } catch {
-          value = null
+        if (d.guard !== undefined) {
+          guardsRun.push({ condition: x.id, value: d.guard })
+          guardLog.push({ capability: c.id, condition: x.id, value: d.guard })
         }
-        guardsRun.push({ condition: x.id, value })
-        guardLog.push({ capability: c.id, condition: x.id, value })
-        if (value === false) r.value = false
-        else if (typeof value === 'string') {
-          r.value = false
-          r.detail = value
-        } else if (value === true) {
-          // not ruled out: true when there's no input to wait for, unknown for input otherwise
-          if (takesInput && !authorizing) forInput.add(x.id)
-          else r.value = true
+        // not ruled out: true when there's no input to wait for, unknown for input otherwise. authorization never
+        // reads the input, so its guards never wait on it
+        if (r.value === true && takesInput && !authorizing) {
+          r.value = 'unknown'
+          forInput.add(x.id)
         }
         return r
       }
@@ -317,7 +309,7 @@ export const createRuntime = ({
         ]),
       )
       const conditions: ConditionResult[] = []
-      for (const x of c.preconditions ?? []) conditions.push(await result(x as never))
+      for (const x of c.preconditions ?? []) conditions.push(await result(x))
       let authorization: Truth | undefined
       if (c.authorization) {
         if (c.authorization.principal === 'authenticated' && !principal.authenticated)
@@ -325,7 +317,7 @@ export const createRuntime = ({
         else {
           const values: Truth[] = []
           for (const x of c.authorization.conditions ?? [])
-            values.push((await result(x as never, true)).value)
+            values.push((await result(x, true)).value)
           authorization = all(values)
         }
       }
@@ -416,7 +408,7 @@ export const createRuntime = ({
 
   const project = async (request: ProjectionRequest): Promise<Projection> => {
     const { principal } = request
-    const { base, loads, read, guardLog, offerOn } = await session(principal)
+    const { base, loads, guardLog, offerOn } = await session(principal)
     const start = typeof request.start === 'object' ? request.start : undefined
     // a reference is bound when the request starts from an instance of its type
     const startBinding = (c: CapabilityDefinition) =>
@@ -436,15 +428,12 @@ export const createRuntime = ({
         if (offer) offers.push(offer)
         continue
       }
-      const keys = new Set<string>()
-      if (start?.type === c.target) keys.add(start.key)
-      try {
-        for (const key of (await resources[c.target]!.list?.(principal, { capability: c.id })) ??
-          [])
-          keys.add(key)
-      } catch {
-        // a list that throws enumerates nothing beyond the start
-      }
+      const keys = await instancesOf(
+        resources[c.target]!,
+        principal,
+        c.id,
+        start?.type === c.target ? start.key : undefined,
+      )
       for (const key of keys) {
         const offer = await offerOn(c, { type: c.target, key }, startBinding(c))
         if (offer) offers.push(offer)

@@ -1,6 +1,6 @@
 import type { Basis, CapabilityDefinition, CapabilityManifest, Id } from '@affordances/ir'
 
-// RFC 0002's projection types (§2-§7), as the RFC states them. Execution's (§8) arrive with M3d
+// RFC 0002's types (§2-§8), as the RFC states them
 
 export type Revision = string // 'sha256-…', a projection revision
 export type OfferRevision = string // 'sha256-…', an offer revision
@@ -38,7 +38,7 @@ export type ResourceResolver = {
   list?(principal: Principal, scope: { capability: Id }): Promise<string[]>
 }
 
-// §11: what the application registers for a capability. M3b uses its guards; execution's run comes with M3d
+// §11: what the application registers for a capability: its run, and its guards
 export type Handler = {
   // runs the capability once every check has passed (§8.1, step 9); a query returns its output
   run?(
