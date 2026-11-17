@@ -489,7 +489,8 @@ describe('a schema node that is not a schema', () => {
       'E_PATH /capabilities/1/preconditions/7/expr/exists',
     ])
   })
-  test('junk anywhere in an embedded schema never throws', () => {
+  // 2,000 runs: about 1s on a quiet machine, so a generous timeout for a loaded one
+  test('junk anywhere in an embedded schema never throws', { timeout: 60_000 }, () => {
     const junk = [
       null,
       'x',
