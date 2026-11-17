@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest'
 import type { CapabilityManifest } from '@affordances/ir'
 import plansJson from '../../ir/fixtures/valid/plans.json' with { type: 'json' }
 import { createRuntime, offerId, parseOfferId } from '../src/index.ts'
-import type { Principal, Projection, ResourceResolver } from '../src/index.ts'
+import type { GuardImpl, Principal, Projection, ResourceResolver } from '../src/index.ts'
 
 const plans = plansJson as unknown as CapabilityManifest
 const fresh = (): CapabilityManifest => structuredClone(plans)
@@ -25,13 +25,19 @@ const versioned = (rows: Instances): ResourceResolver => ({
   load: async (key) => (rows[key] ? { attributes: rows[key], version: 'v1' } : null),
   list: async () => Object.keys(rows),
 })
+// the fixture's one guard, billing on subscribe: not ruled out, unless a test says otherwise
+const handlers = (billing: GuardImpl = () => true) => ({
+  'hosting.plan.subscribe': { guards: { billing } },
+})
 const runtimeOf = (
   state = { plans: plansState(), projects: projectsState() },
   manifest = fresh(),
+  billing?: GuardImpl,
 ) =>
   createRuntime({
     manifest,
     resources: { 'hosting.plan': table(state.plans), 'hosting.project': table(state.projects) },
+    handlers: handlers(billing),
   })
 
 const member: Principal = { authenticated: true, attributes: { plan: 'hobby', orgIds: ['o1'] } }
@@ -104,10 +110,8 @@ describe('a projection', () => {
     }
     expect(await status(anonymous)).toEqual({ status: 'needs-authorization' })
     expect(await status(outsider)).toEqual({ status: 'unavailable', because: ['member'] })
-    expect(await status(member)).toEqual({
-      status: 'unknown',
-      because: ['seatsInRange', 'billing'],
-    })
+    // what's left is the input: the seats, and billing, which a guard can only rule out once it has the input
+    expect(await status(member)).toEqual({ status: 'needs-input', inputs: ['input.seats'] })
     // and the plan the member is on can't be chosen again
     const p = await rt.project({ principal: member, start: fromProject })
     expect(
@@ -175,6 +179,7 @@ describe('deterministic for its input', () => {
     const b = await runtimeOf(state).project({ principal: member, start: fromProject })
     const reversed = await createRuntime({
       manifest: fresh(),
+      handlers: handlers(),
       resources: {
         'hosting.plan': table(state.plans, ['team', 'pro', 'hobby']),
         'hosting.project': table(state.projects),
@@ -222,6 +227,7 @@ describe('deterministic for its input', () => {
       [changed, plansState()].map((rows) =>
         createRuntime({
           manifest: fresh(),
+          handlers: handlers(),
           resources: { 'hosting.plan': versioned(rows), 'hosting.project': table(projectsState()) },
         }).project({ principal: member }),
       ),
@@ -249,6 +255,17 @@ describe('what an offer says', () => {
     })
   })
 
+  test('a claim whose subject names the capability with the manifest’s namespace is shown too', async () => {
+    const manifest = fresh()
+    manifest.claims![1]!.subject = `${manifest.namespace}#hosting.plan.subscribe`
+    const p = await runtimeOf(undefined, manifest).project({ principal: member })
+    expect(
+      (offer(p.offers, 'hosting.plan.subscribe@hosting.plan:hobby').claims as { id: string }[]).map(
+        (c) => c.id,
+      ),
+    ).toEqual(['proUptime'])
+  })
+
   test('consequential is derived from effects, and an action with none declared is consequential', async () => {
     const p = await runtimeOf().project({ principal: member })
     expect(offer(p.offers, 'hosting.plan.list').consequential).toBe(false)
@@ -265,25 +282,40 @@ describe('what an offer says', () => {
     })
   })
 
-  test('a condition left only on the input is needs-input, naming those paths', async () => {
+  test('needs-input only when every missing path is on the input', async () => {
+    // review's case: the input against an attribute the resolver didn't supply
     const manifest = fresh()
-    const subscribe = manifest.capabilities[1]!
-    subscribe.preconditions = subscribe.preconditions!.filter((c) => c.id !== 'billing')
-    const p = await runtimeOf(undefined, manifest).project({
-      principal: member,
-      start: fromProject,
+    const project = manifest.resources[1]!.attributes as { properties: Record<string, unknown> }
+    project.properties.seatLimit = { type: 'integer' }
+    manifest.capabilities[1]!.preconditions!.push({
+      id: 'underLimit',
+      description: 'No more seats than the project allows',
+      expr: { le: [{ count: 'input.seats' }, { path: 'project.seatLimit' }] },
     })
-    expect(
-      offer(p.offers, 'hosting.plan.subscribe@hosting.plan:pro?project=p1').availability,
-    ).toEqual({
-      status: 'needs-input',
-      inputs: ['input.seats'],
+    const status = async (projects: Instances) =>
+      offer(
+        (
+          await runtimeOf({ plans: plansState(), projects }, manifest).project({
+            principal: member,
+            start: fromProject,
+          })
+        ).offers,
+        'hosting.plan.subscribe@hosting.plan:pro?project=p1',
+      ).availability
+    // seatLimit isn't supplied, so the comparison waits on more than input
+    expect(await status(projectsState())).toEqual({
+      status: 'unknown',
+      because: ['seatsInRange', 'billing', 'underLimit'],
     })
+    const limited = projectsState()
+    limited.p1!.seatLimit = 10
+    expect(await status(limited)).toEqual({ status: 'needs-input', inputs: ['input.seats'] })
   })
 
   test('a resolver that throws makes what it would have supplied unknown, never a guess', async () => {
     const p = await createRuntime({
       manifest: fresh(),
+      handlers: handlers(),
       resources: {
         'hosting.plan': table(plansState()),
         'hosting.project': {
@@ -303,6 +335,7 @@ describe('what an offer says', () => {
   test('an instance its resolver returns null for has no offer', async () => {
     const p = await createRuntime({
       manifest: fresh(),
+      handlers: handlers(),
       resources: {
         'hosting.plan': table(plansState(), ['hobby', 'gone']),
         'hosting.project': table({}),
@@ -313,6 +346,123 @@ describe('what an offer says', () => {
       'hosting.plan.list',
       'hosting.plan.subscribe@hosting.plan:hobby',
     ])
+  })
+})
+
+// for the guard tests: subscribe to pro from p1 with a billing guard, under a manifest
+const subscribePro = async (billing: GuardImpl, manifest = fresh()) =>
+  offer(
+    (
+      await runtimeOf(undefined, manifest, billing).project({
+        principal: member,
+        start: fromProject,
+      })
+    ).offers,
+    'hosting.plan.subscribe@hosting.plan:pro?project=p1',
+  )
+const billingOf = (o: Record<string, unknown>) =>
+  (o.conditions as { id: string }[]).find((c) => c.id === 'billing')
+const projectWith = (billing: GuardImpl) =>
+  runtimeOf(undefined, fresh(), billing).project({ principal: member })
+const only = (value: boolean) => Object.assign(() => value, { executionOnly: true as const })
+
+describe('guards at projection time (§4.2)', () => {
+  test('run with no input, the target and the bound references', async () => {
+    const calls: unknown[] = []
+    await subscribePro((args) => (calls.push(args), true))
+    expect(calls).toContainEqual({
+      input: undefined,
+      target: { key: 'pro', attributes: plansState().pro },
+      refs: { project: { key: 'p1', attributes: projectsState().p1 } },
+      principal: member,
+    })
+  })
+
+  test('false rules it out, and a string rules it out and says why', async () => {
+    expect((await subscribePro(() => false)).availability).toEqual({
+      status: 'unavailable',
+      because: ['billing'],
+    })
+    const o = await subscribePro(async () => 'the card on file has expired')
+    expect(o.availability).toEqual({ status: 'unavailable', because: ['billing'] })
+    expect(billingOf(o)).toEqual({
+      id: 'billing',
+      description: 'The billing account is in good standing',
+      value: false,
+      detail: 'the card on file has expired',
+    })
+  })
+
+  test('a guard that throws, or returns neither a boolean nor a string, is unknown, never a guess', async () => {
+    for (const billing of [
+      () => {
+        throw new Error('down')
+      },
+      () => 1 as never,
+    ])
+      expect((await subscribePro(billing)).availability).toEqual({
+        status: 'unknown',
+        because: ['seatsInRange', 'billing'],
+      })
+  })
+
+  test('an execution-only guard isn’t run, and stays unknown', async () => {
+    let ran = 0
+    const billing: GuardImpl = Object.assign(() => (ran++, false), { executionOnly: true as const })
+    expect((await subscribePro(billing)).availability).toEqual({
+      status: 'unknown',
+      because: ['seatsInRange', 'billing'],
+    })
+    expect(ran).toBe(0)
+  })
+
+  test('true on a capability that takes no input is true', async () => {
+    const manifest = fresh()
+    manifest.capabilities[2]!.preconditions = [
+      { id: 'active', description: 'The plan is active on the account', guard: true },
+    ]
+    const p = await createRuntime({
+      manifest,
+      resources: { 'hosting.plan': table(plansState()), 'hosting.project': table({}) },
+      handlers: {
+        ...handlers(),
+        'hosting.plan.cancel': { guards: { active: ({ target }) => target?.key === 'pro' } },
+      },
+    }).project({ principal: member })
+    expect(offer(p.offers, 'hosting.plan.cancel@hosting.plan:pro').availability).toEqual({
+      status: 'available',
+    })
+    expect(offer(p.offers, 'hosting.plan.cancel@hosting.plan:hobby').availability).toEqual({
+      status: 'unavailable',
+      because: ['active'],
+    })
+  })
+
+  test('what a guard says is an input of both revisions, and an execution-only guard isn’t', async () => {
+    const [yes, no, why] = await Promise.all([
+      projectWith(() => true),
+      projectWith(() => false),
+      projectWith(() => 'expired'),
+    ])
+    const rev = (p: Projection) =>
+      offer(p.offers, 'hosting.plan.subscribe@hosting.plan:pro').revision
+    expect(new Set([rev(yes), rev(no), rev(why)]).size).toBe(3)
+    expect(new Set([yes.revision, no.revision, why.revision]).size).toBe(3)
+    // cancel has no guard, so its revision doesn't move
+    expect(offer(no.offers, 'hosting.plan.cancel@hosting.plan:pro').revision).toBe(
+      offer(yes.offers, 'hosting.plan.cancel@hosting.plan:pro').revision,
+    )
+    const [a, b] = await Promise.all([projectWith(only(true)), projectWith(only(false))])
+    expect(b.revision).toBe(a.revision)
+  })
+
+  test('createRuntime refuses to start without an implementation for every declared guard', () => {
+    expect(() =>
+      createRuntime({
+        manifest: fresh(),
+        resources: { 'hosting.plan': table({}), 'hosting.project': table({}) },
+      }),
+    ).toThrow("no implementation for hosting.plan.subscribe's guard billing")
   })
 })
 

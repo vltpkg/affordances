@@ -38,6 +38,19 @@ export type ResourceResolver = {
   list?(principal: Principal, scope: { capability: Id }): Promise<string[]>
 }
 
+// §11: what the application registers for a capability. M3b uses its guards; execution's run comes with M3d
+export type Handler = {
+  guards?: Record<string, GuardImpl>
+}
+// a guard: true is "not ruled out", false or a string rules it out (the string says why). input is undefined at
+// projection time, and an execution-only guard isn't run then at all (§4.2)
+export type GuardImpl = ((args: {
+  input: Record<string, unknown> | undefined
+  target?: { key: string; attributes: Record<string, unknown> }
+  refs: Record<string, { key: string; attributes: Record<string, unknown> } | undefined>
+  principal: Principal
+}) => boolean | string | Promise<boolean | string>) & { executionOnly?: true }
+
 // §4.1
 export type CapabilityOffer = {
   id: OfferId

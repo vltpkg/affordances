@@ -22,6 +22,7 @@ import type {
   ProjectionRequest,
   Requirements,
   ResourceRef,
+  Handler,
   ResourceResolver,
   Runtime,
   View,
@@ -31,6 +32,8 @@ export type RuntimeOptions = {
   manifest: CapabilityManifest
   // one per resource type the manifest declares (RFC 0002 §2.1)
   resources: Record<Id, ResourceResolver>
+  // by capability id: an implementation for each guard it declares (§11). execution's run arrives with M3d
+  handlers?: Record<Id, Handler>
 }
 
 type Obj = Record<string, unknown>
@@ -100,13 +103,31 @@ const canonically = (a: CapabilityOffer, b: CapabilityOffer) => {
   return byBytes(x[3], y[3])
 }
 
+// §4.2: a capability takes input when its input schema declares a property, or isn't an object schema
+const takes = (c: CapabilityDefinition) => {
+  const input = c.input as { type?: unknown; properties?: Obj } | boolean | undefined
+  if (input === undefined) return false
+  if (typeof input !== 'object') return true
+  return input.type !== 'object' || Object.keys(input.properties ?? {}).length > 0
+}
+
+// a path the context doesn't supply (RFC 0001 §3.1's missing): its root isn't there, or the root's attribute isn't.
+// inside a value supplied whole, an omitted key is absent instead, and input and item are supplied whole
+const missing = (path: string, context: Context) => {
+  const [root, attribute] = path.split('.')
+  if (root === 'input' || root === 'item') return false
+  const value =
+    root === 'target' || root === 'principal' ? context[root] : context.references?.[root!]
+  return value === undefined || (attribute !== undefined && !Object.hasOwn(value, attribute))
+}
+
 // terminology §2.4: derived, never declared
 const consequential = (c: CapabilityDefinition) =>
   c.kind === 'action' &&
   (c.effects === undefined ||
     c.effects.some((e) => e.category !== 'state' || e.reversibility === 'irreversible'))
 
-export const createRuntime = ({ manifest, resources }: RuntimeOptions): Runtime => {
+export const createRuntime = ({ manifest, resources, handlers = {} }: RuntimeOptions): Runtime => {
   const checked = validate(manifest)
   if (!checked.ok)
     throw new Error(
@@ -117,6 +138,14 @@ export const createRuntime = ({ manifest, resources }: RuntimeOptions): Runtime 
     )
   for (const r of manifest.resources)
     if (!resources[r.id]) throw new Error(`no resolver for the resource type ${r.id}`)
+  // every declared guard has an implementation (§11: createRuntime checks at startup)
+  for (const c of manifest.capabilities)
+    for (const x of [...(c.preconditions ?? []), ...(c.authorization?.conditions ?? [])])
+      if ('guard' in x && typeof handlers[c.id]?.guards?.[x.id] !== 'function')
+        throw new Error(`no implementation for ${c.id}'s guard ${x.id}`)
+  // a definition's own id, for a Ref that may name it with the manifest's namespace (RFC 0001 §2)
+  const local = (ref: string) =>
+    ref.startsWith(`${manifest.namespace}#`) ? ref.slice(manifest.namespace.length + 1) : ref
   const types = new Map(manifest.resources.map((r) => [r.id, r]))
   const sources = new Map(manifest.sources.map((s) => [s.id, s]))
   const declared = Object.keys(
@@ -169,6 +198,8 @@ export const createRuntime = ({ manifest, resources }: RuntimeOptions): Runtime 
       return { type, key, version: loaded.version ?? (await digestOf(loaded.attributes)) }
     }
     const start = typeof request.start === 'object' ? request.start : undefined
+    // every guard run at projection time, for the projection's revision (§7)
+    const guardLog: { capability: Id; condition: string; value: boolean | string | null }[] = []
 
     const offerOn = async (
       c: CapabilityDefinition,
@@ -194,19 +225,76 @@ export const createRuntime = ({ manifest, resources }: RuntimeOptions): Runtime 
         reads.push((await read(start.type, start.key, loaded))!)
       }
 
-      // conditions, then requirements, then availability in RFC 0002 §4.2's order. A guard is unknown at projection
-      // until handlers can run it (M3b)
-      const result = (x: { id: string; description: string; expr?: Expr }): ConditionResult => ({
-        id: x.id,
-        description: x.description,
-        value: x.expr ? evaluate(x.expr, context) : 'unknown',
-      })
-      const conditions = (c.preconditions ?? []).map((x) => result(x as never))
-      const authorization = c.authorization
-        ? c.authorization.principal === 'authenticated' && !principal.authenticated
-          ? false
-          : all((c.authorization.conditions ?? []).map((x) => result(x as never).value))
-        : undefined
+      // conditions, then requirements, then availability in RFC 0002 §4.2's order
+      // a guard that threw, or returned something else, is null: unknown
+      const guardsRun: { condition: string; value: boolean | string | null }[] = []
+      const takesInput = takes(c)
+      // why each condition is unknown when it is: only for input, or for something else
+      const forInput = new Set<string>()
+      const result = async (x: {
+        id: string
+        description: string
+        expr?: Expr
+      }): Promise<ConditionResult> => {
+        const r: ConditionResult = { id: x.id, description: x.description, value: 'unknown' }
+        if (x.expr) {
+          r.value = evaluate(x.expr, context)
+          // needs-input only when every path that's missing is on the input (review of M3a)
+          const reading = paths(x.expr)
+          if (
+            r.value === 'unknown' &&
+            reading.some((path) => path.startsWith('input.')) &&
+            reading.every((path) => !missing(path, context))
+          )
+            forInput.add(x.id)
+          return r
+        }
+        // §4.2: a guard runs with no input, unless it's execution-only; a throw is unknown
+        const guard = handlers[c.id]?.guards?.[x.id]
+        if (!guard || guard.executionOnly) return r
+        let value: boolean | string | null
+        try {
+          value = await guard({ input: undefined, target: targetArg, refs, principal })
+          if (typeof value !== 'boolean' && typeof value !== 'string') value = null
+        } catch {
+          value = null
+        }
+        guardsRun.push({ condition: x.id, value })
+        guardLog.push({ capability: c.id, condition: x.id, value })
+        if (value === false) r.value = false
+        else if (typeof value === 'string') {
+          r.value = false
+          r.detail = value
+        } else if (value === true) {
+          // not ruled out: true when there's no input to wait for, unknown for input otherwise
+          if (takesInput) forInput.add(x.id)
+          else r.value = true
+        }
+        return r
+      }
+      const targetArg =
+        target && context.target ? { key: target.key, attributes: context.target } : undefined
+      const refs = Object.fromEntries(
+        (c.references ?? []).map((r) => [
+          r.name,
+          bound[r.name] !== undefined && context.references![r.name]
+            ? { key: bound[r.name]!, attributes: context.references![r.name]! }
+            : undefined,
+        ]),
+      )
+      const conditions: ConditionResult[] = []
+      for (const x of c.preconditions ?? []) conditions.push(await result(x as never))
+      let authorization: Truth | undefined
+      if (c.authorization) {
+        if (c.authorization.principal === 'authenticated' && !principal.authenticated)
+          authorization = false
+        else {
+          const values: Truth[] = []
+          for (const x of c.authorization.conditions ?? [])
+            values.push((await result(x as never)).value)
+          authorization = all(values)
+        }
+      }
       const requirements: Requirements = {
         authorization:
           authorization === undefined
@@ -230,15 +318,14 @@ export const createRuntime = ({ manifest, resources }: RuntimeOptions): Runtime 
             because: conditions.filter((x) => x.value === false).map((x) => x.id),
           }
         if (value === 'unknown') {
-          const unknown = (c.preconditions ?? []).filter(
-            (_, i) => conditions[i]!.value === 'unknown',
-          )
-          const pathsOf = unknown.map((x) => ('expr' in x ? paths(x.expr) : []))
-          if (pathsOf.every((p) => p.some((path) => path.startsWith('input.'))))
-            return {
-              status: 'needs-input',
-              inputs: [...new Set(pathsOf.flat().filter((p) => p.startsWith('input.')))].toSorted(),
-            }
+          const unknown = conditions.filter((x) => x.value === 'unknown')
+          if (unknown.every((x) => forInput.has(x.id))) {
+            const inputs = (c.preconditions ?? [])
+              .filter((x) => forInput.has(x.id) && 'expr' in x)
+              .flatMap((x) => paths((x as { expr: Expr }).expr))
+              .filter((path) => path.startsWith('input.'))
+            return { status: 'needs-input', inputs: [...new Set(inputs)].toSorted() }
+          }
           return { status: 'unknown', because: unknown.map((x) => x.id) }
         }
         return { status: 'available' }
@@ -247,7 +334,7 @@ export const createRuntime = ({ manifest, resources }: RuntimeOptions): Runtime 
       const claims: ClaimView[] = (manifest.claims ?? [])
         .filter(
           (k) =>
-            k.subject === c.id &&
+            local(k.subject) === c.id &&
             (!k.applies || evaluate(k.applies, { target: context.target }) !== false),
         )
         .map((k) => {
@@ -271,7 +358,11 @@ export const createRuntime = ({ manifest, resources }: RuntimeOptions): Runtime 
           with: Object.keys(bound).length ? bound : undefined,
         }),
         capability: c.id,
-        revision: await digestOf({ ...base, resources: reads, guards: [] }),
+        revision: await digestOf({
+          ...base,
+          resources: reads,
+          guards: guardsRun.toSorted((a, b) => codePoints(a.condition, b.condition)),
+        }),
         availability,
         conditions,
         requirements,
@@ -336,7 +427,16 @@ export const createRuntime = ({ manifest, resources }: RuntimeOptions): Runtime 
       if (r) everyRead.push(r)
     }
     everyRead.sort(byRead)
-    const revision = await digestOf({ ...base, resources: everyRead, guards: [] })
+    const revision = await digestOf({
+      ...base,
+      resources: everyRead,
+      guards: guardLog.toSorted(
+        (a, b) =>
+          codePoints(a.capability, b.capability) ||
+          codePoints(a.condition, b.condition) ||
+          byBytes(a, b),
+      ),
+    })
 
     // every offer, in canonical order, with nothing omitted. policies and budgets choose subsets in M3c
     const view = (): View => {
