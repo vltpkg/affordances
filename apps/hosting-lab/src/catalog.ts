@@ -3,6 +3,9 @@
 // no real provider
 
 export type Plan = {
+  // the resource key: opaque, and permuted per trial, so canonical order (by id) varies while the data doesn't
+  // (RFC 0003 §4). Everything the manifest reads uses slug
+  id: string
   slug: 'hobby' | 'pro' | 'business'
   name: string
   priceUsd: number // a month
@@ -14,6 +17,7 @@ export type Plan = {
 
 export const plans: readonly Plan[] = [
   {
+    id: 'p1',
     slug: 'hobby',
     name: 'Hobby',
     priceUsd: 0,
@@ -23,6 +27,7 @@ export const plans: readonly Plan[] = [
     support: 'community',
   },
   {
+    id: 'p2',
     slug: 'pro',
     name: 'Pro',
     priceUsd: 20,
@@ -32,6 +37,7 @@ export const plans: readonly Plan[] = [
     support: 'email',
   },
   {
+    id: 'p3',
     slug: 'business',
     name: 'Business',
     priceUsd: 80,
@@ -41,6 +47,10 @@ export const plans: readonly Plan[] = [
     support: 'priority',
   },
 ]
+
+// the plans with their ids assigned by a permutation of p1, p2, p3: `order[i]` is the id the i-th plan gets
+export const withPlanIds = (order: readonly [string, string, string]): Plan[] =>
+  plans.map((p, i) => ({ ...p, id: order[i]! }))
 
 export type AddOn = {
   slug: 'priority-support' | 'extra-bandwidth' | 'daily-backups'

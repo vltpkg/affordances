@@ -39,8 +39,11 @@ export const project = defineResource({
 export const plan = defineResource({
   id: 'hosting.plan',
   description: 'A plan: what a project gets each month, and what it costs',
-  key: 'slug',
+  // an opaque id, permuted per trial, so the choice set's canonical order varies while everything a condition or
+  // claim reads, the slug included, stays fixed (RFC 0003 §4)
+  key: 'id',
   attributes: z.object({
+    id: z.string(),
     slug: z.enum(['hobby', 'pro', 'business']),
     name: z.string(),
     priceUsd: z.number(),
