@@ -543,6 +543,10 @@ type ExecutionRequest = {
 2. **Authorization:** evaluate `authorization` against the principal and target. Authorization conditions read only `principal.*` and `target.*` (RFC 0001 §3.2, as amended), so they can run before input and references are read. Failure: `unauthorized`. A capability with no declared authorization is refused here (§4.3).
 3. **Rate limit.** Failure: `rate_limited`.
 4. **Input:** validate against the input schema. Failure: `invalid_input`, with the issues.
+   - **The target's key in the input.** For a capability that declares `targetAt` (RFC 0001 §2.2), the input's key there must name the offer's target.
+     - **Absent:** the runtime fills it in from the offer.
+     - **A different key:** the call is refused with `invalid_input`, and a `detail` naming both keys. The offer and the input can never disagree about what is acted on.
+     - **A caller that skipped projection** and sent a capability id with an input: the input's key is the target.
 5. **References:** load each reference whose key is in the input (`references[].at`, RFC 0001 §2.2). A key that resolves to nothing refuses with `not_found`, and a `detail` naming the reference ("No commerce.product 'xyz'"). So "doesn't exist" never falls through to an `unknown` precondition. It's what v0's guards return today (`apps/example/src/app/products/[slug]/actions.ts:25`).
 6. **Preconditions:** evaluate every declarative precondition and run every guard, with the input and the references. `false` or `unknown` fails (RFC 0001, rule 5). Failure: `precondition`, with the condition.
 7. **Freshness:** if `ifRevision` was given and the offer revision recomputed now differs, the failure is `stale`. This check is optional, and never a substitute for 2-6.
