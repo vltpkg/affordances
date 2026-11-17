@@ -1,19 +1,14 @@
 import { cookies } from 'next/headers'
+import { SESSION_COOKIE, sessionCookieOptions } from './cookie.ts'
 
-export const getSessionId = async () => (await cookies()).get('sid')?.value ?? null
+export const getSessionId = async () => (await cookies()).get(SESSION_COOKIE)?.value ?? null
 
 // sets a sid cookie on first use; only callable where cookies can be written (actions, route handlers)
 export const ensureSession = async () => {
   const jar = await cookies()
-  const existing = jar.get('sid')?.value
+  const existing = jar.get(SESSION_COOKIE)?.value
   if (existing) return existing
   const sid = crypto.randomUUID()
-  jar.set('sid', sid, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-    path: '/',
-    maxAge: 60 * 60 * 24 * 30,
-  })
+  jar.set(SESSION_COOKIE, sid, sessionCookieOptions)
   return sid
 }

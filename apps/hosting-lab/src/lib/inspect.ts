@@ -1,5 +1,10 @@
 import { derive, type CapabilityManifest } from '@affordances/ir'
-import type { CapabilityOffer, PolicyId, Principal } from '@affordances/runtime'
+import {
+  builtInPolicies,
+  type CapabilityOffer,
+  type PolicyId,
+  type Principal,
+} from '@affordances/runtime'
 import { manifest } from '../manifest.ts'
 import { runtime, runtimeFor } from './runtime.ts'
 
@@ -7,7 +12,7 @@ import { runtime, runtimeFor } from './runtime.ts'
 // every offer the principal may see, and marks which ones a policy's view leaves out, since what a view omits is
 // what a developer most needs to see
 
-export const POLICIES: PolicyId[] = ['exhaustive', 'resource', 'progressive', 'advocated']
+export const POLICIES: PolicyId[] = builtInPolicies.map((p) => p.id)
 
 export type InspectedOffer = CapabilityOffer & { inView: boolean }
 

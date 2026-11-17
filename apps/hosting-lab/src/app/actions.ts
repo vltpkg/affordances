@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { defineAction } from '@/lib/affordances'
+import { messages } from '@/lib/messages'
 import { checkedBy } from '@/lib/runtime'
 import { ensureSession } from '@/lib/session'
 import * as store from '@/lib/store'
@@ -20,5 +21,5 @@ export const cancel = defineAction({
     revalidatePath('/', 'layout')
     return result
   },
-  message: () => 'The project renews as Hobby at the end of the month',
+  message: messages.cancelled,
 })

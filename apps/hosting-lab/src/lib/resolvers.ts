@@ -10,6 +10,9 @@ import { accountById, currentPlans, findAccount, projectAttributes, type Account
 export const accountOf = (principal: Principal): Account | undefined =>
   principal.authenticated && principal.subject ? accountById(principal.subject) : undefined
 
+// the caller's project, the one thing every per-project read needs
+export const projectOf = (principal: Principal) => accountOf(principal)?.project
+
 // rows read when asked, so a plan-id assignment made after the resolvers exist still applies
 const catalog = <T extends Record<string, unknown>>(
   rows: () => readonly T[],
@@ -28,24 +31,24 @@ export const resolvers: Record<string, ResourceResolver> = {
   'hosting.bundle': catalog(() => bundles, 'slug'),
   'hosting.project': {
     load: async (key, principal) => {
-      const project = accountOf(principal)?.project
+      const project = projectOf(principal)
       return project && project.id === key ? { attributes: projectAttributes(project) } : null
     },
     list: async (principal) => {
-      const project = accountOf(principal)?.project
+      const project = projectOf(principal)
       return project ? [project.id] : []
     },
   },
   'hosting.deployment': {
     load: async (key, principal) => {
-      const project = accountOf(principal)?.project
+      const project = projectOf(principal)
       const d = project?.deployments.find((x) => x.id === key)
       return d && project
         ? { attributes: { id: d.id, projectId: project.id, status: d.status, current: d.current } }
         : null
     },
     list: async (principal) => {
-      return accountOf(principal)?.project.deployments.map((d) => d.id) ?? []
+      return projectOf(principal)?.deployments.map((d) => d.id) ?? []
     },
   },
 }

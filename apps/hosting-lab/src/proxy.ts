@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server'
+import { SESSION_COOKIE, sessionCookieOptions } from './lib/cookie.ts'
 import { inspectorEnabled } from './lib/gate.ts'
 
 // every page visitor gets a session before the page renders, so the project a page shows is the one its forms act
@@ -9,17 +10,12 @@ export const proxy = (request: NextRequest) => {
   if (request.nextUrl.pathname.startsWith('/inspect') && !inspectorEnabled())
     return new NextResponse('Not found', { status: 404 })
   if (request.nextUrl.pathname.startsWith('/api/')) return NextResponse.next()
-  if (request.cookies.has('sid') || request.headers.has('authorization')) return NextResponse.next()
+  if (request.cookies.has(SESSION_COOKIE) || request.headers.has('authorization'))
+    return NextResponse.next()
   const sid = crypto.randomUUID()
-  request.cookies.set('sid', sid)
+  request.cookies.set(SESSION_COOKIE, sid)
   const response = NextResponse.next({ request: { headers: request.headers } })
-  response.cookies.set('sid', sid, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-    path: '/',
-    maxAge: 60 * 60 * 24 * 30,
-  })
+  response.cookies.set(SESSION_COOKIE, sid, sessionCookieOptions)
   return response
 }
 

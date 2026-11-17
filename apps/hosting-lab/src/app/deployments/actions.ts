@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { defineAction } from '@/lib/affordances'
+import { messages } from '@/lib/messages'
 import { checkedBy } from '@/lib/runtime'
 import { ownsDeployment, planHasRollback } from '@/lib/guards'
 import { ensureSession } from '@/lib/session'
@@ -21,7 +22,7 @@ export const deploy = defineAction({
     revalidatePath('/', 'layout')
     return result
   },
-  message: ({ output }) => `Deployment ${output.id} is ${output.status}`,
+  message: messages.deployed,
 })
 
 export const rollback = defineAction({
@@ -46,5 +47,5 @@ export const rollback = defineAction({
     revalidatePath('/', 'layout')
     return result
   },
-  message: ({ output }) => `${output.current} is published again`,
+  message: messages.rolledBack,
 })

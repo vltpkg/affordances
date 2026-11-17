@@ -1,6 +1,7 @@
 import type { Handler, Principal, TokenStore } from '@affordances/runtime'
 import { ownsDeployment, planHasRollback } from './guards.ts'
-import { accountOf } from './resolvers.ts'
+import { accountOf, projectOf } from './resolvers.ts'
+import { messages } from './messages.ts'
 import * as store from './store.ts'
 
 // what the projection runtime runs for each capability (RFC 0002 §11): its guards, its run once every check has
@@ -21,13 +22,13 @@ export const handlers: Record<string, Handler> = {
   'hosting.plan.list': { run: () => store.planRows() },
   'hosting.project.read': {
     run: (_, { principal }) => {
-      const project = store.accountById(caller(principal))!.project
-      return store.projectAttributes(project)
+      caller(principal)
+      return store.projectAttributes(projectOf(principal)!)
     },
   },
   'hosting.subscription.cancel': {
     run: (i, { principal }) => store.cancel(caller(principal), fields(i).projectId!),
-    message: () => 'The project renews as Hobby at the end of the month',
+    message: messages.cancelled,
   },
   'hosting.plan.subscribe': {
     run: (i, { principal }) =>
@@ -48,10 +49,7 @@ export const handlers: Record<string, Handler> = {
   'hosting.deployment.create': {
     run: (i, { principal }) =>
       store.deploy(caller(principal), fields(i).projectId!, fields(i).ref!),
-    message: ({ output }) => {
-      const d = output as { id: string; status: string }
-      return `Deployment ${d.id} is ${d.status}`
-    },
+    message: messages.deployed,
   },
   'hosting.deployment.rollback': {
     guards: {
@@ -60,7 +58,7 @@ export const handlers: Record<string, Handler> = {
         ownsDeployment(accountOf(principal), input?.deployment ?? target?.key),
     },
     run: (i, { principal }) => store.rollback(caller(principal), fields(i).deployment!),
-    message: ({ output }) => `${(output as { current: string }).current} is published again`,
+    message: messages.rolledBack,
   },
 }
 

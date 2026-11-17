@@ -1,4 +1,5 @@
 import type { Principal } from '@affordances/runtime'
+import { SESSION_COOKIE } from './cookie.ts'
 import { principalFor } from './resolvers.ts'
 
 // which credential authenticates a request, read once for every route: an agent sends `Authorization: Bearer
@@ -11,7 +12,9 @@ export type Credential =
 export const credentialOf = (request: Request): Credential => {
   const bearer = request.headers.get('authorization')?.match(/^Bearer (\S+)$/)?.[1]
   if (bearer) return { session: bearer, via: 'bearer' }
-  const cookie = request.headers.get('cookie')?.match(/(?:^|;\s*)sid=([^;]+)/)?.[1]
+  const cookie = request.headers
+    .get('cookie')
+    ?.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([^;]+)`))?.[1]
   if (cookie) return { session: cookie, via: 'cookie' }
   return { session: null, via: null }
 }

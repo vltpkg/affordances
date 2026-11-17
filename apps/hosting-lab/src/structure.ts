@@ -2,6 +2,8 @@
 // set's member offers move out of the view's `offers` and into their choice set, in the choice set's order. Nothing
 // is added, dropped or relabelled, and the order basis is A's. So S is information-constant, and checkably so
 
+import { canonicalJson } from '@affordances/ir'
+
 type Offer = { id: string; [field: string]: unknown }
 type ChoiceSet = { id: string; members: string[]; [field: string]: unknown }
 export type ViewData = { offers: Offer[]; choiceSets: ChoiceSet[]; [field: string]: unknown }
@@ -55,15 +57,4 @@ const arranged = (view: ViewData): ViewData => {
 // whether an S rendering carries exactly A's information: undo the named transform, and compare as data. Any
 // added label, claim, detail or field, or a changed order basis, makes it unequal
 export const sameInformation = (a: ViewData, s: NestedView): boolean =>
-  JSON.stringify(sortKeys(arranged(a))) === JSON.stringify(sortKeys(unnestChoiceSets(s)))
-
-const sortKeys = (value: unknown): unknown =>
-  Array.isArray(value)
-    ? value.map(sortKeys)
-    : value !== null && typeof value === 'object'
-      ? Object.fromEntries(
-          Object.keys(value)
-            .toSorted()
-            .map((k) => [k, sortKeys((value as Record<string, unknown>)[k])]),
-        )
-      : value
+  canonicalJson(arranged(a)) === canonicalJson(unnestChoiceSets(s))
