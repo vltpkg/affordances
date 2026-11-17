@@ -1,3 +1,4 @@
+import { createAffordances, createHandler } from '@affordances/core'
 import { NextRequest } from 'next/server'
 import { beforeEach, expect, test } from 'vitest'
 import { credentialOf } from '../src/lib/principal.ts'
@@ -5,6 +6,12 @@ import { serveExecute, serveExpand, serveInspect, serveView } from '../src/lib/s
 import * as store from '../src/lib/store.ts'
 import { accountFor } from '../src/lib/view.ts'
 import { proxy } from '../src/proxy.ts'
+import overview from '@/app/state'
+import addOnsState from '@/app/add-ons/state'
+import deploymentsState from '@/app/deployments/state'
+import plansState from '@/app/plans/state'
+import { checkedBy } from '../src/lib/runtime.ts'
+import * as capabilities from '../src/manifest.ts'
 
 // the code review's findings 1 to 4 (the M3 close-out): a session's credential is never its identity, the
 // proxy never gives an agent-facing request a session, and reading never makes an account
@@ -154,4 +161,130 @@ test('finding 4: reading never makes an account, in a v0 state loader or a proje
   accountFor('s_seen')
   const after = await (await view('s_seen')).json()
   expect(after.revision).toBe(before.revision)
+})
+
+// v0's agent surface, guarded as the projection's is: the app's real state loaders, with its capabilities bound to
+// store-backed runs (the app's own actions need Next's request context), through core's handler
+const v0 = createAffordances<{ id: string }>({
+  auth: (request) => {
+    const id = request.headers.get('authorization')?.match(/^Bearer (\S+)$/)?.[1]
+    return id ? { id } : null
+  },
+})
+const own = (ctx: { session: { id: string } | null }) => store.account(ctx.session!.id).id
+const v0Handler = createHandler({
+  manifest: {
+    name: 'hosting-lab',
+    routes: {
+      '/': {
+        state: overview,
+        actions: [
+          v0.defineAction({
+            capability: capabilities.cancel,
+            name: 'cancel',
+            state: overview,
+            ...checkedBy,
+            run: ({ projectId }, ctx) => store.cancel(own(ctx), projectId),
+          }),
+        ],
+      },
+      '/plans': {
+        state: plansState,
+        actions: [
+          v0.defineAction({
+            capability: capabilities.subscribe,
+            name: 'subscribe',
+            state: plansState,
+            ...checkedBy,
+            run: ({ plan, projectId }, ctx) => store.subscribePlan(own(ctx), projectId, plan),
+          }),
+        ],
+      },
+      '/add-ons': {
+        state: addOnsState,
+        actions: [
+          v0.defineAction({
+            capability: capabilities.addAddOn,
+            name: 'addAddOn',
+            state: addOnsState,
+            ...checkedBy,
+            run: ({ projectId, addOn }, ctx) => store.addAddOn(own(ctx), projectId, addOn),
+          }),
+        ],
+      },
+      '/deployments': {
+        state: deploymentsState,
+        actions: [
+          v0.defineAction({
+            capability: capabilities.deploy,
+            name: 'deploy',
+            state: deploymentsState,
+            ...checkedBy,
+            run: ({ projectId, ref }, ctx) => store.deploy(own(ctx), projectId, ref),
+          }),
+        ],
+      },
+    },
+  },
+  basePath: '/api/affordances',
+})
+const MEDIA_TYPE = 'application/vnd.affordances+json'
+
+test("finding 1, on v0's surface: no graph or call response carries the credential or its prefix", async () => {
+  for (const sid of [crypto.randomUUID(), crypto.randomUUID(), 'abcdefgh-short']) {
+    const { id } = store.account(sid).project
+    const out: string[] = []
+    const graph = (route: string) =>
+      v0Handler(
+        new Request(`https://hosting.test/api/affordances${route}`, {
+          headers: { accept: MEDIA_TYPE, ...bearer(sid) },
+        }),
+      )
+    const call = (route: string, body: unknown) =>
+      v0Handler(
+        new Request(`https://hosting.test/api/affordances${route}`, {
+          method: 'POST',
+          body: JSON.stringify(body),
+          headers: { 'content-type': MEDIA_TYPE, ...bearer(sid) },
+        }),
+      )
+    for (const route of ['/', '/plans', '/add-ons', '/deployments'])
+      out.push(await (await graph(route)).text())
+    out.push(
+      await (
+        await call('/plans', { action: 'subscribe', input: { plan: 'p2', projectId: id } })
+      ).text(),
+    )
+    out.push(
+      await (
+        await call('/plans', {
+          action: 'subscribe',
+          input: { plan: 'p2', projectId: id },
+          confirm: true,
+        })
+      ).text(),
+    )
+    out.push(await (await call('/', { action: 'cancel', input: { projectId: id } })).text())
+    out.push(
+      await (
+        await call('/add-ons', {
+          action: 'addAddOn',
+          input: { projectId: id, addOn: 'priority-support' },
+          confirm: true,
+        })
+      ).text(),
+    )
+    out.push(
+      await (
+        await call('/deployments', { action: 'deploy', input: { projectId: id, ref: 'main' } })
+      ).text(),
+    )
+    // the calls ran: the surface checked is the one an agent gets after acting
+    expect(store.findAccount(sid)!.project.plan).toBe('pro')
+    expect(store.findAccount(sid)!.project.deployments).toHaveLength(1)
+    const all = out.join('\n')
+    expect(all).toContain(id)
+    expect(all).not.toContain(sid)
+    expect(all).not.toContain(sid.slice(0, 8))
+  }
 })

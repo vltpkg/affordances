@@ -1,4 +1,9 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
-// unit tests only: e2e/ is Playwright's (test:e2e), and needs a running app
-export default defineConfig({ test: { include: ['test/**/*.test.ts'] } })
+// unit tests only: e2e/ is Playwright's (test:e2e), and needs a running app. `@` is the app's own alias
+// (tsconfig.json), so a test can load the app's real state loaders
+export default defineConfig({
+  resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
+  test: { include: ['test/**/*.test.ts'] },
+})
