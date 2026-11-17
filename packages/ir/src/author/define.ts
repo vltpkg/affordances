@@ -24,6 +24,7 @@ import type { ContextPaths } from './paths.ts'
 import { toJsonSchema, type Infer, type StandardSchemaV1 } from './standard.ts'
 import type { Declared, Guard, When } from './when.ts'
 import { encodePointer } from '../pointer.ts'
+import { renderSummary } from '../summary.ts'
 
 // the source authoring names for what it converts (Standard Schema to JSON Schema): basis `inferred`, by a tool
 // (RFC 0001 §12.1, rule 3). defineManifest declares it whenever a definition uses it
@@ -53,6 +54,9 @@ export type DefinedPrincipal<Attributes = unknown> = {
 export type DefinedCapability<Guards extends string = string, Input = unknown, Output = unknown> = {
   readonly definition: CapabilityDefinition
   readonly schemas: Schemas
+  // the confirmation summary for an input, by ir's one renderer (RFC 0001 §3.2), so a binding that has only the
+  // input (v0) renders it as the runtime does. Other roots read `unknown`, as unresolved paths do
+  readonly summary?: (input: unknown) => string
   readonly '~guards'?: Guards
   readonly '~input'?: Input
   readonly '~output'?: Output
@@ -257,6 +261,10 @@ export const defineCapability = <
       ...fieldProvenance(converted),
     }) as CapabilityDefinition,
     schemas: defined({ input: spec.input, output: spec.output }),
+    ...(spec.confirmation && {
+      summary: (input: unknown) =>
+        renderSummary(spec.confirmation!.summary, { input: input as Record<string, unknown> }),
+    }),
   }
 }
 
