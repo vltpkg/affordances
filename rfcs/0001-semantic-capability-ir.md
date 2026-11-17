@@ -1,6 +1,6 @@
 # RFC 0001: The semantic capability IR
 
-- **Status:** accepted (2026-11-17); amended 2026-11-17: §3.1, §5.5 and §6.3 (quantifiers and `count` after the guard survey, with route parameters mapped into input by bindings); §2.3, §3.1, §3.2, §5.5, §6.4 and §9 (declared principal attributes, missing against absent, the roots authorization conditions and claims read, and composition, for RFC 0002); §12.1 (v0's agent path fails closed on declarative preconditions); §7.2 and §7.3 (empty `extensions` dropped, and `W_PATH_UNCHECKED`, from M2b's review); §3.2 (how a summary renders strings)
+- **Status:** accepted (2026-11-17); amended 2026-11-17: §3.1, §5.5 and §6.3 (quantifiers and `count` after the guard survey, with route parameters mapped into input by bindings); §2.3, §3.1, §3.2, §5.5, §6.4 and §9 (declared principal attributes, missing against absent, the roots authorization conditions and claims read, and composition, for RFC 0002); §12.1 (v0's agent path fails closed on declarative preconditions); §7.2 and §7.3 (empty `extensions` dropped, and `W_PATH_UNCHECKED`, from M2b's review); §3.2 (how a summary renders strings); §12.1 and §12.2 (`definePrincipal`)
 - **Package:** `@affordances/ir` (private until published)
 - **Depends on:** [terminology](./research/terminology.md), [repo audit](./research/repo-audit.md), [prior art](./research/prior-art.md)
 
@@ -1087,7 +1087,7 @@ A publisher recommendation is a separate claim, which an agent sees with its sou
 Nobody writes §11's JSON by hand. The IR's types are chosen so that a typed authoring surface can produce it. M2 builds the data half; M6 builds the Next.js half.
 
 - **Capabilities are declared as data, and code is bound to them separately.**
-  - `defineResource` and `defineCapability` hold only data: identifiers, descriptions, schemas, conditions, effects.
+  - `defineResource`, `defineCapability` and `definePrincipal` hold only data: identifiers, descriptions, schemas, conditions, effects.
   - v0's `defineAction` gains an additive `capability` option that refers to one, and supplies only the code: `run`, the guard implementations, and v0's own `summary` and `message`. The description and input come from the capability, so nothing is written twice.
   - The split matches the IR's own: definitions are data, and handlers are registered with a runtime (§6.3). XState's machine config against `setup()` and `provide()` is the precedent (prior art §3.3).
 - **The compiler builds a manifest from capability modules alone.** They import `@affordances/ir` and a schema library, never the application's code. That closes the gap where today's build artifact imports the application (`packages/next/src/codegen.ts:109-131`).
@@ -1125,7 +1125,7 @@ Nobody writes §11's JSON by hand. The IR's types are chosen so that a typed aut
   - the types in §13;
   - the JSON Schema, which is generated from the same zod source as the types, as `@affordances/protocol` does today (`packages/protocol/src/schema.ts:3`);
   - the readers: `validate`, `normalize`, `canonicalize` (to bytes), `digest`, `compose`, and `derive` (the edges of §5.5);
-  - the authoring helpers of §12.1: `defineResource`, `defineCapability`, `defineClaims`, `defineManifest`, `guard` and `when`.
+  - the authoring helpers of §12.1: `defineResource`, `defineCapability`, `definePrincipal`, `defineClaims`, `defineManifest`, `guard` and `when`.
 - **No runtime dependencies** beyond the schema library. No Next.js, React or MCP.
 - **Private** (`"private": true`) until published.
 - **Tests:**
