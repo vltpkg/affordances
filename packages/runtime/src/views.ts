@@ -64,6 +64,33 @@ type Origin =
 type Cursor = { r: string; o: Origin; b: (number | null)[] }
 const encode = (cursor: Cursor) =>
   `more:${base64url(new TextEncoder().encode(canonicalJson(cursor)))}`
+// a cursor's shape, checked whole: anything an agent sends is untrusted (review of C)
+const ALONG = ['alternatives', 'members', 'relations', 'contains', 'enables']
+const MAX_CUTS = 256
+const isRef = (v: unknown): v is ResourceRef =>
+  v !== null &&
+  typeof v === 'object' &&
+  typeof (v as ResourceRef).type === 'string' &&
+  typeof (v as ResourceRef).key === 'string'
+const isOrigin = (o: unknown): o is Origin => {
+  if (o === null || typeof o !== 'object' || Array.isArray(o)) return false
+  const v = o as Record<string, unknown>
+  if ('view' in v) return v.view === true && Object.keys(v).length === 1
+  return (
+    Object.keys(v).length === 2 &&
+    (typeof v.from === 'string' || isRef(v.from)) &&
+    ALONG.includes(v.along as string)
+  )
+}
+const isCursor = (v: unknown): v is Cursor =>
+  v !== null &&
+  typeof v === 'object' &&
+  typeof (v as Cursor).r === 'string' &&
+  isOrigin((v as Cursor).o) &&
+  Array.isArray((v as Cursor).b) &&
+  (v as Cursor).b.length <= MAX_CUTS &&
+  (v as Cursor).b.every((n) => n === null || (Number.isInteger(n) && n > 0))
+
 const decode = (from: unknown): Cursor | undefined => {
   if (typeof from !== 'string' || !from.startsWith('more:')) return
   try {
@@ -71,9 +98,7 @@ const decode = (from: unknown): Cursor | undefined => {
     const value = JSON.parse(
       new TextDecoder().decode(Uint8Array.from(text, (ch) => ch.charCodeAt(0))),
     )
-    return value && typeof value.r === 'string' && value.o && Array.isArray(value.b)
-      ? value
-      : undefined
+    return isCursor(value) ? value : undefined
   } catch {
     return undefined
   }

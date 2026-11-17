@@ -61,6 +61,8 @@ const runtime = (options: { policies?: DiscoveryPolicy[]; defaultPolicy?: string
 const member: Principal = { authenticated: true, attributes: { plan: 'hobby', orgIds: ['o1'] } }
 const fromProject = { type: 'hosting.project', key: 'p1' }
 const task = { statement: 'Find a plan for my small project; keep costs low, but deploy reliably.' }
+// a cursor anyone could write, from its parts
+const forge = (body: unknown) => `more:${Buffer.from(JSON.stringify(body)).toString('base64url')}`
 const ids = (v: View) => v.offers.map((o) => o.id)
 
 // what each offer's availability is, by id
@@ -265,6 +267,17 @@ describe('expansion and inspection (§6.5)', () => {
     await expect(p.expand({ from: 'more:not-a-cursor', along: 'more' })).rejects.toThrow(
       'nothing to expand',
     )
+    // a forged cursor of the right revision but the wrong shape is refused the same way, never a TypeError (review of C)
+    for (const body of [
+      { r: p.revision, o: 5, b: [] },
+      { r: p.revision, o: { view: true }, b: [0] },
+      { r: p.revision, o: { view: true }, b: [1.5] },
+      { r: p.revision, o: { from: 'x', along: 'more' }, b: [] },
+      { r: p.revision, o: { view: true }, b: Array.from({ length: 257 }, () => 1) },
+    ])
+      await expect(p.expand({ from: forge(body), along: 'more' })).rejects.toThrow(
+        'nothing to expand',
+      )
   })
 
   test('two pages that end on the same offer keep their own next pages (review of M3c)', async () => {
