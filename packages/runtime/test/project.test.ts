@@ -456,6 +456,23 @@ describe('guards at projection time (§4.2)', () => {
     expect(b.revision).toBe(a.revision)
   })
 
+  test('an authorization guard never waits on the input: true is met, with or without input', async () => {
+    const manifest = fresh()
+    manifest.capabilities[1]!.authorization!.conditions = [
+      { id: 'billingOwner', description: 'The caller owns the billing account', guard: true },
+    ]
+    const p = await createRuntime({
+      manifest,
+      resources: { 'hosting.plan': table(plansState()), 'hosting.project': table(projectsState()) },
+      handlers: {
+        'hosting.plan.subscribe': { guards: { billing: () => true, billingOwner: () => true } },
+      },
+    }).project({ principal: member, start: fromProject })
+    const o = offer(p.offers, 'hosting.plan.subscribe@hosting.plan:pro?project=p1')
+    expect((o.requirements as { authorization: string }).authorization).toBe('met')
+    expect(o.availability).toEqual({ status: 'needs-input', inputs: ['input.seats'] })
+  })
+
   test('createRuntime refuses to start without an implementation for every declared guard', () => {
     expect(() =>
       createRuntime({

@@ -231,11 +231,11 @@ export const createRuntime = ({ manifest, resources, handlers = {} }: RuntimeOpt
       const takesInput = takes(c)
       // why each condition is unknown when it is: only for input, or for something else
       const forInput = new Set<string>()
-      const result = async (x: {
-        id: string
-        description: string
-        expr?: Expr
-      }): Promise<ConditionResult> => {
+      // authorization never reads the input (RFC 0001 §3.2), so its guards never wait on it
+      const result = async (
+        x: { id: string; description: string; expr?: Expr },
+        authorizing = false,
+      ): Promise<ConditionResult> => {
         const r: ConditionResult = { id: x.id, description: x.description, value: 'unknown' }
         if (x.expr) {
           r.value = evaluate(x.expr, context)
@@ -267,7 +267,7 @@ export const createRuntime = ({ manifest, resources, handlers = {} }: RuntimeOpt
           r.detail = value
         } else if (value === true) {
           // not ruled out: true when there's no input to wait for, unknown for input otherwise
-          if (takesInput) forInput.add(x.id)
+          if (takesInput && !authorizing) forInput.add(x.id)
           else r.value = true
         }
         return r
@@ -291,7 +291,7 @@ export const createRuntime = ({ manifest, resources, handlers = {} }: RuntimeOpt
         else {
           const values: Truth[] = []
           for (const x of c.authorization.conditions ?? [])
-            values.push((await result(x as never)).value)
+            values.push((await result(x as never, true)).value)
           authorization = all(values)
         }
       }
