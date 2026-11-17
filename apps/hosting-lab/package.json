@@ -2,18 +2,35 @@
   "name": "@affordances/hosting-lab",
   "version": "0.0.0",
   "private": true,
-  "description": "A fictional hosting provider: the fixed option set the agent-choice benchmark shares",
+  "description": "A fictional hosting provider: the fixed option set the agent-choice benchmark shares, and its app",
   "type": "module",
   "exports": {
     "./manifest": "./src/manifest.ts",
     "./catalog": "./src/catalog.ts"
   },
   "scripts": {
+    "dev": "next dev -p 3007",
+    "build": "next build",
+    "start": "next start -p 3007",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@affordances/core": "workspace:*",
     "@affordances/ir": "workspace:*",
+    "@affordances/next": "workspace:*",
+    "@affordances/ui": "workspace:*",
+    "next": "^16.4.6",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "tailwindcss": "^4.3.3"
   }
 }
