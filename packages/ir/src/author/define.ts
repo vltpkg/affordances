@@ -1,6 +1,6 @@
 import {
-  CapabilityManifest,
   type AuthorizationRequirement,
+  type CapabilityManifest,
   type Binding,
   type CapabilityDefinition,
   type CapabilityKind,
@@ -19,6 +19,7 @@ import {
   type Source,
   type URI,
 } from '../schema.ts'
+import { validate } from '../validate.ts'
 import type { ContextPaths } from './paths.ts'
 import { toJsonSchema, type Infer, type StandardSchemaV1 } from './standard.ts'
 import type { Declared, Guard, When } from './when.ts'
@@ -336,6 +337,12 @@ export const defineManifest = (spec: {
     claims: claims?.length ? claims : undefined,
     bindings: spec.bindings && [...spec.bindings],
   })
-  // the shapes are the IR's; reference resolution, paths and the safety rules are validate's (M2b)
-  return CapabilityManifest.parse(manifest)
+  // safe by default: an authored manifest is valid IR, or defineManifest says where it isn't (RFC 0001 §7.3)
+  const result = validate(manifest)
+  const errors = result.issues.filter((i) => i.code.startsWith('E_'))
+  if (!result.ok || errors.length)
+    throw new TypeError(
+      `defineManifest: the manifest isn't valid IR:\n${errors.map((i) => `  ${i.code} at ${i.at || '/'}: ${i.message}`).join('\n')}`,
+    )
+  return result.manifest
 }

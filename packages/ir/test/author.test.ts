@@ -327,6 +327,13 @@ test('condition paths are checked against attributes, input, references and the 
       },
     ],
   })
+  defineCapability({
+    ...base,
+    input: z.object({ productId: z.string() }),
+    references: { product: { resource: product, at: 'productId' } },
+    // @ts-expect-error elements are reached through a quantifier's item, never a [] segment
+    preconditions: { a: when.eq('product.variants.[].sku', 'x').because('no [] paths') },
+  })
   // no input and no principal: the target's paths still type, and nothing else's
   const targetOnly = defineCapability({
     ...base,
@@ -362,4 +369,16 @@ test('condition paths are checked against attributes, input, references and the 
     },
   })
   expect(valid.definition.preconditions?.map((c) => c.id)).toEqual(['a', 'b', 'c', 'd'])
+})
+
+test('defineManifest refuses a manifest validate rejects, saying where', () => {
+  expect(() =>
+    defineManifest({
+      namespace: 'https://broken.example/capabilities',
+      owner: { name: 'Broken' },
+      // the cart contains products, which this manifest doesn't declare
+      resources: [cart],
+      capabilities: [],
+    }),
+  ).toThrow(/E_UNRESOLVED at \/resources\/0\/contains\/0/)
 })
