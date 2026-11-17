@@ -1,0 +1,19 @@
+{
+  "name": "@affordances/hosting-lab",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A fictional hosting provider: the fixed option set the agent-choice benchmark shares",
+  "type": "module",
+  "exports": {
+    "./manifest": "./src/manifest.ts",
+    "./catalog": "./src/catalog.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@affordances/ir": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}

@@ -1087,6 +1087,8 @@
     "workspace~apps+example @affordances/protocol": "prod workspace:* workspace~packages+protocol",
     "workspace~apps+example @affordances/react": "prod workspace:* workspace~packages+react",
     "workspace~apps+example @affordances/ui": "prod workspace:* workspace~packages+ui",
+    "workspace~apps+hosting-lab zod": "prod ^4.6.7 ~npm~zod@4.6.7",
+    "workspace~apps+hosting-lab @affordances/ir": "prod workspace:* workspace~packages+ir",
     "workspace~packages+cli @effect/platform-node": "dev 4.1.0 ~npm~@effect+platform-node@4.1.0~peer.ef00b57fff5a53f1",
     "workspace~packages+cli effect": "dev 4.1.0 ~npm~effect@4.1.0",
     "workspace~packages+cli @affordances/mcp": "prod workspace:* workspace~packages+mcp",
