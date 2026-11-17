@@ -41,7 +41,7 @@ For the second and third to work, the words have to keep apart what an applicati
 - **Why not "operation".** In OpenAPI and [Hydra](https://www.hydra-cg.com/spec/latest/core/), an operation is bound to an HTTP method and target. A capability has no transport.
 - **Why not "tool" or "action".** "Tool" is MCP's transport-level unit. "Action" is one of the three kinds, and in v0 it means any `defineAction`, including read-only ones like `search` (`apps/example/src/app/actions.ts:8-15`).
 - **What it does not mean: authority.** In security engineering a _capability_ is an unforgeable reference whose possession grants authority (the object-capability model; [Miller, _Robust Composition_, 2006](https://papers.agoric.com/assets/pdf/papers/robust-composition.pdf)). That is explicitly **not** this meaning. Knowing a capability, or receiving an offer of one, grants nothing. Authorization is checked at execution (§3.2).
-- **The other collision.** MCP also uses "capabilities" for protocol features negotiated at initialization ([MCP lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle)). The context always disambiguates, because ours are always "capability definitions" or "capability offers".
+- **The other collision.** MCP also uses "capabilities" for the optional protocol features a client and server declare: per request since revision 2026-07-28, and in an initialization handshake before it ([MCP lifecycle](https://modelcontextprotocol.io/specification/2026-07-28/basic/lifecycle)). The context always disambiguates, because ours are always "capability definitions" or "capability offers".
 
 ### 2.3 Capability kinds: query, action, event
 
@@ -57,14 +57,14 @@ For the second and third to work, the words have to keep apart what an applicati
 
 ### 2.4 Behavioral properties: safe, idempotent
 
-These two are used exactly as HTTP defines them for methods, applied to a capability.
+These two are HTTP's definitions for methods, applied to a capability.
 
-- **`safe`:** executing it is not expected to change state the caller can observe ([RFC 9110 §9.2.1](https://www.rfc-editor.org/rfc/rfc9110#section-9.2.1)). WoT uses the same term on actions ([`ActionAffordance`](https://www.w3.org/TR/wot-thing-description11/#actionaffordance)).
+- **`safe`:** the caller "does not request, and does not expect, any state change on the origin server" as a result of executing it ([RFC 9110 §9.2.1](https://www.rfc-editor.org/rfc/rfc9110#section-9.2.1)). For a capability, "the origin server" is the application. WoT uses the same term on actions ([`ActionAffordance`](https://www.w3.org/TR/wot-thing-description11/#actionaffordance)).
 - **`idempotent`:** executing it several times with the same input has the same intended effect as executing it once ([RFC 9110 §9.2.2](https://www.rfc-editor.org/rfc/rfc9110#section-9.2.2)).
 
 **Each is three-valued: `true`, `false`, or absent.** Absent means no claim was made. WoT gives `safe` and `idempotent` a default of `false`, but uses this rule for `synchronous`: "Lack of this keyword means that no claim on the synchronicity of the action can be made" ([`ActionAffordance`](https://www.w3.org/TR/wot-thing-description11/#actionaffordance)). We apply it to all of them, so an imported description with no annotation stays distinguishable from one that says `false`. Enforcement treats absent the same as the cautious value: not safe, not idempotent.
 
-**What they don't mean:** that the capability is harmless, approved, or exempt from confirmation. A behavioral property is a statement by its source (§2.8), and every enforcement decision ignores it when it would loosen a check. MCP draws the same line: clients "MUST consider tool annotations to be untrusted unless they come from trusted servers" ([MCP tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)). v0's `readOnly` (`packages/core/src/action.ts:52`) and MCP's `readOnlyHint`/`idempotentHint` map onto these two terms. Imported from MCP or WebMCP, they are recorded as **hints**, the word those protocols use: imported claims, never declarations (§2.8).
+**What they don't mean:** that the capability is harmless, approved, or exempt from confirmation. A behavioral property is a statement by its source (§2.8), and every enforcement decision ignores it when it would loosen a check. MCP draws the same line: clients "MUST consider tool annotations to be untrusted unless they come from trusted servers" ([MCP tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)). v0's `readOnly` (`packages/core/src/action.ts:52`) and MCP's `readOnlyHint`/`idempotentHint` map onto these two terms. Imported from MCP or WebMCP, they are recorded as **hints**, the word those protocols use: imported claims, never declarations (§2.8).
 
 **Consequential** is the one combined flag, for targets that have only one (WebMCP's `consequentialHint`). It is derived, never authored: a capability is consequential when any of its effects is `financial`, `external`, `access` or `irreversible`, or when its effects are unknown (§2.6).
 
@@ -135,7 +135,7 @@ v0's single guard function (`packages/core/src/action.ts:39-44`) and `expose` (`
 ### 2.9 Identity and binding
 
 - **A semantic identifier** names a definition, independently of every transport, as a dotted name such as `commerce.cart.addItem`.
-  - Dots are already legal in MCP tool names (`admin.tools.list` is the spec's own example; [MCP tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)).
+  - Dots are already legal in MCP tool names (`admin.tools.list` is the spec's own example; [MCP tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)).
   - For cross-application use, the canonical form is a URI: the manifest's namespace URI with the identifier as a fragment. That follows ALPS, where "the complete URI to an ALPS 'descriptor' (including the fragment) forms an 'abstract semantic type' identifier" (ALPS §2.2.9.2).
 - **A binding** connects a capability to one concrete way of invoking it: a v0 route and action name, an MCP tool, an HTTP operation, a UI component interaction.
   - WoT calls the abstract version a [Protocol Binding](https://www.w3.org/TR/wot-thing-description11/#dfn-protocol-binding) and serializes it as [forms](https://www.w3.org/TR/wot-thing-description11/#form). OWL-S calls it a grounding ([OWL-S §6](https://www.w3.org/submissions/OWL-S/#6)).
@@ -181,7 +181,7 @@ These five are kept apart because each can change an agent's choice independentl
 
 - `available`;
 - `unavailable`, with a reason;
-- `needs-input`: it depends on input not yet given, as v0's guard does when it's evaluated without input (`packages/core/src/handler.ts:109`);
+- `needs-input`: it depends on input not yet given. v0 has no such value. Its graph runs the guard with `input: undefined` (`packages/core/src/handler.ts:109`), and the convention is to "return true for it unless the action is unavailable regardless" (`packages/core/src/action.ts:38`). So v0's `available: true` means "available for some input", and can't be told apart from `needs-input`;
 - `needs-authorization`: a different principal could, as v0's "Requires a session" (`packages/core/src/handler.ts:107-108`);
 - `unknown`: not evaluated, or an opaque condition that hasn't run.
 
@@ -209,7 +209,7 @@ What each term does **not** mean:
 | `enables`       | capability → capability                   | Some declared effect of the domain can make a declared precondition of the range true, or create a resource the range operates on                                                        | That B becomes available after A runs (other preconditions can still fail), that B needs A first, that B is the expected next step (salience or relevance), or that the publisher recommends doing them together |
 | `relatedTo`     | definition → definition                   | An association with a prose description and no stronger meaning. It's the fallback, and the mapping for v0's `nav` (`packages/protocol/src/schema.ts:29-33`)                             | Any of the above. A tool may not infer dependency, alternative or containment from it                                                                                                                            |
 
-**`alternativeTo` is not IANA's `alternate`.** The registered link relation `alternate` means another representation of the same resource ([RFC 8288](https://www.rfc-editor.org/rfc/rfc8288)). An exported relation never uses `rel="alternate"` for an alternative capability.
+**`alternativeTo` is not IANA's `alternate`.** The registered link relation `alternate` "Refers to a substitute for this context" ([IANA Link Relations](https://www.iana.org/assignments/link-relations/), from HTML). HTML and Atom read it as another representation of the same thing. An exported relation never uses `rel="alternate"` for an alternative capability.
 
 **`enables` is derivable.** When both effect and precondition are declarative, the runtime derives the edge and marks it `inferred`. A declared `enables` with nothing to back it stays a claim of its source, so a reader can tell a checked link from an asserted one.
 
@@ -229,22 +229,22 @@ A relation graph is not a workflow. [OpenAPI Arazzo](https://spec.openapis.org/a
 
 ## 6. Mapping from v0's words
 
-| v0                               | New term                                                     | Note                                                                |
-| -------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------- |
-| action (`defineAction`)          | capability definition, kind `query` or `action`              | `readOnly: true` actions such as `search` are queries               |
-| action name per route            | a binding name                                               | not an identity (§2.9)                                              |
-| `description`                    | the capability's description                                 | unchanged                                                           |
-| `requires`                       | the prose of a precondition                                  |                                                                     |
-| `guard` (the function)           | an opaque precondition                                       | unless it is rewritten declaratively                                |
-| `expose: 'public' \| 'session'`  | an authorization requirement                                 |                                                                     |
-| `expose: 'confirm'`              | an authorization requirement plus a confirmation requirement |                                                                     |
-| `available`, `reason`            | availability, `available` or `unavailable`                   | per action, without input: `needs-input` where that's what happened |
-| `effects` (state keys)           | the scope of observed change in a delta                      | not an effect (§2.6)                                                |
-| `changed`                        | observed change                                              |                                                                     |
-| `actionsAdded`, `actionsRemoved` | changes to availability between revisions                    |                                                                     |
-| `entities`                       | resources, once they are typed                               |                                                                     |
-| `nav`                            | `relatedTo`                                                  |                                                                     |
-| route manifest                   | not part of the IR                                           | the capability manifest replaces its role as a description          |
+| v0                                            | New term                                                     | Note                                                                                                                                                                                                            |
+| --------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| action (`defineAction`)                       | capability definition, kind `query` or `action`              | `readOnly: true` actions such as `search` are queries                                                                                                                                                           |
+| action name per route                         | a binding name                                               | not an identity (§2.9)                                                                                                                                                                                          |
+| `description`                                 | the capability's description                                 | unchanged                                                                                                                                                                                                       |
+| `requires` (sent as the descriptor's `guard`) | the prose of a precondition                                  | the wire's `guard` is this text (`packages/protocol/spec.md:60`, `packages/core/src/handler.ts:94`)                                                                                                             |     |
+| `guard` (the function)                        | an opaque precondition                                       | unless it is rewritten declaratively                                                                                                                                                                            |
+| `expose: 'public' \| 'session'`               | an authorization requirement                                 |                                                                                                                                                                                                                 |
+| `expose: 'confirm'`                           | an authorization requirement plus a confirmation requirement |                                                                                                                                                                                                                 |
+| `available`, `reason`                         | availability                                                 | `available: false` is `unavailable`. `available: true` is `available` or `needs-input`, which v0 doesn't distinguish (§3.4), so an importer records `unknown` or an `inferred` `available`, as RFC 0002 decides |
+| `effects` (state keys)                        | the scope of observed change in a delta                      | not an effect (§2.6)                                                                                                                                                                                            |
+| `changed`                                     | observed change                                              |                                                                                                                                                                                                                 |
+| `actionsAdded`, `actionsRemoved`              | changes to offers between revisions, including availability  | `actionsAdded` holds any action whose descriptor changed (`packages/core/src/handler.ts:222-225`)                                                                                                               |     |
+| `entities`                                    | resources, once they are typed                               |                                                                                                                                                                                                                 |
+| `nav`                                         | `relatedTo`                                                  |                                                                                                                                                                                                                 |
+| route manifest                                | not part of the IR                                           | the capability manifest replaces its role as a description                                                                                                                                                      |
 
 ## 7. Words we reserve and don't use yet
 
@@ -286,7 +286,8 @@ A relation graph is not a workflow. [OpenAPI Arazzo](https://spec.openapis.org/a
 - D. Martin et al., [OWL-S: Semantic Markup for Web Services](https://www.w3.org/submissions/OWL-S/), W3C Member Submission, 22 November 2004.
 - Hydra W3C Community Group, [Hydra Core Vocabulary](https://www.hydra-cg.com/spec/latest/core/), unofficial draft.
 - Schema.org, [`potentialAction`](https://schema.org/potentialAction), [`ActionStatusType`](https://schema.org/ActionStatusType), [`Offer`](https://schema.org/Offer).
-- Model Context Protocol, [Tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools) and [Lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle), specification 2025-11-25.
+- Model Context Protocol, [Tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools) and [Lifecycle](https://modelcontextprotocol.io/specification/2026-07-28/basic/lifecycle), revision 2026-07-28.
+- IANA, [Link Relations](https://www.iana.org/assignments/link-relations/) registry.
 - IETF, [RFC 9110: HTTP Semantics](https://www.rfc-editor.org/rfc/rfc9110), §9.2.1 and §9.2.2; [RFC 6906: The 'profile' Link Relation Type](https://www.rfc-editor.org/rfc/rfc6906).
 - W3C, [PROV-O: The PROV Ontology](https://www.w3.org/TR/prov-o/), Recommendation, 2013.
 - W3C, [Verifiable Credentials Data Model 2.0](https://www.w3.org/TR/vc-data-model-2.0/).
