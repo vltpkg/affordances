@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from 'vitest'
 import { forcePath, type Path } from '../../../src/convert/path.ts'
 import { htmlToMarkdown, readPage } from '../../../src/index.ts'
+import { leastRatio } from './support/timing.ts'
 
 afterEach(() => {
   forcePath(undefined)
@@ -358,28 +359,17 @@ const timed = (each: () => unknown) => {
   each()
   return performance.now() - started
 }
-// how much faster than the page a read's cost grows: each size's best of three, the two taken in turn so a load that
-// comes and goes slows both alike, and measured again (up to three times) while it looks too fast, which a real
-// quadratic does every time and a busy moment doesn't
+// how much faster than the page a read's cost grows: the least of N runs of each size, measured again with more runs
+// while it looks too fast (support/timing.ts), over the page's own growth
 const growthOf = (small: ReturnType<typeof page>, large: ReturnType<typeof page>) => {
   const grew = large.html.length / small.html.length
-  let growth = Infinity
-  for (let tries = 0; tries < 3 && growth >= GROWTH; tries++) {
-    let one = Infinity
-    let four = Infinity
-    for (let run = 0; run < 3; run++) {
-      one = Math.min(
-        one,
-        timed(() => read(small)),
-      )
-      four = Math.min(
-        four,
-        timed(() => read(large)),
-      )
-    }
-    growth = Math.min(growth, four / one / grew)
-  }
-  return growth
+  return (
+    leastRatio(
+      () => timed(() => read(small)),
+      () => timed(() => read(large)),
+      GROWTH * grew,
+    ) / grew
+  )
 }
 test.each(features.map((feature) => [feature[0], feature] as const))(
   '%s: read in time that grows with the page',
