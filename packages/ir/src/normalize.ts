@@ -1,4 +1,4 @@
-import { byCanonical, canonicalJson, compare } from './canonical.ts'
+import { canonicalJson, compare } from './canonical.ts'
 import type {
   Binding,
   CapabilityDefinition,
@@ -19,16 +19,18 @@ import type {
 // that order a set are already canonical. normalize(normalize(m)) equals normalize(m)
 
 // a set: sorted by its key, ties broken by the element's canonical bytes, exact duplicates removed (§7.2 step 4)
+// each item's key and RFC 8785 text are computed once, then the items sorted on them (simplify D8)
 const set = <T>(items: T[], key: (item: T) => string[] = () => []): T[] => {
-  const sorted = items.toSorted((a, b) => {
-    const [ka, kb] = [key(a), key(b)]
-    for (let i = 0; i < ka.length; i++) {
-      const order = compare(ka[i]!, kb[i]!)
-      if (order) return order
-    }
-    return byCanonical(a, b)
-  })
-  return sorted.filter((item, i) => i === 0 || canonicalJson(item) !== canonicalJson(sorted[i - 1]))
+  const decorated = items
+    .map((item) => ({ item, keys: key(item), text: canonicalJson(item) }))
+    .toSorted((a, b) => {
+      for (let i = 0; i < a.keys.length; i++) {
+        const order = compare(a.keys[i]!, b.keys[i]!)
+        if (order) return order
+      }
+      return compare(a.text, b.text)
+    })
+  return decorated.filter((d, i) => i === 0 || d.text !== decorated[i - 1]!.text).map((d) => d.item)
 }
 
 // optional arrays are dropped when empty (§7.2 step 5); effects is the exception, and its caller keeps it
