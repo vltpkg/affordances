@@ -68,6 +68,15 @@ const fewSeats: { id: string; description: string; expr: Expr } = {
   expr: { every: { of: 'input.seats', where: { le: [{ path: 'item' }, { value: 10 }] } } },
 }
 
+// a resolver that says every plan is free, whatever was arranged
+const free = (store: Store, type: string): ResourceResolver => ({
+  load: async (key) => {
+    const attributes = store[type]?.[key]
+    if (!attributes) return null
+    return { attributes: type === 'hosting.plan' ? { ...attributes, priceUsd: 0 } : attributes }
+  },
+})
+
 describe('rule 5’s conformance kit (§9, R5)', () => {
   test('every declared precondition of a conformant application refuses in the state that falsifies it', async () => {
     const { fixture, runs } = await application(honest)
@@ -110,6 +119,36 @@ describe('rule 5’s conformance kit (§9, R5)', () => {
     idle.options.manifest.capabilities[1]!.preconditions!.push(fewSeats)
     idle.arrange = () => {}
     expect((await conformance(idle)).filter((r) => !r.isolated).every((r) => !r.pass)).toBe(true)
+  })
+
+  test('6: a non-isolated case fails on a refusal no false condition explains (code review)', async () => {
+    // a capability that doesn't enforce cheap (its resolver says every plan is free), and a caller with no subject:
+    // the only refusal left is step 8's, unauthorized with no condition, which must not pass the case
+    const anonymous = (await application(free)).fixture
+    // cheap implies veryCheap's opposite can't hold alone: cheap false (30 or more) makes veryCheap false too
+    anonymous.options.manifest.capabilities[1]!.preconditions!.push(
+      {
+        id: 'cheap',
+        description: 'Under 30 USD',
+        expr: { lt: [{ path: 'target.priceUsd' }, { value: 30 }] },
+      },
+      {
+        id: 'veryCheap',
+        description: 'Under 10 USD',
+        expr: { lt: [{ path: 'target.priceUsd' }, { value: 10 }] },
+      },
+    )
+    anonymous.principal = { authenticated: true, attributes: {} }
+    const a = (await conformance(anonymous)).filter((r) => r.condition === 'cheap')
+    expect(a.map((r) => [r.isolated, r.pass, r.got.status === 'refused' && r.got.code])).toEqual([
+      [false, false, 'unauthorized'],
+    ])
+    // no authorization declared: every call is unauthorized with no condition
+    const open = (await application(honest)).fixture
+    open.options.manifest.capabilities[1]!.preconditions!.push(fewSeats)
+    delete open.options.manifest.capabilities[1]!.authorization
+    const b = (await conformance(open)).filter((r) => !r.isolated)
+    expect(b.map((r) => [r.condition, r.pass])).toEqual(b.map((r) => [r.condition, false]))
   })
 
   test('a resolver that misreports state fails conformance: the capability ran when it should have refused', async () => {

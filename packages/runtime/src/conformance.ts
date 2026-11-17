@@ -1,6 +1,8 @@
 import {
   conformanceCases,
+  evaluate,
   falsifying,
+  fitContext,
   type CapabilityDefinition,
   type Context,
   type Expr,
@@ -60,7 +62,12 @@ export const conformance = async (fixture: ConformanceFixture): Promise<Conforma
     condition: string,
     context: Context,
     failing?: string,
-  ): Promise<{ got: ExecutionResult; named: boolean; byCondition: boolean }> => {
+  ): Promise<{
+    got: ExecutionResult
+    named: boolean
+    refusedBy?: string
+    falseIds: Set<string>
+  }> => {
     // an instance's key is its key attribute: the case's value when it sets one, which may be what's falsified
     const keyFor = (
       type: Id,
@@ -102,24 +109,65 @@ export const conformance = async (fixture: ConformanceFixture): Promise<Conforma
     )
       got = await runtime.execute({ principal, offer, input, approval: got.confirmation.approval })
     // refused by a condition, not for a missing instance or a confirmation the kit couldn't give
-    const byCondition =
+    const refusedBy =
       got.status === 'refused' && (got.code === 'precondition' || got.code === 'unauthorized')
-    const named = byCondition && (got as { condition?: { id: string } }).condition?.id === condition
-    return { got, named, byCondition }
+        ? got.condition?.id
+        : undefined
+    // the declarative conditions false in the state the kit arranged, as the runtime would read it
+    const arranged: Context = {
+      principal: principal.attributes,
+      input,
+      references: Object.fromEntries(
+        (c.references ?? []).map((r) => [r.name, context.references?.[r.name] ?? {}]),
+      ),
+    }
+    if (c.target) arranged.target = { ...context.target, [keyOf(c.target)]: targetKey }
+    const falseIds = new Set(
+      [...(c.authorization?.conditions ?? []), ...(c.preconditions ?? [])].flatMap((x) =>
+        'expr' in x && evaluate(x.expr, arranged) === false ? [x.id] : [],
+      ),
+    )
+    return { got, named: refusedBy === condition, refusedBy, falseIds }
+  }
+
+  // a context where `id` is false and every other declarative condition of c is true, or as many as can be: the others
+  // that can't be are dropped one at a time, the first that frees a context going first
+  const alongside = (c: CapabilityDefinition, id: string): Context | undefined => {
+    const all = [...(c.authorization?.conditions ?? []), ...(c.preconditions ?? [])].flatMap((x) =>
+      'expr' in x ? [{ id: x.id, expr: x.expr as Expr }] : [],
+    )
+    const target = all.find((x) => x.id === id)!.expr
+    // false exactly when target is false and all of others are true
+    const want = (others: Expr[]) =>
+      fitContext(
+        manifest,
+        c,
+        falsifying(others.length ? { any: [target, { not: { all: others } }] } : target),
+      )
+    let others = all.filter((x) => x.id !== id).map((x) => x.expr)
+    for (;;) {
+      const found = want(others)
+      if (found || !others.length) return found
+      const next = others.findIndex((_, i) => want(others.filter((__, j) => j !== i)))
+      others = next < 0 ? others.slice(1) : others.filter((_, j) => j !== next)
+    }
   }
 
   for (const k of conformanceCases(manifest)) {
     const c = manifest.capabilities.find((x) => x.id === k.capability)!
     if (!k.context) continue
-    const { got, named, byCondition } = await attempt(c, k.condition, k.context)
-    // a case that isn't isolated passes on a condition's refusal: something it implies may have refused first
-    // (review of M3d: never on not_found from an arrange that did nothing, or a leftover confirmation)
+    // a case that isn't isolated: the condition false, and as many of the others true as can be with it, so what
+    // refuses is the condition or one it takes down with it
+    const context = k.isolated ? k.context : (alongside(c, k.condition) ?? k.context)
+    const { got, named, refusedBy, falseIds } = await attempt(c, k.condition, context)
+    // it passes when a condition that's false there refuses it: never on not_found from an arrange that did nothing,
+    // a leftover confirmation (review of M3d), or an unauthorized that names no condition (code review 6)
     results.push({
       capability: c.id,
       condition: k.condition,
       kind: 'declarative',
       isolated: k.isolated,
-      pass: k.isolated ? named : byCondition,
+      pass: k.isolated ? named : refusedBy !== undefined && falseIds.has(refusedBy),
       got,
     })
   }
@@ -128,7 +176,7 @@ export const conformance = async (fixture: ConformanceFixture): Promise<Conforma
     const conditions = [...(c.authorization?.conditions ?? []), ...(c.preconditions ?? [])]
     const exprs = conditions.flatMap((x) => ('expr' in x ? [x.expr as Expr] : []))
     // a context where every declarative condition holds: not all of them is false there
-    const context = exprs.length ? falsifying({ not: { all: exprs } }) : {}
+    const context = exprs.length ? fitContext(manifest, c, falsifying({ not: { all: exprs } })) : {}
     for (const x of conditions) {
       if (!('guard' in x)) continue
       if (!context) continue
