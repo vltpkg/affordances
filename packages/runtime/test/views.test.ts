@@ -228,6 +228,45 @@ describe('expansion and inspection (§6.5)', () => {
     )
   })
 
+  test('a cursor describes itself: a fresh projection follows an expansion page’s, with no replay (simplify C4)', async () => {
+    const request = { principal: member, start: fromProject }
+    const p = await runtime().project(request)
+    // a page of an expansion: the rest of the projection, four offers at a time
+    const rest = { from: fromProject, along: 'relations' as const }
+    const page = await p.expand(rest, { budget: { offers: 4 } })
+    const more = page.omitted.expand.find((e) => e.along === 'more')!
+    expect(more.count).toBeGreaterThan(0)
+    // a projection that never saw that expansion resolves its cursor all the same
+    const fresh = await runtime().project(request)
+    const next = await fresh.expand(more)
+    expect(next).toEqual(await p.expand(more))
+    expect(ids(next)).toHaveLength(more.count)
+    // and the same page asked for twice has the same cursor
+    expect((await fresh.expand(rest, { budget: { offers: 4 } })).omitted.expand).toEqual(
+      page.omitted.expand,
+    )
+  })
+
+  test('a cursor from another revision is refused, and so is one that isn’t a cursor', async () => {
+    const p = await runtime().project({
+      principal: member,
+      policy: 'exhaustive',
+      budget: { offers: 4 },
+    })
+    const more = p.view().omitted.expand.find((e) => e.along === 'more')!
+    // another principal's attributes: another revision
+    const other = await runtime().project({
+      principal: { ...member, attributes: { ...member.attributes, plan: 'pro' } },
+      policy: 'exhaustive',
+      budget: { offers: 4 },
+    })
+    expect(other.revision).not.toBe(p.revision)
+    await expect(other.expand(more)).rejects.toThrow('a cursor from another revision')
+    await expect(p.expand({ from: 'more:not-a-cursor', along: 'more' })).rejects.toThrow(
+      'nothing to expand',
+    )
+  })
+
   test('two pages that end on the same offer keep their own next pages (review of M3c)', async () => {
     const p = await runtime().project({
       principal: member,

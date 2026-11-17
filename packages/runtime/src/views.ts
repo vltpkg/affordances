@@ -1,4 +1,11 @@
-import { derive, localId, type CapabilityManifest, type Id } from '@affordances/ir'
+import {
+  base64url,
+  canonicalJson,
+  derive,
+  localId,
+  type CapabilityManifest,
+  type Id,
+} from '@affordances/ir'
 import type {
   Budget,
   CapabilityOffer,
@@ -68,6 +75,30 @@ const words = (text: string) =>
       .split(/[^a-z0-9]+/)
       .filter((w) => w.length >= 3 && !STOP.has(w)),
   )
+
+// where a sequence of offers comes from (the first view, or one expansion), and a 'more' cursor: its origin and the
+// budget of every cut since, under a projection revision, as base64url of its RFC 8785 text. Any projection of the
+// same revision and request rebuilds the page, and the same view asked for twice has the same bytes (simplify C4)
+type Origin =
+  | { view: true }
+  | { from: Expansion['from']; along: Exclude<Expansion['along'], 'more'> }
+type Cursor = { r: string; o: Origin; b: (number | null)[] }
+const encode = (cursor: Cursor) =>
+  `more:${base64url(new TextEncoder().encode(canonicalJson(cursor)))}`
+const decode = (from: unknown): Cursor | undefined => {
+  if (typeof from !== 'string' || !from.startsWith('more:')) return
+  try {
+    const text = atob(from.slice(5).replaceAll('-', '+').replaceAll('_', '/'))
+    const value = JSON.parse(
+      new TextDecoder().decode(Uint8Array.from(text, (ch) => ch.charCodeAt(0))),
+    )
+    return value && typeof value.r === 'string' && value.o && Array.isArray(value.b)
+      ? value
+      : undefined
+  } catch {
+    return undefined
+  }
+}
 
 export type Views = {
   view(): View
@@ -215,49 +246,44 @@ export const views = (args: {
   }
   const firstScope = scope()
 
-  // 'more' continues a page with the offers it couldn't hold. its cursor is opaque and names exactly those offers,
-  // so two pages never share one (review of M3c), and the same view asked for twice has the same bytes
-  const sequences = new Map<string, OfferId[]>()
-  const cursorFor = (rest: OfferId[]) => {
-    const key = JSON.stringify(rest)
-    let hash = 0xcbf29ce484222325n
-    for (const unit of new TextEncoder().encode(key))
-      hash = ((hash ^ BigInt(unit)) * 0x100000001b3n) & 0xffffffffffffffffn
-    // FNV-1a names it; a collision between two different rests takes the next suffix
-    for (let n = 0; ; n++) {
-      const cursor = `more:${hash.toString(36)}${n ? `.${n}` : ''}`
-      const held = sequences.get(cursor)
-      if (!held) {
-        sequences.set(cursor, rest)
-        return cursor
-      }
-      if (JSON.stringify(held) === key) return cursor
-    }
-  }
-
-  // one page of a sequence: up to the budget, choice sets whole, and the rest counted and expandable (§6.3)
-  const page = (sequence: OfferId[], budget: Budget | undefined, extra: Expansion[] = []): View => {
-    const limit = budget?.offers ?? Infinity
+  // one page's split of a sequence: what fits the budget, choice sets whole; a set bigger than the budget is
+  // summarized; the rest is cut, for the next page (§6.3)
+  const split = (sequence: OfferId[], limit: number) => {
     const shown: OfferId[] = []
     const cut: OfferId[] = []
     const skippedSets = new Set<string>()
     const placed = new Set<OfferId>()
+    const inSequence = new Set(sequence)
     for (const id of sequence) {
       if (placed.has(id)) continue
       const set = byId.get(id)!.choiceSet
-      const group = set ? ordered(sets.get(set)!.members).filter((m) => sequence.includes(m)) : [id]
+      const group = set ? ordered(sets.get(set)!.members).filter((m) => inSequence.has(m)) : [id]
       for (const m of group) placed.add(m)
       if (shown.length + group.length <= limit) shown.push(...group)
       else if (set && group.length > limit) skippedSets.add(set)
       else cut.push(...group)
     }
+    return { shown, cut, skippedSets }
+  }
+
+  // one page of a sequence, and the rest counted and expandable
+  const page = (
+    sequence: OfferId[],
+    budget: Budget | undefined,
+    chain: { o: Origin; b: (number | null)[] },
+    extra: Expansion[] = [],
+  ): View => {
+    const { shown, cut, skippedSets } = split(sequence, budget?.offers ?? Infinity)
     const shownSet = new Set(shown)
     const expand: Expansion[] = [...extra]
     for (const set of skippedSets)
       expand.push({ from: set, along: 'members', count: sets.get(set)!.members.length })
-    if (cut.length) {
-      expand.push({ from: cursorFor(cut), along: 'more', count: cut.length })
-    }
+    if (cut.length)
+      expand.push({
+        from: encode({ r: revision, o: chain.o, b: [...chain.b, budget?.offers ?? null] }),
+        along: 'more',
+        count: cut.length,
+      })
     for (const id of shown) {
       const missing = [...partners(byId.get(id)!.capability)].flatMap((p) =>
         args.offers.filter((o) => o.capability === p && !shownSet.has(o.id)),
@@ -306,71 +332,88 @@ export const views = (args: {
     : typeof start === 'object'
       ? start
       : (first[0] ?? args.offers[0]!.id)
+  const firstBudget = request.budget ?? policy.budget
   const view = () =>
     page(
       first,
-      request.budget ?? policy.budget,
+      firstBudget,
+      { o: { view: true }, b: [] },
       restFrom === undefined ? [] : [{ from: restFrom, along: 'relations', count: rest.length }],
     )
+
+  // the sequence an origin pages through, or undefined when there's nothing to expand there
+  const sequenceOf = (origin: Origin): { ids: OfferId[]; whole?: true } | undefined => {
+    if ('view' in origin) return { ids: first }
+    const { from, along } = origin
+    const offer = typeof from === 'string' ? byId.get(from) : undefined
+    // the rest of the projection, from where the first view says it is
+    if (
+      along === 'relations' &&
+      restFrom !== undefined &&
+      (from === restFrom ||
+        (typeof from === 'object' && typeof restFrom === 'object' && sameRef(from, restFrom)))
+    )
+      return { ids: ordered(whole(rest)) }
+    switch (along) {
+      case 'alternatives':
+        return offer && { ids: ordered(whole(alternatives(offer.id))) }
+      case 'members': {
+        const set = typeof from === 'string' ? sets.get(from) : undefined
+        // a choice set is never shown in part, so expanding one returns all of it, whatever the budget
+        return set && { ids: ordered(set.members), whole: true }
+      }
+      case 'relations': {
+        if (!offer) return
+        const near = new Set(neighbors(offer.capability).map((n) => n.id))
+        return {
+          ids: ordered(whole(args.offers.filter((o) => near.has(o.capability)).map((o) => o.id))),
+        }
+      }
+      case 'enables': {
+        if (!offer) return
+        const to = new Set(
+          edges
+            .filter((e) => e.relation === 'enables' && e.from === offer.capability)
+            .map((e) => e.to),
+        )
+        return {
+          ids: ordered(whole(args.offers.filter((o) => to.has(o.capability)).map((o) => o.id))),
+        }
+      }
+      case 'contains': {
+        if (typeof from !== 'object') return
+        const contains = new Set(manifest.resources.find((r) => r.id === from.type)?.contains ?? [])
+        return {
+          ids: ordered(
+            whole(
+              args.offers.filter((o) => o.target && contains.has(o.target.type)).map((o) => o.id),
+            ),
+          ),
+        }
+      }
+      default:
+        return
+    }
+  }
 
   // each expansion is a view of the part asked for, under the same invariant (§6.5)
   const expand: Views['expand'] = ({ from, along }, options) => {
     const budget = options?.budget
-    const offer = typeof from === 'string' ? byId.get(from) : undefined
-    const fail = (): never => {
-      throw new Error(`nothing to expand from ${JSON.stringify(from)} along ${along}`)
+    const fail = (why = 'nothing to expand'): never => {
+      throw new Error(`${why} from ${JSON.stringify(from)} along ${along}`)
     }
-    // the rest of the projection, from where the first view says it is
-    if (along === 'relations' && restFrom !== undefined && from === restFrom)
-      return page(ordered(whole(rest)), budget)
-    let ids: OfferId[]
-    switch (along) {
-      case 'alternatives':
-        ids = alternatives((offer ?? fail()).id)
-        break
-      case 'members': {
-        const set = typeof from === 'string' ? sets.get(from) : undefined
-        // a choice set is never shown in part, so expanding one returns all of it, whatever the budget
-        return page(ordered((set ?? fail()).members), undefined)
-      }
-      case 'relations':
-        if (offer) {
-          const near = new Set(neighbors(offer.capability).map((n) => n.id))
-          ids = args.offers.filter((o) => near.has(o.capability)).map((o) => o.id)
-        } else if (
-          typeof from === 'object' &&
-          restFrom !== undefined &&
-          typeof restFrom === 'object' &&
-          sameRef(from, restFrom)
-        ) {
-          ids = rest
-        } else return fail()
-        break
-      case 'enables': {
-        const c = (offer ?? fail()).capability
-        const to = new Set(
-          edges.filter((e) => e.relation === 'enables' && e.from === c).map((e) => e.to),
-        )
-        ids = args.offers.filter((o) => to.has(o.capability)).map((o) => o.id)
-        break
-      }
-      case 'contains': {
-        if (typeof from !== 'object') return fail()
-        const contains = new Set(manifest.resources.find((r) => r.id === from.type)?.contains ?? [])
-        ids = args.offers.filter((o) => o.target && contains.has(o.target.type)).map((o) => o.id)
-        break
-      }
-      case 'more': {
-        // a cursor names its offers, so a server that projects afresh for each request finds the first view's by
-        // building that view again. a cursor from an expansion's page needs that expansion again first
-        const cursor = typeof from === 'string' ? from : ''
-        if (!sequences.has(cursor)) view()
-        return page(sequences.get(cursor) ?? fail(), budget)
-      }
-      default:
-        return fail()
+    if (along !== 'more') {
+      const origin: Origin = { from, along }
+      const found = sequenceOf(origin) ?? fail()
+      return page(found.ids, found.whole ? undefined : budget, { o: origin, b: [] })
     }
-    return page(ordered(whole(ids)), budget)
+    // 'more': rebuild the origin's sequence and replay each cut, under this projection's revision
+    const cursor = decode(from) ?? fail()
+    if (cursor.r !== revision) fail('a cursor from another revision')
+    let ids = (sequenceOf(cursor.o) ?? fail()).ids
+    for (const offers of cursor.b) ids = split(ids, offers ?? Infinity).cut
+    if (!ids.length) fail()
+    return page(ids, budget, { o: cursor.o, b: cursor.b })
   }
 
   const inspect = (id: OfferId): OfferDetails | undefined => {
