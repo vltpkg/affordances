@@ -10,6 +10,7 @@ import {
   localId,
   normalize,
   putPointer,
+  renderSummary,
   resolvePath,
   type CapabilityManifest,
 } from '../src/index.ts'
@@ -54,4 +55,14 @@ test('resolvePath: missing, absent, absent holding null, and a value, own keys o
   expect(resolvePath('target.z', context)).toEqual({ kind: 'missing' })
   expect(resolvePath('target.constructor', context)).toEqual({ kind: 'missing' })
   expect(resolvePath('item', context, 5)).toEqual({ kind: 'value', value: 5 })
+})
+
+test('renderSummary: strings as written, others as RFC 8785, unresolved as unknown, {{ }} literal, null as null', () => {
+  const context = { target: { slug: 'pro', price: 20, tags: ['a'], none: null }, input: { n: 2 } }
+  expect(
+    renderSummary(
+      '{target.slug} at {target.price} {target.tags} {target.none} {target.gone} {input.n} {{x}}',
+      context,
+    ),
+  ).toBe('pro at 20 ["a"] null unknown 2 {x}')
 })

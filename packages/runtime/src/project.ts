@@ -15,10 +15,10 @@ import {
   type Expr,
   type Id,
   type Truth,
+  renderSummary as render,
 } from '@affordances/ir'
 import { attributesFor } from './data.ts'
 import { executor } from './execute.ts'
-import { render } from './render.ts'
 import { offerId } from './offer-id.ts'
 import { BUILT_IN, views } from './views.ts'
 import type {

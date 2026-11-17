@@ -12,10 +12,10 @@ import {
   type Context,
   type Expr,
   type Id,
+  renderSummary as render,
 } from '@affordances/ir'
 import { attributesFor } from './data.ts'
 import { offerId, parseOfferId } from './offer-id.ts'
-import { render } from './render.ts'
 import type {
   ApprovalToken,
   CapabilityOffer,
