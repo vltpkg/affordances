@@ -151,7 +151,7 @@ test('an unknown policy is refused, not defaulted', async () => {
   expect((await response.json()).error).toContain('No policy secret')
 })
 
-test("paging inside an expansion: the expansions already taken are replayed, so the page's cursor resolves", async () => {
+test("paging inside an expansion: each page's cursor resolves on a fresh projection, with nothing shown twice", async () => {
   const auth = { authorization: 'Bearer s_page' }
   store.account('s_page')
   const base = { policy: 'exhaustive', offers: 2 }
@@ -164,19 +164,14 @@ test("paging inside an expansion: the expansions already taken are replayed, so 
   const page2 = await (await post({ ...base, from: more.from, along: 'more', budget }, auth)).json()
   const more2 = page2.omitted.expand.find((e: E) => e.along === 'more')
   expect(more2).toBeDefined()
-  // page 2's cursor only resolves where page 2 was taken
-  expect((await post({ ...base, from: more2.from, along: 'more', budget }, auth)).status).toBe(400)
-  const after = [{ from: more.from, along: 'more', budget }]
-  const response = await post({ ...base, from: more2.from, along: 'more', budget, after }, auth)
+  // and so does page 2's: a cursor says where it came from
+  const response = await post({ ...base, from: more2.from, along: 'more', budget }, auth)
   expect(response.status).toBe(200)
   const page3 = await response.json()
   const shown = new Set([...first.offers, ...page2.offers].map((o: { id: string }) => o.id))
   expect(page3.offers.length).toBeGreaterThan(0)
   expect(page3.offers.some((o: { id: string }) => shown.has(o.id))).toBe(false)
-  const tooMany = Array.from({ length: 33 }, () => after[0])
-  expect(
-    (await post({ ...base, from: more2.from, along: 'more', after: tooMany }, auth)).status,
-  ).toBe(400)
-  const malformed = { ...base, from: more2.from, along: 'more', after: [{ along: 'more' }] }
-  expect((await post(malformed, auth)).status).toBe(400)
+  // a cursor that isn't one is refused, with the runtime's reason
+  const forged = await post({ ...base, from: 'more:not-a-cursor', along: 'more', budget }, auth)
+  expect(forged.status).toBe(400)
 })

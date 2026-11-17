@@ -38,8 +38,6 @@ const crossSite = (request: Request): Response | undefined => {
   )
 }
 
-const MAX_AFTER = 32
-
 const POLICIES = new Set(builtInPolicies.map((p) => p.id))
 const ALONG = new Set<Expansion['along']>([
   'alternatives',
@@ -116,37 +114,20 @@ const stepOf = (value: unknown): Step | string => {
   }
 }
 
-// POST /api/projection/expand { from, along, budget?, after?, policy?, start?, seen?, task? }: more of the
-// projection, as a view under the same rules (RFC 0002 §6.5).
-//
-// Each request projects afresh, and a cursor an expansion's page hands out only resolves where that expansion was
-// taken. So `after` lists the expansions already taken to reach `from`, in order, and they're replayed first. It
-// reaches nothing a caller couldn't expand to directly
+// POST /api/projection/expand { from, along, budget?, policy?, start?, seen?, task? }: more of the projection, as a
+// view under the same rules (RFC 0002 §6.5). Each request projects afresh, which is enough: a `more` cursor says
+// where it came from, so any projection of the same revision resolves it
 export const serveExpand = async (request: Request): Promise<Response> => {
   const refused = crossSite(request)
   if (refused) return refused
-  const body = (await request.json().catch(() => undefined)) as
-    | (Params & { after?: unknown })
-    | undefined
+  const body = (await request.json().catch(() => undefined)) as Params | undefined
   if (!body || typeof body !== 'object') return refuse(400, 'The body is a JSON object')
   const step = stepOf(body)
   if (typeof step === 'string') return refuse(400, step)
-  if (body.after !== undefined && !Array.isArray(body.after))
-    return refuse(400, 'after is the list of expansions already taken')
-  // every replay is an expansion the request pays for again: bounded, so one request can't do unbounded work
-  if (((body.after as unknown[] | undefined)?.length ?? 0) > MAX_AFTER)
-    return refuse(400, `after lists at most ${MAX_AFTER} expansions`)
-  const after: Step[] = []
-  for (const a of (body.after as unknown[] | undefined) ?? []) {
-    const s = stepOf(a)
-    if (typeof s === 'string') return refuse(400, `after: ${s}`)
-    after.push(s)
-  }
   const p = projectionOf(request, body)
   if (typeof p === 'string') return refuse(400, p)
   const projection = await runtime.project(p)
   try {
-    for (const a of after) await projection.expand(a, { budget: a.budget })
     return json(await projection.expand(step, { budget: step.budget }))
   } catch (error) {
     return refuse(400, (error as Error).message)
