@@ -11,6 +11,8 @@ import {
   type Provenance,
   type ValidationIssue,
 } from './schema.ts'
+import { decodePointer, encodePointer } from './pointer.ts'
+import { localId } from './ref.ts'
 
 // RFC 0001 §7.3: the IR's errors (E_) and warnings (W_), each at a JSON Pointer into the manifest. The schema's
 // own issues come first; the cross-reference checks run only on a document that parsed
@@ -18,15 +20,12 @@ export type Validation =
   | { ok: true; manifest: CapabilityManifest; issues: ValidationIssue[] }
   | { ok: false; manifest?: CapabilityManifest; issues: ValidationIssue[] }
 
-const pointer = (path: readonly PropertyKey[]) =>
-  path.map((key) => `/${String(key).replaceAll('~', '~0').replaceAll('/', '~1')}`).join('')
-
 const fromZod = (issue: z.core.$ZodIssue): ValidationIssue => ({
   code:
     (issue.code === 'custom' && (issue.params as { code?: ValidationIssue['code'] })?.code) ||
     'E_SCHEMA',
   message: issue.message,
-  at: pointer(issue.path),
+  at: encodePointer(issue.path),
 })
 
 // the part of an embedded JSON Schema a path walks: `true` where the schema leaves it open (a $ref, a oneOf, no
@@ -138,12 +137,7 @@ export const validate = (input: unknown): Validation => {
   const resources = new Map(m.resources.map((r) => [r.id, r]))
 
   // references (E_UNRESOLVED): each names a definition of the right kind; a Ref into another manifest is left alone
-  const local = (ref: string) =>
-    ref.includes('#')
-      ? ref.startsWith(`${m.namespace}#`)
-        ? ref.slice(m.namespace.length + 1)
-        : undefined
-      : ref
+  const local = (ref: string) => localId(m, ref)
   const resolves = (ref: string, at: string, kind?: 'resource' | 'capability') => {
     const id = local(ref)
     if (id === undefined) return
@@ -325,10 +319,7 @@ export const validate = (input: unknown): Validation => {
     )
     // a reference's at, and targetAt, name a property of the input: where the key is (§2.2)
     const inInput = (into: string, where: string) => {
-      const keys = into
-        .split('/')
-        .slice(1)
-        .map((k) => k.replaceAll('~1', '/').replaceAll('~0', '~'))
+      const keys = decodePointer(into)
       let node: Node = c.input
       for (const key of keys) node = child(node, key)
       if (!c.input || !keys.length || node === undefined || node === INVALID)
@@ -481,7 +472,7 @@ export const validate = (input: unknown): Validation => {
   ) => {
     provenance(x.provenance, at + '/provenance')
     for (const [key, p] of Object.entries(x.fieldProvenance ?? {}))
-      provenance(p, `${at}/fieldProvenance${pointer([key])}`)
+      provenance(p, `${at}/fieldProvenance${encodePointer([key])}`)
   }
   provenance(m.provenance, '/provenance')
   if (m.principal) attributed(m.principal, '/principal')

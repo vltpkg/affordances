@@ -23,6 +23,7 @@ import { validate } from '../validate.ts'
 import type { ContextPaths } from './paths.ts'
 import { toJsonSchema, type Infer, type StandardSchemaV1 } from './standard.ts'
 import type { Declared, Guard, When } from './when.ts'
+import { encodePointer } from '../pointer.ts'
 
 // the source authoring names for what it converts (Standard Schema to JSON Schema): basis `inferred`, by a tool
 // (RFC 0001 §12.1, rule 3). defineManifest declares it whenever a definition uses it
@@ -176,8 +177,7 @@ const effect = (spec: EffectSpec<string>): Effect =>
   }) as Effect
 
 // an input property name, as the JSON Pointer a Reference stores (RFC 0001 §12.1)
-const pointer = (name: string): JSONPointer =>
-  `/${name.replaceAll('~', '~0').replaceAll('/', '~1')}`
+const pointer = (name: string): JSONPointer => encodePointer([name])
 
 export const defineCapability = <
   const T extends DefinedResource | undefined = undefined,

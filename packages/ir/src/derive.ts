@@ -1,5 +1,14 @@
 import { canonicalJson, compare } from './canonical.ts'
-import type { CapabilityManifest, Expr, Id, JSONPointer, Operand, Scalar } from './schema.ts'
+import { compareValues } from './evaluate.ts'
+import {
+  COMPARISONS,
+  type CapabilityManifest,
+  type Expr,
+  type Id,
+  type JSONPointer,
+  type Operand,
+  type Scalar,
+} from './schema.ts'
 
 // RFC 0001 §5.5's derived edges: computed from the definitions, never stored. Each says what it came from, as
 // pointers into the manifest, and has basis inferred. They're statements about the manifest, not the world
@@ -16,14 +25,13 @@ type Atom = Expr
 const isTarget = (path: string) => path.startsWith('target.')
 const operandOk = (o: Operand) =>
   'value' in o || ('path' in o ? isTarget(o.path) : isTarget(o.count))
-const COMPARE = ['eq', 'ne', 'lt', 'le', 'gt', 'ge', 'in'] as const
 const atoms = (e: Expr): Atom[] | undefined => {
   if ('all' in e) {
     const parts = e.all.map(atoms)
     return parts.every(Boolean) ? (parts.flat() as Atom[]) : undefined
   }
   if ('exists' in e) return isTarget(e.exists) ? [e] : undefined
-  const op = COMPARE.find((c) => c in e)
+  const op = COMPARISONS.find((c) => c in e)
   if (!op) return undefined // any, not, a quantifier: never an atom
   const pair = (e as Record<string, [Operand, Operand]>)[op]!
   return pair.every(operandOk) ? [e] : undefined
@@ -44,7 +52,7 @@ const fixed = (e: Atom): [string, Scalar | Scalar[]] | undefined => {
 // does P's atom hold when the key it reads has the value v
 const holds = (p: Atom, key: string, v: Scalar | Scalar[]): boolean => {
   if ('exists' in p) return `path:${p.exists}` === key && v !== null
-  const op = COMPARE.find((c) => c in p)!
+  const op = COMPARISONS.find((c) => c in p)!
   const [a, b] = (p as Record<string, [Operand, Operand]>)[op]!
   const side =
     keyOf(a) === key && 'value' in b
@@ -57,26 +65,9 @@ const holds = (p: Atom, key: string, v: Scalar | Scalar[]): boolean => {
     side === 'left'
       ? [v, (b as { value: Scalar | Scalar[] }).value]
       : [(a as { value: Scalar | Scalar[] }).value, v]
-  if (op === 'in') return Array.isArray(y) && !Array.isArray(x) && y.some((m) => m === x)
-  if (Array.isArray(x) || Array.isArray(y) || typeof x !== typeof y || x === null || y === null)
-    return false
-  switch (op) {
-    case 'eq':
-      return x === y
-    case 'ne':
-      return x !== y
-    default: {
-      if (typeof x !== 'number' && typeof x !== 'string') return false
-      const order = typeof x === 'string' ? compare(x, y as string) : (x as number) - (y as number)
-      return op === 'lt'
-        ? order < 0
-        : op === 'le'
-          ? order <= 0
-          : op === 'gt'
-            ? order > 0
-            : order >= 0
-    }
-  }
+  // a null literal decides nothing here: an atom with null is no constraint to derive from
+  if (op !== 'in' && (x === null || y === null)) return false
+  return compareValues(op, x, y) === true
 }
 
 // E satisfies P: every atom of P is matched by an atom of E, identical to it or an eq that makes it true (§5.5)

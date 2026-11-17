@@ -1,12 +1,18 @@
-import type { Context } from './evaluate.ts'
-import type { CapabilityManifest, Expr, Id, Operand, Scalar } from './schema.ts'
+import { compareValues, type Context } from './evaluate.ts'
+import {
+  COMPARISONS,
+  type CapabilityManifest,
+  type Expr,
+  type Id,
+  type Operand,
+  type Scalar,
+} from './schema.ts'
 
 // rule 5's manifest half (RFC 0001 §8.2, §12.2): for a declarative condition, a context that makes it false. The
 // conformance kit (M3) arranges that context, calls the capability and expects the declared refusal. Undefined
 // when the expression can't be made false (a contradiction such as `any [eq x 1, ne x 1]`)
 
 type Assignment = [path: string, value: unknown]
-const COMPARISONS = ['eq', 'ne', 'lt', 'le', 'gt', 'ge', 'in'] as const
 
 // two assignments to one path must agree, and neither may be inside the other
 const merge = (parts: (Assignment[] | undefined)[]): Assignment[] | undefined => {
@@ -27,14 +33,9 @@ const merge = (parts: (Assignment[] | undefined)[]): Assignment[] | undefined =>
   return out
 }
 
-const holds = (op: string, a: unknown, b: unknown): boolean => {
-  if (op === 'in') return Array.isArray(b) && b.some((m) => m === a)
-  if (typeof a !== typeof b) return false
-  if (op === 'eq') return a === b
-  if (op === 'ne') return a !== b
-  const order = (a as number) < (b as number) ? -1 : (a as number) > (b as number) ? 1 : 0
-  return op === 'lt' ? order < 0 : op === 'le' ? order <= 0 : op === 'gt' ? order > 0 : order >= 0
-}
+// a candidate witness holds when the evaluator itself says true: one comparison semantics, so null never orders and a
+// mismatch never counts (it did here: null le null held, though the evaluator says unknown)
+const holds = (op: string, a: unknown, b: unknown): boolean => compareValues(op, a, b) === true
 
 // values to try for an operand compared with v: v itself, and its neighbours either side
 const around = (v: Scalar | Scalar[]): unknown[] => {

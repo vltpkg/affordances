@@ -1,4 +1,4 @@
-import type { Expr, Operand, Path, Scalar } from './schema.ts'
+import { COMPARISONS, type Expr, type Operand, type Path, type Scalar } from './schema.ts'
 
 // RFC 0001 §3.1's evaluation: Kleene's strong three-valued logic over a context the application supplies
 export type Truth = true | false | 'unknown'
@@ -12,10 +12,15 @@ export type Context = {
   references?: Record<string, Obj | undefined>
 }
 
-// a path is missing (not supplied: unknown), absent (supplied, and none), or a value (§3.1)
-type Resolved = { kind: 'missing' } | { kind: 'absent' } | { kind: 'value'; value: unknown }
+// a path is missing (not supplied: unknown), absent (supplied, and none), or a value (§3.1). An absent path whose key
+// was there, holding null, says so, for the one reader that shows it (a summary renders null, RFC 0001 §3.2)
+export type Resolved =
+  | { kind: 'missing' }
+  | { kind: 'absent'; null?: true }
+  | { kind: 'value'; value: unknown }
 const MISSING: Resolved = { kind: 'missing' }
 const ABSENT: Resolved = { kind: 'absent' }
+const NULL: Resolved = { kind: 'absent', null: true }
 
 type Scope = { context: Context; item?: unknown }
 
@@ -40,8 +45,11 @@ const resolve = (path: Path, scope: Scope): Resolved => {
     if (!Object.hasOwn(value, key)) return n === 0 && !whole ? MISSING : ABSENT
     value = (value as Obj)[key]
   }
-  return value === null || value === undefined ? ABSENT : { kind: 'value', value }
+  return value === null ? NULL : value === undefined ? ABSENT : { kind: 'value', value }
 }
+// what a path names in a context, own keys only: missing, absent or a value (§3.1). item, inside a quantifier
+export const resolvePath = (path: Path, context: Context, item?: unknown): Resolved =>
+  resolve(path, { context, item })
 
 const operand = (o: Operand, scope: Scope): Resolved => {
   if ('value' in o) return { kind: 'value', value: o.value }
@@ -55,7 +63,8 @@ const operand = (o: Operand, scope: Scope): Resolved => {
 const isScalar = (v: unknown): v is Scalar =>
   v === null || ['string', 'number', 'boolean'].includes(typeof v)
 
-const compareValues = (op: string, a: unknown, b: unknown): Truth => {
+// one comparison, with three values: a mismatch, or a number that isn't finite, is unknown, never false
+export const compareValues = (op: string, a: unknown, b: unknown): Truth => {
   if (op === 'in') {
     if (!Array.isArray(b) || !isScalar(a)) return 'unknown'
     if (typeof a === 'number' && !Number.isFinite(a)) return 'unknown'
@@ -73,13 +82,12 @@ const compareValues = (op: string, a: unknown, b: unknown): Truth => {
   return op === 'lt' ? order < 0 : op === 'le' ? order <= 0 : op === 'gt' ? order > 0 : order >= 0
 }
 
-const all = (values: Truth[]): Truth =>
+// Kleene's strong all: false wins, then unknown
+export const all = (values: Truth[]): Truth =>
   values.includes(false) ? false : values.includes('unknown') ? 'unknown' : true
 const any = (values: Truth[]): Truth =>
   values.includes(true) ? true : values.includes('unknown') ? 'unknown' : false
 const not = (v: Truth): Truth => (v === 'unknown' ? v : !v)
-
-const COMPARISONS = ['eq', 'ne', 'lt', 'le', 'gt', 'ge', 'in'] as const
 
 const run = (e: Expr, scope: Scope): Truth => {
   if ('all' in e) return all(e.all.map((x) => run(x, scope)))
