@@ -1,6 +1,6 @@
 # RFC 0001: The semantic capability IR
 
-- **Status:** accepted (2026-11-17); amended 2026-11-17: §3.1, §5.5 and §6.3 (quantifiers and `count` after the guard survey, with route parameters mapped into input by bindings); §2.3, §3.1, §3.2, §5.5, §6.4 and §9 (declared principal attributes, missing against absent, the roots authorization conditions and claims read, and composition, for RFC 0002); §12.1 (v0's agent path fails closed on declarative preconditions); §7.2 and §7.3 (empty `extensions` dropped, and `W_PATH_UNCHECKED`, from M2b's review)
+- **Status:** accepted (2026-11-17); amended 2026-11-17: §3.1, §5.5 and §6.3 (quantifiers and `count` after the guard survey, with route parameters mapped into input by bindings); §2.3, §3.1, §3.2, §5.5, §6.4 and §9 (declared principal attributes, missing against absent, the roots authorization conditions and claims read, and composition, for RFC 0002); §12.1 (v0's agent path fails closed on declarative preconditions); §7.2 and §7.3 (empty `extensions` dropped, and `W_PATH_UNCHECKED`, from M2b's review); §3.2 (how a summary renders strings)
 - **Package:** `@affordances/ir` (private until published)
 - **Depends on:** [terminology](./research/terminology.md), [repo audit](./research/repo-audit.md), [prior art](./research/prior-art.md)
 
@@ -377,7 +377,7 @@ type ConfirmationRequirement = {
 **The summary template.** A summary is prose with placeholders in the condition vocabulary's path syntax (§3.1), for example `"Place an order for {target.count} items, and pay its total"`.
 
 - **What a placeholder can name:** a `target`, `input` or reference path. `validate` checks each one as it checks condition paths (`E_PATH`).
-- **How it is rendered:** the runtime puts in each value's JSON text, and an unresolved path as `unknown`. There are no formatting functions.
+- **How it is rendered:** the runtime puts in a string as written, every other value as its JSON text (RFC 8785), and an unresolved path as `unknown`. So `{target.slug}` shows `hobby`, and `{target.priceUsd}` shows `20`. There are no formatting functions.
 - **Literal braces** are written `{{` and `}}`.
 - **Why data, not a function.** The person approving sees this text, so it is the one sentence that mustn't depend on each runtime's guess, or on application code a reader can't inspect. v0's `summary` function (`packages/core/src/action.ts:45-48`) stays possible in v0's own `defineAction`. The IR's summary is the inspectable version.
 
