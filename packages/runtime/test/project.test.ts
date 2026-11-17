@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import type { CapabilityManifest } from '@affordances/ir'
 import plansJson from '../../ir/fixtures/valid/plans.json' with { type: 'json' }
 import { createRuntime, offerId, parseOfferId } from '../src/index.ts'
+import { testRuntime } from './support/runtime.ts'
 import type { GuardImpl, Principal, Projection, ResourceResolver } from '../src/index.ts'
 
 const plans = plansJson as unknown as CapabilityManifest
@@ -34,7 +35,7 @@ const runtimeOf = (
   manifest = fresh(),
   billing?: GuardImpl,
 ) =>
-  createRuntime({
+  testRuntime({
     manifest,
     resources: { 'hosting.plan': table(state.plans), 'hosting.project': table(state.projects) },
     handlers: handlers(billing),
@@ -181,7 +182,7 @@ describe('deterministic for its input', () => {
     const state = { plans: plansState(), projects: projectsState() }
     const a = await runtimeOf(state).project({ principal: member, start: fromProject })
     const b = await runtimeOf(state).project({ principal: member, start: fromProject })
-    const reversed = await createRuntime({
+    const reversed = await testRuntime({
       manifest: fresh(),
       handlers: handlers(),
       resources: {
@@ -229,7 +230,7 @@ describe('deterministic for its input', () => {
     changed.pro!.priceUsd = 25
     const [a, b] = await Promise.all(
       [changed, plansState()].map((rows) =>
-        createRuntime({
+        testRuntime({
           manifest: fresh(),
           handlers: handlers(),
           resources: { 'hosting.plan': versioned(rows), 'hosting.project': table(projectsState()) },
@@ -333,7 +334,7 @@ describe('what an offer says', () => {
   })
 
   test('a resolver that throws makes what it would have supplied unknown, never a guess', async () => {
-    const p = await createRuntime({
+    const p = await testRuntime({
       manifest: fresh(),
       handlers: handlers(),
       resources: {
@@ -353,7 +354,7 @@ describe('what an offer says', () => {
   })
 
   test('an instance its resolver returns null for has no offer', async () => {
-    const p = await createRuntime({
+    const p = await testRuntime({
       manifest: fresh(),
       handlers: handlers(),
       resources: {
@@ -441,7 +442,7 @@ describe('guards at projection time (§4.2)', () => {
     manifest.capabilities[2]!.preconditions = [
       { id: 'active', description: 'The plan is active on the account', guard: true },
     ]
-    const p = await createRuntime({
+    const p = await testRuntime({
       manifest,
       resources: { 'hosting.plan': table(plansState()), 'hosting.project': table({}) },
       handlers: {
@@ -481,7 +482,7 @@ describe('guards at projection time (§4.2)', () => {
     manifest.capabilities[1]!.authorization!.conditions = [
       { id: 'billingOwner', description: 'The caller owns the billing account', guard: true },
     ]
-    const p = await createRuntime({
+    const p = await testRuntime({
       manifest,
       resources: { 'hosting.plan': table(plansState()), 'hosting.project': table(projectsState()) },
       handlers: {
@@ -495,7 +496,7 @@ describe('guards at projection time (§4.2)', () => {
 
   test('createRuntime refuses to start without an implementation for every declared guard', () => {
     expect(() =>
-      createRuntime({
+      testRuntime({
         manifest: fresh(),
         resources: { 'hosting.plan': table({}), 'hosting.project': table({}) },
       }),
@@ -524,12 +525,30 @@ describe('offer ids', () => {
 })
 
 describe('createRuntime', () => {
+  test('refuses a query or action no handler runs, and a confirmation with no keys or token store (§11)', () => {
+    const resources = { 'hosting.plan': table({}), 'hosting.project': table({}) }
+    const guards = {
+      'hosting.plan.subscribe': { guards: { billing: () => true }, run: () => undefined },
+    }
+    expect(() => createRuntime({ manifest: fresh(), resources, handlers: guards })).toThrow(
+      'no handler runs hosting.plan.list',
+    )
+    const runs = {
+      ...guards,
+      'hosting.plan.list': { run: () => [] },
+      'hosting.plan.cancel': { run: () => undefined },
+    }
+    expect(() => createRuntime({ manifest: fresh(), resources, handlers: runs })).toThrow(
+      'hosting.plan.subscribe requires confirmation: give createRuntime approvalKeys and seenTokens',
+    )
+  })
+
   test('refuses an invalid manifest, and a resource type with no resolver', () => {
     const invalid = fresh()
     invalid.capabilities[1]!.target = 'hosting.nothing'
     expect(() => runtimeOf(undefined, invalid)).toThrow(/E_UNRESOLVED/)
     expect(() =>
-      createRuntime({ manifest: fresh(), resources: { 'hosting.plan': table({}) } }),
+      testRuntime({ manifest: fresh(), resources: { 'hosting.plan': table({}) } }),
     ).toThrow('no resolver for the resource type hosting.project')
   })
 })

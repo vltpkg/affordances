@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest'
 import * as fc from 'fast-check'
 import { validate, type CapabilityManifest, type Expr } from '@affordances/ir'
-import { createRuntime, builtInPolicies } from '../src/index.ts'
+import { builtInPolicies } from '../src/index.ts'
+import { testRuntime } from './support/runtime.ts'
 import type {
   DiscoveryPolicy,
   GuardImpl,
@@ -280,7 +281,7 @@ const runtimeOf = (c: Case, manifest = c.spec.manifest) => {
   }
   const handlers: Record<string, Handler> = {}
   for (const g of c.spec.guards) (handlers[g.capability] ??= { guards: {} }).guards![g.id] = guard
-  return createRuntime({
+  return testRuntime({
     manifest,
     resources: Object.fromEntries(
       TYPES.map((t) => [t, resolverOf(c.state[t], c.listThrows === t)]),

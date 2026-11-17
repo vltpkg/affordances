@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { CapabilityManifest } from '@affordances/ir'
 import plansJson from '../../ir/fixtures/valid/plans.json' with { type: 'json' }
-import { createRuntime } from '../src/index.ts'
+
 import type {
   Budget,
   DiscoveryPolicy,
@@ -11,6 +11,7 @@ import type {
   ResourceResolver,
   View,
 } from '../src/index.ts'
+import { testRuntime } from './support/runtime.ts'
 
 // the plans fixture, with a trial on each plan that's an alternative to subscribing
 const manifestOf = (): CapabilityManifest => {
@@ -51,7 +52,7 @@ const table = (rows: Instances): ResourceResolver => ({
   list: async () => Object.keys(rows),
 })
 const runtime = (options: { policies?: DiscoveryPolicy[]; defaultPolicy?: string } = {}) =>
-  createRuntime({
+  testRuntime({
     manifest: manifestOf(),
     resources: { 'hosting.plan': table(plans), 'hosting.project': table(projects) },
     handlers: { 'hosting.plan.subscribe': { guards: { billing: () => true } } },

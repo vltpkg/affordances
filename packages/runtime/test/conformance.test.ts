@@ -20,6 +20,8 @@ const application = async (resolverOf: (store: Store, type: string) => ResourceR
         'hosting.project': resolverOf(store, 'hosting.project'),
       },
       handlers: {
+        'hosting.plan.list': { run: () => [] },
+        'hosting.plan.cancel': { run: () => undefined },
         'hosting.plan.subscribe': {
           guards: { billing: () => true },
           run: (input) => {

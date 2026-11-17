@@ -152,6 +152,16 @@ export const createRuntime = ({
     for (const x of [...(c.preconditions ?? []), ...(c.authorization?.conditions ?? [])])
       if ('guard' in x && typeof handlers[c.id]?.guards?.[x.id] !== 'function')
         throw new Error(`no implementation for ${c.id}'s guard ${x.id}`)
+  // every query and action has a handler that runs it (§11)
+  for (const c of manifest.capabilities)
+    if (c.kind !== 'event' && typeof handlers[c.id]?.run !== 'function')
+      throw new Error(`no handler runs ${c.id}`)
+  // a confirmation needs keys to sign approvals and a store to use each once (§8.2)
+  const confirming = manifest.capabilities.find((c) => c.confirmation)
+  if (confirming && (!approvalKeys || !seenTokens))
+    throw new Error(
+      `${confirming.id} requires confirmation: give createRuntime approvalKeys and seenTokens`,
+    )
   // a definition's own id, for a Ref that may name it with the manifest's namespace (RFC 0001 §2)
   const local = (ref: string) =>
     ref.startsWith(`${manifest.namespace}#`) ? ref.slice(manifest.namespace.length + 1) : ref

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'vitest'
 import type { CapabilityManifest } from '@affordances/ir'
 import plansJson from '../../ir/fixtures/valid/plans.json' with { type: 'json' }
-import { createRuntime } from '../src/index.ts'
+
 import type {
   ExecutionResult,
   GuardImpl,
@@ -10,6 +10,7 @@ import type {
   RuntimeOptions,
   TokenStore,
 } from '../src/index.ts'
+import { testRuntime } from './support/runtime.ts'
 
 const fresh = () => structuredClone(plansJson) as unknown as CapabilityManifest
 type Instances = Record<string, Record<string, unknown>>
@@ -48,7 +49,7 @@ const setup = async (
     extra?: Partial<RuntimeOptions>
   } = {},
 ) =>
-  createRuntime({
+  testRuntime({
     manifest: options.manifest ?? fresh(),
     resources: { 'hosting.plan': table(() => plans), 'hosting.project': table(() => projects) },
     handlers: {
@@ -277,7 +278,7 @@ describe('execution runs every check, in order (§8.1)', () => {
 
   test('a handler that throws fails with a message safe to show, and an output off its schema fails too', async () => {
     const manifest = fresh()
-    const rt = createRuntime({
+    const rt = testRuntime({
       manifest,
       resources: { 'hosting.plan': table(() => plans), 'hosting.project': table(() => projects) },
       handlers: {
