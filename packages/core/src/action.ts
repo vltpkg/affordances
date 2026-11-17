@@ -154,6 +154,10 @@ export type AffordancesOptions<Session> = {
 
 export const createAffordances = <Session = never>(options: AffordancesOptions<Session> = {}) => {
   // a capability-bound action (RFC 0001 §12.1): the capability's data, and this action's code
+  /**
+   * @experimental Binding a capability from `@affordances/ir`, which isn't published yet. It may change before it is,
+   * and its fail-closed refusal on v0's agent path is interim (M3d).
+   */
   function defineAction<C extends BindableCapability, Output, State extends Entities = Entities>(
     config: CapabilityActionConfig<C, Output, Session, State>,
   ): Action<CapabilityInput<C>, Output>
@@ -166,7 +170,8 @@ export const createAffordances = <Session = never>(options: AffordancesOptions<S
       | CapabilityActionConfig<BindableCapability, unknown, Session, Entities>,
   ): AnyAction {
     const config = 'capability' in given ? fromCapability(given) : given
-    if (!config.expose && process.env.NODE_ENV !== 'production')
+    // a capability says why itself (fromCapability)
+    if (!config.expose && !('capability' in given) && process.env.NODE_ENV !== 'production')
       console.warn(`[affordances] ${config.name} has no \`expose\`, so agents can't reach it`)
 
     const action = async (...args: unknown[]) => {

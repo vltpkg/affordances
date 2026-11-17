@@ -9,6 +9,10 @@ type BoundCondition = { readonly id: string; readonly description: string } & (
   | { readonly expr: unknown }
 )
 
+/**
+ * @experimental Binding a capability from `@affordances/ir`, which isn't published yet. It may change before it is,
+ * and its fail-closed refusal on v0's agent path is interim (M3d).
+ */
 export type BindableCapability<Guards extends string = string, Input = unknown> = {
   readonly definition: {
     readonly id: string
@@ -26,16 +30,28 @@ export type BindableCapability<Guards extends string = string, Input = unknown> 
   readonly '~input'?: Input
 }
 
+/**
+ * @experimental Binding a capability from `@affordances/ir`, which isn't published yet. It may change before it is,
+ * and its fail-closed refusal on v0's agent path is interim (M3d).
+ */
 export type CapabilityGuards<C> = C extends { readonly '~guards'?: infer G }
   ? Exclude<G, undefined> & string
   : never
 // a capability without input takes an empty object, as v0's z.object({}) does
+/**
+ * @experimental Binding a capability from `@affordances/ir`, which isn't published yet. It may change before it is,
+ * and its fail-closed refusal on v0's agent path is interim (M3d).
+ */
 export type CapabilityInput<C> = C extends { readonly '~input'?: infer I }
   ? [Exclude<I, undefined>] extends [never]
     ? Record<string, never>
     : Exclude<I, undefined>
   : never
 
+/**
+ * @experimental Binding a capability from `@affordances/ir`, which isn't published yet. It may change before it is,
+ * and its fail-closed refusal on v0's agent path is interim (M3d).
+ */
 export type GuardFn<Input, Session, State extends Entities> = (args: {
   // undefined when the graph is built, as for v0's guard
   input: Input | undefined
@@ -45,6 +61,10 @@ export type GuardFn<Input, Session, State extends Entities> = (args: {
 
 // defineAction's form for a capability: the description, input, readOnly, requires and expose come from the
 // capability, and this supplies only the code. A capability without guards takes no `guards`
+/**
+ * @experimental Binding a capability from `@affordances/ir`, which isn't published yet. It may change before it is,
+ * and its fail-closed refusal on v0's agent path is interim (M3d).
+ */
 export type CapabilityActionConfig<
   C extends BindableCapability,
   Output,
@@ -86,14 +106,26 @@ const at = (value: unknown, path: string[]) =>
     value,
   )
 
-// the capability's `{path}` template (RFC 0001 §3.2). v0 has only the input, so other roots read "unknown",
+// RFC 8785's JSON text, for a value in a summary: object members sorted by UTF-16 code units
+const canonical = (value: unknown): string =>
+  Array.isArray(value)
+    ? `[${value.map(canonical).join(',')}]`
+    : value !== null && typeof value === 'object'
+      ? `{${Object.keys(value)
+          .filter((k) => (value as Record<string, unknown>)[k] !== undefined)
+          .toSorted()
+          .map((k) => `${JSON.stringify(k)}:${canonical((value as Record<string, unknown>)[k])}`)
+          .join(',')}}`
+      : JSON.stringify(value)
+
+// the capability's `{path}` template (RFC 0001 §3.2): a string as written, any other value as its JSON text. v0 has only the input, so other roots read "unknown",
 // as an unresolved placeholder does; `{{` and `}}` are literal braces
 const fill = (template: string, input: unknown) =>
   template.replace(/\{\{|\}\}|\{([A-Za-z0-9_.]+)\}/g, (match, path: string | undefined) => {
     if (!path) return match[0]!
     const [root, ...rest] = path.split('.')
     const value = root === 'input' ? at(input, rest) : undefined
-    return value === undefined || value === null ? 'unknown' : String(value)
+    return value === undefined ? 'unknown' : typeof value === 'string' ? value : canonical(value)
   })
 
 const exposeOf = (def: BindableCapability['definition']): Expose | undefined =>
@@ -155,6 +187,10 @@ export const fromCapability = <
           return true
         }
       : undefined
+  if (!def.authorization && dev())
+    console.warn(
+      `[affordances] ${config.name}: ${def.id} declares no authorization, so agents can't reach it`,
+    )
   const schema = config.capability.schemas.input ?? NO_INPUT
   const template = def.confirmation?.summary
   return {

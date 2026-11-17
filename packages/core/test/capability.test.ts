@@ -291,3 +291,46 @@ describe('the types', () => {
     expect(typeof typed).toBe('function')
   })
 })
+
+describe('the confirmation summary (RFC 0001 §3.2)', () => {
+  test('a string as written, any other value as its canonical JSON text, and unknown for what v0 lacks', async () => {
+    const ship = defineCapability({
+      id: 'commerce.order.ship',
+      kind: 'action',
+      description: 'Ship an order',
+      input: z.object({
+        address: z.object({ street: z.string(), city: z.string() }),
+        items: z.array(z.string()),
+        note: z.string(),
+        gift: z.boolean(),
+        wrap: z.null(),
+      }),
+      authorization: { principal: 'authenticated' },
+      confirmation: {
+        summary:
+          'Ship {input.items} to {input.address} ({input.note}, gift {input.gift}, wrap {input.wrap}) for {target.total} {{as is}}',
+      },
+    })
+    const handler = handlerFor([
+      defineAction({ capability: ship, name: 'ship', run: () => 'shipped' }),
+    ])
+    const delta = await call(handler, {
+      action: 'ship',
+      input: {
+        address: { street: '1 Main', city: 'Springfield' },
+        items: ['a', 'b'],
+        note: 'leave at door',
+        gift: true,
+        wrap: null,
+      },
+    })
+    expect(delta).toMatchObject({
+      error: {
+        code: 'confirm_required',
+        // object members sorted, as RFC 8785: city before street
+        message:
+          'Ship ["a","b"] to {"city":"Springfield","street":"1 Main"} (leave at door, gift true, wrap null) for unknown {as is}',
+      },
+    })
+  })
+})
