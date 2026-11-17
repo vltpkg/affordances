@@ -121,8 +121,38 @@ test("inspecting an offer gives its definition; another caller's offer is not fo
   expect((await inspectGet('')).status).toBe(400)
 })
 
+test('a budget that is not a positive whole number is refused', async () => {
+  for (const offers of ['0', '-1', '2.5', 'many'])
+    expect((await get(`?offers=${offers}`)).status).toBe(400)
+})
+
 test('an unknown policy is refused, not defaulted', async () => {
   const response = await get('?policy=secret')
   expect(response.status).toBe(400)
   expect((await response.json()).error).toContain('No policy secret')
+})
+
+test("paging inside an expansion: the expansions already taken are replayed, so the page's cursor resolves", async () => {
+  const auth = { authorization: 'Bearer s_page' }
+  const base = { policy: 'exhaustive', offers: 2 }
+  const budget = { offers: 2 }
+  type E = { from: unknown; along: string }
+  const first = await (await get('?policy=exhaustive&offers=2', auth)).json()
+  expect(first.offers).toHaveLength(2)
+  const more = first.omitted.expand.find((e: E) => e.along === 'more')
+  // the first view's cursor resolves on a fresh projection
+  const page2 = await (await post({ ...base, from: more.from, along: 'more', budget }, auth)).json()
+  const more2 = page2.omitted.expand.find((e: E) => e.along === 'more')
+  expect(more2).toBeDefined()
+  // page 2's cursor only resolves where page 2 was taken
+  expect((await post({ ...base, from: more2.from, along: 'more', budget }, auth)).status).toBe(400)
+  const after = [{ from: more.from, along: 'more', budget }]
+  const response = await post({ ...base, from: more2.from, along: 'more', budget, after }, auth)
+  expect(response.status).toBe(200)
+  const page3 = await response.json()
+  const shown = new Set([...first.offers, ...page2.offers].map((o: { id: string }) => o.id))
+  expect(page3.offers.length).toBeGreaterThan(0)
+  expect(page3.offers.some((o: { id: string }) => shown.has(o.id))).toBe(false)
+  const malformed = { ...base, from: more2.from, along: 'more', after: [{ along: 'more' }] }
+  expect((await post(malformed, auth)).status).toBe(400)
 })

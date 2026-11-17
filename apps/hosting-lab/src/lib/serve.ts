@@ -1,4 +1,9 @@
-import { builtInPolicies, type Expansion, type ProjectionRequest } from '@affordances/runtime'
+import {
+  builtInPolicies,
+  type Budget,
+  type Expansion,
+  type ProjectionRequest,
+} from '@affordances/runtime'
 import { runtime } from './inspect.ts'
 import { principalOf } from './principal.ts'
 
@@ -36,19 +41,32 @@ const startOf = (value: unknown): ProjectionRequest['start'] => {
   return at === -1 ? value : { type: value.slice(0, at), key: value.slice(at + 1) }
 }
 
-type Params = { policy?: unknown; start?: unknown; seen?: unknown; task?: unknown; offer?: unknown }
+// offers is the request's budget: how many offers its first view shows (RFC 0002 §6.3). An expansion's own budget
+// is the expand body's budget
+type Params = {
+  policy?: unknown
+  start?: unknown
+  seen?: unknown
+  task?: unknown
+  offers?: unknown
+  offer?: unknown
+}
 
 // the projection request a route's parameters describe, or why it can't be made
 const projectionOf = (request: Request, p: Params): ProjectionRequest | string => {
   const policy = typeof p.policy === 'string' && p.policy ? p.policy : undefined
   if (policy && !POLICIES.has(policy))
     return `No policy ${policy}: one of ${[...POLICIES].join(', ')}`
+  const offers = p.offers === undefined || p.offers === '' ? undefined : Number(p.offers)
+  if (offers !== undefined && !(Number.isInteger(offers) && offers > 0))
+    return 'offers is a positive whole number'
   return {
     principal: principalOf(request),
     start: startOf(p.start),
     policy,
     seen: typeof p.seen === 'string' && p.seen ? p.seen : undefined,
     task: typeof p.task === 'string' && p.task ? { statement: p.task } : undefined,
+    budget: offers === undefined ? undefined : { offers },
   }
 }
 
@@ -61,31 +79,54 @@ export const serveView = async (request: Request): Promise<Response> => {
   return json((await runtime.project(p)).view())
 }
 
-// POST /api/projection/expand { from, along, budget?, policy?, start?, seen?, task? }: more of the projection, as
-// a view under the same rules (RFC 0002 §6.5)
-export const serveExpand = async (request: Request): Promise<Response> => {
-  const body = (await request.json().catch(() => undefined)) as
-    | (Params & { from?: unknown; along?: unknown; budget?: unknown })
-    | undefined
-  if (!body || typeof body !== 'object') return refuse(400, 'The body is a JSON object')
-  const { from, along } = body
+type Step = { from: Expansion['from']; along: Expansion['along']; budget?: Budget }
+
+// one expansion as the body names it, or why it can't be one
+const stepOf = (value: unknown): Step | string => {
+  if (!value || typeof value !== 'object') return 'an expansion is { from, along, budget? }'
+  const { from, along, budget } = value as Record<string, unknown>
   const fromOk =
     typeof from === 'string' ||
     (from !== null && typeof from === 'object' && 'type' in from && 'key' in from)
-  if (!fromOk) return refuse(400, 'from is an offer id, a choice set id, or { type, key }')
+  if (!fromOk) return 'from is an offer id, a choice set id, a more cursor, or { type, key }'
   if (typeof along !== 'string' || !ALONG.has(along as Expansion['along']))
-    return refuse(400, `along is one of ${[...ALONG].join(', ')}`)
+    return `along is one of ${[...ALONG].join(', ')}`
+  if (budget !== undefined && (budget === null || typeof budget !== 'object'))
+    return 'budget is { offers? }'
+  return {
+    from: from as Expansion['from'],
+    along: along as Expansion['along'],
+    budget: budget as Budget,
+  }
+}
+
+// POST /api/projection/expand { from, along, budget?, after?, policy?, start?, seen?, task? }: more of the
+// projection, as a view under the same rules (RFC 0002 §6.5).
+//
+// Each request projects afresh, and a cursor an expansion's page hands out only resolves where that expansion was
+// taken. So `after` lists the expansions already taken to reach `from`, in order, and they're replayed first. It
+// reaches nothing a caller couldn't expand to directly
+export const serveExpand = async (request: Request): Promise<Response> => {
+  const body = (await request.json().catch(() => undefined)) as
+    | (Params & { after?: unknown })
+    | undefined
+  if (!body || typeof body !== 'object') return refuse(400, 'The body is a JSON object')
+  const step = stepOf(body)
+  if (typeof step === 'string') return refuse(400, step)
+  if (body.after !== undefined && !Array.isArray(body.after))
+    return refuse(400, 'after is the list of expansions already taken')
+  const after: Step[] = []
+  for (const a of (body.after as unknown[] | undefined) ?? []) {
+    const s = stepOf(a)
+    if (typeof s === 'string') return refuse(400, `after: ${s}`)
+    after.push(s)
+  }
   const p = projectionOf(request, body)
   if (typeof p === 'string') return refuse(400, p)
   const projection = await runtime.project(p)
   try {
-    const budget = body.budget as { offers?: number } | undefined
-    return json(
-      await projection.expand(
-        { from: from as Expansion['from'], along: along as Expansion['along'] },
-        { budget },
-      ),
-    )
+    for (const a of after) await projection.expand(a, { budget: a.budget })
+    return json(await projection.expand(step, { budget: step.budget }))
   } catch (error) {
     return refuse(400, (error as Error).message)
   }
