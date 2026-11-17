@@ -1,6 +1,6 @@
 # RFC 0001: The semantic capability IR
 
-- **Status:** accepted (2026-11-17)
+- **Status:** accepted (2026-11-17); amended 2026-11-17 (§3.1: quantifiers and `count`, after the guard survey)
 - **Package:** `@affordances/ir` (private until published)
 - **Depends on:** [terminology](./research/terminology.md), [repo audit](./research/repo-audit.md), [prior art](./research/prior-art.md)
 
@@ -215,10 +215,12 @@ type Expr =
   | { ge: [Operand, Operand] }
   | { in: [Operand, Operand] } // the left is a member of the right (an array)
   | { exists: Path }
+  | { some: { of: Path; where: Expr } } // some element of an array satisfies `where`
+  | { every: { of: Path; where: Expr } } // every element does
 
-type Operand = { path: Path } | { value: Scalar | Scalar[] }
+type Operand = { path: Path } | { value: Scalar | Scalar[] } | { count: Path } // count: an array's length
 type Scalar = string | number | boolean | null
-// a root, then attribute names: 'target.status', 'input.quantity', 'principal.role', 'product.stock'
+// a root, then attribute names: 'target.status', 'input.quantity', 'principal.role', 'product.stock', 'item.sku'
 type Path = string
 ```
 
@@ -227,7 +229,8 @@ type Path = string
 - `target`: the target resource's attributes;
 - `input`: the input;
 - `principal`: the principal's attributes, which RFC 0002 defines;
-- a reference's `name` (§2.2).
+- a reference's `name` (§2.2);
+- `item`: inside a quantifier's `where`, the current element of the array it ranges over.
 
 Each path is checked at validation time. A `target` or reference path has to name an attribute declared in that resource's `attributes`, and an `input` path has to name a property in the input schema.
 
@@ -255,12 +258,21 @@ Each path is checked at validation time. A `target` or reference path has to nam
 - **`not`** maps `true` to `false`, `false` to `true`, and `unknown` to `unknown`.
 - **`all`** is `false` if any argument is `false`, else `unknown` if any is `unknown`, else `true`. **`any`** is the dual: `true` if any is `true`, else `unknown` if any is `unknown`, else `false`. Both have at least one argument.
 - **A guard** that hasn't run is `unknown`.
+- **Quantifiers** range over the array at `of`, binding `item` to each element in turn:
+  - **`some`** is `true` if `where` is `true` for any element; else `unknown` if it is `unknown` for any; else `false`. An empty array gives `false`.
+  - **`every`** is `false` if `where` is `false` for any element; else `unknown` if it is `unknown` for any; else `true`. An empty array gives `true`.
+  - **An `of` that is `missing` or `absent`, or isn't an array at run time,** makes the quantifier `unknown`.
+  - **Nesting is limited to 2:** a quantifier inside another's `where` is allowed, and a third level is `E_DEPTH`. Inside a nested quantifier, `item` is the inner element, and the outer element can't be named.
+- **`count`** is the number of elements of the array at its path, as a number operand. Non-empty is `{ gt: [{ count: … }, { value: 0 }] }`, so there is no separate operator. A `count` of a `missing` or `absent` path, or of something that isn't an array, is a comparison with no value: `unknown`.
 
 **Types are checked at validation where the schemas allow.** Paths are typed by the `attributes` and input schemas. So `validate` rejects, as `E_TYPE`:
 
 - an ordering comparison between operands whose declared types aren't both numbers or both strings;
 - an `eq` or `ne` between declared types that differ;
-- an `in` whose right side isn't an array literal or an array-typed path.
+- an `in` whose right side isn't an array literal or an array-typed path;
+- a quantifier's `of`, or a `count`'s path, that isn't array-typed.
+
+An `item` path is checked against the array's element schema (its `items`). Elements are objects, so an `item` path always names an attribute. For an array of scalars, use `in`: "the SKU is in the cart" is `{ in: [{ path: 'input.sku' }, { path: 'target.skus' }] }`.
 
 What a schema leaves open (a property without a `type`, a `oneOf`) is checked only at run time, with the rule above.
 
@@ -268,13 +280,21 @@ So a projection can say `unknown` instead of guessing (terminology §3.4, availa
 
 **What is deliberately missing:**
 
-- quantifiers over arrays ("some variant has stock");
 - arithmetic;
 - string functions;
 - regular expressions;
-- calls.
+- calls;
+- unbounded quantification: quantifiers range only over an array the context already holds, nested at most twice.
 
-A check that needs them is a guard. That keeps every declarative condition checkable against a schema, and cheap to evaluate. It also keeps the honest default, that a condition no tool can analyze says so.
+A check that needs them is a guard. That keeps every declarative condition checkable against a schema, and its cost linear in the arrays it reads. It also keeps the honest default, that a condition no tool can analyze says so.
+
+**Arithmetic is the deliberate line.** The vocabulary is closed and has no arithmetic. The one check in this repository that needs it compares the stock left after the cart, `stock - inCart`, with a quantity (guard survey, check 9c). It stays a guard, or the application exposes the difference as an attribute. Adding arithmetic for one check would open a language: precision, overflow, units.
+
+**Why quantifiers and `count` are in** (an amendment after the [guard survey](./research/guard-survey.md)):
+
+- **The evidence:** the survey split every guard in this repository into checks. Of the checks that didn't fit the first version of this vocabulary, all but the subtraction were "some element", "every element", "an element with this key" or "non-empty".
+- **The cost of leaving them out:** three of the example store's four capabilities kept an opaque guard. That's where conformance tests (rule 5) and derived edges matter most.
+- **The bound keeps the cost predictable:** quantifiers range over arrays already in the context, with at most two levels.
 
 **Alternatives considered:**
 
@@ -432,7 +452,7 @@ A reader can compute these, and a projection does. They are never stored:
 
 **When an `establishes` E satisfies a precondition P.** The test is syntactic, so any reader computes the same edges:
 
-- **The shapes it applies to:** both E and P are _atoms_ (a comparison or `exists` whose paths are all `target` paths, with literal values), or `all` of atoms. P with `any`, `not`, or a path on another root never matches.
+- **The shapes it applies to:** both E and P are _atoms_ (a comparison or `exists` whose paths and `count`s are all on `target` paths, with literal values), or `all` of atoms. P with `any`, `not`, a quantifier, or a path on another root never matches.
 - **The test:** every atom of P is matched by an atom of E on the same path, either identical to it, or an `eq` whose value makes P's atom `true`.
 - **Same resource:** E's effect is on the resource that A targets.
 
@@ -502,6 +522,7 @@ Some examples:
 
 - **A binding is a description, not a handler.** The code that executes a capability is registered with a runtime (RFC 0002), keyed by the capability's identifier. That keeps a manifest non-executable while still letting a v0 adapter, or an inspector, know where each capability is reachable.
 - **Bindings are optional.** A manifest without them is complete as a description.
+- **A binding maps transport details into the input.** A route parameter, such as the product slug in v0's `/products/[slug]`, is a binding concern. The binding (the v0 adapter, or a compiler) maps it into the capability's input, so `references[].at` always points into the input, and the IR stays transport-free. References have no route source (guard survey, guard 9).
 - **One capability can have any number of bindings.** Its identity is the same in all of them, and every v0 route that serves it is one binding.
 
 ### 6.4 Composition
@@ -575,7 +596,8 @@ The canonical form is what composition compares, what the digest hashes, and wha
 | `E_KIND`              | a kind rule is broken (a query with effects, a safe action, an event with input)                                                                                                                                            |
 | `E_PATH`              | a condition or summary path doesn't name a declared attribute or input property                                                                                                                                             |
 | `E_KEY`               | a resource's `key` isn't one of its declared `attributes` (when it declares any)                                                                                                                                            |
-| `E_TYPE`              | a comparison whose operand types the schemas show to be incompatible, or a `null` literal in one (§3.1)                                                                                                                     |
+| `E_DEPTH`             | a quantifier nested more than two levels deep (§3.1)                                                                                                                                                                        |
+| `E_TYPE`              | a comparison whose operand types the schemas show to be incompatible, a `null` literal in one, or a quantifier or `count` over a path that isn't array-typed (§3.1)                                                         |
 | `E_ENFORCEMENT_CLAIM` | a claim targets an enforcement field (§8, rule 2)                                                                                                                                                                           |
 | `E_BASIS`             | a provenance basis without what it requires (§8, rule 3)                                                                                                                                                                    |
 | `E_SOURCE`            | provenance names a source that isn't declared                                                                                                                                                                               |
@@ -1168,7 +1190,7 @@ export type Condition = { id: string; description: string } & (
 
 export type Scalar = string | number | boolean | null
 export type Path = string // '<root>.<attribute>[.<attribute>…]'
-export type Operand = { path: Path } | { value: Scalar | Scalar[] }
+export type Operand = { path: Path } | { value: Scalar | Scalar[] } | { count: Path }
 export type Expr =
   | { all: Expr[] }
   | { any: Expr[] }
@@ -1181,6 +1203,8 @@ export type Expr =
   | { ge: [Operand, Operand] }
   | { in: [Operand, Operand] }
   | { exists: Path }
+  | { some: { of: Path; where: Expr } }
+  | { every: { of: Path; where: Expr } }
 
 export type AuthorizationRequirement = {
   principal: 'any' | 'authenticated'
@@ -1247,23 +1271,23 @@ export type ValidationIssue = {
 
 `@affordances/ir/schema.json` is JSON Schema 2020-12, with `$id` `https://affordances.sh/schemas/ir/0.1/manifest.json` and one `$defs` entry per type above. The constraints it states beyond the types:
 
-| `$defs` entry          | Constraints                                                                                                                                                                                                                                                                             |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Id`                   | `pattern` as in §13, `maxLength: 128`                                                                                                                                                                                                                                                   |
-| `Ref`                  | `pattern`: an `Id`, or an absolute URI without a fragment, then `#` and an `Id`: `^(?:ID\|[A-Za-z][A-Za-z0-9+.-]*:[^#\s]*#ID)$`, with `ID` the `Id` pattern                                                                                                                             |
-| `CapabilityManifest`   | `schemaVersion` `const: "0.1"`; `namespace` `pattern: "^[A-Za-z][A-Za-z0-9+.-]*:[^#\\s]*$"`, an absolute URI with no fragment; `additionalProperties: false`                                                                                                                            |
-| `Source`               | `role` enum                                                                                                                                                                                                                                                                             |
-| `Provenance`           | `basis` enum. `if: { properties: { basis: { const: "verified" } } }, then: { required: ["evidence"], properties: { evidence: { minItems: 1 } } }`, and the same for `imported` and `observed`                                                                                           |
-| `ResourceDefinition`   | `required: ["id", "description", "key"]`; `contains` is an array of unique `Id`s                                                                                                                                                                                                        |
-| `CapabilityDefinition` | `required: ["id", "kind", "description"]`. With `kind: "query"`: `effects` absent or `maxItems: 0`, and `safe` not `false`. With `kind: "action"`: `safe` not `true`. With `kind: "event"`: no `input`, `preconditions`, `confirmation` or `effects`. `confirmation` requires `summary` |
-| `Condition`            | `required: ["id", "description"]`; `oneOf` with `expr`, or with `guard: { const: true }`                                                                                                                                                                                                |
-| `Expr`                 | `oneOf` of single-key objects (`minProperties: 1`, `maxProperties: 1`). Comparison values are `prefixItems` of two `Operand`s, with `items: false` and `minItems: 2`; `all` and `any` have `minItems: 1`                                                                                |
-| `Operand`              | `oneOf` `{ path }` and `{ value }`; `path` matches `^(target\|input\|principal\|[a-z][A-Za-z0-9]*)(\.[A-Za-z0-9_]+)+$`                                                                                                                                                                  |
-| `Effect`               | `oneOf` on `category`. `state` requires `change` and `resource`. `compensatedBy` is required when `reversibility` is `compensable`                                                                                                                                                      |
-| `Relation`             | `type` enum. With `type: "relatedTo"`, `description` is required                                                                                                                                                                                                                        |
-| `Claim`                | `required: ["id", "subject", "kind", "statement", "provenance"]`; `quantity` requires `value` and `unit`                                                                                                                                                                                |
-| `Binding`              | `address` is an object of strings, `minProperties: 1`                                                                                                                                                                                                                                   |
-| `Extensions`           | `propertyNames` with the absolute-URI `pattern`                                                                                                                                                                                                                                         |
+| `$defs` entry          | Constraints                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Id`                   | `pattern` as in §13, `maxLength: 128`                                                                                                                                                                                                                                                                                                                                                 |
+| `Ref`                  | `pattern`: an `Id`, or an absolute URI without a fragment, then `#` and an `Id`: `^(?:ID\|[A-Za-z][A-Za-z0-9+.-]*:[^#\s]*#ID)$`, with `ID` the `Id` pattern                                                                                                                                                                                                                           |
+| `CapabilityManifest`   | `schemaVersion` `const: "0.1"`; `namespace` `pattern: "^[A-Za-z][A-Za-z0-9+.-]*:[^#\\s]*$"`, an absolute URI with no fragment; `additionalProperties: false`                                                                                                                                                                                                                          |
+| `Source`               | `role` enum                                                                                                                                                                                                                                                                                                                                                                           |
+| `Provenance`           | `basis` enum. `if: { properties: { basis: { const: "verified" } } }, then: { required: ["evidence"], properties: { evidence: { minItems: 1 } } }`, and the same for `imported` and `observed`                                                                                                                                                                                         |
+| `ResourceDefinition`   | `required: ["id", "description", "key"]`; `contains` is an array of unique `Id`s                                                                                                                                                                                                                                                                                                      |
+| `CapabilityDefinition` | `required: ["id", "kind", "description"]`. With `kind: "query"`: `effects` absent or `maxItems: 0`, and `safe` not `false`. With `kind: "action"`: `safe` not `true`. With `kind: "event"`: no `input`, `preconditions`, `confirmation` or `effects`. `confirmation` requires `summary`                                                                                               |
+| `Condition`            | `required: ["id", "description"]`; `oneOf` with `expr`, or with `guard: { const: true }`                                                                                                                                                                                                                                                                                              |
+| `Expr`                 | `oneOf` of single-key objects (`minProperties: 1`, `maxProperties: 1`). Comparison values are `prefixItems` of two `Operand`s, with `items: false` and `minItems: 2`; `all` and `any` have `minItems: 1`; `some` and `every` take an object with `of` (a `Path`) and `where` (an `Expr`), both required, `additionalProperties: false`. The nesting limit is `validate`'s (`E_DEPTH`) |
+| `Operand`              | `oneOf` `{ path }`, `{ value }` and `{ count }`; `path` and `count` match `^(target\|input\|principal\|item\|[a-z][A-Za-z0-9]*)(\.[A-Za-z0-9_]+)+$`                                                                                                                                                                                                                                   |
+| `Effect`               | `oneOf` on `category`. `state` requires `change` and `resource`. `compensatedBy` is required when `reversibility` is `compensable`                                                                                                                                                                                                                                                    |
+| `Relation`             | `type` enum. With `type: "relatedTo"`, `description` is required                                                                                                                                                                                                                                                                                                                      |
+| `Claim`                | `required: ["id", "subject", "kind", "statement", "provenance"]`; `quantity` requires `value` and `unit`                                                                                                                                                                                                                                                                              |
+| `Binding`              | `address` is an object of strings, `minProperties: 1`                                                                                                                                                                                                                                                                                                                                 |
+| `Extensions`           | `propertyNames` with the absolute-URI `pattern`                                                                                                                                                                                                                                                                                                                                       |
 
 **`format` is not relied on.** JSON Schema 2020-12 makes `format` an annotation unless a validator opts in (Validation §7.2.1), so the schema states URIs with `pattern`s, and `validate` checks the full RFC 3986 syntax.
 
@@ -1293,7 +1317,7 @@ This RFC started from an initial sketch of the model: a manifest of resources, c
 ## 16. Open questions
 
 1. **`principal` attributes.** RFC 0002 defines which principal attributes a condition can read, and how an application declares them.
-2. **A guard language.** Guards are opaque. A later version could let a guard name an implementation in a portable language, CEL for example. That would make it inspectable without making the IR executable, and the decision is deferred until real guards are surveyed.
+2. **A guard language.** Guards are opaque. A later version could let a guard name an implementation in a portable language, CEL for example. That would make it inspectable without making the IR executable, and the decision is deferred. The [guard survey](./research/guard-survey.md) found that, with quantifiers and `count`, only arithmetic is left to guards in this repository, so there is no case for a guard language yet.
 3. **Conditional outcomes.** Whether to add OWL-S-style `outcomes` (§4), once there are post-state conditions.
 4. **Namespace ownership.** Whether a namespace must be proved, for example by serving the manifest at its namespace URI or with reverse-DNS verification as the MCP Registry does (prior art §5), before third-party claims can name it.
 5. **Signing.** A canonical form makes a detached signature (JWS over the RFC 8785 bytes) straightforward. Whether manifests are signed is a distribution decision for a later RFC.
