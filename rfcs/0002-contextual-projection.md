@@ -132,7 +132,7 @@ type Budget = { offers?: number; depth?: number }
 
 The application registers how the runtime learns what it needs:
 
-- **`principal(request)`** resolves a `Principal` from the incoming request, as v0's `auth` does today.
+- **The principal** isn't resolved by the runtime. The runtime is transport-free: every request carries a resolved `Principal`, and the binding or adapter that receives the HTTP request resolves it, as v0's `auth` does today.
 - **`resources[type].load(key, principal)`** returns an instance's attributes, as declared in its `ResourceDefinition.attributes`, and optionally its `version` (§7). It returns `null` when the instance doesn't exist **or the principal may not see it**. The runtime can't tell those apart, and doesn't need to.
 - **`resources[type].list(principal, scope)`** enumerates instances for a choice set or a containment: every plan, or a cart's items (§5).
 
@@ -140,26 +140,20 @@ A resolver that throws makes the attributes it would have supplied `unknown`, ne
 
 ## 3. Principal attributes (RFC 0001, open question 1)
 
-**Decision:** a manifest may declare the principal's attributes the way it declares a resource's. Conditions read them as `principal.<attribute>`, and `validate` checks those paths like any other (`E_PATH`).
+**Decision:** a manifest declares the principal's attributes as it declares a resource's, in `CapabilityManifest.principal` (RFC 0001 §2.3, "Principal"). Conditions read them as `principal.<attribute>`, and `validate` checks those paths (`E_PATH`). With no `principal` declared, any `principal.*` path is an error. This section covers the runtime's side.
 
 ```ts
-// an addition to RFC 0001's CapabilityManifest, proposed as an amendment
-type PrincipalDefinition = {
-  description?: string
-  attributes: JSONSchema // a JSON Schema object, as ResourceDefinition.attributes
-}
-// CapabilityManifest.principal?: PrincipalDefinition
-
 type Principal = {
-  authenticated: boolean // what `authorization.principal: 'authenticated'` reads
+  authenticated: boolean // read only by `authorization.principal: 'authenticated'`
   attributes: Record<string, unknown> // values for the declared attributes; anything else is ignored
 }
 ```
 
-- **`authenticated` is the only built-in.** Every other attribute is declared. A condition can't read an undeclared attribute, so a typo can't become a condition that's silently always `unknown`.
-- **Attributes describe the caller, not their permissions on one resource.** "A member of this organization" is a condition that compares the two: `{ in: [{ path: 'target.orgId' }, { path: 'principal.orgIds' }] }`. The vocabulary of RFC 0001 §3.1 already expresses it.
-- **The manifest declares the shape, never values.** It stays context-independent (RFC 0001, Goals).
-- **Privacy:** a projection never echoes principal attributes back. An offer that's unavailable because of one says which condition failed, by its `id` and `description`, not the attribute's value.
+- **`authenticated` is built in, and isn't a path.** Conditions don't read `principal.authenticated`. `authorization.principal` is the one place that does, so "must be signed in" has one spelling.
+- **Every other attribute is declared.** A condition can't read an undeclared attribute, so a typo can't become a condition that's silently always `unknown`.
+- **Attributes describe the caller, not their permissions on one resource.** "A member of this organization" is a condition that compares the two: `{ in: [{ path: 'target.orgId' }, { path: 'principal.orgIds' }] }`. RFC 0001 §3.1's vocabulary already expresses it.
+- **The application supplies the values** with each request (§2.1). The manifest declares the shape, never values, so it stays context-independent (RFC 0001, Goals).
+- **Privacy:** a projection or an execution result never echoes principal attribute values back. An offer that's unavailable because of one says which condition failed, by its `id` and `description`, not the value (§8.3).
 
 **Alternatives considered:**
 
@@ -168,8 +162,6 @@ type Principal = {
 | Declare principal attributes in runtime configuration only | `validate` couldn't check `principal.*` paths without running the application, and a manifest read by a tool would have conditions it can't interpret |
 | A fixed set: id, roles, scopes                             | Applications model callers differently: plans, organizations, regions, verified age. A fixed set would be wrong for most, and stretched for the rest  |
 | OAuth scopes as the attribute model                        | Scopes are one application's grant vocabulary on the wire. They can be one declared attribute (`principal.scopes`), not the model                     |
-
-This needs a small amendment to RFC 0001: an optional `principal` field on the manifest and its JSON Schema `$defs` entry. Backend owns the IR's types, and the amendment goes to review with this RFC.
 
 ## 4. Offers
 
@@ -183,6 +175,7 @@ type CapabilityOffer = {
   capability: Id
   target?: ResourceRef // absent for a global capability
   with?: Record<string, string> // references already bound, by reference name: { product: 'heavyweight-tee' }
+  revision: OfferRevision // §7: the state this offer was computed from
   availability: Availability
   conditions: ConditionResult[] // every precondition, evaluated
   requirements: Requirements // authorization and confirmation, evaluated
@@ -242,7 +235,8 @@ The runtime computes availability in this order, and stops at the first that app
 
 - **Empty arrays:** `some` over an empty array is `false`, `every` is `true`, and `count` is `0`.
 - **Elements:** with elements, `some` is `true` if any element's condition is `true`, else `unknown` if any is `unknown`, else `false`. `every` is the dual.
-- **Unknown arrays:** an array the resolver didn't supply makes the whole expression `unknown`, never `false` or `true`.
+- **Unknown arrays:** an array the resolver didn't supply, or a value that isn't an array at run time, makes the whole expression `unknown`, never `false` or `true`.
+- **Nesting:** inside a nested quantifier, `item` is the inner element, and the outer one can't be named (RFC 0001 §3.1).
 - **Arrays read from the input:** a quantified condition over an input array counts as reading `input.*`, so it gives `needs-input` before the input is given.
 - **The `detail`** of a quantified condition names the first element that decided it, by its index ("item 2 has stock 0"), so a refusal says which one.
 
@@ -377,7 +371,7 @@ The policies the runtime ships:
 | `progressive` | `neighborhood` | `relevance` | the start resource and one step of relations, ordered by relevance to the task |
 | `advocated`   | `neighborhood` | `byClaim`   | as `progressive`, with offers the owner recommends first, and the claims shown |
 
-An application can register more. A policy's id and its definition are part of every view's revision (§7), so two views made under different policies never look the same.
+An application can register more. Every view names the policy that produced it (§6.2), so two views made under different policies never look the same. The policy isn't part of a revision, because it changes what's shown, not what's true (§7).
 
 **Policies are what the benchmark varies** (dark patterns, Goals). The conditions map onto this RFC as follows. Every one of them is expressible without breaking the disclosure invariant:
 
@@ -485,33 +479,45 @@ type Expansion = {
 - **`projection.inspect(offer)`** returns the capability's definition, the conditions with their results, the effects, the claims, and the provenance of each part (RFC 0001 §8). It's how an agent reads consequences before it commits.
 - **Derived edges are marked.** A derived `enables` or prerequisite (RFC 0001 §5.5) is returned with basis `inferred` and what it was derived from.
 
-## 7. The projection revision
+## 7. Revisions
 
-**Decision:** a projection's **revision** is a digest of exactly the inputs that determine it:
+**Decision:** two digests, one per use.
+
+- **The projection revision** identifies the state a whole projection was derived from. It answers "is my view stale?" (`seen`, `stale`).
+- **An offer revision** identifies the state one offer was computed from. It's what execution can recompute, so `ifRevision` and approval tokens use it.
 
 ```text
-revision = sha256-base64url( canonical({
+projection revision = sha256-base64url( canonical({
   manifest:  the manifest's digest (RFC 0001 §7.1),
-  policy:    the digest of the policy's canonical form,
   principal: the digest of the principal's authenticated flag and declared attributes,
   resources: [ { type, key, version } for every instance the projection read ],
   guards:    [ { capability, condition, value } for every guard run at projection time ],
 }))
+
+offer revision = sha256-base64url( canonical({
+  manifest:  the manifest's digest,
+  principal: the principal's digest, as above,
+  resources: [ { type, key, version } for the offer's target and bound references ],
+  guards:    [ { condition, value } for that capability's guards run at projection time ],
+}))
 ```
 
 - **`version`** is what a resource resolver returns for an instance: an ETag, an updated-at value, a row version. When it returns none, the runtime uses the digest of the attributes it loaded.
-- **A revision changes exactly when the projection's inputs do.** Same inputs, same revision, and a changed input changes it. M3c tests both directions.
+- **The policy isn't an input.** A policy selects and orders what's shown, like `task` and `start`, and changes nothing that's true. Switching policy doesn't make a view stale. A view names its policy and order basis itself (§6.2, §6.4).
+- **A revision changes exactly when its inputs do.** Same inputs, same revision; a changed input changes it. M3c tests both directions, for both digests.
+- **Execution can recompute an offer revision.** It loads the target and the references anyway (§8.1), and the offer id names them. It can't recompute a projection revision, because the runtime is stateless and doesn't store which instances a projection read. So `ifRevision` takes an offer revision.
 - **It's opaque.** The principal enters only as a digest, so a revision reveals nothing about the caller. Two principals with the same attributes and the same view share a revision, which is correct: they see the same thing.
-- **It isn't stored.** It's a function of the inputs, like the manifest's digest.
-- **Freshness, not concurrency control.** A request with `seen` gets `stale: true` when the revision it holds differs. Execution can be asked to refuse when state has moved on (§8.1), but it never _trusts_ a revision: it re-checks regardless.
+- **It isn't stored.** It's a function of its inputs, like the manifest's digest.
+- **Freshness, not concurrency control.** Execution can be asked to refuse when an offer's state has moved on (§8.1), but it never _trusts_ a revision: it re-checks regardless.
 
 **Alternatives considered:**
 
-| Alternative                              | Rejected because                                                                                                                                                       |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A counter the application increments     | Every application would have to wire one through every write, and a counter can't be recomputed by a test from the inputs. A digest can                                |
-| The manifest's digest alone              | It doesn't change when state changes, which is most of the time a view goes stale                                                                                      |
-| Include the request's `task` and `start` | They select and order what's shown. They don't change what's true. Two agents starting from different resources still look at the same state, and the revision says so |
+| Alternative                                   | Rejected because                                                                                                                                                     |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A counter the application increments          | Every application would have to wire one through every write, and a counter can't be recomputed by a test from the inputs. A digest can                              |
+| The manifest's digest alone                   | It doesn't change when state changes, which is most of the time a view goes stale                                                                                    |
+| Include the policy, `task` or `start`         | They select and order what's shown. They don't change what's true. Two agents starting from different resources, or under different policies, look at the same state |
+| One projection revision, checked at execution | Execution would have to reload everything the projection read, which it doesn't know, to compare                                                                     |
 
 ## 8. Execution
 
@@ -519,41 +525,49 @@ revision = sha256-base64url( canonical({
 
 ```ts
 type ExecutionRequest = {
-  principal: Principal // resolved afresh by the application for this request
+  principal: Principal // resolved afresh by the binding for this request
   offer: OfferId // or a capability id plus a target, for a caller that skipped projection
   input?: unknown
   approval?: ApprovalToken // §8.2, for a capability that requires confirmation
-  ifRevision?: Revision // optional: refuse with 'stale' if the state has moved on
+  ifRevision?: OfferRevision // optional: refuse with 'stale' if this offer's state has moved on
 }
 ```
 
-**The checks, in order** (the same order as v0's handler, `packages/protocol/spec.md`, Call):
+**The checks, in order** (v0's order, `packages/protocol/spec.md`, Call, with references and freshness added):
 
 1. **Resolve** the offer id to a capability and a target, and load the target. Failure: `not_found`.
 2. **Authorization:** evaluate `authorization` against the principal and target. Failure: `unauthorized`. A capability with no declared authorization is refused here (§4.3).
-3. **Input:** validate against the input schema. Failure: `invalid_input`, with the issues.
-4. **Preconditions:** evaluate every declarative precondition and run every guard, with the input. `false` or `unknown` fails (RFC 0001, rule 5). Failure: `precondition`, with the condition.
-5. **Freshness:** if `ifRevision` was given and the inputs have changed, the failure is `stale`. This check is optional, and never a substitute for 2-4.
-6. **Confirmation:** if the capability requires confirmation and no valid approval for this exact call is present, the failure is `confirmation_required`, with the summary and an approval token to use (§8.2).
-7. **Run** the registered handler.
-8. **Observe:** reload the target and the resources the effects name, compare them with the declared effects (§8.4), and make the updated projection.
+3. **Rate limit.** Failure: `rate_limited`.
+4. **Input:** validate against the input schema. Failure: `invalid_input`, with the issues.
+5. **References:** load each reference whose key is in the input (`references[].at`, RFC 0001 §2.2). A key that resolves to nothing refuses with `not_found`, and a `detail` naming the reference ("No commerce.product 'xyz'"). So "doesn't exist" never falls through to an `unknown` precondition. It's what v0's guards return today (`apps/example/src/app/products/[slug]/actions.ts:25`).
+6. **Preconditions:** evaluate every declarative precondition and run every guard, with the input and the references. `false` or `unknown` fails (RFC 0001, rule 5). Failure: `precondition`, with the condition.
+7. **Freshness:** if `ifRevision` was given and the offer revision recomputed now differs, the failure is `stale`. This check is optional, and never a substitute for 2-6.
+8. **Confirmation:** if the capability requires confirmation and no valid approval for this exact call is present, the failure is `confirmation_required`, with the summary and an approval token to use (§8.2).
+9. **Run** the registered handler.
+10. **Observe:** reload the target and the resources the effects name, compare them with the declared effects (§8.4), and make the updated projection.
 
-Steps 2-4 run on every execution, with the principal resolved for this request, whatever view or offer the caller holds (§9, rule R1). Rate limiting stays where v0 has it, before the input is read.
+- **Every execution runs steps 2-6** with the principal resolved for this request, whatever view or offer the caller holds (§9, rule R1).
+- **The checks and the run aren't atomic.** Steps 2-8 establish that the call may run at that moment. They don't guarantee their conditions still hold while the handler runs. Anything that must hold throughout is the handler's job (RFC 0001 §8.3, item 2). M3 tests a state change between step 6 and step 9.
 
 ### 8.2 Confirmation and approval tokens
 
 RFC 0001 left open whether a runtime can bind an approval to what was approved (§8.3, item 1).
 
-**Decision:** yes, with an **approval token**.
+**Decision:** yes, with a single-use **approval token**.
 
-- **What a refusal carries.** When step 6 refuses, the result carries:
-  - the rendered summary;
-  - a token: a MAC, under a key the application holds, over the offer id, the digest of the canonical input, the summary text, the principal's digest and an expiry.
-- **What the next call needs.** The next execution must carry that token, and it passes step 6 only for the same offer, input and principal before the expiry.
-- **What it guarantees:** the call that runs is the call that was summarized. A caller can't approve "subscribe to Hobby" and then run Pro, or change the quantity after approval.
+- **What a refusal carries.** When step 8 refuses, the result carries the rendered summary and a token:
+  - **What it is:** HMAC-SHA-256, under a key the application holds, over the RFC 8785 canonical bytes of `{ offer, input, summary, principal, revision, expiresAt, nonce }`, written base64url without padding.
+  - **Its fields:** `input` is the digest of the canonical input, `principal` the principal's digest, `revision` the offer revision (§7), and `nonce` a random value that identifies the token.
+- **What the next call needs.** The next execution must carry that token, and it passes step 8 only for the same offer, input, principal and offer revision, before the expiry.
+- **Single use.**
+  - **The store:** the runtime records each token's nonce as used until its expiry, in a store the application provides (`seenTokens`, a set with a time to live). A second use refuses with `confirmation_required`, and a new token.
+  - **No store, no registration:** `createRuntime` refuses to register a capability that requires confirmation and isn't `idempotent: true`. One approval can never run a charge twice.
+  - **Why the revision alone isn't enough:** binding the offer revision already stops replay after any execution that changes what the offer reads. Single use covers the rest, such as a donation that changes nothing the offer reads.
+- **Keys:** the runtime accepts the current key and one previous key, so a key can rotate without invalidating every outstanding approval at once.
+- **What it guarantees:** the call that runs is the call that was summarized, once. A caller can't approve "subscribe to Hobby" and then run Pro, change the quantity after approval, or reuse the approval.
 - **What it doesn't guarantee:** that a person saw the summary. That still rests on the client, as in v0, and docs and exports keep saying "the caller asserts approval" (RFC 0001 §8.3).
 - **The precedent:** Gmail's action handlers use limited-use tokens in action URLs for the same purpose, against replay (prior art §2.6).
-- **What it is not:** a token satisfies only step 6. It isn't authorization: steps 2-4 still run on the second call. A projection never issues one, and no claim or annotation can make one (§9, rule R2).
+- **What it is not:** a token satisfies only step 8. It isn't authorization: steps 2-6 still run on the second call. A projection never issues one, and no claim or annotation can make one (§9, rule R2).
 
 ### 8.3 The result
 
@@ -573,22 +587,25 @@ type ExecutionResult =
       code:
         | 'not_found'
         | 'unauthorized'
+        | 'rate_limited'
         | 'invalid_input'
         | 'precondition'
         | 'stale'
         | 'confirmation_required'
-        | 'rate_limited'
       condition?: { id: string; description: string } // for 'precondition', and for authorization conditions
       detail?: string // the specific reason, from a guard or the runtime
+      detailTruncated?: true // the detail was cut to the limit
       issues?: InputIssue[] // for 'invalid_input'
       confirmation?: { summary: string; approval: ApprovalToken; expiresAt: string } // for 'confirmation_required'
-      revision: Revision // the revision the refusal was decided at
+      revision: OfferRevision // the offer revision the refusal was decided at
     }
   | {
       status: 'failed' // the handler threw after the checks passed
       message: string // safe to show; never internals
       observed: ObservedChange[] // what changed anyway, if anything did
+      undeclared: ObservedChange[]
       revision: Revision
+      changes: OfferChanges // the view is updated after a partial effect too
     }
 
 type OfferChanges = {
@@ -601,14 +618,16 @@ type OfferChanges = {
 **`detail`**, which RFC 0001 rule 5 left for this RFC to shape:
 
 - **What it is:** a string, the specific reason for a refusal: "Only 2 left of Large", "The plan is already active".
-- **Where it comes from:** a guard returns it as v0's guards return a string today. For declarative conditions, the runtime can generate one from the comparison ("count is 0").
-- **What it never is:** part of the manifest or the revision, or trusted as an instruction. It's application text, shown as text.
-- **Length:** at most 280 characters, the same order as a v0 `message`. A longer one is cut, and marked as cut.
+- **Where it comes from:**
+  - **A guard** returns it, as v0's guards return a string today. What a guard's string says is the application's responsibility.
+  - **A declarative condition:** the runtime can generate one from the comparison ("count is 0"). A generated `detail` never includes a `principal.*` value: for a condition on the principal, it names the condition only (§3).
+- **What it never is:** part of the manifest or a revision, or trusted as an instruction. It's application text, shown as text.
+- **Length:** at most 280 characters, the same order as a v0 `message`. A longer one is cut, and `detailTruncated: true` says so.
 - **What stays stable:** `condition` (`id` and `description`), so code can branch on the id and people can read the detail.
 
 **`changes`** lists the offers whose existence or availability changed, compared with the projection before the execution under the same request. It's v0's `actionsAdded` and `actionsRemoved` (`packages/protocol/spec.md`, Delta), with availability changes kept apart from additions.
 
-**`failed` after a partial effect.** A handler can fail after changing something. The result reports what was observed anyway, and the projection is recomputed. Nothing in the runtime assumes an action is atomic or reversible.
+**`failed` after a partial effect.** A handler can fail after changing something. The result reports what was observed anyway, and carries the recomputed projection's `changes`, so the caller's view doesn't go stale. Nothing in the runtime assumes an action is atomic or reversible.
 
 ### 8.4 Declared against observed effects
 
@@ -617,11 +636,12 @@ type ObservedChange = {
   resource: ResourceRef
   change: 'create' | 'update' | 'delete'
   attributes?: string[] // which declared attributes changed, for an update
-  matches?: number // the index of the declared state effect it accounts for
+  matches?: number // the index, in canonical order, of the declared state effect it accounts for
 }
 ```
 
 - **What the runtime can see.** It observes what resolvers report, before and after: the target, and every resource a declared state effect names. It can't observe external, financial or access effects, so it never claims to.
+- **`matches`** indexes the capability's `effects` in their canonical order (RFC 0001 §7.2), so every reader of the same manifest agrees which effect it means.
 - **`undeclared`** lists observed changes no declared effect accounts for. It's how a developer finds an effect they forgot to declare, and how the inspector (M3f) shows "declared against observed".
 - **`establishes` is checked.** When a state effect declares what it establishes, the runtime evaluates that expression after the run. A `false` result is reported as an observed change that contradicts its declaration.
 - **Observations are records, with basis `observed`, never edits to the manifest** (RFC 0001 §4).
@@ -631,14 +651,17 @@ type ObservedChange = {
 These restate RFC 0001's rules (§8.2) as what the runtime does, and add the ones only a runtime can keep. Each has tests in M3.
 
 - **R1. An offer is never authorization.**
-  - Every execution resolves the principal afresh and re-runs authorization and preconditions (§8.1, steps 2-4), whatever the caller holds.
+  - Every execution resolves the principal afresh and re-runs authorization, references and preconditions (§8.1, steps 2-6), whatever the caller holds.
   - No offer, view, revision or id carries anything that skips a check.
   - **Tests:**
     - execute an offer projected for one principal as another;
-    - execute after the state changed between projection and execution.
+    - execute after the state changed between projection and execution;
+    - execute after the state changed between the checks and the run (§8.1).
 - **R2. Nothing annotated skips a confirmation.**
   - The confirmation requirement comes from the definition, or from the application's own policy. Nothing else can remove it: not `safe: true`, not `effects: []`, not a claim, not a policy, and not an approval token from a different call.
-  - **Test:** a capability with `safe: true`, `effects: []` and `confirmation` still refuses without approval.
+  - **Tests:**
+    - a capability with `safe: true`, `effects: []` and `confirmation` still refuses without approval;
+    - an approval token used twice runs once.
 - **R3. Nothing the agent says changes availability.**
   - Availability reads only the principal, the resolvers and the input (§2).
   - **Test:** the same principal and state, with every combination of `task`, `start`, `policy` and `seen`, give the same availability for every offer that appears.
@@ -648,7 +671,7 @@ These restate RFC 0001's rules (§8.2) as what the runtime does, and add the one
   - **Guards:** the kit runs the same test with the guard's handler forced to return `false`.
   - **A capability that passes when it should refuse fails conformance.** The benchmark's misleading-dependency fixture is one (§6.1).
 - **R6. Influence is explicit.** Every view states its policy and order basis, and publisher preference appears only as attributed claims (§4.5, §6.4).
-- **R7. Determinism.** The same inputs give the same views, byte for byte in canonical form, and the same revision (§7).
+- **R7. Determinism.** The same inputs give the same views, byte for byte in canonical form, and the same revisions (§7).
 
 ## 10. How today's protocol relates
 
@@ -656,7 +679,7 @@ These restate RFC 0001's rules (§8.2) as what the runtime does, and add the one
   - its `actions` are the offers on that resource;
   - `available` and `reason` come from availability, collapsed as v0 can show them (§4.2): `needs-input` becomes `available: true`, as v0 already behaves;
   - `nav` comes from `relatedTo` expansions.
-- **Route parameters are input.** A v0 binding maps the route's parameters (a product's `slug`) into the capability's input, as RFC 0001 §6.3 amends bindings to do. They reach conditions as `input.*`. References are bound only by a projection (an offer's `with`, from where it started or from an expansion), never from a route.
+- **Route parameters are input.** A v0 binding maps the route's parameters (a product's `slug`) into the capability's input, as RFC 0001 §6.3 amends bindings to do. They reach conditions as `input.*`. At projection, an offer's `with` binds references. At execution, references are resolved from the input (§8.1, step 5), where the binding puts route parameters. A route never binds a reference directly.
 - **A v0 call is an execution** through an `affordances/v0` binding (RFC 0001 §6.3). Its delta's `changed` keeps v0's state-key meaning, and its `actionsAdded` and `actionsRemoved` come from `changes`.
 - **An imported v0 guard** is the condition `guard` (RFC 0001 §10.1). At projection time it runs with no input, as in v0, and `true` gives `needs-input` when the action takes input (§4.2). That's the more accurate reading of what v0's `available: true` already meant.
 - **Other transports.** An MCP or WebMCP export offers four tools, `discover`, `expand`, `inspect` and `execute`, over this API. That's the catalog, inspect and execute pattern MCP's guidance recommends (prior art §4.1), with the disclosure invariant behind it. The wire formats are RFC 0004's.
@@ -682,13 +705,18 @@ export type Projection = {
 
 export function createRuntime<M extends CapabilityManifest>(options: {
   manifest: M
-  principal: (request: Request) => Principal | Promise<Principal>
   resources: { [type in ResourceIds<M>]: ResourceResolver }
-  handlers: { [id in ActionIds<M>]: Handler<M, id> } // one per action capability
+  handlers: { [id in InvocableIds<M>]: Handler<M, id> } // one per query and action capability
   policies?: DiscoveryPolicy[] // added to the built-in four
   defaultPolicy?: PolicyId // 'resource' unless set
-  approvalKey: CryptoKey // for approval tokens (§8.2)
+  approvalKeys: { current: CryptoKey; previous?: CryptoKey } // for approval tokens (§8.2)
+  seenTokens?: TokenStore // required if any non-idempotent capability requires confirmation
 }): Runtime
+
+export type TokenStore = {
+  // records the nonce until `expiresAt`; returns false if it was already recorded
+  claim(nonce: string, expiresAt: Date): Promise<boolean>
+}
 
 export type ResourceResolver = {
   load(
@@ -711,6 +739,7 @@ export type Handler<M, Cap> = {
 export type GuardImpl<M, Cap> = ((args: {
   input: InputOf<M, Cap> | undefined // undefined at projection time
   target?: { key: string; attributes: Record<string, unknown> }
+  refs: Record<string, { key: string; attributes: Record<string, unknown> } | undefined> // by reference name
   principal: Principal
 }) => boolean | string | Promise<boolean | string>) & { executionOnly?: true }
 
@@ -728,7 +757,8 @@ export type OfferDetails = {
 // plus the types of §2-§8: ProjectionRequest, Principal, ResourceRef, Task, Budget, CapabilityOffer,
 // Availability, ConditionResult, Requirements, Relevance, ClaimView, ChoiceSet, DiscoveryPolicy, View,
 // Omitted, OrderBasis, Expansion, Revision, ExecutionRequest, ExecutionResult, ObservedChange, OfferChanges
-export type Revision = string // 'sha256-…'
+export type Revision = string // 'sha256-…', a projection revision
+export type OfferRevision = string // 'sha256-…', an offer revision
 export type OfferId = string
 export type ChoiceSetId = string
 export type PolicyId = string
@@ -737,9 +767,10 @@ export type ApprovalToken = string
 ```
 
 - **`handlers` is typed from the manifest.**
-  - **Coverage:** every action capability needs a handler, and every declared guard needs an implementation, so a missing one is a type error. `createRuntime` checks the same at startup, for manifests loaded as JSON.
+  - **Coverage:** every query and action capability needs a handler (a query's handler returns its output), and every declared guard needs an implementation, so a missing one is a type error. `createRuntime` checks the same at startup, for manifests loaded as JSON.
   - **Inside Next.js:** `defineAction({ capability, guards })` (RFC 0001 §12.1) registers exactly this.
-- **Queries** have handlers too, for their output. They're omitted from the sketch for brevity.
+- **No principal resolver.** Requests carry a resolved `Principal`. The binding or adapter that receives an HTTP request resolves it (§2.1), so the runtime stays transport-free.
+- **`createRuntime` refuses to start** if a capability requires confirmation, isn't `idempotent: true`, and no `seenTokens` store is given (§8.2).
 - **Dependencies:** `@affordances/ir`, and Web Crypto for digests and approval tokens. No Next.js, React or MCP.
 
 **Tests M3 adds, beyond R1-R7:**
@@ -748,7 +779,8 @@ export type ApprovalToken = string
 - revision stability and sensitivity (§7);
 - choice-set atomicity under every budget;
 - the `detail` length cap;
-- approval tokens refused for a different input, offer, principal, or after expiry;
+- approval tokens refused for a different input, offer, principal or offer revision, after expiry, and on a second use;
+- a reference key that resolves to nothing refuses with `not_found`;
 - undeclared-change reporting.
 
 ## 12. Example
@@ -763,6 +795,7 @@ A hosting provider with three plans: a resource type `hosting.plan` declared wit
   "offers": [
     {
       "id": "hosting.plan.subscribe@hosting.plan:hobby",
+      "revision": "sha256-Lp2…",
       "capability": "hosting.plan.subscribe",
       "target": { "type": "hosting.plan", "key": "hobby" },
       "availability": { "status": "unavailable", "because": ["notCurrent"] },
