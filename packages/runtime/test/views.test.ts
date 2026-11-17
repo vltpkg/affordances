@@ -214,6 +214,19 @@ describe('budgets', () => {
 })
 
 describe('expansion and inspection (§6.5)', () => {
+  test('a server that projects afresh for each request can follow the first view’s next page', async () => {
+    const request = { principal: member, policy: 'exhaustive', budget: { offers: 4 } }
+    const more = (await runtime().project(request))
+      .view()
+      .omitted.expand.find((e) => e.along === 'more')!
+    // a new projection, as a stateless route makes, never asked for its view
+    const fresh = await runtime().project(request)
+    expect(ids(await fresh.expand(more))).toHaveLength(more.count)
+    await expect(fresh.expand({ from: 'more:nothing', along: 'more' })).rejects.toThrow(
+      'nothing to expand',
+    )
+  })
+
   test('two pages that end on the same offer keep their own next pages (review of M3c)', async () => {
     const p = await runtime().project({
       principal: member,

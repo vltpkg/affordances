@@ -358,9 +358,13 @@ export const views = (args: {
         ids = args.offers.filter((o) => o.target && contains.has(o.target.type)).map((o) => o.id)
         break
       }
-      case 'more':
-        ids = (typeof from === 'string' ? sequences.get(from) : undefined) ?? fail()
-        return page(ids, budget)
+      case 'more': {
+        // a cursor names its offers, so a server that projects afresh for each request finds the first view's by
+        // building that view again. a cursor from an expansion's page needs that expansion again first
+        const cursor = typeof from === 'string' ? from : ''
+        if (!sequences.has(cursor)) view()
+        return page(sequences.get(cursor) ?? fail(), budget)
+      }
       default:
         return fail()
     }
