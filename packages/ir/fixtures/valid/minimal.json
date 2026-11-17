@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "0.1",
+  "namespace": "urn:example:empty",
+  "provenance": { "source": "owner", "basis": "declared" },
+  "sources": [{ "id": "owner", "role": "owner", "name": "An owner" }],
+  "resources": [],
+  "capabilities": []
+}

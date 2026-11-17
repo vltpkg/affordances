@@ -1,0 +1,978 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://affordances.sh/schemas/ir/0.1/manifest.json",
+  "$ref": "#/$defs/CapabilityManifest",
+  "$defs": {
+    "CapabilityManifest": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "const": "0.1"
+        },
+        "namespace": {
+          "$ref": "#/$defs/URI"
+        },
+        "title": {
+          "type": "string"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        },
+        "principal": {
+          "$ref": "#/$defs/PrincipalDefinition"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Source"
+          }
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResourceDefinition"
+          }
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CapabilityDefinition"
+          }
+        },
+        "relations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Relation"
+          }
+        },
+        "claims": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Claim"
+          }
+        },
+        "bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Binding"
+          }
+        },
+        "extensions": {
+          "$ref": "#/$defs/Extensions"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "namespace",
+        "provenance",
+        "sources",
+        "resources",
+        "capabilities"
+      ],
+      "additionalProperties": false
+    },
+    "URI": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:[^#\\s]*$"
+    },
+    "Provenance": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "basis": {
+          "type": "string",
+          "enum": ["declared", "inferred", "imported", "observed", "verified"]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
+        }
+      },
+      "required": ["source", "basis"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "basis": {
+                "enum": ["imported", "observed", "verified"]
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "required": ["evidence"],
+            "properties": {
+              "evidence": {
+                "type": "array",
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Evidence": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "href": {
+          "$ref": "#/$defs/URI"
+        },
+        "digest": {
+          "type": "string"
+        }
+      },
+      "required": ["description"],
+      "additionalProperties": false
+    },
+    "PrincipalDefinition": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "attributes": {
+          "$ref": "#/$defs/JSONSchema"
+        }
+      },
+      "required": ["attributes"],
+      "additionalProperties": false
+    },
+    "JSONSchema": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {},
+      "description": "A JSON Schema 2020-12 object, without $schema"
+    },
+    "Source": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["owner", "tool", "third-party"]
+        },
+        "name": {
+          "type": "string"
+        },
+        "href": {
+          "$ref": "#/$defs/URI"
+        }
+      },
+      "required": ["id", "role", "name"],
+      "additionalProperties": false
+    },
+    "ResourceDefinition": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "attributes": {
+          "$ref": "#/$defs/JSONSchema"
+        },
+        "contains": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "alternatives": {
+          "type": "boolean",
+          "const": true
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        },
+        "fieldProvenance": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/JSONPointer"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Provenance"
+          }
+        },
+        "extensions": {
+          "$ref": "#/$defs/Extensions"
+        }
+      },
+      "required": ["id", "description", "key"],
+      "additionalProperties": false
+    },
+    "Id": {
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^[a-z][A-Za-z0-9]*(?:\\.[a-z][A-Za-z0-9]*)*$",
+      "description": "A definition's identifier: 'commerce.cart.addItem'"
+    },
+    "JSONPointer": {
+      "type": "string",
+      "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+      "description": "RFC 6901"
+    },
+    "Extensions": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:[^#\\s]*$"
+      },
+      "additionalProperties": {},
+      "description": "Keys are absolute URIs, each owned by the vocabulary it names"
+    },
+    "CapabilityDefinition": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["query", "action", "event"]
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/Id"
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Reference"
+          }
+        },
+        "input": {
+          "$ref": "#/$defs/JSONSchema"
+        },
+        "output": {
+          "$ref": "#/$defs/JSONSchema"
+        },
+        "safe": {
+          "type": "boolean"
+        },
+        "idempotent": {
+          "type": "boolean"
+        },
+        "preconditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Condition"
+          }
+        },
+        "authorization": {
+          "$ref": "#/$defs/AuthorizationRequirement"
+        },
+        "confirmation": {
+          "$ref": "#/$defs/ConfirmationRequirement"
+        },
+        "effects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Effect"
+          }
+        },
+        "deprecated": {
+          "type": "object",
+          "properties": {
+            "replacedBy": {
+              "$ref": "#/$defs/Id"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        },
+        "fieldProvenance": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/JSONPointer"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Provenance"
+          }
+        },
+        "extensions": {
+          "$ref": "#/$defs/Extensions"
+        }
+      },
+      "required": ["id", "kind", "description"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "query"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "safe": {
+                "const": true
+              },
+              "effects": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "action"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "safe": {
+                "const": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "event"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "input": false,
+              "preconditions": false,
+              "confirmation": false,
+              "effects": false
+            }
+          }
+        }
+      ]
+    },
+    "Reference": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9]*$"
+        },
+        "resource": {
+          "$ref": "#/$defs/Id"
+        },
+        "at": {
+          "$ref": "#/$defs/JSONPointer"
+        }
+      },
+      "required": ["name", "resource", "at"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "properties": {
+            "name": {
+              "type": "string",
+              "not": {
+                "enum": ["target", "input", "principal", "item"]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Condition": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "expr": {
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "required": ["id", "description", "expr"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "guard": {
+              "type": "boolean",
+              "const": true
+            }
+          },
+          "required": ["id", "description", "guard"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Expr": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "all": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Expr"
+              }
+            }
+          },
+          "required": ["all"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "any": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Expr"
+              }
+            }
+          },
+          "required": ["any"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "not": {
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "required": ["not"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "eq": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "$ref": "#/$defs/Operand"
+                },
+                {
+                  "$ref": "#/$defs/Operand"
+                }
+              ],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": ["eq"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ne": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "$ref": "#/$defs/Operand"
+                },
+                {
+                  "$ref": "#/$defs/Operand"
+                }
+              ],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": ["ne"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "lt": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "$ref": "#/$defs/Operand"
+                },
+                {
+                  "$ref": "#/$defs/Operand"
+                }
+              ],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": ["lt"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "le": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "$ref": "#/$defs/Operand"
+                },
+                {
+                  "$ref": "#/$defs/Operand"
+                }
+              ],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": ["le"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "gt": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "$ref": "#/$defs/Operand"
+                },
+                {
+                  "$ref": "#/$defs/Operand"
+                }
+              ],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": ["gt"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "ge": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "$ref": "#/$defs/Operand"
+                },
+                {
+                  "$ref": "#/$defs/Operand"
+                }
+              ],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": ["ge"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "in": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "$ref": "#/$defs/Operand"
+                },
+                {
+                  "$ref": "#/$defs/Operand"
+                }
+              ],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": ["in"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "exists": {
+              "$ref": "#/$defs/Path"
+            }
+          },
+          "required": ["exists"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "some": {
+              "type": "object",
+              "properties": {
+                "of": {
+                  "$ref": "#/$defs/Path"
+                },
+                "where": {
+                  "$ref": "#/$defs/Expr"
+                }
+              },
+              "required": ["of", "where"],
+              "additionalProperties": false
+            }
+          },
+          "required": ["some"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "every": {
+              "type": "object",
+              "properties": {
+                "of": {
+                  "$ref": "#/$defs/Path"
+                },
+                "where": {
+                  "$ref": "#/$defs/Expr"
+                }
+              },
+              "required": ["of", "where"],
+              "additionalProperties": false
+            }
+          },
+          "required": ["every"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Operand": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "path": {
+              "$ref": "#/$defs/Path"
+            }
+          },
+          "required": ["path"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "value": {
+              "anyOf": [
+                {
+                  "type": ["string", "number", "boolean", "null"]
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": ["string", "number", "boolean", "null"]
+                  }
+                }
+              ]
+            }
+          },
+          "required": ["value"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "count": {
+              "$ref": "#/$defs/Path"
+            }
+          },
+          "required": ["count"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Path": {
+      "type": "string",
+      "pattern": "^(?:item|(?:target|input|principal|item|[a-z][A-Za-z0-9]*)(?:\\.[A-Za-z0-9_]+)+)$",
+      "description": "A root, then attribute names: 'target.count', 'item.sku'; or bare 'item'"
+    },
+    "AuthorizationRequirement": {
+      "type": "object",
+      "properties": {
+        "principal": {
+          "type": "string",
+          "enum": ["any", "authenticated"]
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Condition"
+          }
+        }
+      },
+      "required": ["principal"],
+      "additionalProperties": false
+    },
+    "ConfirmationRequirement": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": ["summary"],
+      "additionalProperties": false
+    },
+    "Effect": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/StateEffect"
+        },
+        {
+          "$ref": "#/$defs/OtherEffect"
+        }
+      ],
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "reversibility": {
+                "const": "compensable"
+              }
+            },
+            "required": ["reversibility"]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "compensatedBy": true
+            },
+            "required": ["compensatedBy"]
+          }
+        }
+      ]
+    },
+    "StateEffect": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "reversibility": {
+          "type": "string",
+          "enum": ["reversible", "compensable", "irreversible"]
+        },
+        "compensatedBy": {
+          "$ref": "#/$defs/Id"
+        },
+        "category": {
+          "type": "string",
+          "const": "state"
+        },
+        "change": {
+          "type": "string",
+          "enum": ["create", "update", "delete"]
+        },
+        "resource": {
+          "$ref": "#/$defs/Id"
+        },
+        "establishes": {
+          "$ref": "#/$defs/Expr"
+        }
+      },
+      "required": ["description", "category", "change", "resource"],
+      "additionalProperties": false
+    },
+    "OtherEffect": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "reversibility": {
+          "type": "string",
+          "enum": ["reversible", "compensable", "irreversible"]
+        },
+        "compensatedBy": {
+          "$ref": "#/$defs/Id"
+        },
+        "category": {
+          "type": "string",
+          "enum": ["external", "financial", "access"]
+        }
+      },
+      "required": ["description", "category"],
+      "additionalProperties": false
+    },
+    "Relation": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["alternativeTo", "enables", "relatedTo"]
+        },
+        "from": {
+          "$ref": "#/$defs/Ref"
+        },
+        "to": {
+          "$ref": "#/$defs/Ref"
+        },
+        "description": {
+          "type": "string"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        },
+        "extensions": {
+          "$ref": "#/$defs/Extensions"
+        }
+      },
+      "required": ["type", "from", "to"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "relatedTo"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "description": true
+            },
+            "required": ["description"]
+          }
+        }
+      ]
+    },
+    "Ref": {
+      "type": "string",
+      "pattern": "^(?:[a-z][A-Za-z0-9]*(?:\\.[a-z][A-Za-z0-9]*)*|[A-Za-z][A-Za-z0-9+.-]*:[^#\\s]*#[a-z][A-Za-z0-9]*(?:\\.[a-z][A-Za-z0-9]*)*)$",
+      "description": "A local Id, or <namespace URI>#<Id> for a definition in another manifest"
+    },
+    "Claim": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "subject": {
+          "$ref": "#/$defs/Ref"
+        },
+        "about": {
+          "$ref": "#/$defs/JSONPointer"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["recommendation", "benefit", "estimate", "assessment"]
+        },
+        "statement": {
+          "type": "string"
+        },
+        "quantity": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "type": "number"
+            },
+            "unit": {
+              "type": "string"
+            }
+          },
+          "required": ["value", "unit"],
+          "additionalProperties": false
+        },
+        "applies": {
+          "$ref": "#/$defs/Expr"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        },
+        "extensions": {
+          "$ref": "#/$defs/Extensions"
+        }
+      },
+      "required": ["id", "subject", "kind", "statement", "provenance"],
+      "additionalProperties": false
+    },
+    "Binding": {
+      "type": "object",
+      "properties": {
+        "capability": {
+          "$ref": "#/$defs/Id"
+        },
+        "protocol": {
+          "type": "string"
+        },
+        "address": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "extensions": {
+          "$ref": "#/$defs/Extensions"
+        }
+      },
+      "required": ["capability", "protocol", "address"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "properties": {
+            "address": {
+              "type": "object",
+              "minProperties": 1
+            }
+          }
+        }
+      ]
+    }
+  }
+}

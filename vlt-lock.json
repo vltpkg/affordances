@@ -1095,6 +1095,8 @@
     "workspace~packages+core zod": "dev ^4.6.7 ~npm~zod@4.6.7",
     "workspace~packages+core @standard-schema/spec": "prod ^1.1.0 ~npm~@standard-schema+spec@1.1.0",
     "workspace~packages+core @affordances/protocol": "prod workspace:* workspace~packages+protocol",
+    "workspace~packages+ir ajv": "dev ^8.17.1 ~npm~ajv@8.20.0",
+    "workspace~packages+ir zod": "prod ^4.6.7 ~npm~zod@4.6.7",
     "workspace~packages+lint eslint": "dev ^10 ~npm~eslint@10.13.0~peer.739453758e51a122",
     "workspace~packages+mcp @affordances/core": "dev workspace:* workspace~packages+core",
     "workspace~packages+mcp @modelcontextprotocol/sdk": "prod ^1.32.2 ~npm~@modelcontextprotocol+sdk@1.32.2~peer.b1cb2f6de5198dea",
