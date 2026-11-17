@@ -458,3 +458,61 @@ test("a claim about another manifest's capability can say when it applies", () =
   m.claims[0].subject = 'https://other.example/capabilities#billing.plan.subscribe'
   expect(validate(m).ok).toBe(true)
 })
+
+describe('a schema node that is not a schema', () => {
+  // validate returns issues for any input; it never throws (review's probe)
+  test.each([null, 'event', 5, [1]])(
+    'an attribute schema of %j is E_SCHEMA at the path, not a throw',
+    (junk) => {
+      const m = plans()
+      m.resources[0].attributes.properties.priceUsd = junk
+      sub(m).preconditions.push({
+        id: 'p',
+        description: 'x',
+        expr: { exists: 'target.priceUsd.sub' },
+      })
+      const result = validate(m)
+      expect(codes(result.issues)).toContain('E_SCHEMA /capabilities/1/preconditions/6/expr/exists')
+      expect(result.ok).toBe(false)
+    },
+  )
+  test('a boolean schema: true allows anything, false declares nothing', () => {
+    const m = plans()
+    m.resources[0].attributes.properties.any = true
+    m.resources[0].attributes.properties.none = false
+    sub(m).preconditions.push(
+      { id: 'a', description: 'x', expr: { exists: 'target.any.deep' } },
+      { id: 'b', description: 'x', expr: { exists: 'target.none' } },
+    )
+    expect(codes(validate(m).issues)).toEqual([
+      'W_PATH_UNCHECKED /capabilities/1/preconditions/6/expr/exists',
+      'E_PATH /capabilities/1/preconditions/7/expr/exists',
+    ])
+  })
+  test('junk anywhere in an embedded schema never throws', () => {
+    const junk = [
+      null,
+      'x',
+      5,
+      true,
+      false,
+      [],
+      [null],
+      {},
+      { properties: 5 },
+      { items: 'x' },
+      { additionalProperties: 3 },
+    ]
+    let seed = 7
+    const next = () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31
+    for (let run = 0; run < 2000; run++) {
+      const m = plans()
+      const attrs = m.resources[0].attributes
+      const key = ['slug', 'priceUsd', 'regions'][Math.floor(next() * 3)]!
+      const value = junk[Math.floor(next() * junk.length)]
+      if (next() < 0.5) attrs.properties[key] = value
+      else attrs.properties.regions.items = value
+      expect(() => validate(m)).not.toThrow()
+    }
+  })
+})

@@ -31,29 +31,37 @@ const fromZod = (issue: z.core.$ZodIssue): ValidationIssue => ({
 
 // the part of an embedded JSON Schema a path walks: `true` where the schema leaves it open (a $ref, a oneOf, no
 // type), so that segment is checked only at run time (§3.1)
-type Node = JSONSchema | true | undefined
+// INVALID: something in an embedded schema that isn't a schema at all (null, a string, a number), which validate
+// reports rather than throws on; a manifest is input, and may be hostile or hand-edited
+const INVALID: unique symbol = Symbol('invalid')
+type Node = JSONSchema | true | undefined | typeof INVALID
+const isObject = (x: unknown): x is JSONSchema =>
+  typeof x === 'object' && x !== null && !Array.isArray(x)
+// a subschema as written: an object, or a boolean schema (true allows anything; false, nothing)
+const asNode = (x: unknown): Node =>
+  x === true ? true : x === false ? undefined : isObject(x) ? x : INVALID
 const OPEN_KEYWORDS = ['$ref', 'anyOf', 'oneOf', 'allOf', 'if']
 const isOpen = (s: JSONSchema) =>
   OPEN_KEYWORDS.some((k) => k in s) || (s.type === undefined && s.properties === undefined)
 const child = (node: Node, key: string): Node => {
-  if (node === true || node === undefined) return node
-  const properties = node.properties as Record<string, JSONSchema> | undefined
-  if (properties && key in properties) return properties[key]
+  if (node === true || node === undefined || node === INVALID) return node
+  const properties = node.properties
+  if (properties !== undefined && !isObject(properties)) return INVALID
+  if (properties && key in properties) return asNode(properties[key])
   // additionalProperties: true and {} say the same thing: anything, unchecked
   const extra = node.additionalProperties
-  if (extra === true || (typeof extra === 'object' && extra !== null && !Object.keys(extra).length))
-    return true
-  if (typeof node.additionalProperties === 'object') return node.additionalProperties as JSONSchema
+  if (extra === true || (isObject(extra) && !Object.keys(extra).length)) return true
+  if (extra !== undefined && extra !== false) return asNode(extra)
   return isOpen(node) ? true : undefined
 }
 const element = (node: Node): Node => {
-  if (node === true || node === undefined) return node
-  if (typeof node.items === 'object') return node.items as JSONSchema
+  if (node === true || node === undefined || node === INVALID) return node
+  if (node.items !== undefined) return asNode(node.items)
   return isOpen(node) ? true : undefined
 }
 type Type = 'string' | 'number' | 'boolean' | 'null' | 'object' | 'array'
 const typeOf = (node: Node): Type | undefined => {
-  if (node === true || node === undefined || typeof node.type !== 'string') return
+  if (!isObject(node) || typeof node.type !== 'string') return
   return node.type === 'integer' ? 'number' : (node.type as Type)
 }
 const literalType = (value: unknown): Type =>
@@ -177,10 +185,19 @@ export const validate = (input: unknown): Validation => {
     }
     return walk(node, rest, path, at)
   }
-  const walk = (start: Node, rest: string[], path: string, at: string) => {
+  const walk = (
+    start: Node,
+    rest: string[],
+    path: string,
+    at: string,
+  ): { ok: boolean; node: Node } => {
     let node = start
     for (const [n, key] of rest.entries()) {
       node = child(node, key)
+      if (node === INVALID) {
+        report('E_SCHEMA', at, `${path} reaches a part of a schema that isn't a JSON Schema`)
+        return { ok: false, node: undefined }
+      }
       if (node === undefined) {
         report('E_PATH', at, `${path} doesn't name a declared attribute`)
         return { ok: false, node: undefined }
