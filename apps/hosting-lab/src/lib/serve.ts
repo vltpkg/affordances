@@ -161,11 +161,11 @@ const STATUS: Record<string, number> = {
   confirmation_required: 409,
 }
 
-// POST /api/projection/execute { offer, input?, approval?, ifRevision?, start?, policy?, task?, offers? }: run an
-// offer, every check first (RFC 0002 §8.1). A capability that requires confirmation is refused with its summary and
-// an approval token, the first time; sending the same call with that token runs it, once. start, policy, task and
-// offers are the caller's view's request, as GET /api/projection takes them, so the result's changes are that view
-// before and after (§8.3), and disclose only what it does
+// POST /api/projection/execute { offer, input?, approval?, ifRevision?, start?, policy?, task?, offers?, seen? }:
+// run an offer, every check first (RFC 0002 §8.1). A capability that requires confirmation is refused with its
+// summary and an approval token, the first time; sending the same call with that token runs it, once. start,
+// policy, task, offers and seen are the caller's view's request, as GET /api/projection takes them, so the result's
+// changes are that view before and after (§8.3), and disclose only what it does
 export const serveExecute = async (request: Request): Promise<Response> => {
   const refused = crossSite(request)
   if (refused) return refused
@@ -179,19 +179,11 @@ export const serveExecute = async (request: Request): Promise<Response> => {
     return refuse(400, 'ifRevision is an offer revision')
   if (start !== undefined && (typeof start !== 'string' || !start))
     return refuse(400, 'start is type:key, or a capability or resource type id')
-  const view = projectionOf(request, body)
-  if (typeof view === 'string') return refuse(400, view)
-  const result = await runtime.execute({
-    principal: view.principal,
-    offer,
-    input,
-    approval,
-    ifRevision,
-    start: view.start,
-    policy: view.policy,
-    task: view.task,
-    budget: view.budget,
-  })
+  const projection = projectionOf(request, body)
+  if (typeof projection === 'string') return refuse(400, projection)
+  // the caller's view request, whole, as GET /api/projection builds it: its changes are that view's (RFC 0002 §8.3)
+  const { principal, ...view } = projection
+  const result = await runtime.execute({ principal, offer, input, approval, ifRevision, view })
   return json(
     result,
     result.status === 'succeeded'
