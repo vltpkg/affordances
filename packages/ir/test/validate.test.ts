@@ -541,3 +541,39 @@ describe('a schema node that is not a schema', () => {
     }
   })
 })
+
+// review's close-out: names are a schema's own, never inherited, and validate reports, never throws
+describe('own names only', () => {
+  test.for(['a string', 7, true] as const)(
+    'attributes.properties that is %j is E_SCHEMA, not a throw',
+    (junk) => {
+      const m = plans()
+      m.resources[0].attributes.properties = junk
+      const result = validate(m)
+      expect(result.ok).toBe(false)
+      expect(codes(result.issues)).toContain('E_SCHEMA /resources/0/attributes/properties')
+    },
+  )
+  test.for(['constructor', 'toString', '__proto__'])(
+    'a key named %s that no attribute has is E_KEY',
+    (key) => {
+      const m = plans()
+      m.resources[0].key = key
+      expect(codes(validate(m).issues)).toContain('E_KEY /resources/0/key')
+    },
+  )
+  test.for(['__proto__', 'constructor', 'hasOwnProperty'])(
+    'a path to target.%s on a closed schema is E_PATH, as any undeclared attribute is',
+    (name) => {
+      const m = plans()
+      m.resources[0].attributes.additionalProperties = false
+      sub(m).preconditions.push({
+        id: 'odd',
+        description: 'an inherited name',
+        expr: { exists: `target.${name}` },
+      })
+      const at = `/capabilities/1/preconditions/${sub(m).preconditions.length - 1}/expr/exists`
+      expect(codes(validate(m).issues)).toContain(`E_PATH ${at}`)
+    },
+  )
+})

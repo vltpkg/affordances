@@ -47,7 +47,8 @@ const child = (node: Node, key: string): Node => {
   if (node === true || node === undefined || node === INVALID) return node
   const properties = node.properties
   if (properties !== undefined && !isObject(properties)) return INVALID
-  if (properties && key in properties) return asNode(properties[key])
+  // own names only: properties.__proto__ is Object.prototype, and constructor isn't an attribute (review, close-out)
+  if (properties && Object.hasOwn(properties, key)) return asNode(properties[key])
   // additionalProperties: true and {} say the same thing: anything, unchecked
   const extra = node.additionalProperties
   if (extra === true || (isObject(extra) && !Object.keys(extra).length)) return true
@@ -153,9 +154,16 @@ export const validate = (input: unknown): Validation => {
   }
   m.resources.forEach((r, i) => {
     r.contains?.forEach((id, j) => resolves(id, `/resources/${i}/contains/${j}`, 'resource'))
-    // E_KEY: the key is one of the declared attributes
-    const properties = r.attributes?.properties as Record<string, unknown> | undefined
-    if (properties && !(r.key in properties))
+    // E_KEY: the key is one of the declared attributes, an own one. properties that isn't an object is no schema, and
+    // reported as one: validate reports, it never throws (review, close-out)
+    const properties = r.attributes?.properties
+    if (properties !== undefined && !isObject(properties))
+      report(
+        'E_SCHEMA',
+        `/resources/${i}/attributes/properties`,
+        `${r.id}'s attributes.properties isn't an object`,
+      )
+    else if (properties && !Object.hasOwn(properties, r.key))
       report('E_KEY', `/resources/${i}/key`, `${r.key} isn't one of ${r.id}'s attributes`)
   })
 
