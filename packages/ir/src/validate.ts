@@ -39,6 +39,10 @@ const child = (node: Node, key: string): Node => {
   if (node === true || node === undefined) return node
   const properties = node.properties as Record<string, JSONSchema> | undefined
   if (properties && key in properties) return properties[key]
+  // additionalProperties: true and {} say the same thing: anything, unchecked
+  const extra = node.additionalProperties
+  if (extra === true || (typeof extra === 'object' && extra !== null && !Object.keys(extra).length))
+    return true
   if (typeof node.additionalProperties === 'object') return node.additionalProperties as JSONSchema
   return isOpen(node) ? true : undefined
 }
@@ -62,6 +66,14 @@ type Scope = {
   forbidden?: (root: string) => string | undefined
   item?: Node
   depth: number
+}
+
+// a path's schema node, without reporting: for a second look at a path already checked
+const nodeOf = (path: string, scope: Scope): Node => {
+  const [root, ...rest] = path.split('.')
+  let node = root === 'item' ? scope.item : scope.roots.get(root!)
+  for (const key of rest) node = child(node, key)
+  return node
 }
 
 const ENFORCEMENT = [
@@ -167,11 +179,20 @@ export const validate = (input: unknown): Validation => {
   }
   const walk = (start: Node, rest: string[], path: string, at: string) => {
     let node = start
-    for (const key of rest) {
+    for (const [n, key] of rest.entries()) {
       node = child(node, key)
       if (node === undefined) {
         report('E_PATH', at, `${path} doesn't name a declared attribute`)
         return { ok: false, node: undefined }
+      }
+      // a schema that doesn't declare this key: the rest of the path is checked only at run time
+      if (node === true) {
+        report(
+          'W_PATH_UNCHECKED',
+          at,
+          `${path} passes through a schema that doesn't declare ${rest.slice(n).join('.')}, so it's checked only at run time`,
+        )
+        return { ok: true, node }
       }
     }
     return { ok: true, node }
@@ -228,6 +249,17 @@ export const validate = (input: unknown): Validation => {
     if (op === 'in') {
       if (b && b !== 'array')
         report('E_TYPE', `${at}/${op}/1`, `in needs an array on the right, not a ${b}`)
+      if (a === 'array')
+        report('E_TYPE', `${at}/${op}/0`, "in's left side is one value, not an array")
+      // the left against the right's elements: a literal array's, or a path's declared items
+      const elements =
+        'value' in right && Array.isArray(right.value)
+          ? [...new Set(right.value.filter((v) => v !== null).map(literalType))]
+          : 'path' in right
+            ? [typeOf(element(nodeOf(right.path, scope)))]
+            : []
+      if (a && a !== 'array' && elements.length === 1 && elements[0] && elements[0] !== a)
+        report('E_TYPE', `${at}/${op}`, `in compares a ${a} with ${elements[0]}s`)
     } else if (a && b) {
       const ordering = op !== 'eq' && op !== 'ne'
       if (ordering && (a !== b || (a !== 'number' && a !== 'string')))
@@ -339,8 +371,10 @@ export const validate = (input: unknown): Validation => {
   })
 
   m.relations?.forEach((r, i) => {
-    resolves(r.from, `/relations/${i}/from`)
-    resolves(r.to, `/relations/${i}/to`)
+    // alternativeTo and enables join capabilities; relatedTo, any two definitions (§5.1-§5.3)
+    const kind = r.type === 'relatedTo' ? undefined : 'capability'
+    resolves(r.from, `/relations/${i}/from`, kind)
+    resolves(r.to, `/relations/${i}/to`, kind)
   })
   // a declared enables that nothing derives is the source's word only (§5.2)
   const derived = new Set(
@@ -372,7 +406,8 @@ export const validate = (input: unknown): Validation => {
         `a claim can't be about ${field}, which enforcement reads`,
       )
     // applies reads only the target: the subject resource, or the subject capability's target (§9)
-    if (c.applies) {
+    // a claim about another manifest's definition can't be checked here: its attributes aren't known
+    if (c.applies && local(c.subject) !== undefined) {
       const id = local(c.subject)
       const subject = id === undefined ? undefined : definitions.get(id)
       const target = subject === 'resource' ? id : m.capabilities.find((x) => x.id === id)?.target

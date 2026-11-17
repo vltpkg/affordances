@@ -237,6 +237,44 @@ const cases: [string, ValidationIssue['code'], string, (m: M) => void][] = [
     (m) => (m.claims[0].applies.eq[0].path = 'principal.plan'),
   ],
   [
+    'an alternativeTo between resources',
+    'E_UNRESOLVED',
+    '/relations/1/from',
+    (m) => m.relations.push({ type: 'alternativeTo', from: 'hosting.plan', to: 'hosting.project' }),
+  ],
+  [
+    'an enables from a resource',
+    'E_UNRESOLVED',
+    '/relations/1/from',
+    (m) =>
+      m.relations.push({ type: 'enables', from: 'hosting.plan', to: 'hosting.plan.subscribe' }),
+  ],
+  [
+    'in that compares a number with strings',
+    'E_TYPE',
+    '/capabilities/1/preconditions/0/expr/in',
+    (m) => (sub(m).preconditions[0].expr.in[0] = { path: 'target.priceUsd' }),
+  ],
+  [
+    'in with an array on the left',
+    'E_TYPE',
+    '/capabilities/1/preconditions/0/expr/in/0',
+    (m) => (sub(m).preconditions[0].expr.in[0] = { path: 'target.regions' }),
+  ],
+  [
+    'a path through a schema that declares nothing',
+    'W_PATH_UNCHECKED',
+    '/capabilities/1/preconditions/6/expr/exists',
+    (m) => {
+      m.resources[0].attributes.properties.meta = { type: 'object', additionalProperties: true }
+      sub(m).preconditions.push({
+        id: 'meta',
+        description: 'x',
+        expr: { exists: 'target.meta.anything' },
+      })
+    },
+  ],
+  [
     'a key that is not an attribute',
     'E_KEY',
     '/resources/0/key',
@@ -369,7 +407,14 @@ describe('every code', () => {
       'E_TYPE',
       'E_DEPTH',
     ]
-    const rest = ['E_ENFORCEMENT_CLAIM', 'E_BASIS', 'E_SOURCE', 'W_OPAQUE', 'W_EFFECTS_UNKNOWN']
+    const rest = [
+      'E_ENFORCEMENT_CLAIM',
+      'E_BASIS',
+      'E_SOURCE',
+      'W_OPAQUE',
+      'W_EFFECTS_UNKNOWN',
+      'W_PATH_UNCHECKED',
+    ]
     expect(new Set(cases.map(([, code]) => code))).toEqual(new Set([...own, ...rest]))
   })
 })
@@ -391,5 +436,25 @@ test('an open schema is checked at run time, not rejected', () => {
     description: 'x',
     expr: { exists: 'target.meta.anything' },
   })
+  const result = validate(m)
+  expect(result.ok).toBe(true)
+  // and says it couldn't check it
+  expect(result.issues.map((x) => x.code)).toEqual(['W_PATH_UNCHECKED'])
+})
+
+test('additionalProperties: true and {} are both open', () => {
+  for (const open of [true, {}]) {
+    const m = plans()
+    m.resources[0].attributes.additionalProperties = open
+    sub(m).preconditions.push({ id: 'extra', description: 'x', expr: { exists: 'target.extra' } })
+    const result = validate(m)
+    expect(result.ok).toBe(true)
+    expect(result.issues.map((x) => x.code)).toEqual(['W_PATH_UNCHECKED'])
+  }
+})
+
+test("a claim about another manifest's capability can say when it applies", () => {
+  const m = plans()
+  m.claims[0].subject = 'https://other.example/capabilities#billing.plan.subscribe'
   expect(validate(m).ok).toBe(true)
 })

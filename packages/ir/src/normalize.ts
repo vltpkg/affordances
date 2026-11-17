@@ -58,6 +58,10 @@ const expr = (e: Expr): Expr => {
 
 const condition = (c: Condition): Condition => ('expr' in c ? { ...c, expr: expr(c.expr) } : c)
 
+// an empty extensions object says nothing, and is dropped like an empty array (§7.2 step 5)
+const extensions = (e: Record<string, unknown> | undefined) =>
+  e && Object.keys(e).length ? e : undefined
+
 const evidence = (list: Evidence[] | undefined) => optional(list && set(list))
 const provenance = (p: Provenance): Provenance => ({ ...p, evidence: evidence(p.evidence) })
 
@@ -85,7 +89,12 @@ export const normalize = (input: CapabilityManifest): CapabilityManifest => {
     x: T,
   ): T => {
     const p = own(x.provenance)
-    return { ...x, provenance: p, fieldProvenance: fields(x.fieldProvenance, p ?? base) }
+    return {
+      ...x,
+      provenance: p,
+      fieldProvenance: fields(x.fieldProvenance, p ?? base),
+      extensions: extensions((x as { extensions?: Record<string, unknown> }).extensions),
+    }
   }
 
   const resource = (r: ResourceDefinition): ResourceDefinition =>
@@ -136,6 +145,7 @@ export const normalize = (input: CapabilityManifest): CapabilityManifest => {
       from: swap ? r.to : r.from,
       to: swap ? r.from : r.to,
       provenance: own(r.provenance),
+      extensions: extensions(r.extensions),
     }
   }
 
@@ -143,10 +153,12 @@ export const normalize = (input: CapabilityManifest): CapabilityManifest => {
     ...c,
     applies: c.applies && expr(c.applies),
     provenance: provenance(c.provenance),
+    extensions: extensions(c.extensions),
   })
 
   return strip({
     ...input,
+    extensions: extensions(input.extensions),
     provenance: base,
     principal: input.principal && {
       ...attributed(input.principal),
@@ -161,7 +173,10 @@ export const normalize = (input: CapabilityManifest): CapabilityManifest => {
     claims: optional(input.claims && set(input.claims.map(claim), (c) => [c.id])),
     bindings: optional(
       input.bindings &&
-        set(input.bindings, (b: Binding) => [b.capability, b.protocol, canonicalJson(b.address)]),
+        set(
+          input.bindings.map((b) => ({ ...b, extensions: extensions(b.extensions) })),
+          (b: Binding) => [b.capability, b.protocol, canonicalJson(b.address)],
+        ),
     ),
   })
 }

@@ -145,6 +145,16 @@ describe('defaults are dropped', () => {
     expect(bytes(withSchema)).toBe(bytes(m))
   })
 
+  test('an empty extensions object', () => {
+    const empty = structuredClone(m)
+    empty.extensions = {}
+    empty.capabilities[1]!.extensions = {}
+    empty.claims![0]!.extensions = {}
+    const without = structuredClone(m)
+    delete without.extensions
+    expect(bytes(empty)).toBe(bytes(without))
+  })
+
   test('exact duplicates in a set', () => {
     const twice = structuredClone(m)
     twice.bindings!.push({ ...m.bindings![0]! })
