@@ -3,6 +3,7 @@ import {
   evaluate,
   falsifying,
   fitContext,
+  searchFalsifying,
   putPointer,
   type CapabilityDefinition,
   type Context,
@@ -37,7 +38,10 @@ export type ConformanceResult = {
   // false: the condition implies another, so a refusal can't be pinned on it alone (falsify.ts)
   isolated: boolean
   pass: boolean
-  got: ExecutionResult
+  // what the execution returned; absent for a case the kit couldn't test
+  got?: ExecutionResult
+  // why it didn't pass when it never ran: a gap is a failure, never a silent skip (review's close-out finding)
+  reason?: string
 }
 
 const KEY = 'conformance'
@@ -51,7 +55,8 @@ const implied = (c: CapabilityDefinition, p: string, q: string) => {
       (x) => x.id === id && 'expr' in x,
     ) as { expr: Expr } | undefined
   const [a, b] = [exprOf(p), exprOf(q)]
-  return !!a && !!b && falsifying({ any: [a.expr, { not: b.expr }] }) === undefined
+  // implied only when the search proves no state makes p false and q true; one that ran out of budget isn't proof
+  return !!a && !!b && 'none' in searchFalsifying({ any: [a.expr, { not: b.expr }] })
 }
 
 export const conformance = async (fixture: ConformanceFixture): Promise<ConformanceResult[]> => {
@@ -168,7 +173,17 @@ export const conformance = async (fixture: ConformanceFixture): Promise<Conforma
 
   for (const k of conformanceCases(manifest)) {
     const c = manifest.capabilities.find((x) => x.id === k.capability)!
-    if (!k.context) continue
+    if (!k.context) {
+      results.push({
+        capability: c.id,
+        condition: k.condition,
+        kind: 'declarative',
+        isolated: k.isolated,
+        pass: false,
+        reason: 'untested: no state makes this condition false',
+      })
+      continue
+    }
     // a case that isn't isolated: the condition false, and as many of the others true as can be with it, so what
     // refuses is the condition or one it takes down with it
     const context = k.isolated ? k.context : (alongside(c, k.condition) ?? k.context)
@@ -194,7 +209,18 @@ export const conformance = async (fixture: ConformanceFixture): Promise<Conforma
     const context = exprs.length ? fitContext(manifest, c, falsifying({ not: { all: exprs } })) : {}
     for (const x of conditions) {
       if (!('guard' in x)) continue
-      if (!context) continue
+      if (!context) {
+        results.push({
+          capability: c.id,
+          condition: x.id,
+          kind: 'guard',
+          isolated: true,
+          pass: false,
+          reason:
+            'untested: no state makes every declarative condition true, so the guard alone can’t refuse',
+        })
+        continue
+      }
       const { got, named } = await attempt(c, x.id, context, x.id)
       results.push({
         capability: c.id,

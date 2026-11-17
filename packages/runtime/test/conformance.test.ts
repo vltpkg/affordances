@@ -107,7 +107,7 @@ describe('rule 5’s conformance kit (§9, R5)', () => {
     fixture.arrange = () => {}
     const results = await conformance(fixture)
     expect(results.every((r) => !r.pass)).toBe(true)
-    expect(results.map((r) => (r.got.status === 'refused' ? r.got.code : r.got.status))).toEqual(
+    expect(results.map((r) => (r.got?.status === 'refused' ? r.got.code : r.got?.status))).toEqual(
       results.map(() => 'not_found'),
     )
     expect(runs).toEqual([])
@@ -121,7 +121,7 @@ describe('rule 5’s conformance kit (§9, R5)', () => {
     expect(loose.length).toBeGreaterThan(0)
     for (const r of loose)
       expect(
-        r.got.status === 'refused' && ['precondition', 'unauthorized'].includes(r.got.code),
+        r.got?.status === 'refused' && ['precondition', 'unauthorized'].includes(r.got.code),
       ).toBe(r.pass)
     // and with an arrange that does nothing, on a store nothing was arranged in, those fail too
     const idle = (await application(honest)).fixture
@@ -149,7 +149,7 @@ describe('rule 5’s conformance kit (§9, R5)', () => {
     )
     anonymous.principal = { authenticated: true, attributes: {} }
     const a = (await conformance(anonymous)).filter((r) => r.condition === 'cheap')
-    expect(a.map((r) => [r.isolated, r.pass, r.got.status === 'refused' && r.got.code])).toEqual([
+    expect(a.map((r) => [r.isolated, r.pass, r.got?.status === 'refused' && r.got.code])).toEqual([
       [false, false, 'unauthorized'],
     ])
     // no authorization declared: every call is unauthorized with no condition
@@ -191,6 +191,43 @@ describe('rule 5’s conformance kit (§9, R5)', () => {
       condition: { id: 'slugIsX' },
     })
     expect(r.pass).toBe(false)
+  })
+
+  test('a condition the kit can’t test is a failure with its reason, never a silent skip (review’s close-out)', async () => {
+    const { fixture } = await application(honest)
+    const subscribe = fixture.options.manifest.capabilities[1]!
+    // no state makes it false: a supplied price is a number or not, and either way one side holds
+    subscribe.preconditions = [
+      {
+        id: 'always',
+        description: 'A price, or none',
+        expr: { any: [{ exists: 'target.priceUsd' }, { not: { exists: 'target.priceUsd' } }] },
+      },
+    ]
+    const results = await conformance(fixture)
+    expect(results).toContainEqual(
+      expect.objectContaining({
+        condition: 'always',
+        pass: false,
+        reason: 'untested: no state makes this condition false',
+      }),
+    )
+  })
+  test('a guard no state lets act alone is a failure with its reason', async () => {
+    const { fixture } = await application(honest)
+    const subscribe = fixture.options.manifest.capabilities[1]!
+    // the declarative conditions can't all hold at once, so no state isolates the guard
+    subscribe.preconditions = [
+      { id: 'isX', description: 'Plan x', expr: { eq: [{ path: 'target.slug' }, { value: 'x' }] } },
+      { id: 'isY', description: 'Plan y', expr: { eq: [{ path: 'target.slug' }, { value: 'y' }] } },
+      { id: 'billing', description: 'Billing is in good standing', guard: true },
+    ]
+    const results = await conformance(fixture)
+    expect(results.find((r) => r.condition === 'billing')).toMatchObject({
+      kind: 'guard',
+      pass: false,
+      reason: expect.stringMatching(/^untested/),
+    })
   })
 
   test('a resolver that misreports state fails conformance: the capability ran when it should have refused', async () => {
