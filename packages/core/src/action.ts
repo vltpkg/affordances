@@ -1,5 +1,11 @@
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from '@standard-schema/spec'
 import type { Expose, NavItem } from '@affordances/protocol'
+import {
+  fromCapability,
+  type BindableCapability,
+  type CapabilityActionConfig,
+  type CapabilityInput,
+} from './capability.ts'
 import { AffordancesError, RedirectSignal } from './errors.ts'
 
 export const AFFORDANCES = Symbol.for('affordances.action')
@@ -147,9 +153,19 @@ export type AffordancesOptions<Session> = {
 }
 
 export const createAffordances = <Session = never>(options: AffordancesOptions<Session> = {}) => {
-  const defineAction = <Schema extends StandardSchemaV1, Output, State extends Entities = Entities>(
+  // a capability-bound action (RFC 0001 §12.1): the capability's data, and this action's code
+  function defineAction<C extends BindableCapability, Output, State extends Entities = Entities>(
+    config: CapabilityActionConfig<C, Output, Session, State>,
+  ): Action<CapabilityInput<C>, Output>
+  function defineAction<Schema extends StandardSchemaV1, Output, State extends Entities = Entities>(
     config: ActionConfig<Schema, Output, Session, State>,
-  ): Action<StandardSchemaV1.InferInput<Schema>, Output> => {
+  ): Action<StandardSchemaV1.InferInput<Schema>, Output>
+  function defineAction(
+    given:
+      | ActionConfig<StandardSchemaV1, unknown, Session, Entities>
+      | CapabilityActionConfig<BindableCapability, unknown, Session, Entities>,
+  ): AnyAction {
+    const config = 'capability' in given ? fromCapability(given) : given
     if (!config.expose && process.env.NODE_ENV !== 'production')
       console.warn(`[affordances] ${config.name} has no \`expose\`, so agents can't reach it`)
 
@@ -171,10 +187,7 @@ export const createAffordances = <Session = never>(options: AffordancesOptions<S
       outputSchema: config.output && toJsonSchema(config.output),
       auth: options.auth as Auth<unknown> | undefined,
     }
-    return Object.assign(action, { [AFFORDANCES]: meta }) as unknown as Action<
-      StandardSchemaV1.InferInput<Schema>,
-      Output
-    >
+    return Object.assign(action, { [AFFORDANCES]: meta }) as unknown as AnyAction
   }
 
   const defineState = <State extends Entities>(

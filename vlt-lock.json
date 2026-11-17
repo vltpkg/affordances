@@ -1093,6 +1093,7 @@
     "workspace~packages+cli @affordances/next": "prod workspace:* workspace~packages+next",
     "workspace~packages+cli @affordances/protocol": "prod workspace:* workspace~packages+protocol",
     "workspace~packages+core zod": "dev ^4.6.7 ~npm~zod@4.6.7",
+    "workspace~packages+core @affordances/ir": "dev workspace:* workspace~packages+ir",
     "workspace~packages+core @standard-schema/spec": "prod ^1.1.0 ~npm~@standard-schema+spec@1.1.0",
     "workspace~packages+core @affordances/protocol": "prod workspace:* workspace~packages+protocol",
     "workspace~packages+ir ajv": "dev ^8.17.1 ~npm~ajv@8.20.0",
