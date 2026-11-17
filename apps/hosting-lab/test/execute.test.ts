@@ -228,6 +228,9 @@ test('a cookie call needs a matching Origin, for execute and expand', async () =
   const crossSite: Record<string, string>[] = [
     { cookie: `sid=${sid}`, origin: 'https://evil.test' },
     { cookie: `sid=${sid}` },
+    // an empty bearer authenticates nothing, so the cookie does, and the Origin rule applies
+    { cookie: `sid=${sid}`, authorization: 'Bearer ' },
+    { cookie: `sid=${sid}`, authorization: 'Bearer two words' },
   ]
   for (const headers of crossSite) expect((await post(headers)).status).toBe(403)
   const expand = await serveExpand(
