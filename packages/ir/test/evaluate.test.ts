@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, test } from 'vitest'
 import { evaluate, type Context, type Truth } from '../src/evaluate.ts'
-import { conformanceCases, falsifying } from '../src/falsify.ts'
+import { conformanceCases, falsifying, fitContext } from '../src/falsify.ts'
 import type { CapabilityManifest, Expr } from '../src/schema.ts'
 
 // three expressions whose value the context fixes: true, false, unknown
@@ -347,5 +347,23 @@ describe('conformanceCases isolate the condition under test', () => {
     ).filter((c) => c.condition === 'many')
     expect(first!.isolated).toBe(false)
     expect(evaluate({ gt: [{ path: 'target.count' }, { value: -5 }] }, first!.context!)).toBe(false)
+  })
+})
+
+test('a count’s witness elements take the type its schema declares, so the state fits the resource (code review 7)', () => {
+  const m = fixture('plans.json')
+  // hasDomain counts project.domains, which are strings: every case that needs a domain gets string ones
+  const withDomains = conformanceCases(m).filter(
+    (k) => (k.context?.references?.project?.domains as unknown[] | undefined)?.length,
+  )
+  expect(withDomains.length).toBeGreaterThan(0)
+  for (const k of withDomains)
+    expect(
+      (k.context!.references!.project!.domains as unknown[]).every((d) => typeof d === 'string'),
+    ).toBe(true)
+  // and fitContext on its own: an empty placeholder becomes the item type's value
+  const c = m.capabilities.find((x) => x.id === 'hosting.plan.subscribe')!
+  expect(fitContext(m, c, { references: { project: { domains: [{}, {}] } } })).toEqual({
+    references: { project: { domains: ['', ''] } },
   })
 })

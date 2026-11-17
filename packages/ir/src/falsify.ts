@@ -183,6 +183,58 @@ export type ConformanceCase = {
   context: Context | undefined
   isolated: boolean
 }
+// a count's witness is an array of empty placeholders. Fitted to the schema the root is declared by, each becomes a
+// value of the item's type, so an application's own resolver accepts the state the kit arranges (code review 7)
+type Schemaish = { type?: unknown; items?: unknown; properties?: Record<string, unknown> }
+const placeholder = (schema: Schemaish | undefined): unknown => {
+  const type = Array.isArray(schema?.type) ? schema.type[0] : schema?.type
+  if (type === 'string') return ''
+  if (type === 'number' || type === 'integer') return 0
+  if (type === 'boolean') return false
+  if (type === 'null') return null
+  if (type === 'array') return []
+  return {}
+}
+const fit = (value: unknown, schema: unknown): unknown => {
+  const s = (schema ?? {}) as Schemaish
+  if (Array.isArray(value)) {
+    const items = s.items as Schemaish | undefined
+    return value.map((v) =>
+      v !== null && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0
+        ? placeholder(items)
+        : fit(v, items),
+    )
+  }
+  if (value !== null && typeof value === 'object')
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, fit(v, s.properties?.[k])]))
+  return value
+}
+export const fitContext = (
+  m: CapabilityManifest,
+  c: CapabilityManifest['capabilities'][number],
+  context?: Context,
+) => {
+  if (!context) return context
+  const resource = (id?: string) => m.resources.find((r) => r.id === id)?.attributes
+  const out: Context = {}
+  if (context.target)
+    out.target = fit(context.target, resource(c.target)) as Record<string, unknown>
+  if (context.principal)
+    out.principal = fit(context.principal, m.principal?.attributes) as Record<string, unknown>
+  if (context.input) out.input = fit(context.input, c.input) as Record<string, unknown>
+  if (context.references)
+    out.references = Object.fromEntries(
+      Object.entries(context.references).map(([name, v]) => [
+        name,
+        fit(v, resource(c.references?.find((r) => r.name === name)?.resource)) as Record<
+          string,
+          unknown
+        >,
+      ]),
+    )
+  return out
+}
+
 export const conformanceCases = (m: CapabilityManifest): ConformanceCase[] =>
   m.capabilities.flatMap((c) => {
     const declarative = [
@@ -195,7 +247,17 @@ export const conformanceCases = (m: CapabilityManifest): ConformanceCase[] =>
         ...declarative.filter((q) => q.id !== p.id).map((q) => witness(q.expr, true)),
       ])
       if (alone)
-        return { capability: c.id, condition: p.id, context: contextOf(alone), isolated: true }
-      return { capability: c.id, condition: p.id, context: falsifying(p.expr), isolated: false }
+        return {
+          capability: c.id,
+          condition: p.id,
+          context: fitContext(m, c, contextOf(alone)),
+          isolated: true,
+        }
+      return {
+        capability: c.id,
+        condition: p.id,
+        context: fitContext(m, c, falsifying(p.expr)),
+        isolated: false,
+      }
     })
   })
