@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { z } from 'zod'
 // the IR's authoring, as a dev dependency: core itself doesn't depend on the (private) IR package
 import { defineCapability, defineResource, guard, when } from '@affordances/ir'
-import { createAffordances, createHandler, type AnyAction } from '../src/index.ts'
+import { AFFORDANCES, createAffordances, createHandler, type AnyAction } from '../src/index.ts'
 
 type Session = { id: string }
 let stock: Record<string, number>
@@ -211,6 +211,10 @@ describe('a capability with declarative preconditions (interim, until M3d)', () 
 })
 
 describe('what comes from the capability', () => {
+  test("the action's metadata carries the capability's id", () => {
+    expect(bound[AFFORDANCES].id).toBe('commerce.cart.addItem')
+  })
+
   test('expose, readOnly, requires and the confirmation summary', async () => {
     const lookup = defineCapability({
       id: 'commerce.stock.read',

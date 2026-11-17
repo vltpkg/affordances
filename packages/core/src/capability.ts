@@ -194,6 +194,8 @@ export const fromCapability = <
   const schema = config.capability.schemas.input ?? NO_INPUT
   const template = def.confirmation?.summary
   return {
+    // the capability's id, as the migration form's `id` carries it (RFC 0001 §10.1)
+    id: def.id,
     name: config.name,
     description: def.description,
     input: schema,
