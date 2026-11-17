@@ -281,7 +281,7 @@ test("finding 1, on v0's surface: no graph or call response carries the credenti
     )
     // the calls ran: the surface checked is the one an agent gets after acting
     expect(store.findAccount(sid)!.project.plan).toBe('pro')
-    expect(store.findAccount(sid)!.project.deployments).toHaveLength(1)
+    expect(store.findAccount(sid)!.project.deployments.size).toBe(1)
     const all = out.join('\n')
     expect(all).toContain(id)
     expect(all).not.toContain(sid)

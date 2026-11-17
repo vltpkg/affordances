@@ -1,6 +1,13 @@
 import type { Principal, ResourceResolver } from '@affordances/runtime'
 import { addOns, bundles } from '../catalog.ts'
-import { accountById, currentPlans, findAccount, projectAttributes, type Account } from './store.ts'
+import {
+  accountById,
+  currentPlans,
+  deploymentList,
+  findAccount,
+  projectAttributes,
+  type Account,
+} from './store.ts'
 
 // how the runtime reads the store (RFC 0002 §2.1), one resolver per resource type the manifest declares. A caller
 // sees only their own project and its deployments: anything else loads as null, as if it didn't exist. Reads look
@@ -42,13 +49,14 @@ export const resolvers: Record<string, ResourceResolver> = {
   'hosting.deployment': {
     load: async (key, principal) => {
       const project = projectOf(principal)
-      const d = project?.deployments.find((x) => x.id === key)
+      const d = project?.deployments.get(key)
       return d && project
         ? { attributes: { id: d.id, projectId: project.id, status: d.status, current: d.current } }
         : null
     },
     list: async (principal) => {
-      return projectOf(principal)?.deployments.map((d) => d.id) ?? []
+      const project = projectOf(principal)
+      return project ? deploymentList(project).map((d) => d.id) : []
     },
   },
 }

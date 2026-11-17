@@ -1,5 +1,6 @@
 import { Button } from '@affordances/ui/components/button'
 import { Input } from '@affordances/ui/components/input'
+import { deploymentList } from '@/lib/store'
 import { currentAccount, summary } from '@/lib/view'
 import { deploy, rollback } from './actions'
 
@@ -30,7 +31,7 @@ const Page = async () => {
         <Button type="submit">Deploy</Button>
       </form>
       <ul className="flex flex-col gap-2 text-sm">
-        {a.project.deployments.map((d) => (
+        {deploymentList(a.project).map((d) => (
           <li key={d.id} className="flex items-center justify-between rounded-md border p-3">
             <span>
               {d.id} · {d.ref} · {d.status}

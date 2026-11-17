@@ -17,7 +17,7 @@ export const ownsDeployment = (caller: Account | undefined, deployment: unknown)
   if (deployment === undefined) return true
   if (!caller) return 'Sign in to roll back'
   return (
-    caller.project.deployments.some((d) => d.id === deployment) ||
+    (typeof deployment === 'string' && caller.project.deployments.has(deployment)) ||
     `No deployment ${String(deployment)}`
   )
 }

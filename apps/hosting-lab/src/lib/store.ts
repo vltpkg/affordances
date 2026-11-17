@@ -34,7 +34,8 @@ export type Project = {
   // add-ons that stop at the next renewal
   removing: AddOn['slug'][]
   buildMinutesUsed: number
-  deployments: Deployment[]
+  // by id, in the order they were made
+  deployments: Map<string, Deployment>
 }
 
 export type Account = { id: string; project: Project; ledger: Charge[] }
@@ -83,6 +84,10 @@ export const findAccount = (sid: string): Account | undefined => {
 // an account by its id, as the runtime's principal names it
 export const accountById = (id: string): Account | undefined => state.accounts.get(id)
 
+// a project's deployments as pages and v0's state show them: newest first
+export const deploymentList = (project: Project): Deployment[] =>
+  [...project.deployments.values()].toReversed()
+
 export const accountCount = () => state.accounts.size
 
 // a fresh random id, unique in the store
@@ -117,7 +122,7 @@ const fresh = (id: string, projectId: string): Account => ({
     addOns: [],
     removing: [],
     buildMinutesUsed: 0,
-    deployments: [],
+    deployments: new Map(),
   },
   ledger: [],
 })
@@ -261,10 +266,10 @@ export const deploy = (accountId: string, projectId: string, ref: string) => {
   }
   a.project.buildMinutesUsed += MINUTES_PER_DEPLOY
   if (deployment.status === 'ready') {
-    for (const d of a.project.deployments) d.current = false
+    for (const d of a.project.deployments.values()) d.current = false
     deployment.current = true
   }
-  a.project.deployments.unshift(deployment)
+  a.project.deployments.set(deployment.id, deployment)
   return { id: deployment.id, status: deployment.status }
 }
 
@@ -272,7 +277,7 @@ export const deploy = (accountId: string, projectId: string, ref: string) => {
 export const rollbackRefusal = (accountId: string, id: string): string | undefined => {
   const a = state.accounts.get(accountId)
   if (!a) return `No deployment ${id}`
-  const target = a.project.deployments.find((d: Deployment) => d.id === id)
+  const target = a.project.deployments.get(id)
   if (!target) return `No deployment ${id}`
   if (!planBySlug(a.project.plan).rollback)
     return `${planBySlug(a.project.plan).name} doesn't include rollback`
@@ -286,7 +291,7 @@ export const rollback = (accountId: string, id: string) => {
   const refusal = rollbackRefusal(accountId, id)
   if (!a) throw new Refused(`No deployment ${id}`)
   if (refusal) throw new Refused(refusal)
-  for (const d of a.project.deployments) d.current = d.id === id
+  for (const d of a.project.deployments.values()) d.current = d.id === id
   return { current: id }
 }
 

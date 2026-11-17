@@ -65,7 +65,7 @@ test('deploying uses build minutes and publishes; a broken build fails; minutes 
     id: 'dep_2',
     status: 'failed',
   })
-  expect(project().deployments.map((d) => [d.id, d.status, d.current])).toEqual([
+  expect(store.deploymentList(project()).map((d) => [d.id, d.status, d.current])).toEqual([
     ['dep_2', 'failed', false],
     ['dep_1', 'ready', true],
   ])
@@ -88,7 +88,7 @@ test('rollback needs a plan with rollback, a ready deployment, and one that is n
   store.subscribePlan(store.account(sid).id, id, 'p2')
   expect(store.rollbackRefusal(store.account(sid).id, 'dep_2')).toBe('dep_2 is already published')
   store.rollback(store.account(sid).id, 'dep_1')
-  expect(project().deployments.find((d) => d.current)?.id).toBe('dep_1')
+  expect(store.deploymentList(project()).find((d) => d.current)?.id).toBe('dep_1')
 })
 
 test("a project the caller doesn't own is refused like one that doesn't exist", () => {
