@@ -66,7 +66,6 @@ const encode = (cursor: Cursor) =>
   `more:${base64url(new TextEncoder().encode(canonicalJson(cursor)))}`
 // a cursor's shape, checked whole: anything an agent sends is untrusted (review of C)
 const ALONG = ['alternatives', 'members', 'relations', 'contains', 'enables']
-const MAX_CUTS = 256
 const isRef = (v: unknown): v is ResourceRef =>
   v !== null &&
   typeof v === 'object' &&
@@ -88,7 +87,6 @@ const isCursor = (v: unknown): v is Cursor =>
   typeof (v as Cursor).r === 'string' &&
   isOrigin((v as Cursor).o) &&
   Array.isArray((v as Cursor).b) &&
-  (v as Cursor).b.length <= MAX_CUTS &&
   (v as Cursor).b.every((n) => n === null || (Number.isInteger(n) && n > 0))
 
 const decode = (from: unknown): Cursor | undefined => {
@@ -383,6 +381,8 @@ export const views = (args: {
     const cursor = decode(from) ?? fail()
     if (cursor.r !== revision) fail('a cursor from another revision')
     let ids = (sequenceOf(cursor.o) ?? fail()).ids
+    // each cut takes at least one offer, so a cursor can't have more cuts than its sequence has offers (review of D)
+    if (cursor.b.length > ids.length) fail()
     for (const offers of cursor.b) ids = split(ids, offers ?? Infinity).cut
     if (!ids.length) fail()
     return page(ids, budget, { o: cursor.o, b: cursor.b })

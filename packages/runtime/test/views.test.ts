@@ -273,7 +273,8 @@ describe('expansion and inspection (§6.5)', () => {
       { r: p.revision, o: { view: true }, b: [0] },
       { r: p.revision, o: { view: true }, b: [1.5] },
       { r: p.revision, o: { from: 'x', along: 'more' }, b: [] },
-      { r: p.revision, o: { view: true }, b: Array.from({ length: 257 }, () => 1) },
+      // more cuts than the sequence has offers
+      { r: p.revision, o: { view: true }, b: Array.from({ length: p.offers.length + 1 }, () => 1) },
     ])
       await expect(p.expand({ from: forge(body), along: 'more' })).rejects.toThrow(
         'nothing to expand',
