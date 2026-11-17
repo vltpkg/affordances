@@ -1,14 +1,25 @@
 import { NodeServices } from '@effect/platform-node'
 import { Effect } from 'effect'
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { expect, test } from 'vitest'
+import { afterEach, expect, test } from 'vitest'
 import { init } from '../src/project.ts'
+
+// each test's scratch dirs, removed after it
+const roots: string[] = []
+const scratch = () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'affordances-cli-'))
+  roots.push(root)
+  return root
+}
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
 
 // a scratch Next app: an app/ dir and, optionally, a config
 const app = (config?: string) => {
-  const root = mkdtempSync(path.join(tmpdir(), 'affordances-cli-'))
+  const root = scratch()
   mkdirSync(path.join(root, 'app'))
   if (config !== undefined) writeFileSync(path.join(root, 'next.config.ts'), config)
   return root
@@ -47,7 +58,7 @@ test('an existing .gitignore gets the entry on its own line', async () => {
 })
 
 test('outside a Next app, init fails with NoApp before writing anything', async () => {
-  const root = mkdtempSync(path.join(tmpdir(), 'affordances-cli-'))
+  const root = scratch()
   const error = await Effect.runPromise(
     init(root).pipe(Effect.flip, Effect.provide(NodeServices.layer)),
   )

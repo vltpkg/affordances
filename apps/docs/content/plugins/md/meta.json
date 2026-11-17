@@ -9,6 +9,7 @@
     "llms",
     "production",
     "page-actions",
-    "converter"
+    "converter",
+    "performance"
   ]
 }

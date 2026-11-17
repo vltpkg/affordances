@@ -1,0 +1,249 @@
+import type { Element, Nodes, Parents, Text } from 'hast'
+
+// html's insignificant whitespace, collapsed and trimmed in place as css would lay it out: what hast-util-to-mdast
+// does to a tree before converting it, with hast-util-minify-whitespace (MIT, Titus Wormer). that one builds its
+// tag-name tests again for every node it asks about, which was a quarter of a conversion; this is its algorithm,
+// rule for rule, over sets. the names are its lists'
+export const BLOCKS = new Set([
+  'address',
+  'article',
+  'aside',
+  'blockquote',
+  'body',
+  'br',
+  'caption',
+  'center',
+  'col',
+  'colgroup',
+  'dd',
+  'dialog',
+  'dir',
+  'div',
+  'dl',
+  'dt',
+  'figcaption',
+  'figure',
+  'footer',
+  'form',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'head',
+  'header',
+  'hgroup',
+  'hr',
+  'html',
+  'legend',
+  'li',
+  'listing',
+  'main',
+  'menu',
+  'nav',
+  'ol',
+  'optgroup',
+  'option',
+  'p',
+  'plaintext',
+  'pre',
+  'section',
+  'summary',
+  'table',
+  'tbody',
+  'td',
+  'tfoot',
+  'th',
+  'thead',
+  'tr',
+  'ul',
+  'wbr',
+  'xmp',
+])
+// what contributes content of its own, so whitespace beside it counts: embedded content and form controls
+export const CONTENT = new Set([
+  'audio',
+  'canvas',
+  'embed',
+  'iframe',
+  'img',
+  'math',
+  'object',
+  'picture',
+  'svg',
+  'video',
+  'button',
+  'input',
+  'select',
+  'textarea',
+])
+export const SKIPPABLE = new Set([
+  'area',
+  'base',
+  'basefont',
+  'dialog',
+  'datalist',
+  'head',
+  'link',
+  'meta',
+  'noembed',
+  'noframes',
+  'param',
+  'rp',
+  'script',
+  'source',
+  'style',
+  'template',
+  'track',
+  'title',
+])
+
+type Whitespace = 'normal' | 'nowrap' | 'pre' | 'pre-wrap'
+// before, after: whether a break comes before or after the node, so whitespace at that edge says nothing
+type State = { whitespace: Whitespace; before: boolean | undefined; after: boolean | undefined }
+type Result = { ignore: boolean; stripAtStart: boolean; remove: boolean }
+
+const isElement = (node: Nodes | undefined): node is Element => node?.type === 'element'
+const ignorable = (node: Nodes) => node.type === 'comment' || node.type === 'doctype'
+const content = (node: Nodes | undefined) => isElement(node) && CONTENT.has(node.tagName)
+const blocklike = (node: Nodes) => isElement(node) && BLOCKS.has(node.tagName)
+const skippable = (node: Parents) =>
+  (isElement(node) && (Boolean(node.properties.hidden) || SKIPPABLE.has(node.tagName))) ||
+  ignorable(node)
+const blank = (value: string) => !/[^ \t\n\f\r]/.test(value)
+const collapse = (value: string) => String(value).replace(/[\t\n\v\f\r ]+/g, ' ')
+const removable = (character: string) => character === ' ' || character === '\n'
+
+// whitespace: what the tree is in, for one taken from a page (md-core's form, in a <nobr> or a <pre>)
+export const minifyWhitespace = (tree: Nodes, whitespace: Whitespace = 'normal') => {
+  aheadOf = new WeakMap()
+  minify(tree, { whitespace, before: undefined, after: undefined })
+}
+
+const minify = (node: Nodes, state: State): Result => {
+  if ('children' in node) {
+    const edge = node.type === 'root' || blocklike(node)
+    return all(node, {
+      whitespace: whitespaceOf(node, state),
+      before: edge || state.before,
+      after: edge || state.after,
+    })
+  }
+  if (node.type === 'text') {
+    if (state.whitespace === 'normal') return minifyText(node, state)
+    // (not `pre-wrap` or `pre`: those keep their whitespace)
+    if (state.whitespace === 'nowrap') node.value = collapse(node.value)
+  }
+  return { ignore: ignorable(node), stripAtStart: false, remove: false }
+}
+
+const minifyText = (node: Text, state: State): Result => {
+  const value = collapse(node.value)
+  const result = { ignore: false, stripAtStart: false, remove: false }
+  let start = 0
+  let end = value.length
+  if (state.before && removable(value.charAt(0))) start++
+  if (start !== end && removable(value.charAt(end - 1))) {
+    if (state.after) end--
+    else result.stripAtStart = true
+  }
+  if (start === end) result.remove = true
+  else node.value = value.slice(start, end)
+  return result
+}
+
+const all = (parent: Parents, state: State): Result => {
+  let before = state.before
+  const { after, whitespace } = state
+  const children = parent.children
+  // what's kept moves down over what's removed, in place: what follows, which the lookahead reads, stays where it is
+  let kept = 0
+  for (let index = 0; index < children.length; index++) {
+    const child = children[index]!
+    const result = minify(child, {
+      whitespace,
+      before,
+      after: collapsableAfter(children, index, after),
+    })
+    if (!result.remove) {
+      children[kept++] = child
+      if (!result.ignore) before = result.stripAtStart
+    }
+    // an element that contributes content somehow, a <select> or an <img>, allows whitespace again
+    if (content(children[kept - 1])) before = false
+  }
+  children.length = kept
+  aheadOf.delete(children)
+  return { ignore: false, stripAtStart: Boolean(before || after), remove: false }
+}
+
+// whether a break comes after the node at index: true where whitespace there says nothing. the first node that says
+// so, past a run that doesn't (blank text, empty inline elements), is found once for the list: a scan from anywhere in
+// the run finds the same one, so a page of thousands of them is read in linear time (md-core's is the same)
+const collapsableAfter = (
+  nodes: Nodes[],
+  index: number,
+  after?: boolean | undefined,
+): boolean | undefined => {
+  const from = index + 1
+  if (from >= nodes.length) return after
+  const first = decides(nodes[from]!)
+  if (first !== undefined) return first
+  let ahead = aheadOf.get(nodes)
+  if (ahead === undefined || from < ahead.from || from > ahead.at)
+    aheadOf.set(nodes, (ahead = scan(nodes, from)))
+  return ahead.decides ?? after
+}
+const decides = (node: Nodes): boolean | undefined => {
+  const result = boundary(node)
+  return result === undefined && 'children' in node && !skippable(node)
+    ? collapsableAfter(node.children, -1)
+    : result
+}
+// the first node after from that decides, in a list whose node at from doesn't, and so for any scan from up to it
+type Ahead = { from: number; at: number; decides: boolean | undefined }
+let aheadOf = new WeakMap<Nodes[], Ahead>()
+const scan = (nodes: Nodes[], from: number): Ahead => {
+  for (let at = from + 1; at < nodes.length; at++) {
+    const decided = decides(nodes[at]!)
+    if (decided !== undefined) return { from, at, decides: decided }
+  }
+  return { from, at: nodes.length, decides: undefined }
+}
+
+// true: whitespace around the node says nothing; false: it does; undefined: its siblings or children decide
+const boundary = (node: Nodes): boolean | undefined => {
+  if (node.type === 'element') {
+    if (content(node)) return false
+    if (blocklike(node)) return true
+  } else if (node.type === 'text') {
+    if (!blank(node.value)) return false
+  } else if (!ignorable(node)) {
+    return false
+  }
+  return undefined
+}
+
+// see <https://html.spec.whatwg.org/multipage/rendering.html#flow-content-3>
+const whitespaceOf = (node: Parents, state: State): Whitespace => {
+  if (isElement(node))
+    switch (node.tagName) {
+      case 'listing':
+      case 'plaintext':
+      case 'script':
+      case 'style':
+      case 'xmp':
+        return 'pre'
+      case 'nobr':
+        return 'nowrap'
+      case 'pre':
+        return node.properties.wrap ? 'pre-wrap' : 'pre'
+      case 'td':
+      case 'th':
+        return node.properties.noWrap ? 'nowrap' : state.whitespace
+      case 'textarea':
+        return 'pre-wrap'
+    }
+  return state.whitespace
+}

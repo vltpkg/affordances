@@ -11,6 +11,7 @@ import {
   readStreamed,
   relinkMarkdown,
   type SlotNames,
+  type Swapped,
   TITLE_SEPARATORS,
   yaml,
 } from '../convert/index.ts'
@@ -595,6 +596,28 @@ const convertPage = (options: MdHandlerOptions) => {
 }
 
 // renders the page as html the normal way (real RSC, Suspense, auth), then converts it
+// a conversion that threw, for whatever reason md didn't foresee: nothing of the page goes out, as with flight data it
+// can't read (502, private, no-store), and the error is logged once, so a bug in md never becomes the framework's
+// generic 500 or a page converted in part
+// an error as the log names it, and its cause (one, as when md tried another path and that threw too)
+const nameOf = (error: unknown) =>
+  error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+const thrownAs = (error: unknown) =>
+  error instanceof Error && error.cause !== undefined
+    ? `${nameOf(error)}, cause ${nameOf(error.cause)}`
+    : nameOf(error)
+const unconverted = (target: URL, error: unknown, headers: Headers, upstream: Response) => {
+  once(
+    'convert',
+    `[affordances-md] ${target.pathname} couldn't be converted (${thrownAs(error)}), so it answers 502, private, no-store. Please report it to @affordances/md.`,
+    { production: true, level: 'error' },
+  )
+  return fail(
+    502,
+    "The page couldn't be converted",
+    credentialed(headers) || upstream.headers.has('set-cookie'),
+  )
+}
 const renderPage =
   (options: MdHandlerOptions) =>
   async (request: Request, pagePath: string, direct: boolean, seen: Seen): Promise<Response> => {
@@ -746,8 +769,8 @@ const renderPage =
     clearTimeout(timer)
     if ('whole' in body) return tooLarge(body.whole === true)
     // a page whose shell arrived is converted as far as it streamed: boundaries still loading keep their fallback
-    const partial = !body.complete
-    if (partial && !body.html.trim()) return unreached(target, true, timeout)
+    const loading = !body.complete
+    if (loading && !body.html.trim()) return unreached(target, true, timeout)
     // the page, read once: what it streamed, the slots it rendered, and its markdown
     let read: Page
     try {
@@ -756,12 +779,13 @@ const renderPage =
         link: options.linkTwins === false ? undefined : twinLinks(target),
       })
     } catch (error) {
-      if (!(error instanceof FlightDataError)) throw error
+      if (!(error instanceof FlightDataError)) return unconverted(target, error, headers, upstream)
       // flight data the stripper can't account for (a push it didn't take out, one it can't read, a placeholder that
       // isn't a script): what the page says can't be told, so none of it goes out. in production too, once
+      // (and, if md tried another path first and that threw, what it threw: a bug to report)
       once(
         'flight',
-        `[affordances-md] ${target.pathname}'s Flight data couldn't be read (${error.reason}), so it answers 502, private, no-store. If it's a page of Next's own, update @affordances/md or report it.`,
+        `[affordances-md] ${target.pathname}'s Flight data couldn't be read (${error.reason}${error.cause === undefined ? '' : `, cause ${nameOf(error.cause)}`}), so it answers 502, private, no-store. If it's a page of Next's own, update @affordances/md or report it.`,
         { production: true, level: 'error' },
       )
       return fail(
@@ -770,6 +794,9 @@ const renderPage =
         credentialed(headers) || upstream.headers.has('set-cookie'),
       )
     }
+    // a page cut short, as one still loading or one nested deeper than md reads (something of it left out), says so and
+    // is never cached
+    const partial = loading || read.cut === true
     // personal: rendered with someone's credentials (the caller's, or the route's service ones), or answered with a
     // cookie. a credential-free render is the anonymous public view, whatever cache-control next put on it (next
     // sends private, no-store for every dynamic render), so only this marks a page for llms to leave out
@@ -794,10 +821,18 @@ const renderPage =
     // the page rendered, so its own redirect(), notFound() and layout checks ran: now the slots it rendered get filled
     const slots = routed?.module.slots && (await fillSlots(read.slots, target, routed))
     if (slots instanceof Response) return slots
-    const result = read.markdown(slots)
-    const page = partial
-      ? `${result.markdown}\n> Some of this page was still loading after ${timeout}ms and is missing or shown as its loading state.\n`
-      : result.markdown
+    let result: ReturnType<Page['markdown']>
+    try {
+      result = read.markdown(slots)
+    } catch (error) {
+      return unconverted(target, error, headers, upstream)
+    }
+    // a page both still loading and cut says both
+    let page = result.markdown
+    if (loading)
+      page += `\n> Some of this page was still loading after ${timeout}ms and is missing or shown as its loading state.\n`
+    if (read.cut)
+      page += `\n> This page nests deeper than @affordances/md reads, so some of it is missing.\n`
     const extra = await appended
     const markdown = extra ? `${page}\n${extra.trim()}\n` : page
 
@@ -899,16 +934,106 @@ export const createMdHandler = (options: MdHandlerOptions = {}) => {
   }
 }
 
-// the literal page as it came, for a request that isn't for markdown: the person asked for a page named x.md
+// a passed-through page's body as it streams, up to maxBytes or the deadline: the bytes as they came, the html without
+// its flight pushes, and what the stripper swapped. rest is the body from there on, starting with a read the deadline
+// left waiting, so none of it is lost
+const heldPage = async (
+  body: ReadableStream<Uint8Array>,
+  deadline: Promise<void>,
+  maxBytes: number,
+) => {
+  const strip = flightStripper()
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  const late = deadline.then(() => undefined)
+  const held: Uint8Array[] = []
+  let html = ''
+  let raw = 0
+  let waiting: ReturnType<typeof reader.read> | undefined
+  try {
+    while (raw <= maxBytes) {
+      waiting = reader.read()
+      const chunk = await Promise.race([waiting, late])
+      if (!chunk) break
+      waiting = undefined
+      if (chunk.done) break
+      held.push(chunk.value)
+      raw += chunk.value.byteLength
+      html += strip.write(decoder.decode(chunk.value, { stream: true }))
+    }
+  } catch {
+    // the stream broke: the rest reads its error, as the page's own body would have
+    waiting = undefined
+  }
+  html += strip.write(decoder.decode()) + strip.end()
+  const rest = new ReadableStream<Uint8Array>({
+    start: (controller) => held.forEach((chunk) => controller.enqueue(chunk)),
+    pull: async (controller) => {
+      try {
+        const chunk = await (waiting ?? reader.read())
+        waiting = undefined
+        if (chunk.done) controller.close()
+        else controller.enqueue(chunk.value)
+      } catch (error) {
+        controller.error(error)
+      }
+    },
+    cancel: (reason) => reader.cancel(reason),
+  })
+  return { html, swapped: strip.swapped(), rest }
+}
+
+// the 404, 403 or 401 a page streamed after its shell, read as the convert path reads it: a digest in its flight data
+// that the page's scripts account for. undefined for anything else, a page whose flight data can't be trusted among
+// them: page content can't make a page answer what it wouldn't as markdown. only a page with such a digest is parsed
+const streamedFallback = (html: string, swapped: Swapped, url: URL) => {
+  if (!swapped.errors.some((digest) => fromDigest(digest))) return undefined
+  try {
+    return readStreamed(html, swapped, { url: url.href }).fallback?.status
+  } catch {
+    return undefined
+  }
+}
+
+// the literal page as it came, for a request that isn't for markdown: the person asked for a page named x.md. one
+// that streamed notFound() after its shell (a 200 of next's not-found ui) is a 404, so the handler falls to the twin,
+// and forbidden() or unauthorized() its status, private: what a markdown request for it answers. so a 200 html page is
+// read before it's answered, up to maxBytes and under the timeout, and then answered as it came, held bytes and the
+// rest; past either it's decided on what was read, as the convert path decides on a page still loading
 const literalPage = async (request: Request, page: string, options: MdHandlerOptions) => {
   const target = pageUrl(request, options, page + new URL(request.url).search)
   if (!target) return fail(400, 'Not a page on this site')
-  const passed = await passPage(request, target, options)
-  if (passed.status === 404) void passed.body?.cancel().catch(() => {})
-  // its Link, which md()'s rules leave off a url ending in .md, since there it would be a twin's too
-  else if (passed.ok && passed.headers.get('content-type')?.includes('text/html'))
-    passed.headers.append('link', `<${mdPath(page)}>; ${LINK}`)
-  return passed
+  const { timeout = TIMEOUT, maxBytes = 16 * MIB } = options
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeout)
+  })
+  try {
+    const passed = await passPage(request, target, options)
+    if (passed.status === 404) void passed.body?.cancel().catch(() => {})
+    if (
+      passed.status !== 200 ||
+      !passed.headers.get('content-type')?.includes('text/html') ||
+      !passed.body
+    )
+      return passed
+    const headers = new Headers(passed.headers)
+    // its Link, which md()'s rules leave off a url ending in .md, since there it would be a twin's too
+    headers.append('link', `<${mdPath(page)}>; ${LINK}`)
+    const { html, swapped, rest } = await heldPage(passed.body, deadline, maxBytes)
+    const status = streamedFallback(html, swapped, target)
+    if (status === 404) {
+      void rest.cancel().catch(() => {})
+      return fail(404, HTTP_ERRORS[404]!)
+    }
+    if (status) {
+      passed.headers.set('cache-control', 'private, no-store')
+      return new Response(rest, { status, headers: passed.headers })
+    }
+    return new Response(rest, { status: 200, headers })
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 // a route's params from its folder names, as next gives them to page.tsx: [x] is a string, [...x] a string[], and

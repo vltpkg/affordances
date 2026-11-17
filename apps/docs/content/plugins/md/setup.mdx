@@ -70,7 +70,7 @@ They're matched the way Next matches a rewrite's `source` (named and unnamed par
 For a URL on those routes that ends in `.md`, the handler first fetches the page at that exact URL:
 
 - If it answers with anything but a 404, it's the page. A request for Markdown (`Accept: text/markdown`) gets it converted; any other request gets the page's HTML as it came. A redirect, a 401, or a 500 counts as an answer, so an error is never hidden behind a twin.
-- If it 404s, the `.md` is the twin suffix, and the request gets the Markdown of the URL without it. So `/package/readme.md.md` is the Markdown of the page `readme.md`.
+- If it 404s, the `.md` is the twin suffix, and the request gets the Markdown of the URL without it. So `/package/readme.md.md` is the Markdown of the page `readme.md`. A page that streams `notFound()` after its shell (under a `loading.tsx` or `<Suspense>`) answers `200` with the not-found page, and counts as a 404 here too. One that streams `forbidden()` or `unauthorized()` answers its `403` or `401`, `private, no-store`, as its Markdown does. To tell, the handler reads a `200` HTML answer before passing it on, up to `maxBytes` and within the `timeout`, then sends it as it came. Past either, it decides on what it has read.
 
 The twin of any page is still its URL plus `.md`, so links, `Link` headers and `llms.txt` don't change. The page needs to 404 for a name it doesn't have (`notFound()`), not render a 200 "not found" page. Each twin request on these routes costs that 404 render before the real one; routes not listed make one request, as before.
 

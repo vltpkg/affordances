@@ -1,8 +1,16 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { expect, test } from 'vitest'
 import { fromHtml } from 'hast-util-from-html'
+import { parse as parseHtml } from 'parse5'
 import { visit } from 'unist-util-visit'
-import { FlightDataError, flightStripper, readPage, readStreamed } from '../src/convert/index.ts'
+import {
+  CALL,
+  FlightDataError,
+  flightStripper,
+  NEXT_F,
+  readPage,
+  readStreamed,
+} from '../src/convert/index.ts'
 
 const dir = new URL('./fixtures/', import.meta.url)
 const fixtures = readdirSync(dir).filter((file) => file.endsWith('.html'))
@@ -186,6 +194,9 @@ const CONTEXTS = [
   `<table><tr>${FAKE}</tr></table>`,
   `<select>${FAKE}</select>`,
   `<plaintext>${FAKE}`,
+  // where a script's text is read as text: json-ld, and a foreign title
+  `<script type="application/ld+json">${FAKE.slice(8, -9)}</script>`,
+  `<math><title>${FAKE}</title></math>`,
 ]
 
 // the pushes parse5 sees: script elements in the page (not in a template's content) whose own text is a push
@@ -199,6 +210,32 @@ const parse5Pushes = (html: string) => {
 }
 const PUSH_TEXT =
   /^\s*(?:\(self\.__next_f\s*=\s*self\.__next_f\s*\|\|\s*\[\]\)|self\.__next_f)\.push\(/
+// whether parse5 puts a push in a script a browser never runs: in a <noscript> (text, with scripting on) or in mathml
+type Parse5Node = {
+  tagName?: string
+  namespaceURI?: string
+  value?: string
+  childNodes?: Parse5Node[]
+}
+const unrunPush = (html: string) => {
+  const walk = (parent: Parse5Node, hidden: boolean): boolean =>
+    (parent.childNodes ?? []).some((node) => {
+      if (!node.tagName) return false
+      const own = (node.childNodes ?? []).map((kid) => kid.value ?? '').join('')
+      if (
+        node.tagName === 'script' &&
+        (hidden || node.namespaceURI === 'http://www.w3.org/1998/Math/MathML') &&
+        PUSH_TEXT.test(own)
+      )
+        return true
+      return walk(
+        node,
+        hidden ||
+          (node.tagName === 'noscript' && node.namespaceURI === 'http://www.w3.org/1999/xhtml'),
+      )
+    })
+  return walk(parseHtml(html, { scriptingEnabled: false }) as Parse5Node, false)
+}
 
 test('the stripper swaps exactly the pushes parse5 finds as scripts, over every fixture and every context', () => {
   const real = push('6:E{"digest":"NEXT_HTTP_ERROR_FALLBACK;403"}\n')
@@ -213,8 +250,154 @@ test('the stripper swaps exactly the pushes parse5 finds as scripts, over every 
     for (const sizes of [[html.length], [1], [2], [7, 3, 31], [4096, 13]]) {
       const { kept, swapped } = stream(html, sizes)
       expect([html, sizes, swapped.count]).toEqual([html, sizes, parse5Pushes(html)])
-      // the swaps hold: every nonce is a script, and no script still holds a push
-      const page = readStreamed(kept, swapped)
-      expect([html, page.markdown().markdown]).toEqual([html, readPage(html).markdown().markdown])
+      // the swaps hold: every nonce is a script, and no script still holds a push. one where a browser never runs it
+      // is never next's: the swaps aren't trusted, so the route answers 502
+      let streamed: string
+      try {
+        streamed = readStreamed(kept, swapped).markdown().markdown
+      } catch (error) {
+        streamed = `threw ${(error as { reason?: string }).reason}`
+      }
+      expect([html, streamed]).toEqual([
+        html,
+        unrunPush(html) ? 'threw unrun' : readPage(html).markdown().markdown,
+      ])
     }
 }, 30_000)
+
+// a push where a script's text is read as text, not run: its nonce never reaches the markdown, which reads as the
+// page does with that push's text gone
+const PUSHED_TEXT = push('7:E{"digest":"NEXT_HTTP_ERROR_FALLBACK;404"}\n').slice(8, -9)
+const LD = '{"@context":"https://schema.org","@type":"Thing","name":"Real"}'
+const PLACEMENTS = [
+  `<html><head><script type="application/ld+json">${PUSHED_TEXT}</script></head><body><p>x</p></body></html>`,
+  body(`<p>after</p><script type="application/ld+json">${PUSHED_TEXT}</script>`),
+  body(
+    `<script type="application/ld+json">${LD}</script><script type="application/ld+json">${PUSHED_TEXT}</script>`,
+  ),
+  body(
+    `<svg><title><script>${PUSHED_TEXT}</script></title></svg><math><mi><script>${PUSHED_TEXT}</script></mi></math>`,
+  ),
+]
+test.each(PLACEMENTS)('a push read as text leaves no placeholder in the markdown: %s', (html) => {
+  const without = html.replaceAll(PUSHED_TEXT, '')
+  for (const jsonLd of [false, true]) {
+    const expected = readPage(without, { jsonLd }).markdown().markdown
+    const page = readPage(html, { jsonLd })
+    expect(new Set(page.errors)).toEqual(new Set(['NEXT_HTTP_ERROR_FALLBACK;404']))
+    expect(page.markdown().markdown).toBe(expected)
+    for (const sizes of [[html.length], [1], [7, 3, 31]]) {
+      const { kept, swapped } = stream(html, sizes)
+      const streamed = readStreamed(kept, swapped, { jsonLd }).markdown().markdown
+      expect(streamed).not.toContain(swapped.nonce)
+      expect(streamed).toBe(expected)
+    }
+  }
+})
+
+// a script in mathml's <title> is mathml's, which a browser never runs: its push isn't next's, so the page's flight
+// data isn't trusted. readPage reads the page as it was sent, with an error of its own; the route's read throws
+test.each([
+  body(`<math><title><script>${PUSHED_TEXT}</script></title></math><p>x</p>`),
+  `<html><head><title>Page</title></head><body><math><title>A<script>${PUSHED_TEXT}</script>B</title></math><p>x</p></body></html>`,
+])('a push in a mathml title is never trusted: %s', (html) => {
+  expect(readPage(html).errors).toEqual([''])
+  for (const sizes of [[html.length], [1], [7, 3, 31]]) {
+    const { kept, swapped } = stream(html, sizes)
+    expect(() => readStreamed(kept, swapped)).toThrow(expect.objectContaining({ reason: 'unrun' }))
+  }
+})
+
+// readPage skips the stripper on a page that never says NEXT_F, which is exact only if the stripper never swaps
+// without it: a push is a script whose text, a run of the page as written, starts with CALL
+test('CALL is made of NEXT_F: whatever starts like a push says NEXT_F as written', () => {
+  expect(CALL).toBe(
+    String.raw`\s*(?:\(self\.__next_f\s*=\s*self\.__next_f\s*\|\|\s*\[\]\)|self\.__next_f)\.push\(`,
+  )
+  const starts = new RegExp(`^${CALL}`)
+  // every one-character edit of a push's start, again and again: those still read as one keep NEXT_F
+  const forms = ['self.__next_f.push(', ' (self.__next_f = self.__next_f || []).push(']
+  const alphabet = 'self._nxtFPUSH|[]()= \t\n&#;\\u005'
+  let seed = 1
+  const next = (k: number) => (seed = (seed * 1103515245 + 12345) >>> 0) % k
+  let read = 0
+  const missing: string[] = []
+  for (let round = 0; round < 100_000; round++) {
+    let text = forms[next(forms.length)]!
+    for (let edits = 1 + next(2); edits > 0; edits--) {
+      const at = next(text.length + 1)
+      const char = alphabet[next(alphabet.length)]!
+      const how = next(4)
+      text =
+        how === 0
+          ? text.slice(0, at) + char + text.slice(at)
+          : how === 1
+            ? text.slice(0, at) + text.slice(at + 1)
+            : how === 2
+              ? text.slice(0, at) + char + text.slice(at + 1)
+              : text.slice(0, at) + text.slice(at, at + 1).toUpperCase() + text.slice(at + 1)
+    }
+    if (starts.test(text)) {
+      read += 1
+      if (!text.includes(NEXT_F)) missing.push(text)
+    }
+  }
+  expect(missing).toEqual([])
+  expect(read).toBeGreaterThan(100)
+})
+
+// what comes near a push without being one: the stripper gives every such page back as it is, swapping nothing
+const NEAR = [
+  'self.__NEXT_F.push([1,"a"])',
+  'Self.__next_f.push([1,"a"])',
+  'self.__next_ f.push([1,"a"])',
+  'self .__next_f.push([1,"a"])',
+  'self.&#95;_next_f.push([1,"a"])',
+  // a js escape in the name: a script would run it, but its text, as written, isn't a push
+  'self.\\u005f_next_f.push([1,"a"])',
+  `self['__next_f'].push([1,"a"])`,
+  'window.__next_f.push([1,"a"])',
+  '(self.__next_F=self.__next_F||[]).push([0])',
+  'self.__nextf.push([1,"a"])',
+  [...'self.__next_f'].join('<!---->') + '.push([1,"a"])',
+]
+test.each(NEAR)('a page with %s and no NEXT_F is the stripper’s own output', (near) => {
+  const script = `<script>${near}</script>`
+  const pages = [
+    // the contexts that hold a push as a script (json-ld holds its text alone)
+    ...CONTEXTS.filter((context) => context.includes(FAKE)).map((context) =>
+      body(context.replaceAll(FAKE, script)),
+    ),
+    body(`<svg><script>${near}</script></svg>`),
+    body(`<p>${near}</p>`, script),
+  ]
+  for (const html of pages) {
+    expect(html.includes(NEXT_F)).toBe(false)
+    for (const sizes of [[html.length], [1], [7, 3, 31]]) {
+      const { kept, swapped } = stream(html, sizes)
+      expect([html, sizes, kept]).toEqual([html, sizes, html])
+      expect({
+        count: swapped.count,
+        errors: swapped.errors,
+        unreadable: swapped.unreadable,
+      }).toEqual({ count: 0, errors: [], unreadable: false })
+    }
+  }
+})
+
+test('the skip leaves the check: a push svg reads out of an entity still marks the page errored', () => {
+  const html = body(
+    `<svg><script>self.&#95;_next_f.push([1,"8:E{\\"digest\\":\\"x\\"}\\n"])</script></svg>`,
+  )
+  expect(html.includes(NEXT_F)).toBe(false)
+  expect(readPage(html).errors).toEqual([''])
+})
+
+test('NEXT_F split across chunks is still read on the streamed path', () => {
+  const html = body('<p>x</p>', push('9:E{"digest":"split"}\n'))
+  const at = html.indexOf(NEXT_F)
+  for (const cut of [1, 5, 8, NEXT_F.length - 1]) {
+    const { swapped } = stream(html, [at + cut, html.length])
+    expect([cut, swapped.count, swapped.errors]).toEqual([cut, 1, ['split']])
+  }
+})

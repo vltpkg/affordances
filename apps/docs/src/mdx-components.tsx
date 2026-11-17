@@ -13,6 +13,14 @@ import {
 import { Heading } from '@/components/heading'
 import { TypeTable } from '@/components/type-table'
 import { BenchHistory, BenchResults } from '@/components/bench-results'
+import {
+  PerfChart,
+  PerfOverhead,
+  PerfPages,
+  PerfRun,
+  PerfSummary,
+  PerfTotals,
+} from '@/components/md-performance'
 import { Install, Run } from '@/components/command'
 import { SetupPrompt } from '@/components/setup-prompt'
 
@@ -73,6 +81,12 @@ export const components: MDXComponents = {
   ),
   BenchHistory,
   BenchResults,
+  PerfChart,
+  PerfOverhead,
+  PerfPages,
+  PerfRun,
+  PerfSummary,
+  PerfTotals,
   Install,
   Run,
   SetupPrompt,

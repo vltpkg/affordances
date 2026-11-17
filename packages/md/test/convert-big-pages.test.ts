@@ -86,3 +86,27 @@ test('a filled slot’s children are left out, and the page can be converted aga
   // generous for a loaded machine: converting the fallback instead takes seconds
   expect(performance.now() - started).toBeLessThan(1500)
 })
+
+test('converting works on a copy: the page reads the same every time, user handlers and all', () => {
+  const page = readPage(
+    '<html><body><main><h1>  Spaced\n  out  </h1><p>one\n   <em>two</em>   three</p><pre>  kept\n    as written</pre>' +
+      `<p id="note">  a note  </p>${slot(1)}</main></body></html>`,
+    {
+      frontmatter: false,
+      // a handler that changes what it's given changes the copy, never the page
+      handlers: {
+        em: (state, node) => {
+          const children = state.all(node)
+          node.children = []
+          return { type: 'emphasis', children } as never
+        },
+      },
+    },
+  )
+  const first = page.markdown().markdown
+  expect(first).toBe(
+    '# Spaced out\n\none _two_ three\n\n```\n  kept\n    as written\n```\n\na note\n\n| n   |\n| --- |\n| row |\n',
+  )
+  expect(page.markdown({ table: 'Filled' }).markdown).toContain('Filled')
+  expect(page.markdown().markdown).toBe(first)
+})

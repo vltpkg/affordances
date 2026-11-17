@@ -8,18 +8,58 @@ import type {
   PhrasingContent,
   Root as MdastRoot,
   TableCell,
+  TableRow,
 } from 'mdast'
-import { fromHtml } from 'hast-util-from-html'
+import { fromParse5 } from 'hast-util-from-parse5'
 import { select, selectAll } from 'hast-util-select'
-import { defaultHandlers, toMdast, type Handle } from 'hast-util-to-mdast'
+import { defaultHandlers, defaultNodeHandlers, toMdast, type Handle } from 'hast-util-to-mdast'
 import { toString } from 'hast-util-to-string'
 import { gfmToMarkdown } from 'mdast-util-gfm'
 import { toMarkdown } from 'mdast-util-to-markdown'
 import { parse, postprocess, preprocess } from 'micromark'
+import { defaultTreeAdapter, parse as parseHtml } from 'parse5'
 import { gfm } from 'micromark-extension-gfm'
 import { decodeString } from 'micromark-util-decode-string'
 import { normalizeIdentifier } from 'micromark-util-normalize-identifier'
 import { visit } from 'unist-util-visit'
+import { minifyWhitespace } from './whitespace.ts'
+import {
+  BOXED,
+  canonicalOf,
+  CHROME_ROLES,
+  CHROME_TAGS,
+  collapsed,
+  declarations,
+  type Declarations,
+  fenced,
+  gridFits,
+  hides,
+  HTML_NS,
+  MATHML_NS,
+  IMAGE_SCHEMES,
+  INLINE,
+  LABEL_HOSTS,
+  LAID_OUT,
+  LINK_SCHEMES,
+  pageTitle,
+  pretty,
+  Spliced,
+  unbracketed,
+  VALUE_ROLES,
+  VALUED,
+  yaml,
+} from './shared.ts'
+import { CUT, flattenDeep } from './depth.ts'
+import { emit as emitCore, readSlots } from './core/emit.ts'
+import { struckList, underChanged } from './core/emit-markers.ts'
+import { parse as parseCore } from './core/parse.ts'
+import type {
+  Document as CoreDocument,
+  FormNode,
+  MdastNode,
+  Options as CoreOptions,
+} from './core/types.ts'
+import { declined, Declined, forcedPath, PARITY, tally } from './path.ts'
 
 export type Handlers = Record<string, Handle>
 
@@ -38,8 +78,8 @@ export type Options = {
   slots?: Record<string, string>
 }
 
-// url: the page's canonical url (or the one given), for a Link header
-export type Result = { markdown: string; title?: string; url?: string; tokens: number }
+// url: the page's canonical url (or the one given), for a Link header. cut: as Page's, from htmlToMarkdown
+export type Result = { markdown: string; title?: string; url?: string; tokens: number; cut?: true }
 
 // never content, whatever the page says
 // (form controls stay until conversion: the form summary and task-list items read them, then handlers drop them)
@@ -60,10 +100,15 @@ const ALWAYS_DROP = new Set([
   'video',
   'source',
 ])
-const CHROME =
-  'nav, header, footer, aside, dialog, [role=navigation], [role=banner], [role=contentinfo], [role=complementary], [aria-hidden=true], [hidden]'
 
 const isElement = (node: unknown): node is Element => (node as Element)?.type === 'element'
+// asked of every element on a page, so read from its properties: a css selector over a whole page costs as much as
+// parsing it
+const chrome = (el: Element) =>
+  CHROME_TAGS.has(el.tagName) ||
+  CHROME_ROLES.has(String(el.properties.role)) ||
+  String(el.properties.ariaHidden) === 'true' ||
+  (el.properties.hidden != null && el.properties.hidden !== false)
 const mode = (node: Element) =>
   node.tagName === 'affordances-md'
     ? String(node.properties.dataMode ?? '')
@@ -74,43 +119,9 @@ const mode = (node: Element) =>
 // accordion's content) marked data-affordances-md="show"
 const unhidden = (node: Element) => mode(node) === 'only' || mode(node) === 'show'
 
-// a code point a css escape names, or U+FFFD where css reads one instead: zero, a surrogate, or past the last code point
-const codePoint = (hex: string) => {
-  const code = Number.parseInt(hex, 16)
-  return code === 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)
-    ? '\ufffd'
-    : String.fromCodePoint(code)
-}
-// a style attribute as css reads it: comments gone, escapes (n\one, \6e one) decoded
-const cssText = (style: string) =>
-  style
-    .replace(/\/\*[\s\S]*?(\*\/|$)/g, '')
-    .replace(/\\([0-9a-f]{1,6})[ \t\n\r\f]?|\\([^\n0-9a-f])/gi, (_, hex: string, char: string) =>
-      hex ? codePoint(hex) : char,
-    )
-// a style attribute's declarations as [property, value], lowercased, without !important
-type Declarations = [property: string, value: string][]
-const declarations = (node: Element): Declarations =>
-  node.properties.style === undefined
-    ? []
-    : cssText(String(node.properties.style))
-        .split(';')
-        .map((declaration) => {
-          const [property = '', value = ''] = declaration
-            .split(':')
-            .map((part) => part.trim().toLowerCase())
-          return [property, value.replace(/\s*!\s*important$/, '')]
-        })
-// display: none, visibility: hidden or content-visibility: hidden in a style attribute, however it's spaced, cased,
-// commented, escaped or marked !important. opacity: 0 isn't hidden: motion libraries render it on the server as the
-// first frame of an entrance animation, so it would drop content people see a moment later
-const styleHidden = (style: Declarations) =>
-  style.some(
-    ([property, keyword]) =>
-      (property === 'display' && keyword === 'none') ||
-      (property === 'visibility' && (keyword === 'hidden' || keyword === 'collapse')) ||
-      (property === 'content-visibility' && keyword === 'hidden'),
-  )
+// a style attribute's declarations (shared.ts)
+const styleOf = (node: Element): Declarations =>
+  node.properties.style === undefined ? [] : declarations(String(node.properties.style))
 
 // what an icon or avatar link (an image without alt) is called. a link reads its own content first, so this is only
 // the name it has without any: its aria-labelledby, aria-label or title
@@ -119,7 +130,34 @@ const linkLabel = (a: Element, byId: Ids) =>
 // the page's ids, or how to find them only once a link needs them
 type Ids = Map<string, Element> | (() => Map<string, Element>)
 
-const described = (node: Element) => selectAll('img[alt]:not([alt=""])', node)
+// what selectAll(selector, root) finds for a selector of simple parts: the root and what's under it that matches, each
+// once, in document order (not a template's content). selectAll checks each match against every one before it, which
+// on a form of thousands of fields is quadratic; this is linear
+const elementsIn = (root: HastRoot | Element, matches: (el: Element) => boolean) => {
+  const found: Element[] = []
+  const stack: HastNodes[] = [root]
+  // a tree: each node is under one parent, so it's met once
+  for (let node = stack.pop(); node; node = stack.pop()) {
+    if (node.type === 'element' && matches(node)) found.push(node)
+    if ('children' in node) for (let i = node.children.length; i--;) stack.push(node.children[i]!)
+  }
+  return found
+}
+// an attribute as a selector reads it: absent when null, false or an empty list, a list joined with spaces
+const attributeOf = (el: Element, property: string, name: string) => {
+  const value = el.properties[property]
+  if (value === null || value === undefined || value === false) return
+  if (value === true) return name
+  if (Array.isArray(value)) return value.length ? value.join(' ').trim() : undefined
+  return String(value)
+}
+
+// img[alt]:not([alt=""])
+const described = (node: Element) =>
+  elementsIn(
+    node,
+    (el) => el.tagName === 'img' && !['', undefined].includes(attributeOf(el, 'alt', 'alt')),
+  )
 
 // what a link renders as: its text, else its described images, else its label
 const linkText = (a: Element, byId: Ids) =>
@@ -162,26 +200,18 @@ const skeleton = (table: Element) => {
 // between, they get a space. html can't tell a css gap from a split word, so the space goes only where a letter or
 // digit meets another ($48 stays whole); links side by side are always separate, even inside a wrapper each
 // (<span><a/></span><span><a/></span>, an avatar stack)
-const INLINE = new Set(['a', 'span', 'code', 'strong', 'em', 'b', 'i', 'small', 'time', 'abbr'])
 const isInline = (node: ElementContent | undefined): node is Element =>
   isElement(node) && INLINE.has(node.tagName)
 const isBlank = (node: ElementContent | undefined) => node?.type === 'text' && !node.value.trim()
-// in a flex or grid container every child is its own box, bare text too, so a text node beside an element is
-// laid out apart from it (configure<span>vlt</span> reads configure vlt). outside one, text beside an element is
-// the same run of text (un<em>believ</em>able)
-// (display: flex in a style, or tailwind's flex, inline-grid, md:flex)
-const LAID_OUT = /^([\w-]+:)*(inline-)?(flex|grid)$/
+// display classes and styles, laid out side by side or boxed (shared.ts)
 // whether an element's class or display style is one of these displays
 const displays = (node: Element, style: Declarations, display: RegExp) =>
   [node.properties.className].flat().some((name) => display.test(String(name ?? ''))) ||
   style.some(([property, value]) => property === 'display' && display.test(value))
 const laidOut = (node: HastRoot | Element, style: Declarations) =>
   isElement(node) && displays(node, style, LAID_OUT)
-// an inline element made a box of its own (tailwind's block, flex or grid, or the same display) sits on its own line
-// or in its own box, so it's apart from what's beside it whatever the characters: a cell's <span class="block">yarn
-// (zpm)</span><span class="block">6.0.0</span> reads yarn (zpm) 6.0.0. single characters still stay together, as
-// below: a ticker stacks its digits in boxes, and $ beside 48 is a price
-const BOXED = /^([\w-]+:)*(block|flex|grid)$/
+// an inline element made a box of its own (shared.ts's BOXED) sits apart from what's beside it. single characters
+// still stay together, as below: a ticker stacks its digits in boxes, and $ beside 48 is a price
 const boxed = (node: ElementContent | undefined, style: Declarations = []) =>
   isInline(node) && displays(node, style, BOXED)
 // a run of one-character elements is one word split for styling or animation (H e l l o, an odometer's 1 2 3), so
@@ -227,10 +257,6 @@ const spaced = (
     (/[\p{L}\p{N}]$/u.test(leftWord) && /^[\p{L}\p{N}]/u.test(rightWord)) ||
     (boxes && leftWord !== '' && rightWord !== ''))
 
-// headers and summaries whose text is a button's (<th><button>Name</button></th>, a sortable column; <h3><button
-// aria-expanded>Shipping</button></h3>, an accordion): with no text outside the buttons, the buttons' text is theirs
-const LABEL_HOSTS = new Set(['th', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'caption', 'summary', 'dt'])
-
 // what an aria-labelledby can name: the first element with an id, as getElementById finds it, among what prune keeps.
 // one inside something hidden from people (display: none, hidden, aria-hidden, <AgentSkip>, <noscript>) or replaced
 // by an <AgentText> never names anything, so a name can't carry hidden text out
@@ -249,14 +275,14 @@ const ids = (root: HastRoot | Element) => {
 }
 // what prune leaves out, with everything in it. an editor (contenteditable, role=textbox) is a field like a textarea:
 // its text is what someone typed, which never leaves the page
-const dropped = (el: Element, style = declarations(el)) =>
+const dropped = (el: Element, style = styleOf(el)) =>
   ALWAYS_DROP.has(el.tagName) ||
   mode(el) === 'skip' ||
   editor(el) ||
   (!unhidden(el) &&
     ((el.properties.hidden !== undefined && el.properties.hidden !== false) ||
       String(el.properties.ariaHidden) === 'true' ||
-      styleHidden(style)))
+      hides(style)))
 
 // drop what never belongs (scripts, controls, comments) and apply skip/text/only markers, in place. code is
 // left as written: a highlighter's tokens are adjacent spans
@@ -274,17 +300,21 @@ const prune = (parent: HastRoot | Element, literal = false) => {
   let tabs: Set<string> | undefined
   const page: Pruning = {
     byId: () => (byId ??= ids(parent)),
-    tabs: () =>
-      (tabs ??= new Set(selectAll('[data-affordances-md=show]', parent).flatMap(labelledBy))),
+    tabs: () => (tabs ??= new Set(shownPanels(parent).flatMap(labelledBy))),
   }
   pruneWith(parent, page, literal)
 }
+// everything under it marked data-affordances-md="show", in page order
+const shownPanels = (parent: HastRoot | Element) =>
+  elementsIn(parent, (el) => el !== parent && String(el.properties.dataAffordancesMd) === 'show')
 // what prune reads from the whole page, once it needs it: its ids, and the tabs that label a shown panel
 type Pruning = { byId: () => Map<string, Element>; tabs: () => Set<string> }
 // a tablist whose panels are shown: each panel is headed by its tab, so the tabs aren't said again
 const shownTablist = (el: Element, page: Pruning) =>
   String(el.properties.role) === 'tablist' &&
-  selectAll('[role=tab]', el).some((tab) => page.tabs().has(String(tab.properties.id ?? '')))
+  elementsIn(el, (tab) => attributeOf(tab, 'role', 'role') === 'tab').some((tab) =>
+    page.tabs().has(String(tab.properties.id ?? '')),
+  )
 // with the page, and the parent's style already parsed
 const pruneWith = (
   parent: HastRoot | Element,
@@ -313,7 +343,7 @@ const pruneWith = (
       child.properties = properties
     }
     if (shownTablist(child, page)) return []
-    const childStyle = declarations(child)
+    const childStyle = styleOf(child)
     styles.set(child, childStyle)
     // hidden from people means hidden from agents, unless it was marked for them
     if (dropped(child, childStyle)) return []
@@ -415,22 +445,38 @@ const pruneWith = (
 // data-rci, data-rri, data-rsi. ids are hex (B:a comes after B:9) and can carry a prefix, and a segment is a hidden
 // div, or the table, tbody, tr or svg its content needs. $RX, a boundary the server gave up on, keeps its fallback.
 // make the same moves, so streamed content counts. the page's scripts come from the same walk, before any move
-const resolveStreamed = (tree: HastRoot) => {
+// what resolveStreamed moves a segment by, as it's written in the html: a script's $RC or $RR (a boundary) or $RS (a
+// placeholder), or the external runtime's templates for them. md's pre-check scans for the same
+const STREAMED = ['$RC("', '$RR("', '$RS("', 'data-rci', 'data-rri', 'data-rsi']
+// unrun: the scripts and templates a browser never runs or reads as one (fromHtml's), which move nothing and aren't the
+// page's scripts: their own list, for the flight check
+export const resolveStreamed = (tree: HastRoot, unrun: Set<Element> = new Set()) => {
   // one walk: the instructions, every id, each element's parent, and the scripts
   const scripts: Element[] = []
+  const unrunScripts: Element[] = []
   const instructions: Element[] = []
   const templates: Element[] = []
   const byId = new Map<string, Element>()
   const parents = new Map<ElementContent, HastRoot | Element>()
-  visit(tree, 'element', (node, _, parent) => {
-    if (parent) parents.set(node, parent as HastRoot | Element)
-    const id = node.properties.id
-    if (id != null) byId.set(String(id), node)
-    if (node.tagName === 'script') scripts.push(node)
-    if (node.tagName !== 'template') return
-    if (id != null) templates.push(node)
-    if (node.properties.dataBid != null || node.properties.dataPid != null) instructions.push(node)
-  })
+  const walk = (parent: HastRoot | Element) => {
+    for (const node of parent.children) {
+      if (!isElement(node)) continue
+      parents.set(node, parent)
+      const id = node.properties.id
+      if (id != null) byId.set(String(id), node)
+      if (node.tagName === 'script') (unrun.has(node) ? unrunScripts : scripts).push(node)
+      if (node.tagName === 'template') {
+        if (id != null) templates.push(node)
+        if (
+          (node.properties.dataBid != null || node.properties.dataPid != null) &&
+          !unrun.has(node)
+        )
+          instructions.push(node)
+      }
+      walk(node)
+    }
+  }
+  walk(tree)
   const boundaries = new Map<string, string>()
   const placeholders = new Map<string, string>()
   for (const script of scripts)
@@ -445,31 +491,40 @@ const resolveStreamed = (tree: HastRoot) => {
   }
   const resolve = () => {
     if (!boundaries.size && !placeholders.size) return
+    const lists = new Spliced<HastRoot | Element, ElementContent>(
+      (parent) => parent.children as ElementContent[],
+    )
     // in document order, once: a segment's own templates (nested boundaries) move with it, and are reached after it
     for (const template of templates) {
       const id = String(template.properties.id)
       const boundary = boundaries.has(id)
       const segment = byId.get((boundary ? boundaries : placeholders).get(id) ?? '')
       const parent = parents.get(template)
+      if (!segment || !parent) continue
       // a template inside a fallback that was already replaced is gone
-      const start = parent ? parent.children.indexOf(template) : -1
-      if (!segment || !parent || start < 0) continue
+      const start = lists.find(parent, template)
+      if (!start) continue
       // a boundary's fallback runs from its template to the boundary's closing <!--/$-->; a placeholder is the
       // template alone
-      let end = start + 1
+      let end = start.next
       if (boundary)
-        for (let depth = 0; end < parent.children.length; end++) {
-          const node = parent.children[end]!
+        for (let depth = 0; end; end = end.next) {
+          const node = end.node
           if (node.type !== 'comment') continue
           if (node.value.startsWith('$')) depth++
           else if (node.value === '/$' && depth-- === 0) break
         }
-      for (const child of segment.children) parents.set(child, parent)
-      parent.children.splice(start, end - start, ...segment.children)
+      const kids = lists.kids(segment)
+      for (const child of kids) parents.set(child, parent)
+      // a segment that is the template's parent takes its own children back, and then has none
+      if (segment === parent) lists.clear(parent)
+      else lists.take(start, end, kids)
+      lists.clear(segment)
       segment.children = []
     }
+    lists.done()
   }
-  return { scripts, resolve }
+  return { scripts, unrun: unrunScripts, resolve }
 }
 
 // the elements that are, in page order, with none inside another: one walk that stops at each
@@ -500,10 +555,9 @@ const extract = (body: HastRoot, how: Options['extract']): HastRoot => {
   const main = landmarks.find((m) => m.tagName === 'main') ?? landmarks[0]
   if (main) return { type: 'root', children: [main] }
   // the page has no landmark: take the body and drop its chrome, but keep what was marked for agents
-  const chrome = new Set(selectAll(CHROME, body).filter((el) => !unhidden(el)))
   const strip = (parent: HastRoot | Element) => {
     const kept = (parent.children as ElementContent[]).filter(
-      (child) => !(isElement(child) && chrome.has(child)),
+      (child) => !(isElement(child) && chrome(child) && !unhidden(child)),
     )
     parent.children = kept
     for (const child of kept) if (isElement(child)) strip(child)
@@ -534,13 +588,16 @@ const FILLABLE = 'affordancesSlot'
 // for one. only the script's text is swapped, for a nonce (hex and dashes), so even a mistaken swap can't end the context
 // it's in. after parsing, every nonce must be a script's whole text and no script may still hold a push, or the swaps
 // can't be trusted
-const CALL = String.raw`\s*(?:\(self\.__next_f\s*=\s*self\.__next_f\s*\|\|\s*\[\]\)|self\.__next_f)\.push\(`
+// what every push starts with, as written (CALL is made of it): a page that never says it has no push to strip
+export const NEXT_F = 'self.__next_f'
+const F = NEXT_F.replaceAll('.', '\\.')
+export const CALL = String.raw`\s*(?:\(${F}\s*=\s*${F}\s*\|\|\s*\[\]\)|${F})\.push\(`
 const PUSH = new RegExp(String.raw`^${CALL}([\s\S]*)\)\s*;?\s*$`)
 // a script that starts like a push is one, read or not: one that doesn't end like one can't be read
 const PUSHED = new RegExp(String.raw`^${CALL}`)
 
 // the html tokenizer's raw text (rawtext and rcdata) elements: their text runs to their own end tag. noscript isn't
-// one: the page is parsed with scripting off, as hast-util-from-html parses it
+// one: the page is parsed with scripting off (fromHtml)
 const RAW = new Set(['style', 'xmp', 'iframe', 'noembed', 'noframes', 'title', 'textarea'])
 // a start tag that ends foreign content (svg, math) and is an html element again
 const BREAKOUT = new Set(
@@ -556,9 +613,19 @@ const INTEGRATION = {
 }
 const space = (char: string | undefined) =>
   char === ' ' || char === '\n' || char === '\t' || char === '\f' || char === '\r'
-const alpha = (char: string | undefined) => !!char && /[a-z]/i.test(char)
-const lower = (text: string) =>
-  /[A-Z]/.test(text) ? text.replace(/[A-Z]+/g, (upper) => upper.toLowerCase()) : text
+// ascii only, as the tokenizer reads them
+const alpha = (char: string | undefined) => {
+  if (!char) return false
+  const code = char.charCodeAt(0) | 32
+  return code >= 97 && code <= 122
+}
+const lower = (text: string) => {
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i)
+    if (code >= 65 && code <= 90) return text.replace(/[A-Z]+/g, (upper) => upper.toLowerCase())
+  }
+  return text
+}
 // a script's end tag, or (in its escaped text) what changes how its text is read
 const SCRIPT_DATA = /<\/script(?=[\t\n\f\r />])|<!--/gi
 const SCRIPT_ESCAPED = /<\/script(?=[\t\n\f\r />])|<script(?=[\t\n\f\r />])|-->/gi
@@ -694,20 +761,39 @@ export const flightStripper = () => {
   const run = (text: string, final: boolean) => {
     const buffer = carry + text
     carry = ''
+    // what's read is given back as it is, so the output is the buffer between its scripts, sliced only where one starts
+    // or ends and where the chunk does: from is where the next slice starts. a script's text is held in script
+    // instead, to be swapped or given back whole
     const out: string[] = []
+    let from = 0
     const n = buffer.length
     let i = 0
     // not enough left to decide: keep the rest for the next chunk (always a few characters), or at the end, go on
     const short = (need: number) => !final && n - i < need
+    // a tag read the long way starts
+    const tagOpen = (isEnd: boolean) => {
+      state = 'tagName'
+      name = ''
+      end = isEnd
+      selfClosing = false
+      attributes = new Set()
+      encoding = ''
+    }
+    // a start tag ended at i: what it opens, and a script's text is held from here
+    const opened = (next: State) => {
+      state = next
+      if (state === 'script' || state === 'foreignScript') {
+        out.push(buffer.slice(from, i))
+        script = []
+      }
+    }
     while (i < n) {
       if (state === 'data') {
         const lt = buffer.indexOf('<', i)
         if (lt < 0) {
-          out.push(buffer.slice(i))
           i = n
           break
         }
-        out.push(buffer.slice(i, lt))
         i = lt
         if (short(LOOKAHEAD)) break
         const next = buffer[i + 1]
@@ -716,78 +802,58 @@ export const flightStripper = () => {
         if (!inForeign() && alpha(buffer[at])) {
           TAG.lastIndex = at
           const tag = TAG.exec(buffer)
+          const tagName = tag && lower(tag[1]!.slice(0, 32))
           // svg and math go the long way, since only theirs can be self-closing (<svg/> opens no foreign content)
-          if (tag && !/^(svg|math)$/i.test(tag[1]!)) {
-            out.push(buffer.slice(i, TAG.lastIndex))
+          if (tagName && tagName !== 'svg' && tagName !== 'math') {
             i = TAG.lastIndex
-            ;[name, end, selfClosing] = [lower(tag[1]!.slice(0, 32)), next === '/', false]
-            state = end ? (endTag(), 'data') : startTag()
-            if (state === 'script' || state === 'foreignScript') script = []
+            name = tagName
+            end = next === '/'
+            selfClosing = false
+            if (end) {
+              endTag()
+              state = 'data'
+            } else opened(startTag())
             continue
           }
         }
         if (alpha(next)) {
-          out.push('<')
           i += 1
-          ;[state, name, end, selfClosing, attributes, encoding] = [
-            'tagName',
-            '',
-            false,
-            false,
-            new Set(),
-            '',
-          ]
+          tagOpen(false)
         } else if (next === '/') {
           const after = buffer[i + 2]
           if (alpha(after)) {
-            out.push('</')
             i += 2
-            ;[state, name, end, selfClosing, attributes, encoding] = [
-              'tagName',
-              '',
-              true,
-              false,
-              new Set(),
-              '',
-            ]
-          } else if (after === '>') {
-            out.push('</>')
-            i += 3
-          } else {
-            out.push('</')
+            tagOpen(true)
+          } else if (after === '>') i += 3
+          else {
             i += 2
             state = after === undefined ? 'data' : 'bogus'
           }
         } else if (next === '!') {
           const head = buffer.slice(i, i + 9)
           if (head.startsWith('<!--')) {
-            out.push('<!--')
             i += 4
             state = 'commentStart'
           } else if (lower(head) === '<!doctype' || (head === '<![CDATA[' && inForeign())) {
-            out.push(head)
             i += 9
             state = head === '<![CDATA[' ? 'cdata' : 'bogus'
           } else {
-            out.push('<!')
             i += 2
             state = 'bogus'
           }
         } else if (next === '?') {
-          out.push('<?')
           i += 2
           state = 'bogus'
-        } else {
-          out.push('<')
-          i += 1
-        }
+        } else i += 1
       } else if (state === 'tagName') {
         let at = i
         while (at < n && !space(buffer[at]) && buffer[at] !== '/' && buffer[at] !== '>') at += 1
         if (name.length < 32) name += lower(buffer.slice(i, Math.min(at, i + 32 - name.length)))
-        out.push(buffer.slice(i, at))
         i = at
-        if (i < n) [state, attribute] = ['attributes', 'before']
+        if (i < n) {
+          state = 'attributes'
+          attribute = 'before'
+        }
       } else if (state === 'attributes') {
         // runs of a name, an unquoted value or spaces in one step: most of a page's tags are attributes
         const runOf =
@@ -811,7 +877,6 @@ export const flightStripper = () => {
               encoding.length < 32
             )
               encoding += taken.slice(0, 32)
-            out.push(taken)
             i += taken.length
             continue
           }
@@ -822,18 +887,18 @@ export const flightStripper = () => {
           const stop = quote < 0 ? n : quote
           if (attributeName === 'encoding' && encoding.length < 32)
             encoding += buffer.slice(i, Math.min(stop, i + 32))
-          out.push(buffer.slice(i, quote < 0 ? n : quote + 1))
           i = quote < 0 ? n : quote + 1
           if (quote >= 0) attribute = 'afterValue'
           continue
         }
-        out.push(char)
         i += 1
         if (char === '>') {
           if (attribute === 'name') attributes.add(attributeName)
           if (attribute === 'slash') selfClosing = true
-          state = end ? (endTag(), 'data') : startTag()
-          if (state === 'script' || state === 'foreignScript') script = []
+          if (end) {
+            endTag()
+            state = 'data'
+          } else opened(startTag())
           continue
         }
         if (attribute === 'before' || attribute === 'after') {
@@ -871,48 +936,33 @@ export const flightStripper = () => {
         if (short(2)) break
         // <!--> and <!---> end at once
         const shut = buffer[i] === '>' ? 1 : buffer.startsWith('->', i) ? 2 : 0
-        out.push(buffer.slice(i, i + shut))
         i += shut
         state = shut ? 'data' : 'comment'
       } else if (state === 'comment') {
         const dashes = buffer.indexOf('--', i)
         if (dashes < 0 || (!final && dashes + 4 > n)) {
-          const keep = dashes < 0 ? Math.max(i, n - 1) : dashes
-          out.push(buffer.slice(i, keep))
-          i = keep
-          if (!final) break
-          out.push(buffer.slice(i))
-          i = n
+          i = final ? n : dashes < 0 ? Math.max(i, n - 1) : dashes
           break
         }
         const close = buffer[dashes + 2] === '>' ? 3 : buffer.startsWith('!>', dashes + 2) ? 4 : 0
-        out.push(buffer.slice(i, close ? dashes + close : dashes + 1))
         i = close ? dashes + close : dashes + 1
         if (close) state = 'data'
       } else if (state === 'bogus' || state === 'cdata') {
         const stop = buffer.indexOf(state === 'bogus' ? '>' : ']]>', i)
-        const keep =
+        i =
           stop >= 0
             ? stop + (state === 'bogus' ? 1 : 3)
             : final || state === 'bogus'
               ? n
               : Math.max(i, n - 2)
-        out.push(buffer.slice(i, keep))
-        i = keep
         if (stop >= 0) state = 'data'
         else if (!final && state === 'cdata') break
       } else if (state === 'raw') {
         const close = buffer.indexOf('</', i)
         if (close < 0) {
-          out.push(buffer.slice(i, Math.max(i, n - 1)))
-          i = Math.max(i, n - 1)
-          if (final) {
-            out.push(buffer.slice(i))
-            i = n
-          }
+          i = final ? n : Math.max(i, n - 1)
           break
         }
-        out.push(buffer.slice(i, close))
         i = close
         if (short(raw.length + 3)) break
         if (
@@ -920,10 +970,7 @@ export const flightStripper = () => {
           /[\t\n\f\r />]/.test(buffer[i + 2 + raw.length] ?? '')
         )
           state = 'data'
-        else {
-          out.push('</')
-          i += 2
-        }
+        else i += 2
       } else if (state === 'script') {
         if (dashed) {
           // right after <!--, more dashes then > (<!-->, <!--->) end the escape it started
@@ -953,7 +1000,7 @@ export const flightStripper = () => {
           script.push(buffer.slice(i))
           out.push(script.join(''))
           script = []
-          i = n
+          i = from = n
           break
         }
         script.push(buffer.slice(i, found.index))
@@ -962,6 +1009,7 @@ export const flightStripper = () => {
         if (match === '</script' && escape !== 'double') {
           ended(out)
           state = 'data'
+          from = i
         } else {
           script.push(found[0])
           i += found[0].length
@@ -990,11 +1038,11 @@ export const flightStripper = () => {
           script = []
         }
         state = 'data'
-      } else {
-        out.push(buffer.slice(i))
-        i = n
-      }
+        from = i
+      } else i = n
     }
+    // what's read since the last script: a script's own text, still open, is held, not given
+    if (state !== 'script' && state !== 'foreignScript') out.push(buffer.slice(from, i))
     carry = buffer.slice(i)
     if (final && carry) {
       out.push(carry)
@@ -1014,9 +1062,10 @@ export const flightStripper = () => {
 }
 
 // why a page's swapped flight data can't be trusted: a nonce that didn't parse as a script's whole text, a push left
-// in a script (a swap the stripper missed), or a push or error row that can't be read
+// in a script (a swap the stripper missed), a push or error row that can't be read, or a push or streamed instruction
+// in a script a browser never runs (unrun)
 export class FlightDataError extends Error {
-  readonly reason: 'count' | 'unswapped' | 'push' | 'row'
+  readonly reason: 'count' | 'unswapped' | 'push' | 'row' | 'unrun'
   constructor(reason: FlightDataError['reason']) {
     super(`the page's flight data can't be read (${reason})`)
     this.name = 'FlightDataError'
@@ -1026,10 +1075,20 @@ export class FlightDataError extends Error {
 // a script's own text: an svg script can hold elements, and another script's text isn't its own
 const scriptText = (script: Element) =>
   script.children.map((child) => (child.type === 'text' ? child.value : '')).join('')
-const untrusted = (scripts: Element[], swapped: Swapped): FlightDataError['reason'] | undefined => {
+// a streamed boundary's instruction, $RC, $RR, $RS or $RX, as a script calls it
+const INSTRUCTED = /\$R[CRSX]\("/
+// unrun: the text of each script a browser never runs, in a <noscript> (read as text with scripting on) or mathml (not
+// html's script). md reads them as scripts, with scripting off, so a push or an instruction there is page content's,
+// put past a sanitizer that parses as a browser does, never next's: the whole page's flight data is untrusted
+const untrusted = (
+  scripts: string[],
+  swapped: Swapped,
+  unrun: string[],
+): FlightDataError['reason'] | undefined => {
+  if (unrun.some((text) => text === swapped.nonce || PUSHED.test(text) || INSTRUCTED.test(text)))
+    return 'unrun'
   let count = 0
-  for (const script of scripts) {
-    const text = scriptText(script)
+  for (const text of scripts) {
     if (text === swapped.nonce) count += 1
     else if (PUSHED.test(text)) return 'unswapped'
   }
@@ -1154,12 +1213,172 @@ const rowScanner = () => {
   }
 }
 
+// where md-core cut a page it parsed and then declined, for the tree pipeline reading it next: at the tag that opens
+// one element too many, or nowhere (at undefined)
+type Cut = { at: number | undefined }
+// the page up to where it nests deeper than md reads, if it does
+const cutAt = (html: string, cut: number | undefined) =>
+  cut === undefined ? html : html.slice(0, cut)
+
+// parse5's own count of open elements as it parses, through the tree adapter's hooks (every change to its stack calls
+// one): a page that takes it past CUT is one md-core's parser cuts, and the parse stops there
+const tooDeep = Symbol('too deep')
+let stacked = 0
+const counting = {
+  ...defaultTreeAdapter,
+  onItemPush: () => {
+    if (++stacked > CUT) throw tooDeep
+  },
+  onItemPop: () => {
+    stacked--
+  },
+}
+// the page parsed whole if it never nests past CUT, else undefined
+const shallow = (page: string) => {
+  stacked = 0
+  try {
+    return parseHtml(page, { scriptingEnabled: false, treeAdapter: counting })
+  } catch (error) {
+    if (error === tooDeep) return undefined
+    throw error
+  }
+}
+
+// where parse5 itself nests past CUT, for a page md-core's parser read whole: at the tag that takes it there (or, for
+// an element the parser made with no tag of its own, the last tag before), so what's before it never nests that deep
+const deepAt = (page: string) => {
+  stacked = 0
+  let at = 0
+  try {
+    parseHtml(page, {
+      scriptingEnabled: false,
+      sourceCodeLocationInfo: true,
+      treeAdapter: {
+        ...counting,
+        onItemPush: (element) => {
+          at = element.sourceCodeLocation?.startOffset ?? at
+          if (++stacked > CUT) throw tooDeep
+        },
+      },
+    })
+  } catch (error) {
+    if (error === tooDeep) return at
+    throw error
+  }
+  return undefined
+}
+
+// html as a tree, parsed as hast-util-from-html parses it (scripting off) but without each node's place in the source:
+// nothing reads it, and working it out costs more than the parse (most of a conversion, on a page of many lines). and
+// the source it's made of: the page, or what of it is read
+const fromHtml = (page: string, known?: Cut) => {
+  // a page nesting deeper than md reads is read up to where it does, as md-core reads it: the cut md-core found when it
+  // read this page and declined it, or, once parse5 nests past CUT, md-core's parser asked now (only it can tell where,
+  // in a pass that never goes past the cut). and parse5's own count guards it too: a page md-core read whole, which
+  // parse5 nests past CUT, is cut where parse5 does
+  let cut = known?.at
+  let document = cut === undefined ? shallow(page) : undefined
+  if (!document) {
+    if (!known) cut = parseCore(page, undefined, false).cut
+    cut ??= deepAt(page)
+    document = parseHtml(cutAt(page, cut), { scriptingEnabled: false })
+  }
+  const { renamed, unrun } = foreignOf(document)
+  const tree = fromParse5(document) as HastRoot
+  const unrunEls =
+    renamed.size || unrun.size ? restoreForeign(document, tree, renamed, unrun) : new Set<Element>()
+  // and whether it was cut, which the page says (readTree)
+  if (cut !== undefined) tree.data = { ...tree.data, cut: true } as never
+  return { tree, source: cutAt(page, cut), unrun: unrunEls }
+}
+// a page's tree with its streamed boundaries moved into place, and then, as md-core reads it, what's nested deeper
+// than md reads read as text: both read the whole page first. and whether that left something out, which the page says
+const settled = (tree: HastRoot, streamed: ReturnType<typeof resolveStreamed>) => {
+  streamed.resolve()
+  if (flattenDeep(tree as never)) tree.data = { ...tree.data, cut: true } as never
+  return tree
+}
+// the swaps in what of a page is read: a page cut where it nests too deep has only the pushes before the cut (both
+// paths cut it at the same tag, which a push's script can't be inside), and its flight data is checked against those
+const keptOf = (source: string, page: string, swapped: Swapped): Swapped => {
+  if (source === page) return swapped
+  let count = 0
+  for (let at = source.indexOf(swapped.nonce); at >= 0; at = source.indexOf(swapped.nonce, at + 1))
+    count++
+  return { ...swapped, count }
+}
+// a <template> in svg or math is an element like any other there, with children and no content, but
+// hast-util-from-parse5 reads every template's content and throws on one without. so it's converted under another
+// name and named template again after, its children where parse5 put them: prune drops it as a template, and the
+// flight check still finds a script in it, as md-core does. only the ones renamed are named back, found by walking
+// both trees (hast-util-from-parse5 makes one node of each), so an element the page names so is left as it is
+type Parse5Tree = ReturnType<typeof parseHtml>
+type Parse5Any = {
+  nodeName: string
+  tagName?: string
+  namespaceURI?: string
+  childNodes?: Parse5Any[]
+  content?: Parse5Any
+}
+const FOREIGN_TEMPLATE = 'affordances-foreign-template'
+// in the same walk, the scripts and templates a browser never runs or reads as one, though this parse (scripting off)
+// makes them elements: inside a <noscript>, whose content a browser with scripting on reads as text, or in mathml,
+// where a script isn't html's (in <mi> or an html annotation-xml it is, and runs). one flag down the walk, so O(1) each
+const foreignOf = (document: Parse5Tree) => {
+  const renamed = new Set<Parse5Any>()
+  const unrun = new Set<Parse5Any>()
+  const walk = (node: Parse5Any, hidden: boolean) => {
+    const name = node.tagName
+    if ((name === 'script' || name === 'template') && (hidden || node.namespaceURI === MATHML_NS))
+      unrun.add(node)
+    if (name === 'template' && node.namespaceURI !== HTML_NS) {
+      node.tagName = node.nodeName = FOREIGN_TEMPLATE
+      renamed.add(node)
+    }
+    const inside = hidden || (name === 'noscript' && node.namespaceURI === HTML_NS)
+    for (const child of node.childNodes ?? []) walk(child, inside)
+    if (node.content) walk(node.content, inside)
+  }
+  walk(document as unknown as Parse5Any, false)
+  return { renamed, unrun }
+}
+// the renamed templates named back, and the unrun elements as the tree's
+const restoreForeign = (
+  document: Parse5Tree,
+  tree: HastRoot,
+  renamed: Set<Parse5Any>,
+  unrun: Set<Parse5Any>,
+) => {
+  const found = new Set<Element>()
+  const walk = (from: Parse5Any, to: HastRoot | Element) => {
+    const kids = from.childNodes ?? []
+    for (let i = 0; i < kids.length; i++) {
+      const node = kids[i]!
+      const made = to.children[i]
+      if (!made || made.type !== 'element') continue
+      if (renamed.has(node)) made.tagName = 'template'
+      if (unrun.has(node)) found.add(made)
+      walk(node, made)
+      if (node.content && made.content) walk(node.content, made.content)
+    }
+  }
+  walk(document as unknown as Parse5Any, tree)
+  return found
+}
+
 // a page's html with its flight pushes taken out, parsed: the tree and the error rows' digests, or why they can't be
 // trusted
-const strippedTree = (html: string, swapped: Swapped) => {
-  const tree = fromHtml(html)
-  const streamed = resolveStreamed(tree)
-  const reason = untrusted(streamed.scripts, swapped)
+const strippedTree = (html: string, swapped: Swapped, cut?: Cut) => {
+  const { tree, source, unrun } = fromHtml(html, cut)
+  const streamed = resolveStreamed(tree, unrun)
+  const texts = streamed.scripts.map(scriptText)
+  const reason = untrusted(texts, keptOf(source, html, swapped), streamed.unrun.map(scriptText))
+  // a swapped push's nonce is only for the check: anything else that reads a script's text (a json-ld block, a
+  // foreign title) reads it empty, as the page reads without its flight data
+  streamed.scripts.forEach((script, i) => {
+    if (texts[i] === swapped.nonce)
+      script.children = script.children.filter((kid) => kid.type !== 'text')
+  })
   return { tree, streamed, reason }
 }
 
@@ -1231,21 +1450,6 @@ const unwrap = (el: Element, tag: string): Element => ({
   ),
 })
 
-// elements that carry a value (a textarea's text, a select's options), which never leaves the page as a name
-const VALUED = new Set([
-  'input',
-  'select',
-  'option',
-  'optgroup',
-  'textarea',
-  'datalist',
-  'output',
-  'meter',
-  'progress',
-])
-// a control whose text is a value, not a name: what someone typed or picked (an input, a select's options, a textarea,
-// a contenteditable or role=textbox editor), or what a widget shows (output, meter, progress, a slider)
-const VALUE_ROLES = new Set(['spinbutton', 'slider'])
 const valueBearing = (el: Element) =>
   VALUED.has(el.tagName) || VALUE_ROLES.has(String(el.properties.role ?? '')) || editor(el)
 const editor = (el: Element) =>
@@ -1305,9 +1509,12 @@ const namedByContent = (el: Element) =>
 // aria-checked>, a toggle a <button aria-pressed>, a radio group's items <button role="radio">, and a select's
 // trigger a <button role="combobox"> showing the value. radix's native mirror of each is aria-hidden, so prune
 // dropped it and it's never counted twice
-const ARIA_FIELDS =
-  '[role=switch], [role=checkbox], [role=radio], [role=combobox], button[aria-pressed]'
 const ROLES = new Set(['switch', 'checkbox', 'radio', 'combobox'])
+// input, select, textarea, [role=switch], [role=checkbox], [role=radio], [role=combobox], button[aria-pressed]
+const isField = (el: Element) =>
+  ['input', 'select', 'textarea'].includes(el.tagName) ||
+  ROLES.has(attributeOf(el, 'role', 'role') ?? '') ||
+  (el.tagName === 'button' && attributeOf(el, 'ariaPressed', 'aria-pressed') !== undefined)
 const roleOf = (field: Element) => {
   if (['input', 'select', 'textarea'].includes(field.tagName)) return
   const role = String(field.properties.role ?? '')
@@ -1412,7 +1619,7 @@ const valueOf = (field: Element) => {
       : ''
   if (field.tagName === 'textarea') return text(field)
   if (field.tagName === 'select') {
-    const options = selectAll('option', field)
+    const options = elementsIn(field, (el) => el.tagName === 'option')
     const chosen = options.filter((option) => option.properties.selected)
     const shown = chosen.length || field.properties.multiple ? chosen : options.slice(0, 1)
     return shown.map(text).filter(Boolean).join(', ')
@@ -1439,7 +1646,7 @@ const form: Handle = (state, node) => {
   const labels = () => {
     if (!forLabels) {
       forLabels = new Map()
-      for (const label of selectAll('label', node)) {
+      for (const label of elementsIn(node, (el) => el.tagName === 'label')) {
         const id = String(label.properties.htmlFor ?? '')
         if (id && !forLabels.has(id)) forLabels.set(id, label)
       }
@@ -1447,7 +1654,7 @@ const form: Handle = (state, node) => {
     return forLabels
   }
   const naming: Naming = { byId, up, labels }
-  const fields = selectAll(`input, select, textarea, ${ARIA_FIELDS}`, node).filter(
+  const fields = elementsIn(node, isField).filter(
     (field) => !['hidden', 'submit', 'button', 'reset', 'image'].includes(typeOf(field)),
   )
   // fields in document order, each line kept with the field it's for; radios and checkboxes sharing a name are one
@@ -1624,8 +1831,6 @@ const scheme = (url: string) => {
     return undefined
   }
 }
-const LINK_SCHEMES = new Set(['http:', 'https:', 'mailto:', 'tel:'])
-const IMAGE_SCHEMES = new Set(['http:', 'https:'])
 
 const link: Handle = (state, node, parent) => {
   const href = String(node.properties.href ?? '').trim()
@@ -1724,6 +1929,50 @@ const dl: Handle = (state, node) => {
     }
   }
   return out as never
+}
+
+// a table as hast-util-to-mdast writes it, unless its grid is far bigger than the table (see gridFits): then its cells,
+// in row order, each a paragraph, as md-core writes them
+const table: Handle = (state, node) => {
+  if (state.inTable || gridFits(spansOf(node))) return defaultHandlers.table(state, node)
+  state.inTable = true
+  const rows = state.toSpecificContent(state.all(node), (): TableRow => ({
+    type: 'tableRow',
+    children: [],
+  }))
+  const said = rows.flatMap((row) =>
+    state.toSpecificContent(row.children, (): TableCell => ({ type: 'tableCell', children: [] })),
+  )
+  state.inTable = false
+  return said.flatMap((cell): Paragraph[] =>
+    cell.children.length ? [{ type: 'paragraph', children: cell.children }] : [],
+  )
+}
+// each row's cells' [colspan, rowspan], as the grid reads them: the table's own rows, not a nested table's
+const spanOf = (value: unknown) => Number.parseInt(String(value), 10) || 1
+const spansOf = (el: Element) => {
+  const rows: [number, number][][] = []
+  const walk = (parent: Element) => {
+    for (const kid of parent.children) {
+      if (kid.type !== 'element' || kid.tagName === 'table') continue
+      if (kid.tagName !== 'tr') walk(kid)
+      else
+        rows.push(
+          kid.children.flatMap((cell) =>
+            cell.type === 'element' && (cell.tagName === 'td' || cell.tagName === 'th')
+              ? [
+                  [spanOf(cell.properties.colSpan), spanOf(cell.properties.rowSpan)] as [
+                    number,
+                    number,
+                  ],
+                ]
+              : [],
+          ),
+        )
+    }
+  }
+  walk(el)
+  return rows
 }
 
 // a cell is one line, so blocks laid out in it (<div>s, <p>s, which no css gap spaces) are separated by a space
@@ -1852,6 +2101,7 @@ const titled =
 
 const handlers: Handlers = {
   form,
+  table,
   [FIELD_LINE]: fieldLine,
   pre,
   a: link,
@@ -2102,7 +2352,6 @@ export const relinkMarkdown = (markdown: string, base: string, relink: Options['
 // link's destination and an image
 const CONTAINERS = new Set(['blockQuote', 'listOrdered', 'listUnordered'])
 const UNSHOWN = new Set(['resource', 'image', 'autolink', 'literalAutolink'])
-const BRACKETS: Record<string, string> = { '(': ')', '[': ']', '<': '>' }
 // the markdown's first # heading, outside any container and outside code, as markdown parses it: where it starts and
 // ends, and its text as a reader sees it, without a url it shows as itself (an autolink, a bare url) or the brackets
 // right around one. a page's heading is near its top, so it's parsed as far as the first line that can be one (# and a
@@ -2154,29 +2403,10 @@ const headingIn = (source: string) => {
       else if (t.type === 'characterReference') pieces.push(decodeString(written))
       else if (t.type === 'codeTextPadding' || t.type === 'whitespace') pieces.push(' ')
     }
-    pieces.forEach((piece, n) => {
-      if (piece !== null) return
-      const before = pieces[n - 1]
-      const after = pieces[n + 1]
-      const open = typeof before === 'string' ? /[([<]\s*$/.exec(before)?.[0] : undefined
-      const close = typeof after === 'string' ? /^\s*([)\]>])/.exec(after) : undefined
-      if (open && close && close[1] === BRACKETS[open.trim()]) {
-        pieces[n - 1] = before!.slice(0, -open.length)
-        pieces[n + 1] = after!.slice(close[0].length)
-      }
-    })
-    const shown = pieces.join('').replace(/\s+/g, ' ').trim()
-    return { start: token.start.offset, end: token.end.offset, text: shown || undefined }
+    const shown = unbracketed(pieces)
+    return { start: token.start.offset, end: token.end.offset, text: shown }
   }
   return undefined
-}
-
-// frontmatter, the handler's for a markdown.ts page too
-export const yaml = (data: Record<string, string | undefined>) => {
-  const lines = Object.entries(data).flatMap(([key, value]) =>
-    value ? [`${key}: ${JSON.stringify(value)}`] : [],
-  )
-  return lines.length ? `---\n${lines.join('\n')}\n---\n\n` : ''
 }
 
 const firstTitle = (node: HastRoot | Element): Element | undefined => {
@@ -2185,19 +2415,6 @@ const firstTitle = (node: HastRoot | Element): Element | undefined => {
     if (child.tagName === 'title') return child
     const found = firstTitle(child)
     if (found) return found
-  }
-}
-
-// the page's canonical, if it's an http(s) url that fits in a Link header: only the <head>'s, since content in the
-// body (a comment, a sanitized post) can carry a <link> too, and never one with a , or ; that would end the header's value
-// early (URL already encodes <, >, quotes and whitespace)
-const canonicalOf = (href: string | undefined, base: string | undefined) => {
-  if (!href) return undefined
-  try {
-    const url = new URL(href, base)
-    return /^https?:$/.test(url.protocol) && !/[,;]/.test(url.href) ? url.href : undefined
-  } catch {
-    return undefined
   }
 }
 
@@ -2231,6 +2448,7 @@ const head = (tree: HastRoot, base: string | undefined) => {
       if (!isElement(child)) continue
       const { tagName, properties } = child
       if (tagName === 'title' && inHead) title ??= child
+      // the canonical is only the <head>'s: content in the body (a comment, a sanitized post) can carry a <link> too
       else if (tagName === 'link' && inHead && [properties.rel].flat().join(' ') === 'canonical')
         canonical ??= child
       else if (tagName === 'html') root ??= child
@@ -2258,20 +2476,6 @@ const head = (tree: HastRoot, base: string | undefined) => {
   }
 }
 
-// a fence longer than any run of backticks in what it holds, so text that isn't valid json can't close it
-const fenced = (lang: string, value: string) => {
-  const fence = '`'.repeat(Math.max(3, ...(value.match(/`+/g) ?? []).map((run) => run.length + 1)))
-  return `${fence}${lang}\n${value}\n${fence}`
-}
-
-const pretty = (raw: string) => {
-  try {
-    return JSON.stringify(JSON.parse(raw), null, 2)
-  } catch {
-    return raw
-  }
-}
-
 // a page read once: its slots, a redirect or http error streamed into it, and its markdown with whatever fills them.
 // the handler reads the page, runs the fills, then converts, without parsing it twice
 export type Page = {
@@ -2283,6 +2487,9 @@ export type Page = {
   // never react's <!--$!--> or $RX in the html, which a boundary that renders in the browser by design (dynamic with
   // ssr: false, useSearchParams) writes too
   errors: string[]
+  // the page nests deeper than md reads, and something of it is missing: past 512 open elements it's read up to the tag
+  // that opens one more, and past 128 deep only plain structure's text is read
+  cut?: true
   markdown: (slots?: Record<string, string>) => Result
 }
 // the <AgentSlot> names that reach the markdown, in page order: the ones a fill can go to, and those the page renders
@@ -2291,29 +2498,174 @@ export type SlotNames = { unique: string[]; duplicate: string[] }
 export type Redirect = { status: 307 | 308; location: string }
 export type Fallback = { status: 401 | 403 | 404 }
 
-export const readPage = (html: string, options: Options = {}): Page => {
-  const strip = flightStripper()
-  const lean = strip.write(html) + strip.end()
-  const swapped = strip.swapped()
-  const { tree, streamed, reason } = strippedTree(lean, swapped)
-  if (!reason) {
-    streamed.resolve()
-    return readTree({ tree, errors: swapped.errors }, options)
-  }
+// the page as read from all of it: the flight stripper's run, and what it swapped
+const leanOf = (html: string) => {
+  // a script is a push only if its text, a run of the page as written, starts with CALL, which needs NEXT_F: a page
+  // without it is what the stripper would give back, with nothing swapped. only here, where the whole page is in hand
+  const strip = html.includes(NEXT_F) ? flightStripper() : undefined
+  const lean = strip ? strip.write(html) + strip.end() : html
+  const swapped: Swapped = strip
+    ? strip.swapped()
+    : { nonce: crypto.randomUUID(), count: 0, errors: [], unreadable: false }
+  return { lean, swapped }
+}
+// md-core's read of a page, or why it declines
+const corePage = (
+  html: string,
+  lean: string,
+  swapped: Swapped,
+  options: Options,
+  insist = false,
+): Page | Decline => {
+  const core = readCore(lean, swapped, options, insist)
+  if ('declined' in core) return core
+  if (!core.reason) return core.page
+  // swaps that can't be trusted: the page as sent, as md-core reads it, and an error of its own. a rare path, so the
+  // page is parsed again with every push still in it as a script's text. its cut is the sent page's, which the tree
+  // pipeline doesn't read first
+  const sent = readCore(html, { ...swapped, errors: [''] }, options, insist)
+  return 'declined' in sent ? { declined: sent.declined } : sent.page
+}
+// the tree pipeline's read of a page, given where md-core cut it, if md-core parsed and declined it
+const treePage = (html: string, lean: string, swapped: Swapped, options: Options, cut?: Cut) => {
+  const { tree, streamed, reason } = strippedTree(lean, swapped, cut)
+  if (!reason) return readTree({ tree: settled(tree, streamed), errors: swapped.errors }, options)
   // swaps that can't be trusted: the page as sent, as parse5 reads it, and an error of its own (private, never a status)
-  const sent = fromHtml(html)
-  resolveStreamed(sent).resolve()
-  return readTree({ tree: sent, errors: [''] }, options)
+  const { tree: sent, unrun } = fromHtml(html)
+  return readTree({ tree: settled(sent, resolveStreamed(sent, unrun)), errors: [''] }, options)
+}
+
+// why md-core declines a page, and where it cut the page, if it parsed it
+type Decline = { declined: string; cut?: Cut }
+
+// an error md didn't foresee, on one path or the other, never decides a page alone. the paths, in order: md-core; the
+// tree pipeline; and md-core past the declines that only keep the two byte-identical (PARITY), on a page md-core
+// declined for one of those alone. the first that reads the page is the answer, and if its markdown() throws, the ones
+// after it read and write the page in turn
+const recovered = (read: {
+  core?: () => Page | Decline
+  tree: (cut: Cut | undefined) => Page
+  insist: () => Page | Decline
+}): Page => {
+  const { core } = read
+  let decline: Decline | undefined
+  return firstOf([
+    core &&
+      (() => {
+        const got = core()
+        if (!('declined' in got)) return got
+        decline = got
+        return undefined
+      }),
+    () => read.tree(decline?.cut),
+    () => {
+      if (!decline || !PARITY.has(decline.declined)) return undefined
+      const got = read.insist()
+      if ('declined' in got) return undefined
+      tally('tree path threw')
+      return got
+    },
+  ])
+}
+// the page the first of these reads: each reads it, passes (undefined), or throws. a Declined or a FlightDataError is
+// md's verdict on the page, not a failure: it ends the read there and is what's thrown. any other error, the next one
+// tries, and once none is left the first error is thrown, unchanged, with the next (there are at most two) as its
+// cause, unless it has one: the route logs one line, and it names both. a markdown() that throws is written by the
+// next path, only if that path reads the page as the one handed out did (its slots, cut, redirect and fallback, which
+// the caller may already have acted on): otherwise the first error is thrown
+const firstOf = (paths: ((() => Page | undefined) | undefined)[]): Page => {
+  // the page the first path from `from` on reads, and which path it is
+  const next = (from: number, errors: unknown[]): [Page, number] => {
+    for (let at = from; at < paths.length; at++) {
+      try {
+        const page = paths[at]?.()
+        if (page) return [page, at]
+      } catch (error) {
+        failed(error, errors)
+      }
+    }
+    throw caused(errors[0], errors[1])
+  }
+  const errors: unknown[] = []
+  const [page, at] = next(0, errors)
+  return {
+    ...page,
+    markdown: (fills) => {
+      const tried = [...errors]
+      let [writing, from] = [page, at]
+      for (;;) {
+        try {
+          return writing.markdown(fills)
+        } catch (error) {
+          failed(error, tried)
+        }
+        ;[writing, from] = next(from + 1, tried)
+        if (readOf(writing) !== readOf(page)) throw caused(tried[0], tried[1])
+      }
+    },
+  }
+}
+// what a page says besides its markdown
+const readOf = ({ slots, errors, cut, redirect, fallback }: Page) =>
+  JSON.stringify([slots, errors, cut, redirect, fallback])
+const failed = (error: unknown, errors: unknown[]) => {
+  if (error instanceof Declined || error instanceof FlightDataError) throw caused(error, errors[0])
+  errors.push(error ?? new Error(String(error)))
+}
+const caused = (error: unknown, cause: unknown) => {
+  if (cause !== undefined && error instanceof Error && !Object.hasOwn(error, 'cause'))
+    Object.defineProperty(error, 'cause', { value: cause, writable: true, configurable: true })
+  return error
+}
+
+// both paths' reads of a page, recovered from what either throws
+const reading = (html: string, options: Options) => {
+  const { lean, swapped } = leanOf(html)
+  return recovered({
+    ...(coreTakes(options) && { core: () => corePage(html, lean, swapped, options) }),
+    tree: (cut) => treePage(html, lean, swapped, options, cut),
+    insist: () => corePage(html, lean, swapped, options, true),
+  })
+}
+
+// readPage never throws: a page md can't read at all (both paths having thrown, or the tree pipeline on a page md-core
+// declined for more than parity) is a page whose markdown() throws that first error, unchanged. its slots are none
+export const readPage = (html: string, options: Options = {}): Page => {
+  try {
+    return reading(html, options)
+  } catch (error) {
+    if (error instanceof Declined) throw error
+    return {
+      slots: { unique: [], duplicate: [] },
+      errors: [],
+      markdown: () => {
+        throw error
+      },
+    }
+  }
 }
 
 // a page whose flight pushes flightStripper took out as it streamed. the page as sent is gone, so swaps that can't be
 // trusted throw: the handler answers 502, and a caller that forgets to catch it fails closed too. not part of the
-// package's api: only the handler, which did the stripping, says a page was
+// package's api: only the handler, which did the stripping, says a page was. what else throws reaches the handler too,
+// which answers 502 the same
 export const readStreamed = (html: string, swapped: Swapped, options: Options = {}): Page => {
-  const { tree, streamed, reason } = strippedTree(html, swapped)
-  if (reason) throw new FlightDataError(reason)
-  streamed.resolve()
-  return readTree({ tree, errors: swapped.errors }, options)
+  // md-core's read, once its swaps are trusted: its own, or one past the declines for parity (the tree pipeline threw)
+  const trusted = (insist: boolean): Page | Decline => {
+    const core = readCore(html, swapped, options, insist)
+    if ('declined' in core) return core
+    if (core.reason) throw new FlightDataError(core.reason)
+    return core.page
+  }
+  return recovered({
+    ...(coreTakes(options) && { core: () => trusted(false) }),
+    tree: (cut) => {
+      const { tree, streamed, reason } = strippedTree(html, swapped, cut)
+      if (reason) throw new FlightDataError(reason)
+      return readTree({ tree: settled(tree, streamed), errors: swapped.errors }, options)
+    },
+    insist: () => trusted(true),
+  })
 }
 
 const readTree = (
@@ -2321,8 +2673,6 @@ const readTree = (
   options: Options,
 ): Page => {
   const meta = head(tree, options.url)
-  // a redirect() or notFound() next streamed into the page: the first error row that's one of next's control flow
-  const control = errors.map(fromDigest).find((said) => said !== undefined)
   const content = contentOf(tree, options.extract)
   // a name rendered twice fills neither copy: one of them may be a forgery in user content, and there's no telling which
   const markers = slotMarkers(content)
@@ -2341,13 +2691,8 @@ const readTree = (
       unique: names.flatMap(([name, count]) => (count === 1 ? [name] : [])),
       duplicate: names.flatMap(([name, count]) => (count > 1 ? [name] : [])),
     },
-    errors,
-    ...(control &&
-      ('location' in control
-        ? (control.status === 307 || control.status === 308) && {
-            redirect: { status: control.status, location: control.location },
-          }
-        : { fallback: control })),
+    ...controlOf(errors),
+    ...((tree.data as { cut?: boolean } | undefined)?.cut && { cut: true }),
     // the page itself is left as it is, so it can be converted again with other fills
     markdown: (slots) => {
       const fillOf = (node: Element) => {
@@ -2364,9 +2709,11 @@ const readTree = (
       // so a filled slot's children are left out before converting, which copies and walks all of what it's given:
       // a slot's fallback (a skeleton, last night's table) can be most of a page
       const filled = new Set(markers.filter((node) => fillOf(node) !== undefined))
-      const mdast = toMdast((filled.size ? emptied(content, filled) : content) as HastNodes, {
-        handlers: { ...handlers, 'affordances-md': marker, ...options.handlers },
-      }) as MdastRoot
+      const mdast = converted(filled.size ? emptied(content, filled) : content, {
+        ...handlers,
+        'affordances-md': marker,
+        ...options.handlers,
+      })
       const url = meta.canonical ?? options.url
       if (absolutize(mdast, options.url ?? meta.canonical, options.link)) {
         inCells(mdast)
@@ -2376,6 +2723,275 @@ const readTree = (
     },
   }
 }
+
+// the page's error rows, and the first that's one of next's control flow: a redirect() or notFound() next streamed
+// into the page
+const controlOf = (errors: string[]): Pick<Page, 'errors' | 'redirect' | 'fallback'> => {
+  const control = errors.map(fromDigest).find((said) => said !== undefined)
+  return {
+    errors,
+    ...(control &&
+      ('location' in control
+        ? (control.status === 307 || control.status === 308) && {
+            redirect: { status: control.status, location: control.location },
+          }
+        : { fallback: control })),
+  }
+}
+
+// md-core converts a page unless the call needs a tree (handlers convert hast; a function extract is given one), or
+// the switch says otherwise
+const coreTakes = (options: Options) =>
+  forcedPath() !== 'hast' && !options.handlers && typeof options.extract !== 'function'
+
+// an id attribute, as written
+const SVG_ID = /\sid\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi
+
+// whether a page has react's streamed boundaries where md-core can't move them, from its html alone: md-core moves
+// them as the tree pipeline does, but keeps nothing inside svg, so one that moves through a template in svg, or finds
+// its segment there, is the tree pipeline's. a scan, not a parse, and a superset of those pages as react writes them
+// (lowercase, double quotes): a template and one of the instructions resolveStreamed moves by, and an svg holding a
+// template or an id the instructions name. what it misses (another spelling: a name's case, its quotes, a reference)
+// md-core still declines once it has parsed the page: an instruction template in svg, a template with an id there,
+// a segment found there
+export const mayStream = (html: string) => {
+  if (!html.includes('<template') || !STREAMED.some((signature) => html.includes(signature)))
+    return false
+  // the segments the instructions name, as written
+  const segments = new Set<string>()
+  for (const [, kind, a, b] of html.matchAll(/\$R([CRS])\("([^"]+)","([^"]+)"/g))
+    segments.add(kind === 'S' ? a! : b!)
+  for (const [, sid] of html.matchAll(/data-sid="([^"]*)"/g)) segments.add(sid!)
+  // each svg, to the end that closes it or the page's: what's inside is at most that. an svg nested in it ends first,
+  // so the stretch runs on past it, the stretches never overlap, and one without an end is the page's last
+  for (let at = html.indexOf('<svg'); at >= 0;) {
+    const tags = /<(\/?)svg/g
+    tags.lastIndex = at
+    let close = html.length
+    for (let depth = 0, tag = tags.exec(html); tag; tag = tags.exec(html))
+      if ((depth += tag[1] ? -1 : 1) === 0) {
+        close = tag.index
+        break
+      }
+    const inside = html.slice(at, close)
+    if (inside.includes('<template')) return true
+    for (const [, double, single, bare] of inside.matchAll(SVG_ID))
+      if (segments.has(double ?? single ?? bare!)) return true
+    at = html.indexOf('<svg', close)
+  }
+  return false
+}
+
+// what md-core declines a parsed page for, in the order it asks: the first that holds is why. md-core past the parity
+// ones (PARITY, which only keep its markdown the tree pipeline's) asks the rest
+const DECLINES: { why: string; holds: (doc: CoreDocument, options: Options) => boolean }[] = [
+  // a <main> where prune may take it out first (an empty one in a link is an empty block there): the tree pipeline
+  // finds landmarks on the pruned page, md-core on the parsed one
+  {
+    why: 'main inside what prune changes',
+    holds: (doc, options) => options.extract !== 'none' && doc.mains.some(underChanged),
+  },
+  // a form in a link or a strikethrough: the tree pipeline converts the form and splits what holds it in one pass
+  { why: 'form in a link or strikethrough', holds: (doc) => doc.formInSplit },
+  // a form in a table cell: the tree pipeline converts the form with the table around it
+  { why: 'form in a table cell', holds: (doc) => doc.formInCell },
+  // text that doesn't wrap, split by a comment or a dropped element: the tree pipeline keeps both sides' whitespace
+  { why: 'text split in a nobr', holds: (doc) => doc.nowrapSplit },
+  // a cell's rowspan or colspan the tree pipeline reads as another number ("1e3", "0x10"): its grid is another shape
+  {
+    why: 'span the tree pipeline reads as another number',
+    holds: (doc) => doc.spanDiffers,
+  },
+  // a strikethrough the tree pipeline writes outside a paragraph
+  { why: 'strikethrough and list', holds: (doc) => doc.struck && struckList(doc.root) },
+  // an element named like a selector, which the tree pipeline renames (to a script, a link, a main): it decides
+  // the page, flight check and all
+  { why: 'selector tag name', holds: (doc) => doc.selector },
+]
+
+// the page as md-core reads it, and whether its flight swaps can be trusted, as the tree pipeline checks them: every
+// script's own text, where parse5 puts it. undefined when md-core declines (the tree pipeline takes it instead)
+const readCore = (
+  html: string,
+  swapped: Swapped,
+  options: Options,
+  // past the declines that only keep the paths byte-identical (PARITY): md-core's own markdown, for a page the tree
+  // pipeline threw on
+  insist = false,
+): { page: Page; reason: FlightDataError['reason'] | undefined } | Decline => {
+  // a page react streams boundaries into: md-core would only parse it to decline it, so it goes to the tree pipeline
+  // first. a superset of md-core's own check below, which still declines whatever this misses
+  if (mayStream(html)) {
+    declined('streamed')
+    return { declined: 'streamed' }
+  }
+  const parsed = parseCore(html, swapped.nonce)
+  // where it's cut, for the tree pipeline if md-core declines it below
+  const cut: Cut = { at: parsed.cut }
+  // a page nesting deeper than md reads is read up to where it does: parsed again, up to there
+  const source = cutAt(html, parsed.cut)
+  const read = parsed.cut === undefined ? parsed : parseCore(source, swapped.nonce)
+  // the first call converts the tree read here; md-core's emit prunes a tree in place, so another parses again
+  let doc: CoreDocument | undefined = read
+  // cut, or with something nested too deep left out
+  const cutOff = source !== html || read.lost
+  const reason = untrusted(read.scripts, keptOf(source, html, swapped), read.unrun)
+  // react's streamed boundaries, which the tree pipeline moves into place: md-core doesn't, and declines the page.
+  // then the rest, past the parity ones when insisting
+  const why =
+    read.streamed ??
+    DECLINES.find((decline) => !(insist && PARITY.has(decline.why)) && decline.holds(read, options))
+      ?.why
+  if (why) {
+    declined(why)
+    return { declined: why, cut }
+  }
+  const coreOptions: CoreOptions = { ...(options as CoreOptions), relinkMarkdown, convertForm }
+  // a marked page whose markers md-core can't read as prune does
+  const slots = readSlots(doc, coreOptions)
+  if ('decline' in slots) {
+    declined(slots.decline)
+    return { declined: slots.decline, cut }
+  }
+  const page: Page = {
+    slots: { unique: slots.unique, duplicate: slots.duplicate },
+    ...controlOf(swapped.errors),
+    ...(cutOff && { cut: cutOff }),
+    markdown: (fills) => {
+      const tree = doc ?? parseCore(source, swapped.nonce)
+      // the slots' read is of the tree read here, and so is the first call's only
+      const first = doc && slots.read
+      doc = undefined
+      return emitCore(tree, { ...coreOptions, ...(fills && { fills }) }, first)
+    },
+  }
+  return { page, reason }
+}
+
+// a form on md-core's path, converted as the tree pipeline converts it: md-core hands over the form as parse5 would
+// have made it (the elements prune left, attributes as written), the elements the page's content names by id, and
+// its filled slots. the whitespace pass, the form summary and every handler are this pipeline's own, so what a form
+// says (its fields' names, which values show and which are secrets) is the same on both paths
+type Parse5Node = Parameters<typeof fromParse5>[0]
+const hastOf = (node: FormNode) => fromParse5(node as unknown as Parse5Node) as Element
+export const convertForm: NonNullable<CoreOptions['convertForm']> = (
+  handed,
+  byIds,
+  fills,
+  whitespace,
+) => {
+  const hast = hastOf(handed)
+  // each node handed over and the element made of it
+  const made = new Map<FormNode, Element>()
+  const pair = (from: FormNode, to: ElementContent) => {
+    if (to.type !== 'element') return
+    made.set(from, to)
+    const kids = from.childNodes ?? []
+    for (let i = 0; i < kids.length; i++) pair(kids[i]!, to.children[i]!)
+  }
+  pair(handed, hast)
+  // a filled slot says so by a property no attribute parses to, which survives the copies the form summary makes
+  const filled = new Map<string, string>()
+  for (const [node, md] of fills) {
+    const el = made.get(node)
+    if (!el) continue
+    const key = String(filled.size)
+    el.properties[FILLABLE] = key
+    filled.set(key, md)
+  }
+  minifyWhitespace({ type: 'root', children: [hast] }, whitespace)
+  // the content's ids: an element in the form is the form's own, any other is made when it's first asked for
+  class ById extends Map<string, Element> {
+    override get(id: string) {
+      if (!super.has(id)) {
+        const named = byIds.get(id)
+        if (named) super.set(id, made.get(named) ?? hastOf(named))
+      }
+      return super.get(id)
+    }
+    override has(id: string) {
+      return this.get(id) !== undefined
+    }
+  }
+  const marker: Handle = (state, node) => {
+    const key = node.properties[FILLABLE]
+    const md = typeof key === 'string' ? filled.get(key) : undefined
+    return (md === undefined ? state.all(node) : markerMarkdown(md, 'block')) as never
+  }
+  let entered = false
+  const mdast = toMdast(
+    { type: 'root', children: [] },
+    {
+      handlers: { ...handlers, 'affordances-md': marker },
+      nodeHandlers: {
+        root: (state, node) => {
+          if (entered) return defaultNodeHandlers.root(state, node)
+          entered = true
+          state.elementById = new ById()
+          return joined(defaultNodeHandlers.root(state, { type: 'root', children: [hast] }))
+        },
+      },
+    },
+  ) as MdastRoot
+  return mdast.children as MdastNode[]
+}
+
+// a tree as hast-util-to-mdast converts it, without what it does first: a structured clone of all it's given, so its
+// whitespace pass can change it, then that pass. it does both to an empty root instead, whose handler converts this
+// copy: only what the whitespace pass changes (children, a text's value) is new, and a node's place in the html, which
+// nothing reads, isn't copied at all
+const converted = (tree: HastRoot, elements: Handlers): MdastRoot => {
+  const copy = copied(tree)
+  minifyWhitespace(copy)
+  // the first root it converts is the empty one, or rather its clone
+  let entered = false
+  return toMdast(
+    { type: 'root', children: [] },
+    {
+      handlers: elements,
+      nodeHandlers: {
+        root: (state, node) => {
+          if (entered) return defaultNodeHandlers.root(state, node)
+          entered = true
+          // the page's ids, as toMdast collects them for its own handlers
+          const collect = (parent: HastRoot | Element) => {
+            for (const child of parent.children) {
+              if (!isElement(child)) continue
+              const id = String(child.properties.id || '')
+              if (id && !state.elementById.has(id)) state.elementById.set(id, child)
+              collect(child)
+            }
+          }
+          collect(copy)
+          return joined(defaultNodeHandlers.root(state, copy))
+        },
+      },
+    },
+  ) as MdastRoot
+}
+// a tree's adjacent texts as one, all through it, as toMdast's last pass joins them: there each join splices the list
+// and reads the joined text again, quadratic in a run of texts (text between comments, or between inline elements
+// Markdown has no node for). joined here first, in one pass, that pass finds none to join
+const joined = <T extends MdastNodes>(node: T): T => {
+  if (!('children' in node)) return node
+  const kids = node.children as MdastNodes[]
+  let kept = 0
+  for (const kid of kids) {
+    const last = kids[kept - 1]
+    if (kid.type === 'text' && last?.type === 'text') {
+      last.value += kid.value
+      if (last.position && kid.position) last.position.end = kid.position.end
+    } else kids[kept++] = joined(kid)
+  }
+  kids.length = kept
+  return node
+}
+const copied = <T extends HastRoot | HastRoot['children'][number]>(node: T): T =>
+  (node.type === 'text'
+    ? { type: 'text', value: node.value }
+    : 'children' in node
+      ? { ...node, position: undefined, children: node.children.map(copied) }
+      : node) as T
 
 // a copy of a tree with these elements' children gone, sharing every part that doesn't hold one
 const emptied = <T extends HastRoot | Element>(node: T, empty: Set<Element>): T => {
@@ -2390,29 +3006,18 @@ const emptied = <T extends HastRoot | Element>(node: T, empty: Set<Element>): T 
   return changed ? { ...node, children } : node
 }
 
-// what a site's title template puts between a page's name and the rest ("Cart · Acme", "Acme | Cart"). a colon isn't
-// one: "Cart: details" says more than "Cart"
-export const TITLE_SEPARATORS = '·|–—-'
-// text as a regular expression that matches it literally
-export const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-// the page's title: its <title>, or its h1 when the <title> is the h1 and the site's name in a template, the h1 on
-// either side, a separator between, with whitespace around it. any other <title> is the page's own, as written
-export const pageTitle = (title: string | undefined, h1: string | undefined) => {
-  const said = title === undefined ? undefined : collapsed(title)
-  if (!said || !h1) return title
-  const name = escapeRegExp(h1)
-  const separator = ` [${TITLE_SEPARATORS}] `
-  return new RegExp(`^${name}${separator}\\S|\\S${separator}${name}$`).test(said) ? h1 : title
+export { escapeRegExp, pageTitle, TITLE_SEPARATORS, yaml } from './shared.ts'
+
+// the page's markdown; slots fills its <AgentSlot>s. it throws where readPage's markdown() would
+export const htmlToMarkdown = (html: string, options: Options = {}): Result => {
+  const page = readPage(html, options)
+  const result = page.markdown(options.slots)
+  return page.cut ? { ...result, cut: true } : result
 }
 
-// the page's markdown; slots fills its <AgentSlot>s
-export const htmlToMarkdown = (html: string, options: Options = {}): Result =>
-  readPage(html, options).markdown(options.slots)
-
-// a node's text as written, and text with its whitespace collapsed
+// a node's text as written
 const textOf = (node: MdastNodes): string =>
   'value' in node ? node.value : 'children' in node ? node.children.map(textOf).join('') : ''
-const collapsed = (value: string) => value.replace(/\s+/g, ' ').trim()
 
 const finish = (
   mdast: MdastRoot,

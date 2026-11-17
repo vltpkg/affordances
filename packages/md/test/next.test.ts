@@ -593,6 +593,26 @@ test('a page still streaming at the timeout is converted as far as it got, never
   ).toBe(504)
 })
 
+test('a page still streaming at the timeout and nested past the cut says both', async () => {
+  upstream = stalls([
+    '<html><head><title>Tee</title></head><body><main><h1>Tee</h1>',
+    '<!--$?--><template id="B:0"></template><p>Loading price…</p><!--/$-->',
+    `${'<div>'.repeat(2_000)}nested words`,
+  ])
+  const response = await createMdHandler({ timeout: 50 })(
+    new Request(`${site}/api/affordances/md/tee`),
+  )
+  expect(response.status).toBe(200)
+  expect(response.headers.get('cache-control')).toBe('private, no-store')
+  expect(response.headers.get(PARTIAL_HEADER)).toBe('1')
+  const markdown = await response.text()
+  expect(markdown).toContain('# Tee')
+  expect(markdown).not.toContain('nested words')
+  expect(markdown.trim()).toMatch(
+    /\n> Some of this page was still loading after 50ms and is missing or shown as its loading state\.\n\n> This page nests deeper than @affordances\/md reads, so some of it is missing\.$/,
+  )
+})
+
 test('origin override and append', async () => {
   const proxied = createMdHandler({
     origin: 'http://internal:3000',
@@ -1002,6 +1022,229 @@ test('on a literalMd route, any answer but a 404 is the page: a redirect or an e
     new Request(`${site}/x/moved.md`, { headers: { accept: 'text/markdown' } }),
   )
   expect(moved.headers.get('location')).toBe('/login.md')
+})
+
+// a literalMd route where /x/widget.md answers as given and /x/widget is a page
+const literalAnswer = (answer: (init: RequestInit) => Response) => {
+  vi.stubEnv(LITERAL_ENV, JSON.stringify(['/x/:pkg']))
+  upstream = (url, init) =>
+    url.pathname === '/x/widget.md'
+      ? answer(init)
+      : new Response(page(`<h1>${url.pathname}</h1>`), { headers: { 'content-type': 'text/html' } })
+}
+const asSent = (html: string) => () =>
+  new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8' } })
+const fixture = (file: string) =>
+  readFileSync(new URL(`./fixtures/${file}`, import.meta.url), 'utf8')
+// a body that sends its chunks, then waits for wait before it sends last and ends
+const chunked = (chunks: string[], wait?: Promise<void>, last?: string) => {
+  const bytes = chunks.map((chunk) => new TextEncoder().encode(chunk))
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (bytes.length) return controller.enqueue(bytes.shift()!)
+      await wait
+      if (last) controller.enqueue(new TextEncoder().encode(last))
+      controller.close()
+    },
+  })
+}
+
+test('on a literalMd route, a page that streams notFound() after its shell (a 200) is a 404: the twin answers', async () => {
+  for (const file of ['streamed-not-found-next16.4.html', 'streamed-not-found-next16.3.html']) {
+    literalAnswer(streamedFallback(file))
+    for (const headers of [{}, { accept: '*/*' }, { accept: 'text/html' }] as Record<
+      string,
+      string
+    >[]) {
+      seen = []
+      const twin = await handler(new Request(`${site}/x/widget.md`, { headers }))
+      expect([twin.status, twin.headers.get('content-type')]).toEqual([
+        200,
+        'text/markdown; charset=utf-8',
+      ])
+      expect(await twin.text()).toContain('# /x/widget')
+      expect(seen.map((call) => call.url.pathname)).toEqual(['/x/widget.md', '/x/widget'])
+    }
+  }
+  // signed in, the twin is private as it always is
+  const signedIn = await handler(
+    new Request(`${site}/x/widget.md`, { headers: { cookie: 'sid=1' } }),
+  )
+  expect(signedIn.headers.get('cache-control')).toBe('private, no-store')
+})
+
+test('on a literalMd route, a page that streams forbidden() or unauthorized() answers its status, private, as the markdown request does', async () => {
+  for (const [file, status] of [
+    ['streamed-forbidden-next16.4.html', 403],
+    ['streamed-unauthorized-next16.3.html', 401],
+  ] as const) {
+    literalAnswer(streamedFallback(file))
+    seen = []
+    const html = await handler(new Request(`${site}/x/widget.md`))
+    expect([html.status, html.headers.get('cache-control'), html.headers.has('link')]).toEqual([
+      status,
+      'private, no-store',
+      false,
+    ])
+    // the page as it came
+    expect(await html.text()).toBe(fixture(file))
+    const markdown = await handler(
+      new Request(`${site}/x/widget.md`, { headers: { accept: 'text/markdown' } }),
+    )
+    expect(markdown.status).toBe(status)
+    // never the twin
+    expect(seen.map((call) => call.url.pathname)).toEqual(['/x/widget.md', '/x/widget.md'])
+  }
+})
+
+test("on a literalMd route, a page read before it's answered is answered with exactly its bytes, status and headers, plus its Link", async () => {
+  // flight data without a control digest, and a character split across chunks
+  const flight = `<script>self.__next_f.push([1,"0:[\\"$\\",\\"p\\",null,{}]\\n"])</script>`
+  const bytes = new TextEncoder().encode(page(`<h1>café</h1>${flight}`))
+  const split = bytes.indexOf(0xc3) + 1
+  literalAnswer(
+    () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(bytes.slice(0, split))
+            controller.enqueue(bytes.slice(split))
+            controller.close()
+          },
+        }),
+        {
+          headers: {
+            'content-type': 'text/html; charset=utf-8',
+            'cache-control': 'public, max-age=60',
+            etag: '"v1"',
+            'set-cookie': 'seen=1',
+          },
+        },
+      ),
+  )
+  const response = await handler(new Request(`${site}/x/widget.md`))
+  expect(response.status).toBe(200)
+  expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes)
+  expect(Object.fromEntries(response.headers)).toEqual({
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'public, max-age=60',
+    etag: '"v1"',
+    'set-cookie': 'seen=1',
+    link: alternate('/x/widget.md.md'),
+  })
+  expect(seen.map((call) => call.url.pathname)).toEqual(['/x/widget.md'])
+  // credentialed, it's theirs alone
+  const signedIn = await handler(
+    new Request(`${site}/x/widget.md`, { headers: { cookie: 'sid=1' } }),
+  )
+  expect(signedIn.headers.get('cache-control')).toBe('private, no-store')
+})
+
+test("on a literalMd route, a not-found digest the page's flight data doesn't account for leaves the page as it is", async () => {
+  const push = `<script>self.__next_f.push([1,"5:E{\\"digest\\":\\"NEXT_HTTP_ERROR_FALLBACK;404\\"}\\n"])</script>`
+  for (const forged of [
+    // in the page's text: a comment, a post
+    page('<p>NEXT_HTTP_ERROR_FALLBACK;404</p><p>5:E{"digest":"NEXT_HTTP_ERROR_FALLBACK;404"}</p>'),
+    // the digest's push beside flight data that can't be read: none of it can be trusted
+    page(`<h1>Readme</h1>${push}<script>self.__next_f.push([1,"0:x"]);steal()</script>`),
+  ]) {
+    literalAnswer(asSent(forged))
+    seen = []
+    const response = await handler(new Request(`${site}/x/widget.md`))
+    expect([response.status, await response.text()]).toEqual([200, forged])
+    expect(response.headers.get('link')).toBe(alternate('/x/widget.md.md'))
+    expect(seen.map((call) => call.url.pathname)).toEqual(['/x/widget.md'])
+  }
+})
+
+test('on a literalMd route, a page is read up to maxBytes: one larger is decided on what was read, and passed through whole', async () => {
+  const notFound = fixture('streamed-not-found-next16.4.html')
+  const small = createMdHandler({ maxBytes: 1024 })
+  // its not-found digest past maxBytes: the page as it came
+  const first = page(`<p>${'x'.repeat(2048)}</p>`)
+  const late = first + notFound
+  literalAnswer(
+    () => new Response(chunked([first, notFound]), { headers: { 'content-type': 'text/html' } }),
+  )
+  const passed = await small(new Request(`${site}/x/widget.md`))
+  expect(passed.status).toBe(200)
+  expect((await passed.text()) === late).toBe(true)
+  // within maxBytes, read
+  literalAnswer(streamedFallback('streamed-not-found-next16.4.html'))
+  const read = await createMdHandler({ maxBytes: notFound.length + 1 })(
+    new Request(`${site}/x/widget.md`),
+  )
+  expect(await read.text()).toContain('# /x/widget')
+})
+
+test('on a literalMd route, a page still streaming at the timeout is decided on what came, and the rest streams on', async () => {
+  let end!: () => void
+  const ended = new Promise<void>((resolve) => (end = resolve))
+  literalAnswer(
+    () =>
+      new Response(
+        chunked(['<html><body><main><h1>Readme</h1>'], ended, '<p>more</p></main></body></html>'),
+        {
+          headers: { 'content-type': 'text/html' },
+        },
+      ),
+  )
+  const slow = createMdHandler({ timeout: 50 })
+  // the read the deadline left waiting is the rest of the body, which comes after the answer
+  setTimeout(end, 200)
+  const response = await slow(new Request(`${site}/x/widget.md`))
+  expect(response.status).toBe(200)
+  expect(await response.text()).toBe(
+    '<html><body><main><h1>Readme</h1><p>more</p></main></body></html>',
+  )
+  // a not-found that streamed in before the timeout is a 404 still
+  literalAnswer(
+    () =>
+      new Response(chunked([fixture('streamed-not-found-next16.4.html')], new Promise(() => {})), {
+        headers: { 'content-type': 'text/html' },
+      }),
+  )
+  expect(await (await slow(new Request(`${site}/x/widget.md`))).text()).toContain('# /x/widget')
+})
+
+test('on a literalMd route, an answer that is not a 200 html page is never read: it streams as it came', async () => {
+  const never = new Promise<void>(() => {})
+  for (const [status, type] of [
+    [200, 'application/json'],
+    [200, 'text/x-component'],
+    [500, 'text/html'],
+  ] as const) {
+    literalAnswer(
+      () =>
+        new Response(chunked(['{"first":'], never), { status, headers: { 'content-type': type } }),
+    )
+    const response = await handler(new Request(`${site}/x/widget.md`))
+    expect(response.status).toBe(status)
+    const reader = response.body!.getReader()
+    expect(new TextDecoder().decode((await reader.read()).value)).toBe('{"first":')
+    await reader.cancel()
+  }
+})
+
+const flightPush = (row: string) =>
+  `<script>self.__next_f.push([1,${JSON.stringify(row)}])</script>`
+test("a not-found digest in a script a browser never runs isn't next's: markdown answers 502, and a literal page is passed through", async () => {
+  for (const place of ['<noscript>%</noscript>', '<math>%</math>']) {
+    const forged = page(
+      `<h1>Post</h1>${place.replace('%', flightPush('9:E{"digest":"NEXT_HTTP_ERROR_FALLBACK;404"}\n'))}${flightPush('0:["$","p",null,{}]\n')}`,
+    )
+    upstream = asSent(forged)
+    const markdown = await handler(new Request(`${site}/post.md`))
+    expect([markdown.status, markdown.headers.get('cache-control')]).toEqual([
+      502,
+      'private, no-store',
+    ])
+    literalAnswer(asSent(forged))
+    seen = []
+    const html = await handler(new Request(`${site}/x/widget.md`))
+    expect([html.status, await html.text()]).toEqual([200, forged])
+    expect(seen.map((call) => call.url.pathname)).toEqual(['/x/widget.md'])
+  }
 })
 
 test('off a literalMd route, a .md path is a twin with one fetch, as before', async () => {
@@ -1875,8 +2118,11 @@ test('the llms handlers resolve headers once, send them everywhere, and stay pri
 
 // an app/ dir: groups, a dynamic segment, an optional catch-all, and folders that aren't urls
 let root: string
+// every dir a test made, not just the last: removed after it
+const roots: string[] = []
 const app = (files: string[]) => {
   root = mkdtempSync(join(tmpdir(), 'md-app-'))
+  roots.push(root)
   for (const file of files) {
     mkdirSync(dirname(join(root, file)), { recursive: true })
     writeFileSync(join(root, file), '')
@@ -1884,7 +2130,7 @@ const app = (files: string[]) => {
   return root
 }
 afterEach(() => {
-  if (root) rmSync(root, { recursive: true, force: true })
+  for (const dir of roots.splice(0)) rmSync(dir, { recursive: true, force: true })
   delete process.env[ROUTES_ENV]
 })
 const shop = [
