@@ -500,6 +500,8 @@ export const createRuntime = ({
 
   const { check, execute } = executor({
     manifest,
+    resources,
+    project: (request) => project(request),
     handlers,
     local,
     session,

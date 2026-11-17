@@ -207,6 +207,8 @@ export type ExecutionRequest = {
   input?: unknown
   approval?: ApprovalToken
   ifRevision?: OfferRevision
+  // where the caller's projection starts, so changes compare like with like (§8.3); the target unless given
+  start?: ResourceRef | Id
 }
 export type RefusalCode =
   | 'not_found'
@@ -226,11 +228,31 @@ export type Refusal = {
   confirmation?: { summary: string; approval?: ApprovalToken; expiresAt?: string }
   revision: OfferRevision
 }
-// M3d's results. M3e adds what was observed and how the view changes
+// §8.4: what the runtime saw change, through the resolvers, before and after the run
+export type ObservedChange = {
+  resource: ResourceRef
+  change: 'create' | 'update' | 'delete'
+  attributes?: string[] // which declared attributes changed, for an update
+  matches?: number // the index, in canonical order, of the declared state effect it accounts for
+  contradicts?: true // the effect it matches declares what it establishes, and that's false after the run
+}
+// §8.3: the offers whose existence or availability changed, against the projection before the execution
+export type OfferChanges = {
+  added: CapabilityOffer[]
+  removed: OfferId[]
+  changed: { id: OfferId; availability: Availability }[]
+}
+type Observed = {
+  observed: ObservedChange[]
+  undeclared: ObservedChange[]
+  revision: Revision // the new projection revision
+  changes: OfferChanges
+}
 export type ExecutionResult =
-  | { status: 'succeeded'; output?: unknown; message?: string }
+  | ({ status: 'succeeded'; output?: unknown; message?: string } & Observed)
   | Refusal
-  | { status: 'failed'; message: string }
+  // the handler threw, or returned off its output schema, after the checks passed: what changed anyway is reported
+  | ({ status: 'failed'; message: string } & Observed)
 
 // §8.1 steps 1-7 without running, for a binding that runs its own handler, as v0's agent path does (M3d, C3.1).
 // It never makes, reads or takes an approval token: v0's confirm is v0's own, recorded with its basis

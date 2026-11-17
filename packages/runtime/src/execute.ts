@@ -2,6 +2,7 @@ import {
   canonicalJson,
   evaluate,
   inputIssues,
+  normalize,
   type CapabilityDefinition,
   type CapabilityManifest,
   type Context,
@@ -19,10 +20,15 @@ import type {
   ExecutionRequest,
   ExecutionResult,
   Handler,
+  ObservedChange,
+  OfferChanges,
   Principal,
+  Projection,
+  ProjectionRequest,
   Refusal,
   RefusalCode,
   ResourceRef,
+  ResourceResolver,
   TokenStore,
 } from './types.ts'
 
@@ -35,6 +41,8 @@ type Loaded =
 // what execution needs from the runtime: the definitions, the handlers, and a per-request session (project.ts)
 export type ExecutionDeps = {
   manifest: CapabilityManifest
+  resources: Record<Id, ResourceResolver>
+  project: (request: ProjectionRequest) => Promise<Projection>
   handlers: Record<Id, Handler>
   local: (ref: string) => string
   session: (principal: Principal) => Promise<{
@@ -101,9 +109,26 @@ const sign = async (key: CryptoKey, call: Obj) =>
     await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(canonicalJson(call))),
   )
 
+// §8.3: the offers whose existence or availability changed, under the same projection request
+const compare = (before: Projection, after: Projection): OfferChanges => {
+  const was = new Map(before.offers.map((o) => [o.id, o]))
+  const now = new Map(after.offers.map((o) => [o.id, o]))
+  return {
+    added: after.offers.filter((o) => !was.has(o.id)),
+    removed: before.offers.filter((o) => !now.has(o.id)).map((o) => o.id),
+    changed: after.offers.flatMap((o) => {
+      const old = was.get(o.id)
+      return old && canonicalJson(old.availability) !== canonicalJson(o.availability)
+        ? [{ id: o.id, availability: o.availability }]
+        : []
+    }),
+  }
+}
+
 export const executor = (deps: ExecutionDeps) => {
   const { manifest, handlers, approval } = deps
   const definitions = new Map(manifest.capabilities.map((c) => [c.id, c]))
+  const canonical = new Map(normalize(manifest).capabilities.map((c) => [c.id, c]))
 
   // §8.2: HMAC-SHA-256 over the canonical call. The token carries only its expiry, its nonce and the MAC, so it
   // echoes nothing about the caller; verifying recomputes the MAC from the call being made
@@ -354,27 +379,130 @@ export const executor = (deps: ExecutionDeps) => {
       : { status: 'ok', revision: r.revision }
   }
 
+  // §8.4: what the resolvers report for the target and every instance of a type a state effect names
+  const declaredAttributes = (type: Id) => {
+    const props = (
+      manifest.resources.find((x) => x.id === type)?.attributes as { properties?: Obj } | undefined
+    )?.properties
+    return props ? new Set(Object.keys(props)) : undefined
+  }
+  type Seen = Map<string, { type: Id; key: string; attributes: Obj }>
+  const snapshot = async (principal: Principal, c: CapabilityDefinition, target?: ResourceRef) => {
+    const seen: Seen = new Map()
+    // an instance whose load threw can't be compared: it's left out of both sides
+    const unseen = new Set<string>()
+    const types = new Set<Id>()
+    if (c.target) types.add(c.target)
+    for (const e of c.effects ?? []) if (e.category === 'state') types.add(e.resource)
+    for (const type of [...types].toSorted()) {
+      const keys = new Set<string>()
+      if (target?.type === type) keys.add(target.key)
+      try {
+        for (const key of (await deps.resources[type]!.list?.(principal, { capability: c.id })) ??
+          [])
+          keys.add(key)
+      } catch {
+        // a list that throws: only the target is observed
+      }
+      for (const key of keys) {
+        const where = canonicalJson([type, key])
+        try {
+          const found = await deps.resources[type]!.load(key, principal)
+          if (found) seen.set(where, { type, key, attributes: found.attributes })
+        } catch {
+          unseen.add(where)
+        }
+      }
+    }
+    return { seen, unseen }
+  }
+  const observe = (
+    c: CapabilityDefinition,
+    before: Awaited<ReturnType<typeof snapshot>>,
+    after: Awaited<ReturnType<typeof snapshot>>,
+  ) => {
+    // the effects in canonical order (RFC 0001 §7.2), so matches means the same effect to every reader
+    const effects = canonical.get(c.id)?.effects ?? []
+    const observed: ObservedChange[] = []
+    const keys = new Set([...before.seen.keys(), ...after.seen.keys()])
+    for (const where of [...keys].toSorted()) {
+      if (before.unseen.has(where) || after.unseen.has(where)) continue
+      const was = before.seen.get(where)
+      const now = after.seen.get(where)
+      const { type, key } = (now ?? was)!
+      let change: ObservedChange['change']
+      let attributes: string[] | undefined
+      if (!was) change = 'create'
+      else if (!now) change = 'delete'
+      else {
+        const declared = declaredAttributes(type)
+        attributes = [...new Set([...Object.keys(was.attributes), ...Object.keys(now.attributes)])]
+          .filter(
+            (k) =>
+              (!declared || declared.has(k)) &&
+              canonicalJson(was.attributes[k] ?? null) !== canonicalJson(now.attributes[k] ?? null),
+          )
+          .toSorted()
+        if (!attributes.length) continue
+        change = 'update'
+      }
+      const o: ObservedChange = { resource: { type, key }, change }
+      if (attributes) o.attributes = attributes
+      const matches = effects.findIndex(
+        (e) => e.category === 'state' && e.resource === type && e.change === change,
+      )
+      if (matches >= 0) {
+        o.matches = matches
+        const effect = effects[matches]!
+        // establishes, checked against the instance after the run
+        if (
+          effect.category === 'state' &&
+          effect.establishes &&
+          now &&
+          evaluate(effect.establishes, { target: now.attributes }) === false
+        )
+          o.contradicts = true
+      }
+      observed.push(o)
+    }
+    return { observed, undeclared: observed.filter((o) => o.matches === undefined) }
+  }
+
   const execute = async (request: ExecutionRequest): Promise<ExecutionResult> => {
     // confirmed is check's, for v0: execute takes only an approval
     const { confirmed: _ignored, ...rest } = request as ExecutionRequest & { confirmed?: unknown }
     const r = await walk(rest, 'execute')
     if (r.status === 'refused') return r
-    // 9. run the application's handler
     const handler = handlers[r.c.id]
     if (!handler?.run) throw new Error(`no handler runs ${r.c.id}`)
+    // the caller's projection, before: what changes are measured against (§8.3)
+    const view = {
+      principal: request.principal,
+      start: request.start ?? r.target,
+      policy: 'exhaustive',
+    }
+    const projected = await deps.project(view)
+    const before = await snapshot(request.principal, r.c, r.target)
+    // 9. run the application's handler
     let output: unknown
+    let failure: string | undefined
     try {
       output = await handler.run(r.input, {
         principal: request.principal,
         target: r.target,
         refs: r.refs,
       })
+      if (r.c.output !== undefined && inputIssues(r.c.output, output).length)
+        failure = "The action's result wasn't what it declares."
     } catch {
-      return { status: 'failed', message: 'The action failed.' }
+      failure = 'The action failed.'
     }
-    if (r.c.output !== undefined && inputIssues(r.c.output, output).length)
-      return { status: 'failed', message: "The action's result wasn't what it declares." }
-    const result: ExecutionResult = { status: 'succeeded' }
+    // 10. observe: what changed, against what was declared, and the view after, a partial effect included
+    const seen = observe(r.c, before, await snapshot(request.principal, r.c, r.target))
+    const after = await deps.project(view)
+    const observed = { ...seen, revision: after.revision, changes: compare(projected, after) }
+    if (failure !== undefined) return { status: 'failed', message: failure, ...observed }
+    const result: ExecutionResult = { status: 'succeeded', ...observed }
     if (output !== undefined) result.output = output
     const message = handler.message?.({ input: r.input, output })
     if (message !== undefined) result.message = message

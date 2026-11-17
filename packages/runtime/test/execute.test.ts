@@ -101,7 +101,7 @@ const refusal = (r: ExecutionResult) => {
 describe('execution runs every check, in order (§8.1)', () => {
   test('an approved call runs the handler once, with the principal, the target and the references', async () => {
     const rt = await setup()
-    expect(await approved(rt)).toEqual({
+    expect(await approved(rt)).toMatchObject({
       status: 'succeeded',
       output: { subscribed: 'pro' },
       message: 'Subscribed to pro',
@@ -292,7 +292,7 @@ describe('execution runs every check, in order (§8.1)', () => {
     })
     expect(
       await rt.execute({ principal: member, offer: 'hosting.plan.cancel@hosting.plan:pro' }),
-    ).toEqual({
+    ).toMatchObject({
       status: 'failed',
       message: 'The action failed.',
     })
@@ -536,5 +536,146 @@ describe('check, for v0’s agent path (C3.1)', () => {
       ).code,
     ).toBe('confirmation_required')
     expect(ran).toEqual([])
+  })
+})
+
+// cancel, as these tests declare it: it takes the plan's regions away, and says so
+const cancelling = () => {
+  const manifest = fresh()
+  const cancel = manifest.capabilities[2]!
+  cancel.effects = [
+    ...cancel.effects!,
+    {
+      category: 'state',
+      change: 'update',
+      resource: 'hosting.plan',
+      description: 'The plan has no regions',
+      reversibility: 'irreversible',
+      establishes: { eq: [{ count: 'target.regions' }, { value: 0 }] },
+    },
+  ]
+  return manifest
+}
+const withRun = (manifest: CapabilityManifest, run: () => unknown) =>
+  testRuntime({
+    manifest,
+    resources: { 'hosting.plan': table(() => plans), 'hosting.project': table(() => projects) },
+    handlers: {
+      'hosting.plan.subscribe': { guards: { billing: () => true } },
+      'hosting.plan.cancel': { run },
+    },
+  })
+const cancelPro = 'hosting.plan.cancel@hosting.plan:pro'
+const succeeded = (r: ExecutionResult) => {
+  if (r.status !== 'succeeded') throw new Error(`expected success, got ${JSON.stringify(r)}`)
+  return r
+}
+
+describe('what an execution changed (§8.4, M3e)', () => {
+  test('a declared change is observed and matched, and the view’s changes say what moved', async () => {
+    const rt = withRun(cancelling(), () => {
+      plans.pro!.regions = []
+    })
+    const before = await rt.project({
+      principal: member,
+      start: { type: 'hosting.plan', key: 'pro' },
+    })
+    const r = succeeded(await rt.execute({ principal: member, offer: cancelPro }))
+    // matches indexes the effects in canonical order: the state effect, wherever canonical order puts it
+    const index = r.observed[0]!.matches!
+    expect(r.observed).toEqual([
+      {
+        resource: { type: 'hosting.plan', key: 'pro' },
+        change: 'update',
+        attributes: ['regions'],
+        matches: index,
+      },
+    ])
+    expect(r.undeclared).toEqual([])
+    // subscribing to pro needs a region with every zone up: now it's unavailable, and nothing was added or removed
+    expect(r.changes.changed).toContainEqual({
+      id: 'hosting.plan.subscribe@hosting.plan:pro',
+      availability: { status: 'unavailable', because: ['regionUp'] },
+    })
+    expect([r.changes.added, r.changes.removed]).toEqual([[], []])
+    expect(r.revision).not.toBe(before.revision)
+    expect(r.revision).toBe(
+      (await rt.project({ principal: member, start: { type: 'hosting.plan', key: 'pro' } }))
+        .revision,
+    )
+  })
+
+  test('a change no effect declares is undeclared: how a developer finds the effect they forgot', async () => {
+    // the fixture's cancel declares only a financial effect, so a change to its own target is undeclared
+    const rt = withRun(fresh(), () => {
+      plans.pro!.priceUsd = 0
+    })
+    const r = succeeded(await rt.execute({ principal: member, offer: cancelPro }))
+    expect(r.undeclared).toEqual([
+      {
+        resource: { type: 'hosting.plan', key: 'pro' },
+        change: 'update',
+        attributes: ['priceUsd'],
+      },
+    ])
+    expect(r.observed).toEqual(r.undeclared)
+  })
+
+  test('establishes is checked: false after the run is reported as contradicting its declaration', async () => {
+    const rt = withRun(cancelling(), () => {
+      plans.pro!.regions = [...(plans.pro!.regions as unknown[]), { code: 'eu', zones: [] }]
+    })
+    const r = succeeded(await rt.execute({ principal: member, offer: cancelPro }))
+    expect(r.observed).toEqual([expect.objectContaining({ change: 'update', contradicts: true })])
+  })
+
+  test('a create is seen through the list, and a delete by its absence', async () => {
+    const manifest = cancelling()
+    manifest.capabilities[2]!.effects!.push(
+      {
+        category: 'state',
+        change: 'create',
+        resource: 'hosting.plan',
+        description: 'A legacy plan appears',
+      },
+      { category: 'state', change: 'delete', resource: 'hosting.plan', description: 'Hobby goes' },
+    )
+    const rt = withRun(manifest, () => {
+      plans.legacy = { slug: 'legacy', priceUsd: 5, regions: up }
+      delete plans.hobby
+    })
+    const r = succeeded(await rt.execute({ principal: member, offer: cancelPro }))
+    expect(r.observed.map((o) => [o.resource.key, o.change, o.matches !== undefined])).toEqual([
+      ['hobby', 'delete', true],
+      ['legacy', 'create', true],
+    ])
+    expect(r.changes.removed).toContain('hosting.plan.subscribe@hosting.plan:hobby')
+    expect(r.changes.added.map((o) => o.id)).toContain('hosting.plan.subscribe@hosting.plan:legacy')
+  })
+
+  test('a handler that fails after a partial effect reports what changed anyway, and the view updates', async () => {
+    const rt = withRun(cancelling(), () => {
+      plans.pro!.regions = []
+      throw new Error('half done')
+    })
+    const r = await rt.execute({ principal: member, offer: cancelPro })
+    expect(r).toMatchObject({ status: 'failed', message: 'The action failed.' })
+    expect(r.status === 'failed' && r.observed.map((o) => o.change)).toEqual(['update'])
+    expect(r.status === 'failed' && r.changes.changed.map((c) => c.id)).toContain(
+      'hosting.plan.subscribe@hosting.plan:pro',
+    )
+  })
+
+  test('a refusal observes nothing and runs nothing', async () => {
+    const rt = withRun(cancelling(), () => {
+      plans.pro!.regions = []
+    })
+    const r = await rt.execute({
+      principal: { authenticated: false, attributes: {} },
+      offer: cancelPro,
+    })
+    expect(r.status).toBe('refused')
+    expect('observed' in r).toBe(false)
+    expect(plans.pro!.regions).toEqual(up)
   })
 })
