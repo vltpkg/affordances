@@ -1,4 +1,5 @@
 import { createAffordances, createHandler } from '@affordances/core'
+import { offerId, parseOfferId } from '@affordances/runtime'
 import { beforeEach, expect, test } from 'vitest'
 import { serveExecute, serveExpand, serveView } from '../src/lib/serve.ts'
 import { checkedBy } from '../src/lib/runtime.ts'
@@ -250,4 +251,46 @@ test('a cookie call needs a matching Origin, for execute and expand', async () =
   // the site's own page runs it
   expect((await post({ cookie: `sid=${sid}`, origin: 'https://hosting.test' })).status).toBe(200)
   expect(store.account(sid).project.renewsAs).toBe('hobby')
+})
+
+test("v0's graph lists from the real runtime's projection: open unless settled", async () => {
+  const sid = 's_list'
+  store.account(sid)
+  const response = await handler(
+    new Request('https://hosting.test/api/affordances/', {
+      headers: { accept: MEDIA_TYPE, authorization: `Bearer ${sid}` },
+    }),
+  )
+  const { actions } = (await response.json()) as {
+    actions: { name: string; available: boolean; reason?: string }[]
+  }
+  // subscribe's conditions read its project reference and input, so a start-less projection can't settle them:
+  // open. Cancel's paid plan is settled on Hobby: closed, with the condition's description
+  expect(actions.find((a) => a.name === 'subscribe')).toMatchObject({ available: true })
+  expect(actions.find((a) => a.name === 'cancel')).toMatchObject({
+    available: false,
+    reason: 'The project renews on a paid plan',
+  })
+})
+
+test('a generated key reaches the runtime as written: its own offer id parses back to it, and a call names it', async () => {
+  const sid = 's_keys'
+  store.account(sid)
+  const alphabet = 'ab?&@:%=/~ 1é'
+  const keys = Array.from({ length: 40 }, (_, i) =>
+    Array.from(
+      { length: 1 + (i % 7) },
+      (__, j) => alphabet[(i * 5 + j * 3) % alphabet.length],
+    ).join(''),
+  )
+  for (const key of keys) {
+    const id = offerId({
+      capability: 'hosting.subscription.cancel',
+      target: { type: 'hosting.project', key },
+    })
+    expect(parseOfferId(id)?.target?.key).toBe(key)
+    // through v0's agent path: a project that doesn't exist is not found under its own key, never misread
+    const { delta } = await v0({ action: 'cancel', input: { projectId: key } }, sid)
+    expect(delta.error?.message).toBe(`No hosting.project '${key}'`)
+  }
 })
