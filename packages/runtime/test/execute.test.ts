@@ -474,6 +474,37 @@ describe('the safety rules (§9)', () => {
   })
 })
 
+describe('the M3 close-out code review', () => {
+  test('5: an authorization guard never sees the input at execution, so crafted input can’t pass it', async () => {
+    const manifest = fresh()
+    manifest.capabilities[1]!.authorization!.conditions = [
+      { id: 'owner', description: 'The caller owns the billing account', guard: true },
+    ]
+    const seen: unknown[] = []
+    const rt = testRuntime({
+      manifest,
+      resources: { 'hosting.plan': table(() => plans), 'hosting.project': table(() => projects) },
+      handlers: {
+        'hosting.plan.subscribe': {
+          guards: {
+            billing: () => true,
+            // a guard that trusts the input: it would pass on { owner: true }
+            owner: ({ input: given }) => (
+              seen.push(given),
+              (given as { owner?: boolean } | undefined)?.owner === true
+            ),
+          },
+        },
+      },
+    })
+    const r = await rt.execute({ principal: member, offer: pro, input: { ...input, owner: true } })
+    expect(r).toMatchObject({ status: 'refused', code: 'unauthorized', condition: { id: 'owner' } })
+    // the check, and the offer revision the refusal is decided at: neither with the input
+    expect(seen.length).toBeGreaterThan(0)
+    expect(seen.every((i) => i === undefined)).toBe(true)
+  })
+})
+
 describe('check, for v0’s agent path (C3.1)', () => {
   test('steps 1-7 without running, and the confirmation as v0’s flag, never a token', async () => {
     const rt = await setup()

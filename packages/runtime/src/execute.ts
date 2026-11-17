@@ -231,7 +231,11 @@ export const executor = (deps: ExecutionDeps) => {
 
     // a guard at execution: with the input, execution-only ones included
     const refs: Record<string, { key: string; attributes: Obj } | undefined> = {}
-    const decide = async (x: { id: string; description: string; expr?: Expr }) => {
+    // authorization never reads the input (RFC 0001 §3.2), so its guards get none, as at projection (code review 5)
+    const decide = async (
+      x: { id: string; description: string; expr?: Expr },
+      authorizing = false,
+    ) => {
       if (x.expr) {
         const value = evaluate(x.expr, context)
         return {
@@ -241,7 +245,7 @@ export const executor = (deps: ExecutionDeps) => {
       }
       try {
         const value = await handlers[c.id]!.guards![x.id]!({
-          input: input as Obj | undefined,
+          input: authorizing ? undefined : (input as Obj | undefined),
           target: targetArg,
           refs,
           principal: request.principal,
@@ -263,7 +267,7 @@ export const executor = (deps: ExecutionDeps) => {
     if (c.authorization.principal === 'authenticated' && !request.principal.authenticated)
       return refuse('unauthorized', withDetail(`${c.id} needs a signed-in caller`))
     for (const x of c.authorization.conditions ?? []) {
-      const { value, detail } = await decide(x as never)
+      const { value, detail } = await decide(x as never, true)
       if (value !== true)
         return refuse('unauthorized', {
           condition: { id: x.id, description: x.description },
