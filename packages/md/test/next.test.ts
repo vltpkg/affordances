@@ -1024,11 +1024,11 @@ test('on a literalMd route, any answer but a 404 is the page: a redirect or an e
   expect(moved.headers.get('location')).toBe('/login.md')
 })
 
-// a literalMd route where /x/express.md answers as given and /x/express is a page
+// a literalMd route where /x/widget.md answers as given and /x/widget is a page
 const literalAnswer = (answer: (init: RequestInit) => Response) => {
   vi.stubEnv(LITERAL_ENV, JSON.stringify(['/x/:pkg']))
   upstream = (url, init) =>
-    url.pathname === '/x/express.md'
+    url.pathname === '/x/widget.md'
       ? answer(init)
       : new Response(page(`<h1>${url.pathname}</h1>`), { headers: { 'content-type': 'text/html' } })
 }
@@ -1057,18 +1057,18 @@ test('on a literalMd route, a page that streams notFound() after its shell (a 20
       string
     >[]) {
       seen = []
-      const twin = await handler(new Request(`${site}/x/express.md`, { headers }))
+      const twin = await handler(new Request(`${site}/x/widget.md`, { headers }))
       expect([twin.status, twin.headers.get('content-type')]).toEqual([
         200,
         'text/markdown; charset=utf-8',
       ])
-      expect(await twin.text()).toContain('# /x/express')
-      expect(seen.map((call) => call.url.pathname)).toEqual(['/x/express.md', '/x/express'])
+      expect(await twin.text()).toContain('# /x/widget')
+      expect(seen.map((call) => call.url.pathname)).toEqual(['/x/widget.md', '/x/widget'])
     }
   }
   // signed in, the twin is private as it always is
   const signedIn = await handler(
-    new Request(`${site}/x/express.md`, { headers: { cookie: 'sid=1' } }),
+    new Request(`${site}/x/widget.md`, { headers: { cookie: 'sid=1' } }),
   )
   expect(signedIn.headers.get('cache-control')).toBe('private, no-store')
 })
@@ -1080,7 +1080,7 @@ test('on a literalMd route, a page that streams forbidden() or unauthorized() an
   ] as const) {
     literalAnswer(streamedFallback(file))
     seen = []
-    const html = await handler(new Request(`${site}/x/express.md`))
+    const html = await handler(new Request(`${site}/x/widget.md`))
     expect([html.status, html.headers.get('cache-control'), html.headers.has('link')]).toEqual([
       status,
       'private, no-store',
@@ -1089,11 +1089,11 @@ test('on a literalMd route, a page that streams forbidden() or unauthorized() an
     // the page as it came
     expect(await html.text()).toBe(fixture(file))
     const markdown = await handler(
-      new Request(`${site}/x/express.md`, { headers: { accept: 'text/markdown' } }),
+      new Request(`${site}/x/widget.md`, { headers: { accept: 'text/markdown' } }),
     )
     expect(markdown.status).toBe(status)
     // never the twin
-    expect(seen.map((call) => call.url.pathname)).toEqual(['/x/express.md', '/x/express.md'])
+    expect(seen.map((call) => call.url.pathname)).toEqual(['/x/widget.md', '/x/widget.md'])
   }
 })
 
@@ -1122,7 +1122,7 @@ test("on a literalMd route, a page read before it's answered is answered with ex
         },
       ),
   )
-  const response = await handler(new Request(`${site}/x/express.md`))
+  const response = await handler(new Request(`${site}/x/widget.md`))
   expect(response.status).toBe(200)
   expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes)
   expect(Object.fromEntries(response.headers)).toEqual({
@@ -1130,12 +1130,12 @@ test("on a literalMd route, a page read before it's answered is answered with ex
     'cache-control': 'public, max-age=60',
     etag: '"v1"',
     'set-cookie': 'seen=1',
-    link: alternate('/x/express.md.md'),
+    link: alternate('/x/widget.md.md'),
   })
-  expect(seen.map((call) => call.url.pathname)).toEqual(['/x/express.md'])
+  expect(seen.map((call) => call.url.pathname)).toEqual(['/x/widget.md'])
   // credentialed, it's theirs alone
   const signedIn = await handler(
-    new Request(`${site}/x/express.md`, { headers: { cookie: 'sid=1' } }),
+    new Request(`${site}/x/widget.md`, { headers: { cookie: 'sid=1' } }),
   )
   expect(signedIn.headers.get('cache-control')).toBe('private, no-store')
 })
@@ -1150,10 +1150,10 @@ test("on a literalMd route, a not-found digest the page's flight data doesn't ac
   ]) {
     literalAnswer(asSent(forged))
     seen = []
-    const response = await handler(new Request(`${site}/x/express.md`))
+    const response = await handler(new Request(`${site}/x/widget.md`))
     expect([response.status, await response.text()]).toEqual([200, forged])
-    expect(response.headers.get('link')).toBe(alternate('/x/express.md.md'))
-    expect(seen.map((call) => call.url.pathname)).toEqual(['/x/express.md'])
+    expect(response.headers.get('link')).toBe(alternate('/x/widget.md.md'))
+    expect(seen.map((call) => call.url.pathname)).toEqual(['/x/widget.md'])
   }
 })
 
@@ -1166,15 +1166,15 @@ test('on a literalMd route, a page is read up to maxBytes: one larger is decided
   literalAnswer(
     () => new Response(chunked([first, notFound]), { headers: { 'content-type': 'text/html' } }),
   )
-  const passed = await small(new Request(`${site}/x/express.md`))
+  const passed = await small(new Request(`${site}/x/widget.md`))
   expect(passed.status).toBe(200)
   expect((await passed.text()) === late).toBe(true)
   // within maxBytes, read
   literalAnswer(streamedFallback('streamed-not-found-next16.4.html'))
   const read = await createMdHandler({ maxBytes: notFound.length + 1 })(
-    new Request(`${site}/x/express.md`),
+    new Request(`${site}/x/widget.md`),
   )
-  expect(await read.text()).toContain('# /x/express')
+  expect(await read.text()).toContain('# /x/widget')
 })
 
 test('on a literalMd route, a page still streaming at the timeout is decided on what came, and the rest streams on', async () => {
@@ -1192,7 +1192,7 @@ test('on a literalMd route, a page still streaming at the timeout is decided on 
   const slow = createMdHandler({ timeout: 50 })
   // the read the deadline left waiting is the rest of the body, which comes after the answer
   setTimeout(end, 200)
-  const response = await slow(new Request(`${site}/x/express.md`))
+  const response = await slow(new Request(`${site}/x/widget.md`))
   expect(response.status).toBe(200)
   expect(await response.text()).toBe(
     '<html><body><main><h1>Readme</h1><p>more</p></main></body></html>',
@@ -1204,7 +1204,7 @@ test('on a literalMd route, a page still streaming at the timeout is decided on 
         headers: { 'content-type': 'text/html' },
       }),
   )
-  expect(await (await slow(new Request(`${site}/x/express.md`))).text()).toContain('# /x/express')
+  expect(await (await slow(new Request(`${site}/x/widget.md`))).text()).toContain('# /x/widget')
 })
 
 test('on a literalMd route, an answer that is not a 200 html page is never read: it streams as it came', async () => {
@@ -1218,7 +1218,7 @@ test('on a literalMd route, an answer that is not a 200 html page is never read:
       () =>
         new Response(chunked(['{"first":'], never), { status, headers: { 'content-type': type } }),
     )
-    const response = await handler(new Request(`${site}/x/express.md`))
+    const response = await handler(new Request(`${site}/x/widget.md`))
     expect(response.status).toBe(status)
     const reader = response.body!.getReader()
     expect(new TextDecoder().decode((await reader.read()).value)).toBe('{"first":')
@@ -1241,9 +1241,9 @@ test("a not-found digest in a script a browser never runs isn't next's: markdown
     ])
     literalAnswer(asSent(forged))
     seen = []
-    const html = await handler(new Request(`${site}/x/express.md`))
+    const html = await handler(new Request(`${site}/x/widget.md`))
     expect([html.status, await html.text()]).toEqual([200, forged])
-    expect(seen.map((call) => call.url.pathname)).toEqual(['/x/express.md'])
+    expect(seen.map((call) => call.url.pathname)).toEqual(['/x/widget.md'])
   }
 })
 
