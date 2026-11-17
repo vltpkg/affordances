@@ -183,6 +183,8 @@ type Reference = {
 - **A reference** is a resource the capability takes as input without acting on it: the product in `commerce.cart.addItem`, whose target is the cart.
 - **What a projection does with both:** it uses targets and references to offer a capability from either resource. That is the `supports` view, which the terminology keeps derived, not stored (terminology §4.2).
 
+**Why `target`.** It reads well in paths (`target.count`), which is where developers write it most. It is not Schema.org's `target` (an entry point, a binding in our terms) or RFC 8288's link target, and it's not a DOM event's `target`. The relation it stores is `operatesOn` (terminology §4.1), and the field keeps the shorter name.
+
 **Behavioral properties are tri-state** (terminology §2.4). `true` and `false` are claims by the definition's source, and absent means no claim. They never loosen enforcement (§8, rule 2).
 
 ## 3. Conditions (question 2)
@@ -282,14 +284,22 @@ type AuthorizationRequirement = {
 }
 
 type ConfirmationRequirement = {
-  required: true
-  // what the person approves, in prose; the runtime fills in the call's specifics
+  // what the person approves: prose, with {path} placeholders the runtime fills in from the call
   summary: string
 }
 ```
 
+**Presence means required.** `confirmation` has no `required` field, because it has no other value to take.
+
+**The summary template.** A summary is prose with placeholders in the condition vocabulary's path syntax (§3.1), for example `"Place an order for {target.count} items, and pay its total"`.
+
+- **What a placeholder can name:** a `target`, `input` or reference path. `validate` checks each one as it checks condition paths (`E_PATH`).
+- **How it is rendered:** the runtime puts in each value's JSON text, and an unresolved path as `unknown`. There are no formatting functions.
+- **Literal braces** are written `{{` and `}}`.
+- **Why data, not a function.** The person approving sees this text, so it is the one sentence that mustn't depend on each runtime's guess, or on application code a reader can't inspect. v0's `summary` function (`packages/core/src/action.ts:45-48`) stays possible in v0's own `defineAction`. The IR's summary is the inspectable version.
+
 - **An absent `authorization` means no requirement was declared.** It doesn't mean "anyone". RFC 0002 decides the runtime default, and v0's own default is deny (`packages/protocol/spec.md:153`).
-- **There is no way to write "confirmation not required".** `confirmation` can only add a requirement (§8, rule 2).
+- **There is no way to write "confirmation not required".** An absent `confirmation` declares nothing, and a present one adds a requirement (§8, rule 2).
 
 ## 4. Effects (question 3)
 
@@ -422,7 +432,7 @@ type Ref = string
 
 - **The canonical URI** is `<namespace>#<id>`, for example `https://store.example/capabilities#commerce.cart.addItem`. The model is ALPS, where the URI of a descriptor, fragment included, is its "abstract semantic type" (ALPS §2.2.9.2). The namespace is an absolute URI that the publisher controls.
 - **Resources and capabilities share one identifier space within a manifest.** So `commerce.cart` (a resource) and `commerce.cart.addItem` (a capability) can't be confused.
-- **The identifier syntax is a subset of the tool-name rule MCP and WebMCP use** (1-128 characters of `[A-Za-z0-9_.-]`; [MCP tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)). So a capability exports as a tool of the same name, unchanged.
+- **The identifier syntax is a subset of the tool-name rule MCP and WebMCP use** (1-128 characters of `[A-Za-z0-9_.-]`; [MCP tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)). So a capability exports as a tool of the same name, unchanged.
 - **Identity is authored, never derived** from a file path, a route or a build. Next.js Server Action IDs, for example, are "periodically recalculated between builds" (prior art §4.5). A compiler emits only identifiers that are written in source.
 
 ### 6.2 Stability across releases
@@ -515,7 +525,8 @@ The canonical form is what composition compares, what the revision digests, and 
 | `E_DUPLICATE_ID`      | two definitions share an identifier                                                                   |
 | `E_UNRESOLVED`        | a local reference (target, reference, contains, relation, claim subject, binding) names no definition |
 | `E_KIND`              | a kind rule is broken (a query with effects, a safe action, an event with input)                      |
-| `E_PATH`              | a condition path doesn't name a declared attribute or input property                                  |
+| `E_PATH`              | a condition or summary path doesn't name a declared attribute or input property                       |
+| `E_KEY`               | a resource's `key` isn't one of its declared `attributes` (when it declares any)                      |
 | `E_ENFORCEMENT_CLAIM` | a claim targets an enforcement field (§8, rule 2)                                                     |
 | `E_BASIS`             | a provenance basis without what it requires (§8, rule 3)                                              |
 | `E_SOURCE`            | provenance names a source that isn't declared                                                         |
@@ -526,6 +537,7 @@ Warnings, which don't fail validation:
 - `W_OPAQUE`: a capability whose preconditions are all guards;
 - `W_EFFECTS_UNKNOWN`: an action whose `effects` is absent;
 - `W_UNCONFIRMED_ENABLES`: a declared `enables` with no derived counterpart.
+- `W_NO_ID` (from the v0 adapter, §10.1): a v0 action without an identifier, with a suggested one.
 
 ### 7.4 Extensions
 
@@ -588,11 +600,11 @@ These five rules are part of the IR. `validate` enforces the parts that a docume
 **Rule 2: an annotation never makes an operation safe, or removes a confirmation.**
 
 - **The enforcement fields:** `safe`, `idempotent`, `authorization`, `confirmation`, `effects` and `preconditions`. Enforcement reads them _monotonically_: they can add a check, never remove one.
-  - **`confirmation`** can only be required. There is no "not required" value.
+  - **`confirmation`** can only be required. It is present or absent, and has no "not required" value.
   - **`safe: true` and `effects: []`** may make a client _present_ a capability as read-only. They may not lift a confirmation required by `confirmation`, by a host's policy, or by a client's own rules.
   - **An absent value** is read as the cautious one: not safe, not idempotent, effects unknown, so consequential (terminology §2.4).
 - **A claim (§9) can't target an enforcement field.** A claim whose `about` points into one is `E_ENFORCEMENT_CLAIM`. A publisher can _say_ a plan is low-risk in a claim, but that statement can't change what is enforced.
-- **Imported hints stay claims.** An importer records MCP's `readOnlyHint` as a claim with basis `imported`, never as `safe`. MCP itself requires clients to treat annotations as untrusted unless they come from trusted servers ([MCP tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)).
+- **Imported hints stay claims.** An importer records MCP's `readOnlyHint` as a claim with basis `imported`, never as `safe`. MCP itself requires clients to treat annotations as untrusted unless they come from trusted servers ([MCP tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)).
 
 **Rule 3: inferred semantics never become declared or verified without a source that justifies it.**
 
@@ -612,7 +624,7 @@ These five rules are part of the IR. `validate` enforces the parts that a docume
 
 **Rule 5: every declared precondition and requirement is enforced.**
 
-- A binding that serves a capability refuses an execution whose declarative preconditions evaluate to `false` or `unknown`, or whose authorization or confirmation requirement isn't met. It answers with the declared condition's `id` and `description`.
+- A binding that serves a capability refuses an execution whose declarative preconditions evaluate to `false` or `unknown`, or whose authorization or confirmation requirement isn't met. It answers with the declared condition's `id` and `description`, and may add a runtime `detail`: the specific reason, such as the `` `Only ${left} left of ${what}` `` that the example store's guard returns (`apps/example/src/app/products/[slug]/actions.ts:27-32`). The `id` and `description` are the stable, inspectable part. The `detail` is never in the manifest, and RFC 0002 defines its shape.
 - A guard is enforced by the handler registered for it. An execution whose guard can't be evaluated is refused, not allowed: `unknown` doesn't pass.
 - **It is a conformance property, testable from outside.** For each declarative precondition, a test puts the target in a state where it's false, calls the capability, and must get that refusal. A manifest whose preconditions the application doesn't enforce fails conformance. A misleading dependency (§5.5) is caught this way, and the choice benchmark's misleading-dependency fixture is, by construction, a manifest that fails it.
 
@@ -667,22 +679,30 @@ This section shows that the IR isn't v0 renamed. Most of what it holds has no v0
 
 ### 10.1 From v0 to the IR
 
-| v0                        | IR                                                                                               | Provenance of the result                                        |
-| ------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
-| `defineAction`            | `CapabilityDefinition`, kind `action`, or `query` when `readOnly: true`                          | the id must be declared (§6.1); everything else as below        |
-| route plus `name`         | a `Binding`, protocol `affordances/v0`, address `{ route, action }`                              | `inferred`                                                      |
-| `description`             | `description`                                                                                    | `declared`                                                      |
-| `input` (Standard Schema) | `input` (JSON Schema)                                                                            | `inferred`, by conversion                                       |
-| `output`                  | `output`                                                                                         | `inferred`                                                      |
-| `readOnly: true`          | kind `query`                                                                                     | `declared`                                                      |
-| `requires` and `guard`    | one `Condition` with `guard: true` and `requires` as its description                             | `declared`                                                      |
-| `expose: 'public'`        | `authorization: { principal: 'any' }`                                                            | `declared`                                                      |
-| `expose: 'session'`       | `authorization: { principal: 'authenticated' }`                                                  | `declared`                                                      |
-| `expose: 'confirm'`       | `authorization: { principal: 'authenticated' }` plus `confirmation: { required: true, summary }` | `declared`                                                      |
-| `summary` (a function)    | `confirmation.summary`, a prose template the developer writes                                    | `declared`, if written; otherwise a generic summary, `inferred` |
-| `effects` (state keys)    | **not an effect.** It stays a binding detail, the keys the v0 delta reports, in `extensions`     | —                                                               |
-| `defineState`'s entities  | no counterpart until the developer declares resource types                                       | —                                                               |
-| `nav`                     | `relatedTo` relations, only where both ends are known definitions                                | `inferred`                                                      |
+| v0                        | IR                                                                                           | Provenance of the result                                        |
+| ------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `defineAction`            | `CapabilityDefinition`, kind `action`, or `query` when `readOnly: true`                      | the id must be declared (§6.1, below); everything else as below |
+| route plus `name`         | a `Binding`, protocol `affordances/v0`, address `{ route, action }`                          | `inferred`                                                      |
+| `description`             | `description`                                                                                | `declared`                                                      |
+| `input` (Standard Schema) | `input` (JSON Schema)                                                                        | `inferred`, by conversion                                       |
+| `output`                  | `output`                                                                                     | `inferred`                                                      |
+| `readOnly: true`          | kind `query`                                                                                 | `declared`                                                      |
+| `requires` and `guard`    | one `Condition`, id `guard`, with `guard: true` and `requires` as its description            | `declared`                                                      |
+| `expose: 'public'`        | `authorization: { principal: 'any' }`                                                        | `declared`                                                      |
+| `expose: 'session'`       | `authorization: { principal: 'authenticated' }`                                              | `declared`                                                      |
+| `expose: 'confirm'`       | `authorization: { principal: 'authenticated' }` plus `confirmation: { summary }`             | `declared`                                                      |
+| `summary` (a function)    | `confirmation.summary`, a prose template the developer writes                                | `declared`, if written; otherwise a generic summary, `inferred` |
+| `effects` (state keys)    | **not an effect.** It stays a binding detail, the keys the v0 delta reports, in `extensions` | —                                                               |
+| `defineState`'s entities  | no counterpart until the developer declares resource types                                   | —                                                               |
+| `nav`                     | `relatedTo` relations, only where both ends are known definitions                            | `inferred`                                                      |
+
+**Identifiers on import.** A v0 action has only a route-local `name`, and identity is never derived (§6.1). So without help, importing an existing application gives no capabilities at all. The adapter therefore:
+
+- reports each action without an identifier as `W_NO_ID` (an error in strict mode), with a **suggested** identifier: the route's static segments and the action's name, such as `products.addToCart`;
+- never emits a suggestion as an identifier. Only identifiers written in source reach a manifest;
+- is paired with a CLI codemod that writes the suggestions into source as `id: '…'` on `defineAction`, for the developer to review and rename.
+
+The compiler reads that `id` statically, as a literal, the way codegen already reads `name` (`packages/next/src/codegen.ts:62-63`). `id` on `defineAction` is the migration form. New code declares capabilities with `defineCapability` (§12.1). The imported guard's condition id is `guard`, so refusals and conformance tests can name it.
 
 **An adapter can't invent what v0 doesn't say.** A v0 import gives capabilities with opaque guards, unknown effects, no resources and no relations. That's an accurate description of what v0 declares, and every `W_EFFECTS_UNKNOWN` and `W_OPAQUE` warning marks something the developer can add.
 
@@ -721,10 +741,7 @@ A small store, in canonical form except for line breaks.
   "capabilities": [
     {
       "authorization": { "principal": "authenticated" },
-      "confirmation": {
-        "required": true,
-        "summary": "Place an order for everything in the cart, and pay its total"
-      },
+      "confirmation": { "summary": "Place an order for {target.count} items, and pay its total" },
       "description": "Place an order for everything in the cart. Reserves the stock and empties the cart.",
       "effects": [
         {
@@ -830,12 +847,51 @@ A publisher recommendation is a separate claim, which an agent sees with its sou
 }
 ```
 
-## 12. The package `@affordances/ir` (M2)
+## 12. Authoring, and the package `@affordances/ir` (M2)
+
+### 12.1 How a manifest is authored
+
+Nobody writes §11's JSON by hand. The IR's types are chosen so that a typed authoring surface can produce it. M2 builds the data half; M6 builds the Next.js half.
+
+- **Capabilities are declared as data, and code is bound to them separately.**
+  - `defineResource` and `defineCapability` hold only data: identifiers, descriptions, schemas, conditions, effects.
+  - v0's `defineAction` gains an additive `capability` option that refers to one, and supplies only the code: `run`, the guard implementations, and v0's own `summary` and `message`. The description and input come from the capability, so nothing is written twice.
+  - The split matches the IR's own: definitions are data, and handlers are registered with a runtime (§6.3). XState's machine config against `setup()` and `provide()` is the precedent (prior art §3.3).
+- **The compiler builds a manifest from capability modules alone.** They import `@affordances/ir` and a schema library, never the application's code. That closes the gap where today's build artifact imports the application (`packages/next/src/codegen.ts:109-131`).
+- **Conditions are written as a record keyed by id:**
+  - `preconditions: { notEmpty: when.gt('target.count', 0).because('The cart has items'), inStock: guard('Every item is in stock') }`.
+  - The builder emits §13's `Condition[]`, so ids are unique by construction.
+  - `defineAction({ capability, guards })` is typed so that `guards` has exactly one implementation per guard the capability declares. A missing or stray implementation is a type error. That is rule 5 (§8.2), caught in the editor as well as by conformance tests.
+- **Paths are typed against the schemas.**
+  - **The helpers** emit `Expr` from a path and a value: `when.gt`, `when.eq`, `when.all`, `when.not` and the rest.
+  - **Paths are checked** against the target's `attributes`, the input and the references, so `'target.cout'` is a type error: `validate`'s `E_PATH`, moved to the editor.
+  - **Helpers live under `when`,** not as top-level `eq` or `all`, which collide with common local names and query builders.
+  - **Plain helpers, not a proxy builder** (`target.count.gt(0)`). A proxy looks like code, and would invite code the closed vocabulary can't express.
+- **Authoring takes Standard Schema, and the IR stores JSON Schema,** as v0 already does for `input` (`packages/core/src/action.ts:101-111`). Conversion is recorded as `inferred` in `fieldProvenance`.
+- **`references[].at` is authored as an input property name,** and the builder emits the JSON Pointer. Developers write one path syntax, the dotted one.
+- **The namespace and the owner come from configuration,** written once: `withAffordances({ namespace, owner })` in Next.js, or `defineManifest` elsewhere.
+  - The tools fill in `sources`, adding themselves with role `tool`, and the default `provenance` (`declared`, by the owner).
+  - A fragment never invents an `owner` source, so only the configured owner can produce `declared` (rule 3).
+- **IR effects never sit in `defineAction`.** v0's `effects` there keeps its v0 meaning, the state keys for the delta. The capability's `effects` are consequences, and the two never meet in one object (§4, §10.1). Renaming v0's field is RFC 0004's question.
+- **Kinds:**
+  - **`defineCapability`:** `kind` is required.
+  - **A v0 `defineAction` without a capability:** it's an `action`, or a `query` when `readOnly: true` (§10.1).
+
+**Alternatives considered:**
+
+| Alternative                                                                             | Rejected because                                                                                                                                                                                                                        |
+| --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| IR fields inline in `defineAction`                                                      | Closures and data in one object mean the compiler has to import the whole action module, and with it the application. It would also put the IR's `effects` next to v0's                                                                 |
+| A codemod that moves a v0 action's description and schema into a new `defineCapability` | Schemas often refer to local imports, so the rewrite is a refactor, not a codemod. The migration form, `id` on `defineAction`, is one line (§10.1), and moving to `defineCapability` can happen when a developer adds what v0 can't say |
+| Conditions as an array in authoring too                                                 | Ids would be a field to forget, and guard implementations couldn't be typed against them                                                                                                                                                |
+
+### 12.2 The package
 
 - **Exports:**
   - the types in §13;
   - the JSON Schema, which is generated from the same zod source as the types, as `@affordances/protocol` does today (`packages/protocol/src/schema.ts:3`);
-  - `validate`, `normalize`, `canonicalize` (to bytes), `revision`, `compose`, and `derive` (the edges of §5.5).
+  - the readers: `validate`, `normalize`, `canonicalize` (to bytes), `revision`, `compose`, and `derive` (the edges of §5.5);
+  - the authoring helpers of §12.1: `defineResource`, `defineCapability`, `defineClaims`, `defineManifest`, `guard` and `when`.
 - **No runtime dependencies** beyond the schema library. No Next.js, React or MCP.
 - **Private** (`"private": true`) until published.
 - **Tests:**
@@ -963,7 +1019,7 @@ export type AuthorizationRequirement = {
   conditions?: Condition[]
 }
 
-export type ConfirmationRequirement = { required: true; summary: string }
+export type ConfirmationRequirement = { summary: string } // presence means required
 
 export type Reversibility = 'reversible' | 'compensable' | 'irreversible'
 
@@ -1023,23 +1079,23 @@ export type ValidationIssue = {
 
 `@affordances/ir/schema.json` is JSON Schema 2020-12, with `$id` `https://affordances.sh/schemas/ir/0.1/manifest.json` and one `$defs` entry per type above. The constraints it states beyond the types:
 
-| `$defs` entry          | Constraints                                                                                                                                                                                                                                          |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Id`                   | `pattern` as in §13, `maxLength: 128`                                                                                                                                                                                                                |
-| `Ref`                  | an `Id`, or `format: "uri"` with a fragment that is an `Id`                                                                                                                                                                                          |
-| `CapabilityManifest`   | `schemaVersion` `const: "0.1"`; `namespace` `format: "uri"`; `additionalProperties: false`                                                                                                                                                           |
-| `Source`               | `role` enum                                                                                                                                                                                                                                          |
-| `Provenance`           | `basis` enum. `if: { properties: { basis: { const: "verified" } } }, then: { required: ["evidence"], properties: { evidence: { minItems: 1 } } }`, and the same for `imported` and `observed`                                                        |
-| `ResourceDefinition`   | `required: ["id", "description", "key"]`; `contains` is an array of unique `Id`s                                                                                                                                                                     |
-| `CapabilityDefinition` | `required: ["id", "kind", "description"]`. With `kind: "query"`: `effects` absent or `maxItems: 0`, and `safe` not `false`. With `kind: "action"`: `safe` not `true`. With `kind: "event"`: no `input`, `preconditions`, `confirmation` or `effects` |
-| `Condition`            | `required: ["id", "description"]`; `oneOf` with `expr`, or with `guard: { const: true }`                                                                                                                                                             |
-| `Expr`                 | `oneOf` of single-key objects (`minProperties: 1`, `maxProperties: 1`). Comparison values are `prefixItems` of two `Operand`s; `all` and `any` have `minItems: 1`                                                                                    |
-| `Operand`              | `oneOf` `{ path }` and `{ value }`; `path` matches `^(target\|input\|principal\|[a-z][A-Za-z0-9]*)(\.[A-Za-z0-9_]+)+$`                                                                                                                               |
-| `Effect`               | `oneOf` on `category`. `state` requires `change` and `resource`. `compensatedBy` is required when `reversibility` is `compensable`                                                                                                                   |
-| `Relation`             | `type` enum. With `type: "relatedTo"`, `description` is required                                                                                                                                                                                     |
-| `Claim`                | `required: ["id", "subject", "kind", "statement", "provenance"]`; `quantity` requires `value` and `unit`                                                                                                                                             |
-| `Binding`              | `address` is an object of strings, `minProperties: 1`                                                                                                                                                                                                |
-| `Extensions`           | `propertyNames: { format: "uri" }`                                                                                                                                                                                                                   |
+| `$defs` entry          | Constraints                                                                                                                                                                                                                                                                             |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Id`                   | `pattern` as in §13, `maxLength: 128`                                                                                                                                                                                                                                                   |
+| `Ref`                  | an `Id`, or `format: "uri"` with a fragment that is an `Id`                                                                                                                                                                                                                             |
+| `CapabilityManifest`   | `schemaVersion` `const: "0.1"`; `namespace` `format: "uri"`; `additionalProperties: false`                                                                                                                                                                                              |
+| `Source`               | `role` enum                                                                                                                                                                                                                                                                             |
+| `Provenance`           | `basis` enum. `if: { properties: { basis: { const: "verified" } } }, then: { required: ["evidence"], properties: { evidence: { minItems: 1 } } }`, and the same for `imported` and `observed`                                                                                           |
+| `ResourceDefinition`   | `required: ["id", "description", "key"]`; `contains` is an array of unique `Id`s                                                                                                                                                                                                        |
+| `CapabilityDefinition` | `required: ["id", "kind", "description"]`. With `kind: "query"`: `effects` absent or `maxItems: 0`, and `safe` not `false`. With `kind: "action"`: `safe` not `true`. With `kind: "event"`: no `input`, `preconditions`, `confirmation` or `effects`. `confirmation` requires `summary` |
+| `Condition`            | `required: ["id", "description"]`; `oneOf` with `expr`, or with `guard: { const: true }`                                                                                                                                                                                                |
+| `Expr`                 | `oneOf` of single-key objects (`minProperties: 1`, `maxProperties: 1`). Comparison values are `prefixItems` of two `Operand`s; `all` and `any` have `minItems: 1`                                                                                                                       |
+| `Operand`              | `oneOf` `{ path }` and `{ value }`; `path` matches `^(target\|input\|principal\|[a-z][A-Za-z0-9]*)(\.[A-Za-z0-9_]+)+$`                                                                                                                                                                  |
+| `Effect`               | `oneOf` on `category`. `state` requires `change` and `resource`. `compensatedBy` is required when `reversibility` is `compensable`                                                                                                                                                      |
+| `Relation`             | `type` enum. With `type: "relatedTo"`, `description` is required                                                                                                                                                                                                                        |
+| `Claim`                | `required: ["id", "subject", "kind", "statement", "provenance"]`; `quantity` requires `value` and `unit`                                                                                                                                                                                |
+| `Binding`              | `address` is an object of strings, `minProperties: 1`                                                                                                                                                                                                                                   |
+| `Extensions`           | `propertyNames: { format: "uri" }`                                                                                                                                                                                                                                                      |
 
 **What the schema can't express, `validate` checks:**
 
@@ -1080,5 +1136,5 @@ This RFC started from an initial sketch of the model: a manifest of resources, c
 - [JSON Schema 2020-12](https://json-schema.org/draft/2020-12).
 - M. Amundsen, L. Richardson, M. Foster, [ALPS](https://datatracker.ietf.org/doc/html/draft-amundsen-richardson-foster-alps-07), Internet-Draft -07.
 - D. Martin et al., [OWL-S](https://www.w3.org/submissions/OWL-S/), W3C Member Submission, 2004.
-- Model Context Protocol, [Tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools), 2025-11-25.
+- Model Context Protocol, [Tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools), revision 2026-07-28.
 - [Common Expression Language](https://cel.dev/); [JsonLogic](https://jsonlogic.com/).
