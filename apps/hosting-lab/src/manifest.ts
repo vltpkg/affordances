@@ -113,6 +113,9 @@ export const readProject = defineCapability({
   kind: 'query',
   description: "Read a project: its plan, add-ons and this month's build minutes",
   target: project,
+  // every capability on a project takes its key in the input, for bindings without an offer (RFC 0001 §2.2)
+  input: z.object({ projectId: z.string() }),
+  targetAt: 'projectId',
   principal: owner,
   authorization: {
     principal: 'authenticated',
@@ -124,7 +127,9 @@ export const readProject = defineCapability({
 
 // ---- plans ----
 
-const onProject = z.object({ projectId: z.string() })
+// the plan or bundle (the target), and the project it's for (a reference)
+const subscribing = z.object({ plan: z.string(), projectId: z.string() })
+const subscribingBundle = z.object({ bundle: z.string(), projectId: z.string() })
 
 export const cancel = defineCapability({
   id: 'hosting.subscription.cancel',
@@ -132,6 +137,8 @@ export const cancel = defineCapability({
   description:
     "Move the project back to Hobby at the end of the month. Stops the paid plan's renewal; nothing already charged is refunded",
   target: project,
+  input: z.object({ projectId: z.string() }),
+  targetAt: 'projectId',
   principal: owner,
   idempotent: true,
   authorization: {
@@ -163,7 +170,8 @@ export const subscribe = defineCapability({
   description:
     "Move a project to this plan. Charges the plan's price now, then every month until cancelled",
   target: plan,
-  input: onProject,
+  input: subscribing,
+  targetAt: 'plan',
   references: { project: { resource: project, at: 'projectId' } },
   principal: owner,
   authorization: { principal: 'authenticated' },
@@ -204,7 +212,8 @@ export const subscribeBundle = defineCapability({
   description:
     "Move a project to the bundle's plan with its add-ons, for the bundle's one monthly price. Charges it now, then every month until cancelled",
   target: bundle,
-  input: onProject,
+  input: subscribingBundle,
+  targetAt: 'bundle',
   references: { project: { resource: project, at: 'projectId' } },
   principal: owner,
   authorization: { principal: 'authenticated' },
@@ -238,7 +247,7 @@ export const subscribeBundle = defineCapability({
 
 // ---- add-ons ----
 
-const withAddOn = z.object({ addOn: z.string() })
+const withAddOn = z.object({ projectId: z.string(), addOn: z.string() })
 
 export const removeAddOn = defineCapability({
   id: 'hosting.addOn.remove',
@@ -246,6 +255,7 @@ export const removeAddOn = defineCapability({
   description: 'Remove an add-on at the end of the month. Nothing already charged is refunded',
   target: project,
   input: withAddOn,
+  targetAt: 'projectId',
   references: { addOn: { resource: addOn, at: 'addOn' } },
   principal: owner,
   idempotent: true,
@@ -276,6 +286,7 @@ export const addAddOn = defineCapability({
     "Add an add-on to a project. Charges its price now, then every month until it's removed",
   target: project,
   input: withAddOn,
+  targetAt: 'projectId',
   references: { addOn: { resource: addOn, at: 'addOn' } },
   principal: owner,
   authorization: {
@@ -321,6 +332,8 @@ export const rollback = defineCapability({
   description:
     'Publish this earlier deployment again, in place of the current one. Needs a plan with rollback',
   target: deployment,
+  input: z.object({ deployment: z.string() }),
+  targetAt: 'deployment',
   principal: owner,
   idempotent: true,
   authorization: { principal: 'authenticated' },
@@ -356,7 +369,8 @@ export const deploy = defineCapability({
   description:
     "Build the project from a git ref, and publish it at the project's address when the build succeeds. Uses build minutes",
   target: project,
-  input: z.object({ ref: z.string().min(1) }),
+  input: z.object({ projectId: z.string(), ref: z.string().min(1) }),
+  targetAt: 'projectId',
   principal: owner,
   authorization: {
     principal: 'authenticated',
