@@ -9,6 +9,7 @@ import {
   type Expr,
   type Id,
 } from '@affordances/ir'
+import { attributesFor } from './data.ts'
 import { digestOf } from './digest.ts'
 import { offerId, parseOfferId } from './offer-id.ts'
 import { render } from './render.ts'
@@ -131,6 +132,7 @@ export const executor = (deps: ExecutionDeps) => {
   const { manifest, handlers, approval } = deps
   const definitions = new Map(manifest.capabilities.map((c) => [c.id, c]))
   const canonical = new Map(normalize(manifest).capabilities.map((c) => [c.id, c]))
+  const checked = attributesFor(manifest)
 
   // §8.2: HMAC-SHA-256 over the canonical call. The token carries only its expiry, its nonce and the MAC, so it
   // echoes nothing about the caller; verifying recomputes the MAC from the call being made
@@ -414,7 +416,12 @@ export const executor = (deps: ExecutionDeps) => {
         const where = canonicalJson([type, key])
         try {
           const found = await deps.resources[type]!.load(key, principal)
-          if (found) seen.set(where, { type, key, attributes: found.attributes })
+          // attributes that aren't plain data fitting the schema can't be compared: as a load that threw
+          if (found) {
+            const attributes = checked(type, found.attributes)
+            if (attributes) seen.set(where, { type, key, attributes })
+            else unseen.add(where)
+          }
         } catch {
           unseen.add(where)
         }

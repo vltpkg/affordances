@@ -10,6 +10,7 @@ import {
   type Id,
   type Truth,
 } from '@affordances/ir'
+import { attributesFor } from './data.ts'
 import { digestOf } from './digest.ts'
 import { executor } from './execute.ts'
 import { render } from './render.ts'
@@ -166,6 +167,7 @@ export const createRuntime = ({
   const local = (ref: string) =>
     ref.startsWith(`${manifest.namespace}#`) ? ref.slice(manifest.namespace.length + 1) : ref
   const types = new Map(manifest.resources.map((r) => [r.id, r]))
+  const attributesOf = attributesFor(manifest)
   const sources = new Map(manifest.sources.map((s) => [s.id, s]))
   const declared = Object.keys(
     (manifest.principal?.attributes as { properties?: Obj } | undefined)?.properties ?? {},
@@ -203,7 +205,13 @@ export const createRuntime = ({
         loaded = (async (): Promise<Loaded> => {
           try {
             const found = await resources[type]!.load(key, principal)
-            return found ? { state: 'found', ...found } : { state: 'none' }
+            if (!found) return { state: 'none' }
+            // attributes that aren't plain data fitting the type's schema are attributes it couldn't supply
+            const fitting = attributesOf(type, found.attributes)
+            if (!fitting) return { state: 'failed' }
+            return typeof found.version === 'string'
+              ? { state: 'found', attributes: fitting, version: found.version }
+              : { state: 'found', attributes: fitting }
           } catch {
             return { state: 'failed' }
           }

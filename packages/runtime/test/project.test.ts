@@ -504,6 +504,41 @@ describe('guards at projection time (§4.2)', () => {
   })
 })
 
+describe('the M3 close-out code review', () => {
+  // a value that isn't I-JSON, or isn't plain data, is no attribute: that instance's attributes are unknown (§2.1)
+  class Money {
+    constructor(readonly cents: number) {}
+  }
+  test.for([
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['a BigInt', 20n],
+    ['undefined in an array', [undefined]],
+    ['a Date', new Date('2026-11-17')],
+    ['a class instance', new Money(2000)],
+    ['the wrong type for its schema', 'twenty'],
+  ] as const)(
+    '7: %s in an attribute makes that instance unknown, and never a throw',
+    async ([, value]) => {
+      const state = { plans: plansState(), projects: projectsState() }
+      state.plans.pro!.priceUsd = value
+      const p = await runtimeOf(state).project({ principal: member, start: fromProject })
+      // pro's conditions on its own attributes can't be read; hobby is untouched
+      const pro = offer(p.offers, 'hosting.plan.subscribe@hosting.plan:pro?project=p1')
+      expect(
+        (pro.conditions as { id: string; value: unknown }[]).find((c) => c.id === 'regionUp')!
+          .value,
+      ).toBe('unknown')
+      expect(
+        offer(p.offers, 'hosting.plan.subscribe@hosting.plan:hobby?project=p1').availability,
+      ).toMatchObject({
+        status: 'unavailable',
+      })
+      expect(p.revision).toMatch(/^sha256-/)
+    },
+  )
+})
+
 describe('offer ids', () => {
   test('are canonical, percent-encode keys, and read back', () => {
     const parts = {
