@@ -270,6 +270,22 @@ describe('what an offer says', () => {
     ).toEqual(['proUptime'])
   })
 
+  test('an alternativeTo written with the manifest’s namespace counts, both ways (found by the generated test)', async () => {
+    const manifest = fresh()
+    manifest.relations!.push({
+      type: 'alternativeTo',
+      from: `${manifest.namespace}#hosting.plan.cancel`,
+      to: 'hosting.plan.subscribe',
+    })
+    const p = await runtimeOf(undefined, manifest).project({ principal: member })
+    expect(offer(p.offers, 'hosting.plan.cancel@hosting.plan:pro').alternatives).toEqual({
+      count: 1,
+    })
+    expect(offer(p.offers, 'hosting.plan.subscribe@hosting.plan:pro').alternatives).toEqual({
+      count: 1,
+    })
+  })
+
   test('consequential is derived from effects, and an action with none declared is consequential', async () => {
     const p = await runtimeOf().project({ principal: member })
     expect(offer(p.offers, 'hosting.plan.list').consequential).toBe(false)

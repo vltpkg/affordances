@@ -172,8 +172,8 @@ export const createRuntime = ({
   for (const r of manifest.relations ?? [])
     if (r.type === 'alternativeTo')
       for (const [a, b] of [
-        [r.from, r.to],
-        [r.to, r.from],
+        [local(r.from), local(r.to)],
+        [local(r.to), local(r.from)],
       ] as const)
         partners.set(a, (partners.get(a) ?? new Set()).add(b))
   const manifestDigest = digest(manifest)
