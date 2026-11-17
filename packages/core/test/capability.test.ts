@@ -351,6 +351,14 @@ describe('the confirmation summary (RFC 0001 §3.2)', () => {
 
 // the projection runtime's check, as RFC 0001 §12.1 and RFC 0002 §8.1 (steps 1-7) give it, standing in for the
 // runtime: the cart's count is the declarative condition, and the summary is filled from the target
+
+// v0's session as the runtime's principal
+const principal = (ctx: { session: Session | null }) => ({
+  authenticated: !!ctx.session,
+  subject: ctx.session?.id,
+  attributes: {},
+})
+
 describe('a capability checked by the runtime', () => {
   let count: number
   let requests: CheckRequest[]
@@ -385,11 +393,6 @@ describe('a capability checked by the runtime', () => {
       }
     },
   }
-  const principal = (ctx: { session: Session | null }) => ({
-    authenticated: !!ctx.session,
-    subject: ctx.session?.id,
-    attributes: {},
-  })
   const keyed = z.object({ cart: z.string() })
   const checkout = defineCapability({
     id: 'commerce.cart.checkout',
@@ -404,7 +407,7 @@ describe('a capability checked by the runtime', () => {
   })
   const action = () => {
     const ran = vi.fn()
-    const bound = defineAction({
+    const checked = defineAction({
       capability: checkout,
       name: 'checkout',
       state: product,
@@ -415,12 +418,12 @@ describe('a capability checked by the runtime', () => {
         return 'ordered'
       },
     })
-    return { bound, ran }
+    return { checked, ran }
   }
 
   test('refused while the condition is false, and available once it is true', async () => {
-    const { bound, ran } = action()
-    const refused = await call(handlerFor([bound]), {
+    const { checked, ran } = action()
+    const refused = await call(handlerFor([checked]), {
       action: 'checkout',
       input: { cart: 'c1' },
       confirm: true,
@@ -438,15 +441,19 @@ describe('a capability checked by the runtime', () => {
     })
     count = 2
     expect(
-      await call(handlerFor([bound]), { action: 'checkout', input: { cart: 'c1' }, confirm: true }),
+      await call(handlerFor([checked]), {
+        action: 'checkout',
+        input: { cart: 'c1' },
+        confirm: true,
+      }),
     ).toMatchObject({ ok: true, output: 'ordered' })
     expect(ran).toHaveBeenCalledOnce()
   })
 
   test("without v0's confirm, it's v0's own confirm_required with the check's summary; with it, the basis is v0's flag", async () => {
     count = 2
-    const { bound, ran } = action()
-    const handler = handlerFor([bound])
+    const { checked, ran } = action()
+    const handler = handlerFor([checked])
     const response = await handler(
       new Request(`${origin}/api/affordances/products/tee`, {
         method: 'POST',
@@ -567,10 +574,10 @@ describe('a capability checked by the runtime', () => {
 
   test('with a runtime there is no fail-closed warning, and the UI path is unchanged', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const { bound, ran } = action()
+    const { checked, ran } = action()
     expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('declarative conditions'))
     warn.mockRestore()
-    expect(await bound({ cart: 'c1' })).toBe('ordered')
+    expect(await checked({ cart: 'c1' })).toBe('ordered')
     expect(ran).toHaveBeenCalledOnce()
     expect(requests).toHaveLength(0)
   })
