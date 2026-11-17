@@ -18,6 +18,13 @@ export {
 export { decodePointer, encodePointer, getPointer, putPointer } from './pointer.ts'
 export { localId } from './ref.ts'
 export { renderSummary } from './summary.ts'
-export { conformanceCases, falsifying, fitContext, type ConformanceCase } from './falsify.ts'
+export {
+  conformanceCases,
+  falsifying,
+  fitContext,
+  searchFalsifying,
+  type ConformanceCase,
+  type Falsified,
+} from './falsify.ts'
 export { inputIssues, type InputIssue } from './input.ts'
 export * from './author/index.ts'

@@ -1,4 +1,5 @@
-import { compareValues, type Context } from './evaluate.ts'
+import { canonicalJson } from './canonical.ts'
+import { compareValues, evaluate, type Context } from './evaluate.ts'
 import {
   COMPARISONS,
   type CapabilityManifest,
@@ -166,10 +167,213 @@ const contextOf = (assignments: Assignment[]): Context => {
   return context
 }
 
+// a complete search for a state that makes expr false (review's close-out finding). The witness above is fast and
+// reads naturally, but misses some expressions (a disjunction over one path with overlapping literals, such as
+// any[in(s, [x, z]), eq(s, x)], false at s = y). Over this condition language the candidates are finite:
+// - each scalar path takes the expression's literals, a step either side of each, one fresh value, null, or nothing;
+// - each array (a count or a quantifier's of) takes lists of 0, 1 and 2 items built the same way, and the lengths
+//   its counts name, one either side.
+// Kleene evaluation is monotone in information: a partial state that's already true stays true however it's
+// extended, so that branch is cut. none: no state of this language makes it false. gaveUp: the node budget ran out
+export type Falsified = { context: Context } | { none: true } | { gaveUp: true }
+const MISSING = Symbol('missing')
+type Slot = { path: string; candidates: unknown[] }
+
+// an operand's literals, an in's list flattened
+const flat = (o: Operand): Scalar[] =>
+  'value' in o ? (Array.isArray(o.value) ? o.value : [o.value]) : []
+// lists of none, one and two of the items, and the lengths a count names
+const listsOf = (items: unknown[], extra: number[] = []) => {
+  const out: unknown[] = [[]]
+  for (const a of items) out.push([a])
+  for (const a of items) for (const b of items) out.push([a, b])
+  // the lengths a count names, one either side, of one item repeated
+  for (const n of extra)
+    for (const len of [n - 1, n, n + 1])
+      if (len > 2 && len <= 12) out.push(Array.from({ length: len }, () => items[0] ?? {}))
+  return out
+}
+// an item for a quantifier: one field at a time from its candidates, from the where's own item.* paths
+const itemsFor = (wheres: Expr[]): unknown[] => {
+  const inner = slotsOf({ all: wheres.length ? wheres : [{ exists: 'item' }] }, true)
+  const fields = inner.filter((s) => s.path.startsWith('item.') && !s.path.slice(5).includes('.'))
+  const bare = inner.find((s) => s.path === 'item')
+  if (bare && !fields.length) return bare.candidates.filter((c) => c !== MISSING)
+  const out: unknown[] = [{}]
+  for (const f of fields)
+    for (const c of f.candidates) if (c !== MISSING) out.push({ [f.path.slice(5)]: c })
+  return out
+}
+
+// inItem: the slots of a quantifier's where, whose item.* paths are the item's own fields
+const isItem = (path: string) => /^item(\.|$)/.test(path)
+const slotsOf = (expr: Expr, inItem = false): Slot[] => {
+  // per path, the literals it's compared with; paths compared with each other share theirs
+  const literals = new Map<string, Scalar[]>()
+  const peers = new Map<string, Set<string>>()
+  const lists = new Set<string>() // paths an in reads as its list
+  const arrays = new Map<string, Expr[]>() // array paths, with the where of each quantifier over them
+  const counts = new Map<string, number[]>() // array paths counted, with the numbers they're counted against
+  const scalar = (path: string, values: Scalar[] = []) =>
+    literals.set(path, [...(literals.get(path) ?? []), ...values])
+  const peer = (a: string, b: string) => {
+    peers.set(a, (peers.get(a) ?? new Set()).add(b))
+    peers.set(b, (peers.get(b) ?? new Set()).add(a))
+  }
+  const walk = (e: Expr) => {
+    if ('all' in e) return e.all.forEach(walk)
+    if ('any' in e) return e.any.forEach(walk)
+    if ('not' in e) return walk(e.not)
+    if ('exists' in e) return void scalar(e.exists)
+    if ('some' in e || 'every' in e) {
+      const q = 'some' in e ? e.some : e.every
+      arrays.set(q.of, [...(arrays.get(q.of) ?? []), q.where])
+      // a where reads paths outside the item too
+      return walk(q.where)
+    }
+    const op = COMPARISONS.find((c) => c in e)!
+    const [left, right] = (e as Record<string, [Operand, Operand]>)[op]!
+    for (const [o, other] of [
+      [left, right],
+      [right, left],
+    ] as const) {
+      if ('count' in o) {
+        if (!arrays.has(o.count)) arrays.set(o.count, [])
+        counts.set(o.count, [
+          ...(counts.get(o.count) ?? []),
+          ...flat(other).filter((v): v is number => typeof v === 'number'),
+        ])
+      } else if ('path' in o) {
+        // the right of an in is a list
+        if (op === 'in' && o === right) lists.add(o.path)
+        scalar(o.path, flat(other))
+        if ('path' in other) peer(o.path, other.path)
+      }
+    }
+  }
+  walk(expr)
+  // a path's candidates: its literals and its peers', a step either side of each, a fresh value of each kind among
+  // them (or a string when there are none), and null
+  const candidatesOf = (path: string): unknown[] => {
+    const seen = new Set([path])
+    const queue = [path]
+    const lits: Scalar[] = []
+    while (queue.length) {
+      const at = queue.pop()!
+      lits.push(...(literals.get(at) ?? []))
+      for (const n of peers.get(at) ?? [])
+        if (!seen.has(n)) {
+          seen.add(n)
+          queue.push(n)
+        }
+    }
+    const pool = new Map<string, unknown>()
+    const add = (v: unknown) => pool.set(canonicalJson(v), v)
+    for (const v of lits) for (const w of around(v)) add(w)
+    const kinds = new Set(lits.map((v) => (v === null ? 'null' : typeof v)))
+    // two fresh values of a kind, so two paths compared with each other can be told apart (ne between them holds)
+    const fresh: unknown[] = []
+    if (kinds.has('number')) fresh.push(7919, 7920)
+    if (kinds.has('string') || !kinds.size) fresh.push('~fresh', '~fresh2')
+    if (kinds.has('boolean')) fresh.push(true, false)
+    for (const v of fresh) add(v)
+    add(null)
+    return [...pool.values()]
+  }
+  const slots: Slot[] = []
+  for (const path of literals.keys()) {
+    if ((isItem(path) && !inItem) || arrays.has(path)) continue
+    const values = candidatesOf(path)
+    slots.push({ path, candidates: [...(lists.has(path) ? listsOf(values) : values), MISSING] })
+  }
+  for (const [path, wheres] of arrays) {
+    if (isItem(path) && !inItem) continue
+    slots.push({ path, candidates: [...listsOf(itemsFor(wheres), counts.get(path)), MISSING] })
+  }
+  return slots
+}
+
+// what making expr false asks, as constraints that each must come out a given way: an any false is every child
+// false, an all true is every child true, a not flips. Constraints that share no path are independent, so each group
+// is searched alone, and the space is their sum, not their product
+const constraintsOf = (e: Expr, want: boolean): [Expr, boolean][] => {
+  if ('any' in e && !want) return e.any.flatMap((c) => constraintsOf(c, false))
+  if ('all' in e && want) return e.all.flatMap((c) => constraintsOf(c, true))
+  if ('not' in e) return constraintsOf(e.not, !want)
+  return [[e, want]]
+}
+const groupsOf = (constraints: [Expr, boolean][]): [Expr, boolean][][] => {
+  const paths = constraints.map(([e]) => new Set(slotsOf(e).map((s) => s.path)))
+  const group = constraints.map((_, i) => i)
+  const find = (i: number): number => (group[i] === i ? i : (group[i] = find(group[i]!)))
+  for (let i = 0; i < constraints.length; i++)
+    for (let j = i + 1; j < constraints.length; j++)
+      if ([...paths[i]!].some((x) => paths[j]!.has(x))) group[find(i)] = find(j)
+  const out = new Map<number, [Expr, boolean][]>()
+  constraints.forEach((c, i) => out.set(find(i), [...(out.get(find(i)) ?? []), c]))
+  return [...out.values()]
+}
+
+export const searchFalsifying = (expr: Expr, budget = 200_000): Falsified => {
+  const groups = groupsOf(constraintsOf(expr, false))
+  if (groups.length <= 1) return searchWhole(expr, budget)
+  // each group as one expression whose falsity is exactly its constraints holding
+  const contexts: Context[] = []
+  for (const g of groups) {
+    const part: Expr = { any: g.map(([e, want]) => (want ? { not: e } : e)) }
+    const found = searchWhole(part, budget)
+    if (!('context' in found)) return found
+    contexts.push(found.context)
+  }
+  // groups share no path, so their states merge without conflict
+  const merged: Context = {}
+  for (const c of contexts)
+    for (const [root, value] of Object.entries(c) as [keyof Context, Record<string, unknown>][])
+      if (root === 'references')
+        for (const [name, attrs] of Object.entries(value))
+          (merged.references ??= {})[name] = {
+            ...merged.references?.[name],
+            ...(attrs as Record<string, unknown>),
+          }
+      else
+        (merged as Record<string, Record<string, unknown>>)[root] = {
+          ...(merged as Record<string, Record<string, unknown>>)[root],
+          ...value,
+        }
+  return evaluate(expr, merged) === false ? { context: merged } : searchWhole(expr, budget)
+}
+
+const searchWhole = (expr: Expr, budget: number): Falsified => {
+  const slots = slotsOf(expr).filter((s) => !isItem(s.path))
+  let nodes = 0
+  const chosen: Assignment[] = []
+  const go = (i: number): Context | undefined | 'gaveUp' => {
+    if (++nodes > budget) return 'gaveUp'
+    const context = contextOf(chosen)
+    const value = evaluate(expr, context)
+    // false already, with what's left unsupplied: that's a state
+    if (value === false) return context
+    // true can't become false by supplying more (Kleene is monotone in information)
+    if (value === true || i === slots.length) return
+    for (const c of slots[i]!.candidates) {
+      if (c !== MISSING) chosen.push([slots[i]!.path, c])
+      const found = go(i + 1)
+      if (c !== MISSING) chosen.pop()
+      if (found) return found
+    }
+  }
+  const found = go(0)
+  if (found === 'gaveUp') return { gaveUp: true }
+  return found ? { context: found } : { none: true }
+}
+
 // the context that makes expr false
 export const falsifying = (expr: Expr): Context | undefined => {
   const assignments = witness(expr, false)
-  return assignments && contextOf(assignments)
+  if (assignments) return contextOf(assignments)
+  // the witness missed it: search the whole bounded space
+  const searched = searchFalsifying(expr)
+  return 'context' in searched ? searched.context : undefined
 }
 
 // every declarative precondition and authorization condition in a manifest, each with a context in which it alone
@@ -266,6 +470,18 @@ export const conformanceCases = (m: CapabilityManifest): ConformanceCase[] =>
           capability: c.id,
           condition: p.id,
           context: fitContext(m, c, contextOf(alone)),
+          isolated: true,
+        }
+      // the witnesses don't combine: search for a state where p alone is false, every other condition true
+      const others = declarative.filter((q) => q.id !== p.id).map((q) => q.expr)
+      const searched = searchFalsifying(
+        others.length ? { any: [p.expr, { not: { all: others } }] } : p.expr,
+      )
+      if ('context' in searched)
+        return {
+          capability: c.id,
+          condition: p.id,
+          context: fitContext(m, c, searched.context),
           isolated: true,
         }
       return {
