@@ -37,6 +37,7 @@ M2 ──> M4 (experimental app; starts once M2's types are fixed, wired to M3)
 M3 + M4 ──> M5 (benchmark; needs RFC 0003)
 M3 ──> M6 (Next.js compilation)
 M3 ──> M7 (protocol interop; needs RFC 0004)
+M5 + M7 ──> M7f (comparison with existing approaches; reuses M5's harness)
 M5 + M6 + M7 ──> M8 (demonstration and publication)
 ```
 
@@ -91,7 +92,7 @@ Many contextual graphs from one manifest.
 
 - the safety invariants are tested at execution, not just stated;
 - review accepts;
-- RFC 0003 (the benchmark method) is drafted during M3.
+- RFC 0003 (the benchmark method) is drafted during M3. Besides the disclosure conditions, it includes a structure-only control: the same semantic information with only its structure or order changed. That separates choice-architecture effects from differences in what information is available.
 
 ## M4: the experimental application
 
@@ -144,22 +145,23 @@ M6 also measures prior art §6.7's assumption 8: whether inferred semantics are 
 
 ## M7: protocol interoperability
 
-| Packet                            | Owner   | Done means                                                                                                                                                                                                                                                                        |
-| --------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| M7a: RFC 0004, protocol evolution | backend | Which v0 wire concepts remain, and what a future version needs. Written during M5.                                                                                                                                                                                                |
-| M7b: the v0 adapter               | backend | Both directions, with compatibility tests. v0's wire documents and authoring API keep working ([repo audit](repo-audit.md) §6).                                                                                                                                                   |
-| M7c: MCP                          | backend | Capabilities exposed through MCP with their identity kept. What's lost in translation is measured (prior art §6.7, assumption 9), not assumed. The trials also measure whether an agent carries what it learned over HTTP to MCP through the stable capability id (assumption 7). |
-| M7d: WebMCP and UI SDK            | design  | WebMCP registration from projections. UI SDK integration where it's feasible, with the limits written down.                                                                                                                                                                       |
-| M7e: fidelity documentation       | design  | What each transport keeps and loses.                                                                                                                                                                                                                                              |
+| Packet                                   | Owner   | Done means                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ---------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M7a: RFC 0004, protocol evolution        | backend | Which v0 wire concepts remain, and what a future version needs. Written during M5.                                                                                                                                                                                                                                                                                                                                                                                        |
+| M7b: the v0 adapter                      | backend | Both directions, with compatibility tests. v0's wire documents and authoring API keep working ([repo audit](repo-audit.md) §6).                                                                                                                                                                                                                                                                                                                                           |
+| M7c: MCP                                 | backend | Capabilities exposed through MCP with their identity kept. What's lost in translation is measured (prior art §6.7, assumption 9), not assumed. The trials also measure whether an agent carries what it learned over HTTP to MCP through the stable capability id (assumption 7).                                                                                                                                                                                         |
+| M7d: WebMCP and UI SDK                   | design  | WebMCP registration from projections. UI SDK integration where it's feasible, with the limits written down.                                                                                                                                                                                                                                                                                                                                                               |
+| M7e: fidelity documentation              | design  | What each transport keeps and loses.                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| M7f: comparison with existing approaches | backend | The same M4 domain and tasks through six surfaces: browser automation over the app's UI; Affordances v0 through the M7b adapter; MCP tools with no graph relations; the full semantic graph, exhaustive; the progressively disclosed graph; and the graph with transparent advocacy. It reuses M5's harness, drivers and metrics. A pilot comes first, and intake approves the run's size. The result is when each surface helps and what it costs, not a ranking to win. |
 
 ## M8: demonstration and publication
 
-| Packet                          | Owner                  | Done means                                                                                                  |
-| ------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------- |
-| M8a: the demonstration          | design                 | Polished and runnable from a clean checkout.                                                                |
-| M8b: architecture documentation | backend (lead), design | Updated from the accepted RFCs.                                                                             |
-| M8c: the technical article      | backend (lead), design | The benchmark results, the limitations and the open problems, with every claim traced to a trace or a test. |
-| M8d: the specification roadmap  | planner                | What a future specification would standardize, and what remains open.                                       |
+| Packet                          | Owner                  | Done means                                                                                                                         |
+| ------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| M8a: the demonstration          | design                 | Polished and runnable from a clean checkout.                                                                                       |
+| M8b: architecture documentation | backend (lead), design | Updated from the accepted RFCs.                                                                                                    |
+| M8c: the technical article      | backend (lead), design | The benchmark results and the M7f comparison, the limitations and the open problems, with every claim traced to a trace or a test. |
+| M8d: the specification roadmap  | planner                | What a future specification would standardize, and what remains open.                                                              |
 
 ## At each milestone's end
 
