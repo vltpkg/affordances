@@ -29,6 +29,7 @@ export type Project = {
   bundle: Bundle['slug'] | null
   // the plan it moves to at the next renewal: its plan, unless it was cancelled
   renewsAs: Plan['slug']
+  // the add-ons bought on their own. A bundle's included add-ons aren't here: they come and go with the bundle
   addOns: AddOn['slug'][]
   // add-ons that stop at the next renewal
   removing: AddOn['slug'][]
@@ -81,10 +82,18 @@ export const account = (sid: string): Account => {
   return found
 }
 
-// what the project pays a month
+const includedIn = (project: Project): AddOn['slug'][] =>
+  (project.bundle ? bundleBySlug(project.bundle)?.addOns : undefined) ?? []
+
+// the add-ons the project has: bought, and included in its bundle
+export const effectiveAddOns = (project: Project): AddOn['slug'][] => [
+  ...new Set([...project.addOns, ...includedIn(project)]),
+]
+
+// what the project pays a month: the bundle's price or the plan's, and bought add-ons the bundle doesn't include
 export const monthlyUsd = (project: Project): number => {
   const bundle = project.bundle ? bundleBySlug(project.bundle) : undefined
-  const included = new Set(bundle?.addOns ?? [])
+  const included = new Set(includedIn(project))
   return (
     (bundle ? bundle.priceUsd : planBySlug(project.plan).priceUsd) +
     project.addOns
@@ -99,7 +108,7 @@ export const projectAttributes = (project: Project) => ({
   ownerId: project.ownerId,
   plan: project.plan,
   renewsAs: project.renewsAs,
-  addOns: project.addOns,
+  addOns: effectiveAddOns(project),
   buildMinutesUsed: project.buildMinutesUsed,
   buildMinutesIncluded: planBySlug(project.plan).buildMinutes,
 })
@@ -144,7 +153,6 @@ export const subscribeBundle = (sid: string, projectId: string, slug: string) =>
   a.project.plan = bundle.plan
   a.project.bundle = bundle.slug
   a.project.renewsAs = bundle.plan
-  a.project.addOns = [...new Set([...a.project.addOns, ...bundle.addOns])]
   charge(a, `${bundle.name}, first month`, bundle.priceUsd)
   return { bundle: slug, monthlyUsd: monthlyUsd(a.project) }
 }
@@ -161,6 +169,8 @@ export const addAddOn = (sid: string, projectId: string, slug: string) => {
   const a = owned(sid, projectId)
   const addOn = addOnBySlug(slug)
   if (!addOn) throw new Refused(`No add-on ${slug}`)
+  if (includedIn(a.project).includes(addOn.slug))
+    throw new Refused(`${addOn.name} is included in the project's bundle`)
   if (a.project.addOns.includes(addOn.slug) && !a.project.removing.includes(addOn.slug))
     throw new Refused(`The project already has ${addOn.name}`)
   if (!a.project.addOns.includes(addOn.slug)) a.project.addOns = [...a.project.addOns, addOn.slug]
@@ -172,6 +182,8 @@ export const addAddOn = (sid: string, projectId: string, slug: string) => {
 export const removeAddOn = (sid: string, projectId: string, slug: string) => {
   const a = owned(sid, projectId)
   const addOn = addOnBySlug(slug)
+  if (addOn && includedIn(a.project).includes(addOn.slug) && !a.project.addOns.includes(addOn.slug))
+    throw new Refused(`${addOn.name} comes with the bundle: change the plan to drop it`)
   if (!addOn || !a.project.addOns.includes(addOn.slug))
     throw new Refused(`The project doesn't have ${addOn?.name ?? slug}`)
   // it stops at the end of the month

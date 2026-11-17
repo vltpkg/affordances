@@ -1,5 +1,6 @@
 import { defineState } from '@/lib/affordances'
 import { addOns } from '@/catalog'
+import { effectiveAddOns } from '@/lib/store'
 import { accountFor } from '@/lib/view'
 
 export default defineState(
@@ -11,6 +12,7 @@ export default defineState(
         name: a.name,
         priceUsd: a.priceUsd,
         added: project.addOns.includes(a.slug),
+        included: effectiveAddOns(project).includes(a.slug) && !project.addOns.includes(a.slug),
         removing: project.removing.includes(a.slug),
       })),
     }

@@ -1,6 +1,7 @@
 import { Button } from '@affordances/ui/components/button'
 import { addOns } from '@/catalog'
 import { usd } from '@/components/usd'
+import { effectiveAddOns } from '@/lib/store'
 import { currentAccount } from '@/lib/view'
 import { addAddOn, removeAddOn } from './actions'
 
@@ -14,6 +15,8 @@ const Page = async () => {
       <h1 className="text-2xl font-semibold">Add-ons</h1>
       <ul className="flex flex-col gap-3">
         {addOns.map((a) => {
+          const included =
+            effectiveAddOns(project).includes(a.slug) && !project.addOns.includes(a.slug)
           const added = project.addOns.includes(a.slug)
           const removing = project.removing.includes(a.slug)
           return (
@@ -23,24 +26,27 @@ const Page = async () => {
                 <p className="text-sm text-muted-foreground">
                   {usd(a.priceUsd)}
                   {removing && ', stops at the end of the month'}
+                  {included && ', included in your bundle'}
                 </p>
               </div>
-              <form
-                action={async (form: FormData) => {
-                  'use server'
-                  await (added && !removing ? removeAddOn : addAddOn)(form)
-                }}
-              >
-                <input type="hidden" name="addOn" value={a.slug} />
-                <input type="hidden" name="projectId" value={project.id} />
-                <Button
-                  type="submit"
-                  size="sm"
-                  variant={added && !removing ? 'outline' : 'default'}
+              {included ? null : (
+                <form
+                  action={async (form: FormData) => {
+                    'use server'
+                    await (added && !removing ? removeAddOn : addAddOn)(form)
+                  }}
                 >
-                  {added && !removing ? 'Remove' : 'Add'}
-                </Button>
-              </form>
+                  <input type="hidden" name="addOn" value={a.slug} />
+                  <input type="hidden" name="projectId" value={project.id} />
+                  <Button
+                    type="submit"
+                    size="sm"
+                    variant={added && !removing ? 'outline' : 'default'}
+                  >
+                    {added && !removing ? 'Remove' : 'Add'}
+                  </Button>
+                </form>
+              )}
             </li>
           )
         })}

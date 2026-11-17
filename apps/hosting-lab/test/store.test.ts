@@ -35,7 +35,9 @@ test('cancelling keeps the plan to the end of the month, and renews as Hobby', (
 
 test('the bundle sets the plan and its add-on for one price, less than its parts', () => {
   store.subscribeBundle(sid, project().id, 'pro-plus')
-  expect(project()).toMatchObject({ plan: 'pro', bundle: 'pro-plus', addOns: ['priority-support'] })
+  // the included add-on comes with the bundle, and isn't bought on its own
+  expect(project()).toMatchObject({ plan: 'pro', bundle: 'pro-plus', addOns: [] })
+  expect(store.effectiveAddOns(project())).toEqual(['priority-support'])
   expect(store.monthlyUsd(project())).toBe(35)
   expect(ledger().map((c) => [c.description, c.usd])).toEqual([['Pro Plus, first month', 35]])
 })
@@ -96,5 +98,38 @@ test("the project's attributes are the ones the manifest declares", () => {
       'plan',
       'renewsAs',
     ].toSorted(),
+  )
+})
+
+test('leaving the bundle takes its included add-on with it, and never bills it', () => {
+  const id = project().id
+  store.subscribeBundle(sid, id, 'pro-plus')
+  store.subscribePlan(sid, id, 'p3')
+  expect(store.effectiveAddOns(project())).toEqual([])
+  expect(store.monthlyUsd(project())).toBe(80)
+  store.subscribeBundle(sid, id, 'pro-plus')
+  store.subscribePlan(sid, id, 'p2')
+  expect(store.effectiveAddOns(project())).toEqual([])
+  expect(store.monthlyUsd(project())).toBe(20)
+})
+
+test('an add-on bought on its own stays when the bundle goes, and the bundle never double-bills it', () => {
+  const id = project().id
+  store.addAddOn(sid, id, 'priority-support')
+  store.subscribeBundle(sid, id, 'pro-plus')
+  // bought and included: billed once, inside the bundle
+  expect(store.monthlyUsd(project())).toBe(35)
+  expect(() => store.addAddOn(sid, id, 'priority-support')).toThrow(
+    /included in the project's bundle/,
+  )
+  store.subscribePlan(sid, id, 'p2')
+  expect(store.effectiveAddOns(project())).toEqual(['priority-support'])
+  expect(store.monthlyUsd(project())).toBe(40)
+})
+
+test("an add-on that only comes with the bundle can't be removed on its own", () => {
+  store.subscribeBundle(sid, project().id, 'pro-plus')
+  expect(() => store.removeAddOn(sid, project().id, 'priority-support')).toThrow(
+    /comes with the bundle/,
   )
 })

@@ -20,10 +20,10 @@ export {
 export { nestChoiceSets, sameInformation } from './structure.ts'
 
 import type { EndState } from './tasks.ts'
-import { account } from './lib/store.ts'
+import { account, effectiveAddOns } from './lib/store.ts'
 
 // the trial's end state, as the ground truth scores it (RFC 0003 §6)
 export const endState = (sid: string): EndState => {
   const { project } = account(sid)
-  return { plan: project.plan, bundle: project.bundle, addOns: project.addOns.toSorted() }
+  return { plan: project.plan, bundle: project.bundle, addOns: effectiveAddOns(project).toSorted() }
 }
