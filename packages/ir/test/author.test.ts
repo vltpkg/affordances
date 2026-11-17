@@ -334,6 +334,27 @@ test('condition paths are checked against attributes, input, references and the 
     // @ts-expect-error elements are reached through a quantifier's item, never a [] segment
     preconditions: { a: when.eq('product.variants.[].sku', 'x').because('no [] paths') },
   })
+  // targetAt names an input property, and needs a target
+  const located = defineCapability({
+    ...base,
+    input: z.object({ cart: z.string() }),
+    targetAt: 'cart',
+  })
+  expect(located.definition.targetAt).toBe('/cart')
+  defineCapability({
+    ...base,
+    input: z.object({ cart: z.string() }),
+    // @ts-expect-error targetAt is an input property
+    targetAt: 'basket',
+  })
+  defineCapability({
+    id: 'x.y',
+    kind: 'action',
+    description: 'no target',
+    input: z.object({ cart: z.string() }),
+    // @ts-expect-error targetAt needs a target
+    targetAt: 'cart',
+  })
   // no input and no principal: the target's paths still type, and nothing else's
   const targetOnly = defineCapability({
     ...base,

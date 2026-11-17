@@ -201,6 +201,8 @@ export const defineCapability = <
   title?: string
   description: string
   target?: T
+  // the input property that holds the target's key, for bindings without an offer (RFC 0001 §2.2)
+  targetAt?: [T] extends [undefined] ? never : keyof Infer<I> & string
   // other resources it takes as input, by the input property that holds each one's key
   references?: Refs & { readonly [K in keyof Refs]: { at: keyof Infer<I> & string } }
   input?: I
@@ -225,6 +227,7 @@ export const defineCapability = <
       title: spec.title,
       description: spec.description,
       target: spec.target?.definition.id,
+      targetAt: spec.targetAt && pointer(spec.targetAt),
       references:
         spec.references &&
         Object.entries(spec.references as Record<string, ReferenceSpec>).map(([name, r]) => ({
