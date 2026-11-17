@@ -6,6 +6,7 @@ import {
   type Principal,
 } from '@affordances/runtime'
 import { manifest } from '../manifest.ts'
+import { handlers } from './guards.ts'
 import { resolvers } from './resolvers.ts'
 
 // the inspector's data (roadmap M3f): the manifest's definitions, and a projection for one principal. It shows
@@ -14,7 +15,7 @@ import { resolvers } from './resolvers.ts'
 
 export const POLICIES: PolicyId[] = ['exhaustive', 'resource', 'progressive', 'advocated']
 
-export const runtime = createRuntime({ manifest, resources: resolvers })
+export const runtime = createRuntime({ manifest, resources: resolvers, handlers })
 
 export type InspectedOffer = CapabilityOffer & { inView: boolean }
 
@@ -25,7 +26,7 @@ export const inspect = async (
   const policy = options.policy ?? 'exhaustive'
   const m = options.m ?? manifest
   const projection = await (
-    options.m ? createRuntime({ manifest: m, resources: resolvers }) : runtime
+    options.m ? createRuntime({ manifest: m, resources: resolvers, handlers }) : runtime
   ).project({
     principal,
     policy,

@@ -8,7 +8,11 @@ beforeEach(() => trial.reset())
 
 test('a trial projects the permuted plan ids, and the store executes the same assignment', async () => {
   trial.setPlanIds(['p3', 'p1', 'p2'])
-  const runtime = createRuntime({ manifest: trial.manifest, resources: trial.resolvers })
+  const runtime = createRuntime({
+    manifest: trial.manifest,
+    resources: trial.resolvers,
+    handlers: trial.handlers,
+  })
   const sid = 's_trial'
   const projection = await runtime.project({ principal: trial.principalFor(sid) })
   const set = projection.choiceSets.find((c) => c.capability === 'hosting.plan.subscribe')!

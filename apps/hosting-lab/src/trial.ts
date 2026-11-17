@@ -4,6 +4,8 @@
 
 export { manifest } from './manifest.ts'
 export { resolvers, principalFor } from './lib/resolvers.ts'
+// the guards' implementations, as the runtime's handlers: pass them to createRuntime
+export { handlers } from './lib/guards.ts'
 export { account, reset, setPlanIds } from './lib/store.ts'
 export { withPlanIds } from './catalog.ts'
 export {

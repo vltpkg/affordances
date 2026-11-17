@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { defineAction } from '@/lib/affordances'
+import { ownsDeployment, planHasRollback } from '@/lib/guards'
 import { ensureSession } from '@/lib/session'
 import * as store from '@/lib/store'
 import { deploy as deployCapability, rollback as rollbackCapability } from '@/manifest'
@@ -26,19 +27,10 @@ export const rollback = defineAction({
   name: 'rollback',
   state: deployments,
   effects: ['deployments'],
-  // the checks only the application can make: the plan is on the project, which a deployment doesn't hold
+  // the same checks the runtime's handlers make (src/lib/guards.ts)
   guards: {
-    planHasRollback: ({ ctx }) => {
-      const { project } = store.account(ctx.session?.id ?? 'anonymous-preview')
-      const plan = store.planBySlug(project.plan)
-      return plan.rollback || `${plan.name} doesn't include rollback`
-    },
-    owns: ({ input, ctx }) =>
-      !input ||
-      store
-        .account(ctx.session?.id ?? 'anonymous-preview')
-        .project.deployments.some((d) => d.id === input.deployment) ||
-      `No deployment ${input.deployment}`,
+    planHasRollback: ({ ctx }) => planHasRollback(ctx.session?.id),
+    owns: ({ input, ctx }) => ownsDeployment(ctx.session?.id, input?.deployment),
   },
   run: async ({ deployment }, ctx) => {
     const sid = ctx.session?.id ?? (await ensureSession())

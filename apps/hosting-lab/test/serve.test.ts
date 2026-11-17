@@ -10,7 +10,7 @@ const get = (query = '', headers: Record<string, string> = {}) =>
   serveView(new Request(`https://hosting.test/api/projection${query}`, { headers }))
 
 test('a caller with a bearer session gets a view of their own projection', async () => {
-  const response = await get('', { authorization: 'Bearer s_view' })
+  const response = await get('?policy=exhaustive', { authorization: 'Bearer s_view' })
   expect(response.status).toBe(200)
   expect(response.headers.get('cache-control')).toBe('private, no-store')
   const view = await response.json()
@@ -29,12 +29,12 @@ test('a caller with a bearer session gets a view of their own projection', async
 
 test("a caller never sees another session's project", async () => {
   const theirs = store.account('s_other').project.id
-  const view = await (await get('', { authorization: 'Bearer s_mine' })).json()
+  const view = await (await get('?policy=exhaustive', { authorization: 'Bearer s_mine' })).json()
   expect(JSON.stringify(view)).not.toContain(theirs)
 })
 
 test('without credentials, nothing per-project is offered, and subscribing needs authorization', async () => {
-  const view = await (await get()).json()
+  const view = await (await get('?policy=exhaustive')).json()
   expect(
     view.offers.some((o: { target?: { type: string } }) => o.target?.type === 'hosting.project'),
   ).toBe(false)
@@ -53,4 +53,21 @@ test('a stale `seen` revision is marked, and the current one is not', async () =
   expect(
     (await (await get(`?seen=${first.revision}`, { authorization: 'Bearer s_seen' })).json()).stale,
   ).toBe(true)
+})
+
+test("the default policy is the start resource's offers, as a v0 page graph shows them", async () => {
+  const id = store.account('s_start').project.id
+  const view = await (
+    await get(`?start=hosting.project:${id}`, { authorization: 'Bearer s_start' })
+  ).json()
+  expect(view.policy).toBe('resource')
+  expect(view.offers.length).toBeGreaterThan(0)
+  // offers on the project, and offers that take it as a reference (subscribing on a plan, for this project)
+  type Offer = { target?: { key: string }; with?: Record<string, string> }
+  expect(view.offers.every((o: Offer) => o.target?.key === id || o.with?.project === id)).toBe(true)
+  expect(view.offers.map((o: { capability: string }) => o.capability)).toContain(
+    'hosting.plan.subscribe',
+  )
+  // what it leaves out is counted, never hidden
+  expect(view.omitted.offers).toBeGreaterThan(0)
 })
