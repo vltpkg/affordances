@@ -190,3 +190,26 @@ test('the generated manifest is byte-identical with and without ids', () => {
   })
   expect(render(scan(b), { name: 'Shop' })).toBe(render(scan(a), { name: 'Shop' }))
 })
+
+// code review 9: defineAction({ capability }) is identified by its capability, so codegen never asks it for an id
+describe('a capability-bound action', () => {
+  const bound = `'use server'\nimport { defineAction } from '@/lib/affordances'\nimport { cancel as c } from '@/manifest'\n\nexport const cancel = defineAction({\n  capability: c,\n  name: 'cancel',\n  run: () => {},\n})\n${action('other')}`
+  test('gets no W_NO_ID, and writeIds never writes into it', () => {
+    const root = project({ 'app/actions.ts': bound })
+    expect(missingIds(scan(root)).map((m) => m.local)).toEqual(['other'])
+    writeIds(root)
+    const after = readFileSync(path.join(root, 'app/actions.ts'), 'utf8')
+    // the bound one is byte for byte as it was; the other got its id before its name
+    expect(after.slice(0, after.indexOf('export const other'))).toBe(
+      bound.slice(0, bound.indexOf('export const other')),
+    )
+    expect(after).toContain("id: 'other',\n  name: 'other',")
+  })
+  test('on hosting-lab, every action is bound, so none is flagged', () => {
+    const root = path.resolve(import.meta.dirname, '../../../apps/hosting-lab')
+    const exports = scan(root).flatMap((e) => e.actions?.exports ?? [])
+    expect(exports.length).toBeGreaterThan(0)
+    expect(exports.every((x) => x.bound)).toBe(true)
+    expect(missingIds(scan(root))).toEqual([])
+  })
+})
