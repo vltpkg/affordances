@@ -60,7 +60,7 @@ export const conformance = async (fixture: ConformanceFixture): Promise<Conforma
     condition: string,
     context: Context,
     failing?: string,
-  ): Promise<{ got: ExecutionResult; named: boolean }> => {
+  ): Promise<{ got: ExecutionResult; named: boolean; byCondition: boolean }> => {
     // an instance's key is its key attribute: the case's value when it sets one, which may be what's falsified
     const keyFor = (
       type: Id,
@@ -101,24 +101,25 @@ export const conformance = async (fixture: ConformanceFixture): Promise<Conforma
       got.confirmation?.approval
     )
       got = await runtime.execute({ principal, offer, input, approval: got.confirmation.approval })
-    const named =
-      got.status === 'refused' &&
-      (got.code === 'precondition' || got.code === 'unauthorized') &&
-      got.condition?.id === condition
-    return { got, named }
+    // refused by a condition, not for a missing instance or a confirmation the kit couldn't give
+    const byCondition =
+      got.status === 'refused' && (got.code === 'precondition' || got.code === 'unauthorized')
+    const named = byCondition && (got as { condition?: { id: string } }).condition?.id === condition
+    return { got, named, byCondition }
   }
 
   for (const k of conformanceCases(manifest)) {
     const c = manifest.capabilities.find((x) => x.id === k.capability)!
     if (!k.context) continue
-    const { got, named } = await attempt(c, k.condition, k.context)
-    // a case that isn't isolated passes on any refusal: something it implies refused first
+    const { got, named, byCondition } = await attempt(c, k.condition, k.context)
+    // a case that isn't isolated passes on a condition's refusal: something it implies may have refused first
+    // (review of M3d: never on not_found from an arrange that did nothing, or a leftover confirmation)
     results.push({
       capability: c.id,
       condition: k.condition,
       kind: 'declarative',
       isolated: k.isolated,
-      pass: k.isolated ? named : got.status === 'refused',
+      pass: k.isolated ? named : byCondition,
       got,
     })
   }

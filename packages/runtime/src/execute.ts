@@ -119,8 +119,18 @@ export const executor = (deps: ExecutionDeps) => {
   const verify = async (token: ApprovalToken, call: Obj) => {
     const [expiresAt, nonce, mac] = token.split('~') as [string?, string?, string?]
     if (!expiresAt || !nonce || !mac || !(Date.parse(expiresAt) > approval.now())) return undefined
+    let given: Uint8Array<ArrayBuffer>
+    try {
+      given = Uint8Array.from(atob(mac.replaceAll('-', '+').replaceAll('_', '/')), (ch) =>
+        ch.charCodeAt(0),
+      )
+    } catch {
+      return undefined
+    }
+    const bytes = new TextEncoder().encode(canonicalJson({ ...call, expiresAt, nonce }))
+    // crypto.subtle.verify compares in constant time (review of M3d), so a MAC isn't guessed byte by byte
     for (const key of [approval.keys!.current, approval.keys!.previous])
-      if (key && base64url(await sign(key, { ...call, expiresAt, nonce })) === mac)
+      if (key && (await crypto.subtle.verify('HMAC', key, given, bytes)))
         return { nonce, expiresAt: new Date(expiresAt) }
     return undefined
   }
