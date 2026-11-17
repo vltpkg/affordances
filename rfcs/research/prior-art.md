@@ -911,7 +911,7 @@ Across the sources, the recurring primitives are:
   - **Refuses to:** Hyper-Schema (§8.1).
   - **Separate:** Schema.org and WoT keep the method separate.
   - The IR has to keep methods in bindings only.
-- **Input description** comes in five forms: HTML5 input types (Siren), RDF classes (Hydra), JSON Schema (Hyper-Schema, MCP, AI SDK), a micro-syntax (Schema.org) and WoT's `DataSchema`. Import from the non-JSON-Schema forms loses detail.
+- **Input description** comes in five forms: HTML5 input types (Siren), RDF classes (Hydra), JSON Schema (Hyper-Schema, MCP, AI SDK), HTML-input-like constraints (Schema.org's `PropertyValueSpecification`) and WoT's `DataSchema`. Import from the non-JSON-Schema forms loses detail.
 - **Safety encodings don't map one to one.** ALPS's single enum can't say "unknown". MCP's `destructiveHint` has no counterpart elsewhere. WebMCP has no idempotency hint. Export to each target is lossy, and needs a documented rule per target.
 - **Closed world against open world.** PDDL assumes complete, known state, which doesn't hold for web applications. The IR's conditions need a third value.
 - **Ordering:**
@@ -997,7 +997,7 @@ No reviewed source provides these. Each is a contribution the RFCs have to speci
    - **What exists:** MCP's SEP-2793 proposes something similar and is an unsponsored draft; WebMCP collapses them all into `consequentialHint`.
 6. **Typed relations between capabilities,** with defined semantics: `requires`, `produces`, `enables` (derived or declared, and not "always makes executable"), `alternativeTo`, `contains`, `operatesOn`.
 7. **Disclosure policy as a variable separate from the manifest.** Projecting the same definitions under exhaustive, progressive, relevance-ordered or advocated policies is what makes choice architecture measurable. Every reviewed system ties disclosure to its definitions or to host code.
-8. **The rule that an offer is never authorization,** stated and tested. WoT ("describe, don't grant"), MCP (SEP-2127) and Next.js ("re-check authorization inside") each state part of it.
+8. **The rule that an offer is never authorization,** stated and tested. WoT ("describe, don't grant"), MCP (SEP-2127) and Next.js ("verify authentication and authorization inside each one") each state part of it.
 
 ### 6.7 Assumptions to validate experimentally
 
