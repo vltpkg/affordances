@@ -164,24 +164,28 @@ const STATUS: Record<string, number> = {
   confirmation_required: 409,
 }
 
-// POST /api/projection/execute { offer, input?, approval?, ifRevision? }: run an offer, every check first (RFC 0002
-// §8.1). A capability that requires confirmation is refused with its summary and an approval token, the first time;
-// sending the same call with that token runs it, once
+// POST /api/projection/execute { offer, input?, approval?, ifRevision?, start? }: run an offer, every check first
+// (RFC 0002 §8.1). A capability that requires confirmation is refused with its summary and an approval token, the
+// first time; sending the same call with that token runs it, once. `start` is the caller's view's start (`type:key`
+// or an id), so the result's changes compare with that view (§8.3); the target's, unless given
 export const serveExecute = async (request: Request): Promise<Response> => {
   const body = (await request.json().catch(() => undefined)) as Record<string, unknown> | undefined
   if (!body || typeof body !== 'object') return refuse(400, 'The body is a JSON object')
-  const { offer, input, approval, ifRevision } = body
+  const { offer, input, approval, ifRevision, start } = body
   if (typeof offer !== 'string' || !offer) return refuse(400, 'offer is an offer id')
   if (approval !== undefined && typeof approval !== 'string')
     return refuse(400, 'approval is a token')
   if (ifRevision !== undefined && typeof ifRevision !== 'string')
     return refuse(400, 'ifRevision is an offer revision')
+  if (start !== undefined && (typeof start !== 'string' || !start))
+    return refuse(400, 'start is type:key, or a capability or resource type id')
   const result = await runtime.execute({
     principal: principalOf(request),
     offer,
     input,
     approval,
     ifRevision,
+    start: startOf(start),
   })
   return json(
     result,

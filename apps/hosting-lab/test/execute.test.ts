@@ -34,9 +34,17 @@ test('a consequential call is refused with its summary and a token, runs once wi
   expect(refused.confirmation.summary).toContain('USD a month')
   expect(store.account('s_exec').project.plan).toBe('hobby')
 
-  const approved = await execute({ ...call, approval: refused.confirmation.approval }, 's_exec')
+  const approved = await execute(
+    { ...call, approval: refused.confirmation.approval, start: `hosting.project:${id}` },
+    's_exec',
+  )
   expect(approved.status).toBe(200)
-  expect(await approved.json()).toMatchObject({ status: 'succeeded' })
+  const succeeded = await approved.json()
+  expect(succeeded).toMatchObject({ status: 'succeeded' })
+  // what changed, compared with the caller's view from the project (RFC 0002 §8.3)
+  expect(succeeded.changes).toBeDefined()
+  expect(succeeded.revision).toMatch(/^sha256-/)
+  expect((await execute({ ...call, start: 7 }, 's_exec')).status).toBe(400)
   expect(store.account('s_exec').project.plan).toBe('pro')
 
   // the same token again: it has run
