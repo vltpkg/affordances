@@ -1,4 +1,5 @@
 import type { z } from 'zod'
+import { derive } from './derive.ts'
 import {
   CapabilityManifest,
   COMPARISONS,
@@ -340,6 +341,22 @@ export const validate = (input: unknown): Validation => {
   m.relations?.forEach((r, i) => {
     resolves(r.from, `/relations/${i}/from`)
     resolves(r.to, `/relations/${i}/to`)
+  })
+  // a declared enables that nothing derives is the source's word only (§5.2)
+  const derived = new Set(
+    derive(m)
+      .filter((e) => e.relation === 'enables')
+      .map((e) => `${e.from} ${e.to}`),
+  )
+  m.relations?.forEach((r, i) => {
+    if (r.type !== 'enables') return
+    const [from, to] = [local(r.from), local(r.to)]
+    if (from !== undefined && to !== undefined && !derived.has(`${from} ${to}`))
+      report(
+        'W_UNCONFIRMED_ENABLES',
+        `/relations/${i}`,
+        `nothing in the manifest derives ${from} enabling ${to}`,
+      )
   })
   m.bindings?.forEach((b, i) => resolves(b.capability, `/bindings/${i}/capability`, 'capability'))
 
