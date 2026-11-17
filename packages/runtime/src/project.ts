@@ -11,6 +11,8 @@ import {
   type Truth,
 } from '@affordances/ir'
 import { digestOf } from './digest.ts'
+import { executor } from './execute.ts'
+import { render } from './render.ts'
 import { offerId } from './offer-id.ts'
 import { BUILT_IN, views } from './views.ts'
 import type {
@@ -26,8 +28,10 @@ import type {
   DiscoveryPolicy,
   Handler,
   PolicyId,
+  Principal,
   ResourceResolver,
   Runtime,
+  TokenStore,
 } from './types.ts'
 
 export type RuntimeOptions = {
@@ -38,6 +42,10 @@ export type RuntimeOptions = {
   handlers?: Record<Id, Handler>
   policies?: DiscoveryPolicy[] // added to the built-in four (§6.1)
   defaultPolicy?: PolicyId // 'resource' unless set
+  approvalKeys?: { current: CryptoKey; previous?: CryptoKey } // HMAC keys for approval tokens (§8.2)
+  seenTokens?: TokenStore // each token's nonce, so a token runs once (§8.2)
+  approvalTtlMs?: number // how long an approval holds: five minutes unless set
+  now?: () => number // the clock approvals expire by; Date.now unless set
 }
 
 type Obj = Record<string, unknown>
@@ -74,25 +82,6 @@ const paths = (expr: Expr): string[] => {
   const [a, b] = Object.values(expr)[0] as [object, object]
   return [a, b].flatMap((o) => ('path' in o ? [o.path] : 'count' in o ? [o.count] : [])) as string[]
 }
-
-// RFC 0001 §3.2: strings as written, other values as their RFC 8785 text, an unresolved path as `unknown`
-const render = (summary: string, context: Context) =>
-  summary.replaceAll(/\{\{|\}\}|\{([^{}]*)\}/g, (whole, path: string | undefined) => {
-    if (path === undefined) return whole[0]!
-    const [root, ...rest] = path.split('.')
-    let value: unknown =
-      root === 'target' || root === 'input' ? context[root] : context.references?.[root!]
-    for (const key of rest)
-      value =
-        value !== null && typeof value === 'object' && Object.hasOwn(value, key)
-          ? (value as Obj)[key]
-          : undefined
-    return value === undefined
-      ? 'unknown'
-      : typeof value === 'string'
-        ? value
-        : canonicalJson(value)
-  })
 
 // canonical order: capability ids, then target type and key, then bound references (§6.4)
 const order = (o: CapabilityOffer) => [
@@ -137,6 +126,10 @@ export const createRuntime = ({
   handlers = {},
   policies: added = [],
   defaultPolicy = 'resource',
+  approvalKeys,
+  seenTokens,
+  approvalTtlMs = 5 * 60_000,
+  now = Date.now,
 }: RuntimeOptions): Runtime => {
   const policies = new Map<PolicyId, DiscoveryPolicy>()
   for (const p of [...BUILT_IN, ...added]) {
@@ -178,8 +171,9 @@ export const createRuntime = ({
         partners.set(a, (partners.get(a) ?? new Set()).add(b))
   const manifestDigest = digest(manifest)
 
-  const project = async (request: ProjectionRequest): Promise<Projection> => {
-    const { principal } = request
+  // what one request reads, shared by projection and execution: the principal's declared attributes, the instances
+  // loaded (each once), the guards run, and an offer computed as a projection computes it
+  const session = async (principal: Principal) => {
     // the declared attributes only: anything else is ignored (§3)
     const attributes = Object.fromEntries(
       declared
@@ -213,13 +207,14 @@ export const createRuntime = ({
       if (loaded.state === 'failed') return { type, key }
       return { type, key, version: loaded.version ?? (await digestOf(loaded.attributes)) }
     }
-    const start = typeof request.start === 'object' ? request.start : undefined
     // every guard run at projection time, for the projection's revision (§7)
     const guardLog: { capability: Id; condition: string; value: boolean | string | null }[] = []
 
+    // bind: reference names to keys, for the references the offer binds
     const offerOn = async (
       c: CapabilityDefinition,
       target: ResourceRef | undefined,
+      bind: Record<string, string> = {},
     ): Promise<CapabilityOffer | undefined> => {
       const reads: Read[] = []
       const context: Context = { principal: attributes, references: {} }
@@ -230,15 +225,16 @@ export const createRuntime = ({
         if (loaded.state === 'found') context.target = loaded.attributes
         reads.push((await read(target.type, target.key, loaded))!)
       }
-      // a reference is bound when the request starts from an instance of its type
+      // a reference is bound when its key is known and the instance is there
       const bound: Record<string, string> = {}
       for (const r of c.references ?? []) {
-        if (start?.type !== r.resource) continue
-        const loaded = await load(start.type, start.key)
+        const key = bind[r.name]
+        if (key === undefined) continue
+        const loaded = await load(r.resource, key)
         if (loaded.state === 'none') continue
-        bound[r.name] = start.key
+        bound[r.name] = key
         if (loaded.state === 'found') context.references![r.name] = loaded.attributes
-        reads.push((await read(start.type, start.key, loaded))!)
+        reads.push((await read(r.resource, key, loaded))!)
       }
 
       // conditions, then requirements, then availability in RFC 0002 §4.2's order
@@ -393,13 +389,28 @@ export const createRuntime = ({
       return offer
     }
 
+    return { attributes, base, loads, load, read, guardLog, offerOn }
+  }
+
+  const project = async (request: ProjectionRequest): Promise<Projection> => {
+    const { principal } = request
+    const { base, loads, read, guardLog, offerOn } = await session(principal)
+    const start = typeof request.start === 'object' ? request.start : undefined
+    // a reference is bound when the request starts from an instance of its type
+    const startBinding = (c: CapabilityDefinition) =>
+      Object.fromEntries(
+        (c.references ?? []).flatMap((r) =>
+          start?.type === r.resource ? [[r.name, start.key]] : [],
+        ),
+      )
+
     // every offer the principal may see: a global capability once, a targeted one on each instance its resolver lists,
     // and on the start instance. events are announced, not invoked, so they have no offers
     const offers: CapabilityOffer[] = []
     for (const c of manifest.capabilities) {
       if (c.kind === 'event') continue
       if (!c.target) {
-        const offer = await offerOn(c, undefined)
+        const offer = await offerOn(c, undefined, startBinding(c))
         if (offer) offers.push(offer)
         continue
       }
@@ -413,7 +424,7 @@ export const createRuntime = ({
         // a list that throws enumerates nothing beyond the start
       }
       for (const key of keys) {
-        const offer = await offerOn(c, { type: c.target, key })
+        const offer = await offerOn(c, { type: c.target, key }, startBinding(c))
         if (offer) offers.push(offer)
       }
     }
@@ -477,5 +488,12 @@ export const createRuntime = ({
     }
   }
 
-  return { manifest, project }
+  const { check, execute } = executor({
+    manifest,
+    handlers,
+    local,
+    session,
+    approval: { keys: approvalKeys, store: seenTokens, ttlMs: approvalTtlMs, now },
+  })
+  return { manifest, project, check, execute }
 }

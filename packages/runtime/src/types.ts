@@ -40,7 +40,18 @@ export type ResourceResolver = {
 
 // §11: what the application registers for a capability. M3b uses its guards; execution's run comes with M3d
 export type Handler = {
+  // runs the capability once every check has passed (§8.1, step 9); a query returns its output
+  run?(
+    input: unknown,
+    ctx: {
+      principal: Principal
+      target?: ResourceRef
+      refs: Record<string, { key: string; attributes: Record<string, unknown> } | undefined>
+    },
+  ): unknown
   guards?: Record<string, GuardImpl>
+  // a sentence to repeat to the user, as v0's message
+  message?(args: { input: unknown; output: unknown }): string
 }
 // a guard: true is "not ruled out", false or a string rules it out (the string says why). input is undefined at
 // projection time, and an execution-only guard isn't run then at all (§4.2)
@@ -180,4 +191,52 @@ export type OfferDetails = {
 export type Runtime = {
   manifest: CapabilityManifest
   project(request: ProjectionRequest): Promise<Projection>
+  check(request: CheckRequest): Promise<CheckResult>
+  execute(request: ExecutionRequest): Promise<ExecutionResult>
 }
+
+// §8: execution
+export type ApprovalToken = string
+export type InputIssue = { at: string; message: string }
+// records a token's nonce until expiresAt; false when it was already recorded (§8.2)
+export type TokenStore = { claim(nonce: string, expiresAt: Date): Promise<boolean> }
+
+export type ExecutionRequest = {
+  principal: Principal // resolved afresh by the binding for this request
+  offer: OfferId // or a capability id, with the target's key in the input at targetAt
+  input?: unknown
+  approval?: ApprovalToken
+  ifRevision?: OfferRevision
+}
+export type RefusalCode =
+  | 'not_found'
+  | 'unauthorized'
+  | 'rate_limited'
+  | 'invalid_input'
+  | 'precondition'
+  | 'stale'
+  | 'confirmation_required'
+export type Refusal = {
+  status: 'refused'
+  code: RefusalCode
+  condition?: { id: string; description: string }
+  detail?: string
+  detailTruncated?: true
+  issues?: InputIssue[]
+  confirmation?: { summary: string; approval?: ApprovalToken; expiresAt?: string }
+  revision: OfferRevision
+}
+// M3d's results. M3e adds what was observed and how the view changes
+export type ExecutionResult =
+  | { status: 'succeeded'; output?: unknown; message?: string }
+  | Refusal
+  | { status: 'failed'; message: string }
+
+// §8.1 steps 1-7 without running, for a binding that runs its own handler, as v0's agent path does (M3d, C3.1).
+// It never makes, reads or takes an approval token: v0's confirm is v0's own, recorded with its basis
+export type CheckRequest = Omit<ExecutionRequest, 'approval'> & {
+  confirmed?: { basis: 'v0-client-flag' }
+}
+export type CheckResult =
+  | { status: 'ok'; revision: OfferRevision; confirmation?: { basis: 'v0-client-flag' } }
+  | (Omit<Refusal, 'confirmation'> & { confirmation?: { summary: string } })
