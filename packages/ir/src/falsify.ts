@@ -177,37 +177,62 @@ const contextOf = (assignments: Assignment[]): Context => {
 // extended, so that branch is cut. none: no state of this language makes it false. gaveUp: the node budget ran out
 export type Falsified = { context: Context } | { none: true } | { gaveUp: true }
 const MISSING = Symbol('missing')
-type Slot = { path: string; candidates: unknown[] }
+// capped: the candidates are a bounded part of the slot's space, so exhausting them proves nothing
+type Slot = { path: string; candidates: unknown[]; capped?: true }
+// the most items, and lists of them, an array slot takes; past these it's capped
+const MAX_ITEMS = 512
+const MAX_LISTS = 8192
 
 // an operand's literals, an in's list flattened
 const flat = (o: Operand): Scalar[] =>
   'value' in o ? (Array.isArray(o.value) ? o.value : [o.value]) : []
 // lists of none, one and two of the items, and the lengths a count names
-const listsOf = (items: unknown[], extra: number[] = []) => {
+const listsOf = (items: unknown[], extra: number[] = []): { lists: unknown[]; capped: boolean } => {
   const out: unknown[] = [[]]
   for (const a of items) out.push([a])
-  for (const a of items) for (const b of items) out.push([a, b])
+  // pairs, as many as fit: two items can each satisfy a different part of a where
+  let capped = false
+  pairs: for (const a of items)
+    for (const b of items) {
+      if (out.length >= MAX_LISTS) {
+        capped = true
+        break pairs
+      }
+      out.push([a, b])
+    }
   // the lengths a count names, one either side, of one item repeated
   for (const n of extra)
     for (const len of [n - 1, n, n + 1])
       if (len > 2 && len <= 12) out.push(Array.from({ length: len }, () => items[0] ?? {}))
-  return out
+  return { lists: out, capped }
 }
-// an item for a quantifier: one field at a time from its candidates, from the where's own item.* paths
-const itemsFor = (wheres: Expr[]): unknown[] => {
-  const inner = slotsOf({ all: wheres.length ? wheres : [{ exists: 'item' }] }, true)
+// an item for a quantifier: every combination of its where's item.* fields, each one of its candidates or absent, so
+// a where over two fields of one item (review of the kit rework) is reachable
+const itemsFor = (wheres: Expr[], pools: Pools): { items: unknown[]; capped: boolean } => {
+  const inner = slotsOf({ all: wheres.length ? wheres : [{ exists: 'item' }] }, true, pools)
   const fields = inner.filter((s) => s.path.startsWith('item.') && !s.path.slice(5).includes('.'))
   const bare = inner.find((s) => s.path === 'item')
-  if (bare && !fields.length) return bare.candidates.filter((c) => c !== MISSING)
-  const out: unknown[] = [{}]
-  for (const f of fields)
-    for (const c of f.candidates) if (c !== MISSING) out.push({ [f.path.slice(5)]: c })
-  return out
+  const capped = inner.some((s) => s.capped)
+  if (bare && !fields.length) return { items: bare.candidates.filter((c) => c !== MISSING), capped }
+  let items: Record<string, unknown>[] = [{}]
+  for (const f of fields) {
+    const next: Record<string, unknown>[] = []
+    for (const item of items)
+      for (const c of f.candidates)
+        next.push(c === MISSING ? item : { ...item, [f.path.slice(5)]: c })
+    if (next.length > MAX_ITEMS) return { items: next.slice(0, MAX_ITEMS), capped: true }
+    items = next
+  }
+  return { items, capped }
 }
 
 // inItem: the slots of a quantifier's where, whose item.* paths are the item's own fields
 const isItem = (path: string) => /^item(\.|$)/.test(path)
-const slotsOf = (expr: Expr, inItem = false): Slot[] => {
+// the literals each path is compared with, and the paths compared with each other
+type Pools = { literals: Map<string, Scalar[]>; peers: Map<string, Set<string>> }
+// pools: the whole expression's, for a where's slots, so an item field compared with an outer path takes that path's
+// literals too (review of the kit rework: eq(item.k, target.s) with target.s in [x, z])
+const slotsOf = (expr: Expr, inItem = false, pools?: Pools): Slot[] => {
   // per path, the literals it's compared with; paths compared with each other share theirs
   const literals = new Map<string, Scalar[]>()
   const peers = new Map<string, Set<string>>()
@@ -254,14 +279,15 @@ const slotsOf = (expr: Expr, inItem = false): Slot[] => {
   walk(expr)
   // a path's candidates: its literals and its peers', a step either side of each, a fresh value of each kind among
   // them (or a string when there are none), and null
+  const own = pools ?? { literals, peers }
   const candidatesOf = (path: string): unknown[] => {
     const seen = new Set([path])
     const queue = [path]
     const lits: Scalar[] = []
     while (queue.length) {
       const at = queue.pop()!
-      lits.push(...(literals.get(at) ?? []))
-      for (const n of peers.get(at) ?? [])
+      lits.push(...(own.literals.get(at) ?? []))
+      for (const n of own.peers.get(at) ?? [])
         if (!seen.has(n)) {
           seen.add(n)
           queue.push(n)
@@ -284,11 +310,22 @@ const slotsOf = (expr: Expr, inItem = false): Slot[] => {
   for (const path of literals.keys()) {
     if ((isItem(path) && !inItem) || arrays.has(path)) continue
     const values = candidatesOf(path)
-    slots.push({ path, candidates: [...(lists.has(path) ? listsOf(values) : values), MISSING] })
+    if (!lists.has(path)) {
+      slots.push({ path, candidates: [...values, MISSING] })
+      continue
+    }
+    const { lists: of, capped } = listsOf(values)
+    slots.push({ path, candidates: [...of, MISSING], ...(capped && { capped: true as const }) })
   }
   for (const [path, wheres] of arrays) {
     if (isItem(path) && !inItem) continue
-    slots.push({ path, candidates: [...listsOf(itemsFor(wheres), counts.get(path)), MISSING] })
+    const { items, capped } = itemsFor(wheres, own)
+    const { lists: of, capped: some } = listsOf(items, counts.get(path))
+    slots.push({
+      path,
+      candidates: [...of, MISSING],
+      ...((capped || some) && { capped: true as const }),
+    })
   }
   return slots
 }
@@ -364,7 +401,9 @@ const searchWhole = (expr: Expr, budget: number): Falsified => {
   }
   const found = go(0)
   if (found === 'gaveUp') return { gaveUp: true }
-  return found ? { context: found } : { none: true }
+  if (found) return { context: found }
+  // exhausting a capped slot's candidates isn't exhausting its space
+  return slots.some((s) => s.capped) ? { gaveUp: true } : { none: true }
 }
 
 // the context that makes expr false
