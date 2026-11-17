@@ -1,2 +1,5 @@
 export * from './schema.ts'
 export { jsonSchema } from './json-schema.ts'
+export { validate, type Validation } from './validate.ts'
+export { normalize } from './normalize.ts'
+export * from './author/index.ts'
