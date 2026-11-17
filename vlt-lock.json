@@ -1099,6 +1099,7 @@
     "workspace~apps+hosting-lab @affordances/core": "prod workspace:* workspace~packages+core",
     "workspace~apps+hosting-lab @affordances/ir": "prod workspace:* workspace~packages+ir",
     "workspace~apps+hosting-lab @affordances/next": "prod workspace:* workspace~packages+next",
+    "workspace~apps+hosting-lab @affordances/runtime": "prod workspace:* workspace~packages+runtime",
     "workspace~apps+hosting-lab @affordances/ui": "prod workspace:* workspace~packages+ui",
     "workspace~packages+cli @effect/platform-node": "dev 4.1.0 ~npm~@effect+platform-node@4.1.0~peer.ef00b57fff5a53f1",
     "workspace~packages+cli effect": "dev 4.1.0 ~npm~effect@4.1.0",

@@ -20,6 +20,7 @@
     "@affordances/core": "workspace:*",
     "@affordances/ir": "workspace:*",
     "@affordances/next": "workspace:*",
+    "@affordances/runtime": "workspace:*",
     "@affordances/ui": "workspace:*",
     "next": "^16.4.6",
     "react": "^19.3.1",
