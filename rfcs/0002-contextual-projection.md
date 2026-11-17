@@ -96,6 +96,7 @@ type ProjectionRequest = {
   seen?: Revision // the revision of a view the agent already holds
   policy?: PolicyId // which declared discovery policy to use; the application's default otherwise
   budget?: Budget // how much one view may hold
+  bind?: ResourceRef[] // instances that bind references, without widening the scope (below)
 }
 
 type ResourceRef = { type: Id; key: string } // 'commerce.cart' + 'c_8f2'
@@ -112,6 +113,18 @@ type Budget = { offers?: number; depth?: number }
 | `seen`   | whether the response says the agent's view is stale          | anything else                            |
 | `policy` | disclosure and order, within the rules of §6                 | which offers exist for this principal    |
 | `budget` | how many offers one view holds                               | the counts in `omitted`                  |
+| `bind`   | which instance an offer's reference names                    | the scope, or any offer's existence      |
+
+**`bind`: references bound from the request.**
+
+- **What it does:** each instance in `bind` binds a reference wherever the reference's type matches, as a start instance does. It never widens the scope and never adds an offer: an offer that's out of scope stays out, so the disclosure invariant (§6.3) is unchanged.
+- **The start comes first:** a reference the start's instance binds keeps it, and `bind` fills only references the start leaves unbound.
+- **One instance per type:** a request that names two instances of one type binds neither, so the order of the list never decides.
+- **Why it exists:** a view can then start from one capability, or one resource type, and still carry the caller's own instance in its references. The benchmark's friction condition is the first use (RFC 0003, condition E).
+- **It loads like a start:** each instance is loaded through its resolver as the request's principal (§2.1). One the principal can't load binds nothing. The response is the same whether it doesn't exist or isn't the principal's, so `bind` never reveals that an instance exists.
+- **It changes nothing else:** it affects authorization and availability only as binding that reference does. An offer bound through `bind` has exactly the availability it has when its reference is bound by a start of the same instance.
+- **Revisions:** a bound instance is read like any other, so it's part of the projection and offer revisions that read it (§7), as a start's is.
+- **Execution:** an execution's references still come from its offer and its input, as always (§8.1, steps 1, 4 and 5). Its `view` (§8.1) carries `bind` with the rest of the caller's request, and that shapes only `changes`. It never stands in for, or overrides, the reference an offer or an input names, so it can't change what an action acts on.
 
 **Why split by who can vouch.**
 
