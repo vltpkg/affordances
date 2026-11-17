@@ -12,6 +12,7 @@ import {
 } from '@affordances/ir'
 import { digestOf } from './digest.ts'
 import { offerId } from './offer-id.ts'
+import { BUILT_IN, views } from './views.ts'
 import type {
   Availability,
   CapabilityOffer,
@@ -22,10 +23,11 @@ import type {
   ProjectionRequest,
   Requirements,
   ResourceRef,
+  DiscoveryPolicy,
   Handler,
+  PolicyId,
   ResourceResolver,
   Runtime,
-  View,
 } from './types.ts'
 
 export type RuntimeOptions = {
@@ -34,6 +36,8 @@ export type RuntimeOptions = {
   resources: Record<Id, ResourceResolver>
   // by capability id: an implementation for each guard it declares (§11). execution's run arrives with M3d
   handlers?: Record<Id, Handler>
+  policies?: DiscoveryPolicy[] // added to the built-in four (§6.1)
+  defaultPolicy?: PolicyId // 'resource' unless set
 }
 
 type Obj = Record<string, unknown>
@@ -127,7 +131,19 @@ const consequential = (c: CapabilityDefinition) =>
   (c.effects === undefined ||
     c.effects.some((e) => e.category !== 'state' || e.reversibility === 'irreversible'))
 
-export const createRuntime = ({ manifest, resources, handlers = {} }: RuntimeOptions): Runtime => {
+export const createRuntime = ({
+  manifest,
+  resources,
+  handlers = {},
+  policies: added = [],
+  defaultPolicy = 'resource',
+}: RuntimeOptions): Runtime => {
+  const policies = new Map<PolicyId, DiscoveryPolicy>()
+  for (const p of [...BUILT_IN, ...added]) {
+    if (policies.has(p.id)) throw new Error(`two discovery policies are named ${p.id}`)
+    policies.set(p.id, p)
+  }
+  if (!policies.has(defaultPolicy)) throw new Error(`no discovery policy ${defaultPolicy}`)
   const checked = validate(manifest)
   if (!checked.ok)
     throw new Error(
@@ -438,24 +454,22 @@ export const createRuntime = ({ manifest, resources, handlers = {} }: RuntimeOpt
       ),
     })
 
-    // every offer, in canonical order, with nothing omitted. policies and budgets choose subsets in M3c
-    const view = (): View => {
-      const v: View = {
-        revision,
-        policy: 'exhaustive',
-        offers,
-        choiceSets,
-        order: { by: 'canonical' },
-        omitted: { offers: 0, choiceSets: 0, claims: 0, expand: [] },
-      }
-      if (request.seen !== undefined && request.seen !== revision) v.stale = true
-      return v
-    }
+    // what's shown first, and how to find the rest (§6)
+    const policyId = request.policy ?? defaultPolicy
+    const policy = policies.get(policyId)
+    if (!policy) throw new Error(`no discovery policy ${policyId}`)
+    const shown = views({ manifest, request, policy, revision, offers, choiceSets })
     return {
       revision,
       offers,
       choiceSets,
-      view,
+      view: shown.view,
+      expand: async (expansion, options) => shown.expand(expansion, options),
+      inspect: async (id) => {
+        const details = shown.inspect(id)
+        if (!details) throw new Error(`no offer ${id} in this projection`)
+        return details
+      },
       // runtime-internal: it holds what a view omits, so it never goes on a wire (RFC 0002 §11). views do
       toJSON() {
         throw new TypeError('a projection is runtime-internal: serialize its view() instead')

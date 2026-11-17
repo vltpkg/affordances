@@ -1,4 +1,4 @@
-import type { Basis, CapabilityManifest, Id } from '@affordances/ir'
+import type { Basis, CapabilityDefinition, CapabilityManifest, Id } from '@affordances/ir'
 
 // RFC 0002's projection types (§2-§7), as the RFC states them. Execution's (§8) arrive with M3d
 
@@ -159,9 +159,22 @@ export type Projection = {
   // every offer the principal may see, in canonical order: what views and expansions draw from (M3c)
   offers: CapabilityOffer[]
   choiceSets: ChoiceSet[]
-  view(): View
+  view(): View // the first view, under the request's policy and budget
+  expand(expansion: Pick<Expansion, 'from' | 'along'>, options?: { budget?: Budget }): Promise<View>
+  inspect(offer: OfferId): Promise<OfferDetails>
   // throws: a projection is runtime-internal, and only views are wire-visible (§11)
   toJSON(): never
+}
+
+export type OfferDetails = {
+  offer: CapabilityOffer
+  definition: CapabilityDefinition
+  derived: {
+    relation: 'enables' | 'prerequisite'
+    to: Id
+    basis: Extract<Basis, 'inferred'>
+    from: string // the pointers into the manifest it was derived from
+  }[]
 }
 
 export type Runtime = {

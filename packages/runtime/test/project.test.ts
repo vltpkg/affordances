@@ -144,8 +144,8 @@ describe('a projection', () => {
     expect(after.revision).not.toBe(before.revision)
   })
 
-  test('without a task or a policy, relevance is undetermined and the view is everything, nothing omitted', async () => {
-    const p = await runtimeOf().project({ principal: member })
+  test('without a task, relevance is undetermined, and the exhaustive view is everything, nothing omitted', async () => {
+    const p = await runtimeOf().project({ principal: member, policy: 'exhaustive' })
     expect(p.offers.every((o) => o.relevance.level === 'undetermined')).toBe(true)
     const view = p.view()
     expect(view).toMatchObject({
@@ -157,16 +157,20 @@ describe('a projection', () => {
     expect(view.offers).toEqual(p.offers)
     expect(view.stale).toBeUndefined()
     expect(
-      (await runtimeOf().project({ principal: member, seen: 'sha256-old' })).view().stale,
+      (
+        await runtimeOf().project({ principal: member, policy: 'exhaustive', seen: 'sha256-old' })
+      ).view().stale,
     ).toBe(true)
     expect(
-      (await runtimeOf().project({ principal: member, seen: p.revision })).view().stale,
+      (
+        await runtimeOf().project({ principal: member, policy: 'exhaustive', seen: p.revision })
+      ).view().stale,
     ).toBeUndefined()
   })
 })
 
 test('a projection refuses to be serialized, and its view serializes: only views go on a wire', async () => {
-  const p = await runtimeOf().project({ principal: member })
+  const p = await runtimeOf().project({ principal: member, policy: 'exhaustive' })
   expect(() => JSON.stringify(p)).toThrow('a projection is runtime-internal')
   expect(() => JSON.stringify({ result: p })).toThrow('a projection is runtime-internal')
   expect(JSON.parse(JSON.stringify(p.view())).offers).toHaveLength(p.offers.length)
