@@ -36,8 +36,6 @@ export const inspect = async (
   const offers: InspectedOffer[] = projection.offers.map((o) => ({ ...o, inView: shown.has(o.id) }))
   return {
     policy,
-    // the policy the runtime applied, which may differ while M3c's policies aren't built
-    applied: view.policy,
     revision: projection.revision,
     order: view.order,
     omitted: view.omitted,

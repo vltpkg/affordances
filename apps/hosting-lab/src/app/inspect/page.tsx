@@ -53,11 +53,6 @@ const Page = async ({ searchParams }: PageProps<'/inspect'>) => {
             </Link>
           ))}
         </nav>
-        {i.applied !== i.policy && (
-          <p role="note" className="text-muted-foreground">
-            The runtime applied {i.applied}: the {i.policy} policy isn&apos;t built yet (M3c).
-          </p>
-        )}
         <p>
           View order: <code>{json(i.order)}</code>. In view: {i.offers.length - omitted.length} of{' '}
           {i.offers.length} offers. Omitted, as the view counts them: {json(i.omitted)}.

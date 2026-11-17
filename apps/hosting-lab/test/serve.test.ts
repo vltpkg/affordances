@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from 'vitest'
-import { serveView } from '../src/lib/serve.ts'
+import { serveExpand, serveInspect, serveView } from '../src/lib/serve.ts'
 import * as store from '../src/lib/store.ts'
 
 // the agent-facing projection route answers with a view, for the caller its credentials name, and nothing more
@@ -70,4 +70,59 @@ test("the default policy is the start resource's offers, as a v0 page graph show
   )
   // what it leaves out is counted, never hidden
   expect(view.omitted.offers).toBeGreaterThan(0)
+})
+
+const post = (body: unknown, headers: Record<string, string> = {}) =>
+  serveExpand(
+    new Request('https://hosting.test/api/projection/expand', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: { 'content-type': 'application/json', ...headers },
+    }),
+  )
+const inspectGet = (query: string, headers: Record<string, string> = {}) =>
+  serveInspect(new Request(`https://hosting.test/api/projection/inspect${query}`, { headers }))
+
+test('every expansion a view lists answers with a view, never a projection', async () => {
+  const auth = { authorization: 'Bearer s_expand' }
+  const id = store.account('s_expand').project.id
+  const view = await (await get(`?start=hosting.project:${id}`, auth)).json()
+  expect(view.omitted.expand.length).toBeGreaterThan(0)
+  for (const e of view.omitted.expand) {
+    const response = await post(
+      { start: `hosting.project:${id}`, from: e.from, along: e.along },
+      auth,
+    )
+    expect(response.status).toBe(200)
+    const more = await response.json()
+    expect(Object.keys(more).toSorted()).toEqual(Object.keys(view).toSorted())
+  }
+})
+
+test('expansion refuses what it cannot do, with a reason', async () => {
+  expect((await post({ from: 'x', along: 'sideways' })).status).toBe(400)
+  expect((await post({ along: 'more' })).status).toBe(400)
+  expect((await post({ from: 'x', along: 'more', policy: 'secret' })).status).toBe(400)
+})
+
+test("inspecting an offer gives its definition; another caller's offer is not found", async () => {
+  const auth = { authorization: 'Bearer s_insp' }
+  const id = store.account('s_insp').project.id
+  const offer = `hosting.project.read@hosting.project:${id}`
+  const response = await inspectGet(`?offer=${encodeURIComponent(offer)}&policy=exhaustive`, auth)
+  expect(response.status).toBe(200)
+  const details = await response.json()
+  expect(details.offer.id).toBe(offer)
+  expect(details.definition.id).toBe('hosting.project.read')
+  expect(
+    (await inspectGet(`?offer=${encodeURIComponent(offer)}`, { authorization: 'Bearer s_other' }))
+      .status,
+  ).toBe(404)
+  expect((await inspectGet('')).status).toBe(400)
+})
+
+test('an unknown policy is refused, not defaulted', async () => {
+  const response = await get('?policy=secret')
+  expect(response.status).toBe(400)
+  expect((await response.json()).error).toContain('No policy secret')
 })
