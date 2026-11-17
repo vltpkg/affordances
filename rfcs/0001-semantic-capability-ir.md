@@ -1,6 +1,6 @@
 # RFC 0001: The semantic capability IR
 
-- **Status:** accepted (2026-11-17); amended 2026-11-17: §3.1, §5.5 and §6.3 (quantifiers and `count` after the guard survey, with route parameters mapped into input by bindings); §2.3, §3.1, §5.5 and §6.4 (declared principal attributes, missing against absent, and composition, for RFC 0002)
+- **Status:** accepted (2026-11-17); amended 2026-11-17: §3.1, §5.5 and §6.3 (quantifiers and `count` after the guard survey, with route parameters mapped into input by bindings); §2.3, §3.1, §3.2, §5.5, §6.4 and §9 (declared principal attributes, missing against absent, the roots authorization conditions and claims read, and composition, for RFC 0002)
 - **Package:** `@affordances/ir` (private until published)
 - **Depends on:** [terminology](./research/terminology.md), [repo audit](./research/repo-audit.md), [prior art](./research/prior-art.md)
 
@@ -359,7 +359,8 @@ v0 mixes three things in its guard and its `expose` field (terminology §2.7). T
 ```ts
 type AuthorizationRequirement = {
   principal: 'any' | 'authenticated'
-  // further conditions on the principal: a role, membership of the target organization
+  // further conditions on the principal: a role, membership of the target organization; they read only
+  // principal.* and target.* paths
   conditions?: Condition[]
 }
 
@@ -368,6 +369,8 @@ type ConfirmationRequirement = {
   summary: string
 }
 ```
+
+**Authorization conditions read only the principal and the target.** Their paths use the `principal` and `target` roots, never `input` or a reference (`E_PATH`). Authorization is decided before the input is validated and the references are loaded (RFC 0002, execution), and who may call a capability shouldn't depend on what they ask it to do. A check that needs the input is a precondition.
 
 **Presence means required.** `confirmation` has no `required` field, because it has no other value to take.
 
@@ -758,7 +761,7 @@ type Claim = {
   kind: 'recommendation' | 'benefit' | 'estimate' | 'assessment'
   statement: string // 'Includes automatic rollback'
   quantity?: { value: number; unit: string } // for estimates and measurable assessments
-  applies?: Expr // the condition under which it holds, in the expression vocabulary
+  applies?: Expr // when it holds; target.* paths only
   provenance: Provenance // required: a claim is nothing without its source
   extensions?: Extensions
 }
@@ -774,6 +777,8 @@ type Claim = {
 | `assessment`     | A judgment of a property, such as reliability or quality                                                         | "99.9% monthly uptime", by a third-party monitor |
 
 **A recommendation is structurally separate from everything else.** It is always a claim, never a field of the definition. It always carries its source, and its kind says it is a preference. A reader can therefore show "the store recommends this" next to "an independent monitor measured that", and an agent can weigh them differently. Whether agents do is something the choice benchmark measures (prior art §6.7, assumption 4).
+
+**`applies` reads only the target.** Its paths use the `target` root: the subject resource, or the subject capability's target (`E_PATH` otherwise). A claim describes a definition to whoever reads it, so it can't depend on one caller's attributes or one call's input. A recommendation for one plan is a claim on the `subscribe` capability that applies to that plan.
 
 **Claims never merge into definitions,** and claims from different sources about the same subject all stay. Disagreement is data.
 
@@ -1064,11 +1069,12 @@ A publisher recommendation is a separate claim, which an agent sees with its sou
 
 ```json
 {
+  "applies": { "eq": [{ "path": "target.slug" }, { "value": "pro" }] },
   "id": "proRecommended",
   "kind": "recommendation",
   "provenance": { "basis": "declared", "source": "host" },
   "statement": "Recommended for production projects",
-  "subject": "hosting.plan.pro"
+  "subject": "hosting.plan.subscribe"
 }
 ```
 
