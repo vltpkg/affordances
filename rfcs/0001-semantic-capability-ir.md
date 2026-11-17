@@ -1,6 +1,6 @@
 # RFC 0001: The semantic capability IR
 
-- **Status:** accepted (2026-11-17); amended 2026-11-17: §3.1, §5.5 and §6.3 (quantifiers and `count` after the guard survey, with route parameters mapped into input by bindings); §2.3, §3.1, §3.2, §5.5, §6.4 and §9 (declared principal attributes, missing against absent, the roots authorization conditions and claims read, and composition, for RFC 0002); §12.1 (v0's agent path fails closed on declarative preconditions)
+- **Status:** accepted (2026-11-17); amended 2026-11-17: §3.1, §5.5 and §6.3 (quantifiers and `count` after the guard survey, with route parameters mapped into input by bindings); §2.3, §3.1, §3.2, §5.5, §6.4 and §9 (declared principal attributes, missing against absent, the roots authorization conditions and claims read, and composition, for RFC 0002); §12.1 (v0's agent path fails closed on declarative preconditions); §7.2 and §7.3 (empty `extensions` dropped, and `W_PATH_UNCHECKED`, from M2b's review)
 - **Package:** `@affordances/ir` (private until published)
 - **Depends on:** [terminology](./research/terminology.md), [repo audit](./research/repo-audit.md), [prior art](./research/prior-art.md)
 
@@ -614,7 +614,8 @@ The canonical form is what composition compares, what the digest hashes, and wha
 
 5. **Defaults are removed:**
    - a field equal to the value it would inherit (provenance equal to the manifest default) is dropped;
-   - an empty optional array is dropped, _except_ `effects: []`, which says something different from an absent `effects`.
+   - an empty optional array is dropped, _except_ `effects: []`, which says something different from an absent `effects`;
+   - an empty `extensions` object is dropped, so `{}` and an absent value compose as one.
 6. **JSON Schemas embedded as `input`, `output`, `attributes` and `principal.attributes`** are canonicalized by RFC 8785 only. Their arrays keep their order, because in JSON Schema some array orders carry meaning (`prefixItems`) and an IR can't know which (4, above). A `$schema` keyword is dropped, since every embedded schema is JSON Schema 2020-12. v0 already drops it (`packages/core/src/action.ts:109`).
 7. **Nothing that varies between builds may appear:** no timestamps, no absolute paths, no build identifiers.
 
@@ -646,6 +647,7 @@ Warnings, which don't fail validation:
 - `W_OPAQUE`: a capability whose preconditions are all guards;
 - `W_EFFECTS_UNKNOWN`: an action whose `effects` is absent;
 - `W_UNCONFIRMED_ENABLES`: a declared `enables` with no derived counterpart.
+- `W_PATH_UNCHECKED`: a path that passes through a schema that doesn't declare its next segment (a `$ref`, a `oneOf`, an untyped node, `additionalProperties: true` or `{}`), so it's checked only at run time (§3.1).
 - `W_NO_ID` (from the v0 adapter, §10.1): a v0 action without an identifier, with a suggested one.
 
 ### 7.4 Extensions
