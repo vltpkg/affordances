@@ -1,6 +1,6 @@
 # RFC 0001: The semantic capability IR
 
-- **Status:** accepted (2026-11-17); amended 2026-11-17: §3.1, §5.5 and §6.3 (quantifiers and `count` after the guard survey, with route parameters mapped into input by bindings); §2.3, §3.1, §3.2, §5.5, §6.4 and §9 (declared principal attributes, missing against absent, the roots authorization conditions and claims read, and composition, for RFC 0002)
+- **Status:** accepted (2026-11-17); amended 2026-11-17: §3.1, §5.5 and §6.3 (quantifiers and `count` after the guard survey, with route parameters mapped into input by bindings); §2.3, §3.1, §3.2, §5.5, §6.4 and §9 (declared principal attributes, missing against absent, the roots authorization conditions and claims read, and composition, for RFC 0002); §12.1 (v0's agent path fails closed on declarative preconditions)
 - **Package:** `@affordances/ir` (private until published)
 - **Depends on:** [terminology](./research/terminology.md), [repo audit](./research/repo-audit.md), [prior art](./research/prior-art.md)
 
@@ -1103,6 +1103,7 @@ Nobody writes §11's JSON by hand. The IR's types are chosen so that a typed aut
 - **The namespace and the owner come from configuration,** written once: `withAffordances({ namespace, owner })` in Next.js, or `defineManifest` elsewhere.
   - The tools fill in `sources`, adding themselves with role `tool`, and the default `provenance` (`declared`, by the owner).
   - A fragment never invents an `owner` source, so only the configured owner can produce `declared` (rule 3).
+- **Until a runtime evaluates declarative preconditions, v0's agent path fails closed.** A capability bound through `defineAction({ capability })` that declares any declarative precondition refuses on v0's agent path, as `unavailable` naming each such condition, until M3's runtime evaluates them. Its guards run as v0's guard does, and v0's UI path is unchanged. A declared precondition is therefore never skipped just because nothing could evaluate it yet (rule 5).
 - **IR effects never sit in `defineAction`.** v0's `effects` there keeps its v0 meaning, the state keys for the delta. The capability's `effects` are consequences, and the two never meet in one object (§4, §10.1). Renaming v0's field is RFC 0004's question.
 - **Kinds:**
   - **`defineCapability`:** `kind` is required.
