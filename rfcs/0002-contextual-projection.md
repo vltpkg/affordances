@@ -541,10 +541,7 @@ type ExecutionRequest = {
   input?: unknown
   approval?: ApprovalToken // §8.2, for a capability that requires confirmation
   ifRevision?: OfferRevision // optional: refuse with 'stale' if this offer's state has moved on
-  start?: ResourceRef | Id // where the caller's projection starts, for `changes` (§8.3); the target unless given
-  policy?: PolicyId // with task and budget, the rest of the caller's projection request, for `changes`
-  task?: Task
-  budget?: Budget
+  view?: Omit<ProjectionRequest, 'principal'> // the caller's projection request, whole, for `changes` (§8.3)
 }
 ```
 
@@ -645,7 +642,7 @@ type OfferChanges = {
 - **Length:** at most 280 characters. A longer one is cut, and `detailTruncated: true` says so.
 - **What stays stable:** `condition` (`id` and `description`), so code can branch on the id and people can read the detail.
 
-**`changes`** lists the offers whose existence or availability changed, compared with the projection before the execution under the same request: the same principal, starting from the request's `start`, or from the target when it gives none, under the request's `policy`, `task` and `budget`.
+**`changes`** lists the offers whose existence or availability changed, compared with the projection before the execution under the same request: the same principal, under the request's `view`: its start, or the target when it names none, and its policy, task, budget and `seen`.
 
 - **What it carries:** an execution result goes on the wire, so `changes` is the caller's first view before and after, never the projection (§11). `added` holds offers as that view shows them, without the claims a policy omits, and every id in `removed` and `changed` is one the caller's view shows, before or after. It's v0's `actionsAdded` and `actionsRemoved` (`packages/protocol/spec.md`, Delta), with availability changes kept apart from additions.
 
