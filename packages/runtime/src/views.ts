@@ -140,21 +140,25 @@ export const views = (args: {
           ? [{ id: e.from, relation: e.relation }]
           : [],
     )
-  const partners = (id: Id) =>
-    new Set(
-      edges.flatMap((e) =>
-        e.relation !== 'alternativeTo' ? [] : e.from === id ? [e.to] : e.to === id ? [e.from] : [],
-      ),
-    )
+  // alternativeTo runs both ways: each capability's partners, found once
+  const partnerMap = new Map<Id, Set<Id>>()
+  for (const e of edges)
+    if (e.relation === 'alternativeTo')
+      for (const [a, b] of [
+        [e.from, e.to],
+        [e.to, e.from],
+      ] as const)
+        partnerMap.set(a, (partnerMap.get(a) ?? new Set()).add(b))
+  const partners = (id: Id) => partnerMap.get(id) ?? new Set<Id>()
+  const byCapability = new Map<Id, OfferId[]>()
+  for (const o of args.offers)
+    byCapability.set(o.capability, [...(byCapability.get(o.capability) ?? []), o.id])
 
   // the start: an instance, whose offers target it or bind it as a reference, or a capability or a resource type
   const onStart = (o: CapabilityOffer) => {
     if (start === undefined) return false
     if (typeof start === 'string') return o.capability === start || o.target?.type === start
-    return (
-      sameRef(o.target, start) ||
-      Object.values(o.with ?? {}).some((key) => key === start.key && boundAs(o, start))
-    )
+    return sameRef(o.target, start) || boundAs(o, start)
   }
   const boundAs = (o: CapabilityOffer, ref: ResourceRef) => {
     const c = manifest.capabilities.find((x) => x.id === o.capability)
@@ -285,11 +289,9 @@ export const views = (args: {
         count: cut.length,
       })
     for (const id of shown) {
-      const missing = [...partners(byId.get(id)!.capability)].flatMap((p) =>
-        args.offers.filter((o) => o.capability === p && !shownSet.has(o.id)),
-      )
-      if (missing.length)
-        expand.push({ from: id, along: 'alternatives', count: whole(alternatives(id)).size })
+      const partnerOffers = alternatives(id)
+      if (partnerOffers.some((x) => !shownSet.has(x)))
+        expand.push({ from: id, along: 'alternatives', count: whole(partnerOffers).size })
     }
     let claims = 0
     const offers = shown.map((id) => {
@@ -318,10 +320,9 @@ export const views = (args: {
     return v
   }
 
+  // every offer of an offer's alternativeTo partners, in canonical order
   const alternatives = (id: OfferId) =>
-    [...partners(byId.get(id)!.capability)].flatMap((p) =>
-      args.offers.filter((o) => o.capability === p).map((o) => o.id),
-    )
+    [...partners(byId.get(id)!.capability)].flatMap((p) => byCapability.get(p) ?? [])
 
   // what's outside the scope is one expansion from the start, along its relations (§12's example). with no start
   // instance to name, it's from the first offer the view shows
