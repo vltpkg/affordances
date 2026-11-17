@@ -1,5 +1,12 @@
 # @affordances/next
 
+## 0.5.1
+
+### Patch Changes
+
+- @affordances/core@0.5.1
+  - @affordances/protocol@0.5.1
+
 ## 0.5.0
 
 ### Patch Changes

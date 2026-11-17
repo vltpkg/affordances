@@ -1,5 +1,21 @@
 # @affordances/md
 
+## 0.5.1
+
+### Patch Changes
+
+- b020384: Converts about 5× faster; the markdown is unchanged. Malformed HTML, and a few unusual placements (a form inside a link, strikethrough or table cell, a comment or script inside a `<nobr>`, a React streamed boundary that moves through an `<svg>` or into its own segment, an AgentMain inside a link that also holds tabs, form values or empty blocks, a slot inside a form control or an element other than plain containers, headings, emphasis, code, table cells, buttons, labels, summaries, forms and links, or in a link that holds a value or says nothing but values, a shown tab panel whose tab is inside a link or table, or tabs whose only shown panel is under a hidden element), can convert slightly slower.
+- 1681ef6: A page nested thousands of elements deep no longer throws or takes minutes to convert. `htmlToMarkdown`, `readPage` and the route read anything nested more than 128 elements deep as its plain text, and a page nested more than 512 deep up to there. When either leaves something out, `readPage` and `htmlToMarkdown` say `cut: true`, and the route marks the page `x-affordances-md-partial`, with a note in the Markdown. An error md didn't foresee no longer decides a page alone: when the faster converter throws, the page is converted the original way, and `readPage` never throws. If md can't convert a page at all, `markdown()` and `htmlToMarkdown` throw that error, and the route answers `502`, `private, no-store`, as it does for Flight data it can't read, instead of the framework's generic `500`.
+- e339302: Converting a page to markdown takes about half the time, and far less on some pages. The markdown is the same.
+
+  - The html is parsed without each node's place in the source. Nothing read it, and on a page of many lines working it out took longer than everything else together.
+  - The tree is no longer structured-cloned before it's converted, and its whitespace is collapsed without rebuilding the tag tests for every node.
+  - A page's chrome and its shown tab panels are found by reading each element's properties rather than with css selectors over the whole page.
+
+- b74ec79: A Flight push in a JSON-LD script, or in a script inside a MathML `<title>`, no longer leaves an internal placeholder in the Markdown: it reads as the page does without its Flight data.
+- d629f46: A Flight script or a streamed boundary's instruction inside a `<noscript>`, or in MathML, is no longer trusted. md parses a page with scripting off, so it read such a script as one, but a browser never runs it there, so it was never Next's. A page that has one is read as untrusted Flight data. `readPage` reads it without its Flight data, and the route answers `502`, `private, no-store`. Hidden content such an instruction names stays hidden. A script a browser runs, including one in SVG, is read as before.
+- 7de2336: On a `literalMd` route, a page that streams `notFound()` after its shell (a `200` with the not-found page) now counts as a 404, so a request for `x.md` gets the twin, as a Markdown request already did. One that streams `forbidden()` or `unauthorized()` answers its `403` or `401`, `private, no-store`. To tell, the handler reads a `200` HTML page before passing it on, up to `maxBytes` and within the `timeout`. It then sends the page's own bytes, status and headers.
+
 ## 0.5.0
 
 ### Minor Changes
