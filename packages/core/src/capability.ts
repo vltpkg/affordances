@@ -148,7 +148,8 @@ export type CapabilityActionConfig<
       { guards: { [K in CapabilityGuards<C>]: GuardFn<CapabilityInput<C>, Session, State> } })
 
 // the agent calls whose v0 client set confirm: true, by their ctx. The handler marks a call before its guard runs,
-// so the check can say v0 confirmed it without the guard's public arguments changing
+// so the check can say v0 confirmed it without the guard's public arguments changing. That's sound because the
+// handler makes a fresh ctx for every call (handler.ts), so one call's confirm never reaches another's
 export const confirmedCalls = new WeakSet<object>()
 
 const dev = () => process.env.NODE_ENV !== 'production'
@@ -266,11 +267,17 @@ export const fromCapability = <
     (async (args: { input: unknown; state: State; ctx: Ctx<Session> }): Promise<GuardResult> => {
       const listing = args.input === undefined
       const key = def.targetAt && !listing ? at(args.input, tokens(def.targetAt)) : undefined
-      // listing a targeted capability, v0 has no input to name the target: the call checks it
+      // listing a targeted capability, v0 has no input to name the target, so the graph's availability for it is
+      // v0's guards only: advice, as the graph always is. The call itself is checked
       if (listing && def.target) return v0Guards(args)
       const result = await runtime.check({
         principal: await principalOf(args.ctx),
-        offer: def.target && typeof key === 'string' ? `${def.id}@${def.target}:${key}` : def.id,
+        // the key percent-encoded, as the runtime's offerId does (RFC 0002 §4.1): `?`, `&`, `@` and `%` are an id's
+        // structure, so a raw key containing them would name a different offer
+        offer:
+          def.target && typeof key === 'string'
+            ? `${def.id}@${def.target}:${encodeURIComponent(key)}`
+            : def.id,
         ...(!listing && { input: args.input }),
         ...(confirmedCalls.has(args.ctx) && { confirmed: { basis: 'v0-client-flag' as const } }),
       })

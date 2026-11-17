@@ -551,6 +551,21 @@ describe('a capability checked by the runtime', () => {
     })
   })
 
+  test('the offer names the target key percent-encoded, as the runtime names it', async () => {
+    count = 2
+    const { checked } = action()
+    for (const [key, encoded] of [
+      ['pro?project=x', 'pro%3Fproject%3Dx'],
+      ['50%41', '50%2541'],
+      ['a@b:c&d', 'a%40b%3Ac%26d'],
+    ]) {
+      await call(handlerFor([checked]), { action: 'checkout', input: { cart: key }, confirm: true })
+      expect(requests.at(-1)!.offer).toBe(`commerce.cart.checkout@commerce.cart:${encoded}`)
+      // and it decodes back to the input's key, as the runtime's parseOfferId reads it
+      expect(decodeURIComponent(requests.at(-1)!.offer.split(':').slice(1).join(':'))).toBe(key)
+    }
+  })
+
   test("a refusal reads the condition's description when the runtime gives no detail", async () => {
     const quiet: CheckRuntime = {
       check: async () => ({
