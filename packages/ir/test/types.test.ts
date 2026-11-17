@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import type * as IR from '../src/index.ts'
 
-// RFC 0001 §13's types (as amended in §2.3 and §3.1), written out as the RFC states them. The package's types are
+// RFC 0001 §13's types (as amended in §2.3, §3.1 and §6.4), written out as the RFC states them. The package's types are
 // inferred from its zod source; this checks the two say the same thing, in both directions, at type-check time
 namespace Spec {
   export type Id = string
@@ -24,7 +24,7 @@ namespace Spec {
     bindings?: Binding[]
     extensions?: Extensions
   }
-  export type PrincipalDefinition = { description?: string; attributes: JSONSchema }
+  export type PrincipalDefinition = Attributed & { description?: string; attributes: JSONSchema }
   export type Source = {
     id: string
     role: 'owner' | 'tool' | 'third-party'

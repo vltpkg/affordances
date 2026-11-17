@@ -141,6 +141,21 @@
         },
         "attributes": {
           "$ref": "#/$defs/JSONSchema"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        },
+        "fieldProvenance": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/JSONPointer"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Provenance"
+          }
+        },
+        "extensions": {
+          "$ref": "#/$defs/Extensions"
         }
       },
       "required": ["attributes"],
@@ -153,6 +168,20 @@
       },
       "additionalProperties": {},
       "description": "A JSON Schema 2020-12 object, without $schema"
+    },
+    "JSONPointer": {
+      "type": "string",
+      "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
+      "description": "RFC 6901"
+    },
+    "Extensions": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:[^#\\s]*$"
+      },
+      "additionalProperties": {},
+      "description": "Keys are absolute URIs, each owned by the vocabulary it names"
     },
     "Source": {
       "type": "object",
@@ -226,20 +255,6 @@
       "maxLength": 128,
       "pattern": "^[a-z][A-Za-z0-9]*(?:\\.[a-z][A-Za-z0-9]*)*$",
       "description": "A definition's identifier: 'commerce.cart.addItem'"
-    },
-    "JSONPointer": {
-      "type": "string",
-      "pattern": "^(?:\\/(?:[^~/]|~[01])*)*$",
-      "description": "RFC 6901"
-    },
-    "Extensions": {
-      "type": "object",
-      "propertyNames": {
-        "type": "string",
-        "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:[^#\\s]*$"
-      },
-      "additionalProperties": {},
-      "description": "Keys are absolute URIs, each owned by the vocabulary it names"
     },
     "CapabilityDefinition": {
       "type": "object",

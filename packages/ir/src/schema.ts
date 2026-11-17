@@ -253,7 +253,7 @@ export const CapabilityDefinition = z
   .meta({ id: 'CapabilityDefinition' })
 
 export const PrincipalDefinition = z
-  .strictObject({ description: z.string().optional(), attributes: JSONSchema })
+  .strictObject({ description: z.string().optional(), attributes: JSONSchema, ...attributed })
   .meta({ id: 'PrincipalDefinition' })
 
 // relations, claims, bindings (RFC 0001 §5, §9, §6.3)
