@@ -20,7 +20,7 @@ This survey tests it against every guard in this repository. Every claim cites `
 - **What the vocabulary lacks:** the four checks that don't fit and the three derived ones share two missing forms:
   - a quantifier over an array attribute ("some line item has this SKU", "every item is in stock");
   - an array's length.
-    A bounded `some`/`every` over an array path would move 6 of those 7 checks into the vocabulary. Only the subtraction would remain.
+    A bounded `some`/`every` and a count would move 5 of those 7 checks into the vocabulary. The two that need subtraction (9a and 9c) would remain.
 - **The sample is small.** It has 11 guards, of which only 4 belong to an application, and five docs guards repeat the store's `addToCart`. The percentages describe this repository, not real applications in general.
 
 ## Method
@@ -93,14 +93,14 @@ Eight of the twelve checks that fit do so only through a reference. In each, the
 
 The checks that don't fit share a shape:
 
-- **"Some element satisfies"** (4a, 9a): is any variant in stock?
+- **"Some element satisfies"** (4a, 9a): is any variant in stock? 9a also needs a subtraction: it asks whether any variant has stock _left after the cart_, `remaining(v) > 0`, and `remaining` is `stock - inCart` (`apps/example/src/app/products/[slug]/state.ts:34`).
 - **"Every element satisfies"** (8b): is every cart item within its stock?
 - **"An element with this key exists"** (6b, 7b): is the SKU in the cart?
 - **"The array isn't empty"** (11): `items.length > 0`.
 
 RFC 0001 §3.1 leaves quantifiers out on purpose, so that every declarative condition stays cheap and checkable against a schema. These cases are the cost of that choice. Three of the store's four capabilities need a quantifier somewhere.
 
-**A bounded form would cover six of the seven:**
+**A bounded form would cover five of the seven** (4a, 6b, 7b, 8b and 11):
 
 ```json
 { "some": { "of": "target.items", "where": { "eq": [{ "path": "item.sku" }, { "path": "input.sku" }] } } }
@@ -143,5 +143,5 @@ A declarative condition has one fixed `description`. RFC 0001 rule 5 already all
 - **This survey doesn't change RFC 0001.** It supplies the evidence that RFC 0001's open question 2 waits for, and M2e's tests use these cases as fixtures.
 - **For the decision on quantifiers,** there are two options, and the choice is intake's before M2e:
   1. **Keep §3.1 as it is.** Model lookups as references, and accept that "some/every/length" checks are guards or derived attributes. Three of the store's four capabilities then keep a guard.
-  2. **Amend §3.1 with bounded `some` and `every`** over array-typed attribute paths, and a `count` (or non-empty) test. That covers 6 of the 7 checks that don't fit now, and leaves arithmetic out.
+  2. **Amend §3.1 with bounded `some` and `every`** over array-typed attribute paths, and a `count` (or non-empty) test. That covers 5 of the 7 checks that don't fit now. The two that need subtraction, 9a and 9c, stay guards or derived attributes, and arithmetic stays out.
 - **Either way, RFC 0002 should specify** how a refusal's `detail` is formed for a declarative condition.
