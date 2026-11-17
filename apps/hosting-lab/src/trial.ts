@@ -12,6 +12,7 @@ export { withPlanIds } from './catalog.ts'
 export {
   tasks,
   groundTruth,
+  satisfies,
   susceptible,
   monthlyUsd,
   label,

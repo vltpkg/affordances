@@ -1,5 +1,6 @@
 import { beforeEach, expect, test } from 'vitest'
 import * as store from '../src/lib/store.ts'
+import { addOns as catalogAddOns } from '../src/catalog.ts'
 
 // the application's logic: every consequence the manifest declares is observable in the store, and the store
 // enforces the domain's rules itself, since v0's UI path doesn't evaluate declared conditions (RFC 0001 §8.3)
@@ -145,4 +146,38 @@ test("an add-on that only comes with the bundle can't be removed on its own", ()
   expect(() => store.removeAddOn(store.account(sid).id, project().id, 'priority-support')).toThrow(
     /comes with the bundle/,
   )
+})
+
+// condition G (RFC 0003 §3.1): subscribe takes the add-ons its manifest edit defaults, in the same call
+test('subscribing with add-ons moves the plan and adds each, charging their first month as adding them would', () => {
+  const p = project()
+  const { id } = p
+  const owner = store.account(sid).id
+  const result = store.subscribePlan(owner, id, 'p2', ['priority-support'])
+  expect(project()).toMatchObject({ plan: 'pro', addOns: ['priority-support'] })
+  expect(result.monthlyUsd).toBe(store.monthlyUsd(project()))
+  const charged = store.account(sid).ledger.map((c) => [c.description, c.usd])
+  const addOn = catalogAddOns.find((a) => a.slug === 'priority-support')!
+  expect(charged).toContainEqual([`${addOn.name}, first month`, addOn.priceUsd])
+})
+
+test('an add-on already bought is kept and not charged again; an unknown one refuses the whole call', () => {
+  const { id } = project()
+  const owner = store.account(sid).id
+  store.addAddOn(owner, id, 'priority-support')
+  const before = store.account(sid).ledger.length
+  store.subscribePlan(owner, id, 'p2', ['priority-support'])
+  // the plan's first month only
+  expect(store.account(sid).ledger.length).toBe(before + 1)
+  expect(() => store.subscribePlan(owner, id, 'p3', ['no-such-add-on'])).toThrow(
+    /No add-on no-such-add-on/,
+  )
+  // nothing changed: still Pro
+  expect(project().plan).toBe('pro')
+})
+
+test('without add-ons, subscribing is exactly as before: the base manifest and every other condition', () => {
+  const { id } = project()
+  store.subscribePlan(store.account(sid).id, id, 'p2')
+  expect(project().addOns).toEqual([])
 })

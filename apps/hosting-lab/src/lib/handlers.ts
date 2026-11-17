@@ -31,8 +31,14 @@ export const handlers: Record<string, Handler> = {
     message: messages.cancelled,
   },
   'hosting.plan.subscribe': {
+    // addOns comes only with condition G's manifest edit (RFC 0003 §3.1)
     run: (i, { principal }) =>
-      store.subscribePlan(caller(principal), fields(i).projectId!, fields(i).plan!),
+      store.subscribePlan(
+        caller(principal),
+        fields(i).projectId!,
+        fields(i).plan!,
+        (i as { addOns?: string[] }).addOns,
+      ),
   },
   'hosting.bundle.subscribe': {
     run: (i, { principal }) =>

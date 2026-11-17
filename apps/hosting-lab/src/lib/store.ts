@@ -191,18 +191,39 @@ const owned = (accountId: string, projectId: string): Account => {
 
 // ---- what the capabilities do ----
 
-export const subscribePlan = (accountId: string, projectId: string, planId: string) => {
+// `withAddOns` is condition G's bundled default (RFC 0003 §3.1): only its manifest edit declares the input, so without
+// it subscribing is unchanged. Each add-on is checked before anything changes, so an unknown one refuses the whole
+// call; one already bought is kept and not charged again; a new one is charged its first month as adding it would
+export const subscribePlan = (
+  accountId: string,
+  projectId: string,
+  planId: string,
+  withAddOns: readonly string[] = [],
+) => {
   const a = owned(accountId, projectId)
   const plan = state.plans.find((p) => p.id === planId)
   if (!plan) throw new Refused(`No plan ${planId}`)
   const slug = plan.slug
   if (a.project.plan === slug && !a.project.bundle)
     throw new Refused(`${plan.name} is already the plan`)
+  const adding: AddOn[] = []
+  for (const s of new Set(withAddOns)) {
+    const addOn = addOnBySlug(s)
+    if (!addOn) throw new Refused(`No add-on ${s}`)
+    adding.push(addOn)
+  }
   a.project.plan = slug
   a.project.bundle = null
   a.project.renewsAs = slug
   // the first month now; it isn't refunded
   charge(a, `${plan.name}, first month`, plan.priceUsd)
+  for (const addOn of adding) {
+    const kept = a.project.addOns.includes(addOn.slug) && !a.project.removing.includes(addOn.slug)
+    if (kept) continue
+    if (!a.project.addOns.includes(addOn.slug)) a.project.addOns = [...a.project.addOns, addOn.slug]
+    a.project.removing = a.project.removing.filter((r) => r !== addOn.slug)
+    charge(a, `${addOn.name}, first month`, addOn.priceUsd)
+  }
   return { plan: slug, monthlyUsd: monthlyUsd(a.project) }
 }
 

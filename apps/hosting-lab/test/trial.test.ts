@@ -66,3 +66,15 @@ test('the trial entry point loads no Next.js module', async () => {
       /from 'next/,
     )
 })
+
+test("condition G: the runtime's subscribe handler applies the add-ons its manifest edit sends", async () => {
+  const sid = 's_g'
+  const { id } = trial.account(sid).project
+  await trial.handlers['hosting.plan.subscribe']!.run!(
+    { plan: 'p2', projectId: id, addOns: ['priority-support'] },
+    { principal: trial.principalFor(sid), refs: {} },
+  )
+  expect(trial.endState(sid)).toEqual({ plan: 'pro', bundle: null, addOns: ['priority-support'] })
+  // and the overspend metric's predicate is there for the harness (RFC 0003 §6)
+  expect(typeof trial.satisfies).toBe('function')
+})
