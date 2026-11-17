@@ -104,36 +104,68 @@ describe('missingIds (W_NO_ID)', () => {
   })
 })
 
+// what writeIds makes of one actions file
+const written = (source: string) => {
+  const root = project({ 'app/actions.ts': `'use server'\n${source}` })
+  writeIds(root)
+  return readFileSync(path.join(root, 'app/actions.ts'), 'utf8').slice("'use server'\n".length)
+}
+
 describe('writeIds, the codemod', () => {
-  test('writes each suggestion after the name, in the file’s indentation, and touches nothing else', () => {
+  test('writes each suggestion before the name, in the file’s indentation, and touches nothing else', () => {
     const before = `'use server'\nimport { defineAction } from '@/lib/affordances'\n\n${action('addToCart')}\n${action('buyNow', "\n  id: 'commerce.buyNow',")}`
     const root = project({ 'app/products/[slug]/actions.ts': before })
-    const written = writeIds(root)
-    expect(written.map((m) => m.suggested)).toEqual(['products.addToCart'])
+    expect(writeIds(root).map((m) => m.suggested)).toEqual(['products.addToCart'])
     const after = readFileSync(path.join(root, 'app/products/[slug]/actions.ts'), 'utf8')
     expect(after).toBe(
-      before.replace("  name: 'addToCart',", "  name: 'addToCart',\n  id: 'products.addToCart',"),
+      before.replace("  name: 'addToCart',", "  id: 'products.addToCart',\n  name: 'addToCart',"),
     )
     // and the result is read back as the id, so nothing is missing now
     expect(missingIds(scan(root))).toEqual([])
   })
   test('a one-line config', () => {
-    const root = project({
-      'app/actions.ts': `'use server'\nexport const a = defineAction({ name: 'a', run: () => {} })\n`,
-    })
-    writeIds(root)
-    expect(readFileSync(path.join(root, 'app/actions.ts'), 'utf8')).toBe(
-      `'use server'\nexport const a = defineAction({ name: 'a', id: 'a', run: () => {} })\n`,
+    expect(written(`export const a = defineAction({ name: 'a', run: () => {} })\n`)).toBe(
+      `export const a = defineAction({ id: 'a', name: 'a', run: () => {} })\n`,
     )
   })
   test('a name with no trailing comma', () => {
-    const root = project({
-      'app/actions.ts': `'use server'\nexport const a = defineAction({\n  run: () => {},\n  name: 'a'\n})\n`,
-    })
-    writeIds(root)
-    expect(readFileSync(path.join(root, 'app/actions.ts'), 'utf8')).toBe(
-      `'use server'\nexport const a = defineAction({\n  run: () => {},\n  name: 'a',\n  id: 'a',\n})\n`,
+    expect(written(`export const a = defineAction({\n  run: () => {},\n  name: 'a'\n})\n`)).toBe(
+      `export const a = defineAction({\n  run: () => {},\n  id: 'a',\n  name: 'a'\n})\n`,
     )
+  })
+  // review's cases: a comment between the name and its comma
+  test('a block comment before the comma', () => {
+    expect(written(`export const a = defineAction({ name: 'a' /* c */, run: () => {} })\n`)).toBe(
+      `export const a = defineAction({ id: 'a', name: 'a' /* c */, run: () => {} })\n`,
+    )
+  })
+  test('a line comment, with the comma on the next line', () => {
+    expect(
+      written(`export const a = defineAction({\n  name: 'a' // c\n  , run: () => {},\n})\n`),
+    ).toBe(
+      `export const a = defineAction({\n  id: 'a',\n  name: 'a' // c\n  , run: () => {},\n})\n`,
+    )
+  })
+  test('every layout re-parses, and reads back with the id', () => {
+    const layouts = [
+      `({ name: 'a', run: () => {} })`,
+      `({\n\tname: 'a',\n\trun: () => {},\n})`,
+      `({ run: () => {}, name: 'a' })`,
+      `({ name: /* n */ 'a' /* c */ , run: () => {} })`,
+      `({\n  // the name\n  name: 'a', // ok\n  run: () => {},\n})`,
+      `({ description: 'a, b', name: 'a', run: () => {} })`,
+    ]
+    for (const config of layouts) {
+      const root = project({
+        'app/actions.ts': `'use server'\nexport const a = defineAction${config}\n`,
+      })
+      writeIds(root)
+      // scan re-parses the file, and throws on a syntax error
+      expect([config, scan(root)[0]!.actions!.exports]).toEqual([
+        config,
+        [{ local: 'a', name: 'a', id: 'a' }],
+      ])
+    }
   })
   test('running it twice changes nothing more', () => {
     const root = project({ 'app/x/actions.ts': `'use server'\n${action('go')}` })

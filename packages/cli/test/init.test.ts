@@ -82,7 +82,7 @@ test('ids lists the actions without a capability id, and --write adds them', asy
   expect(read(root, 'app/products/[slug]/actions.ts')).not.toContain('id:')
   await list(true)
   expect(read(root, 'app/products/[slug]/actions.ts')).toContain(
-    "  name: 'addToCart',\n  id: 'products.addToCart',",
+    "  id: 'products.addToCart',\n  name: 'addToCart',",
   )
   expect((await list(false)).missing).toEqual([])
 })

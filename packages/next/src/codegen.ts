@@ -230,6 +230,8 @@ export const writeIds = (root: string): MissingId[] => {
   // Map.groupBy is ES2024; packages target ES2023 and Node 20
   const byFile = new Map<string, MissingId[]>()
   for (const m of missing) byFile.set(m.file, [...(byFile.get(m.file) ?? []), m])
+  // every file is rewritten in memory and read back first, so one that wouldn't parse leaves all of them as they were
+  const rewritten: [string, string][] = []
   for (const [file, list] of byFile) {
     const abs = findFile(path.join(root, path.dirname(file)), path.basename(file))!
     let source = readFileSync(abs, 'utf8')
@@ -247,19 +249,27 @@ export const writeIds = (root: string): MissingId[] => {
           (p) => p.type === 'Property' && (p.key as Node).name === 'name',
         )
         if (!want || !name) continue
-        const end = name.end as number
-        const comma = source.slice(end).match(/^\s*,/)
-        const after = end + (comma ? comma[0].length : 0)
-        const lineStart = source.lastIndexOf('\n', name.start as number) + 1
-        const indent = source.slice(lineStart, name.start as number)
-        const onItsOwnLine = /^\s*$/.test(indent)
-        const text = `${comma ? '' : ','}${onItsOwnLine ? `\n${indent}` : ' '}id: '${want.suggested}',`
-        inserts.push([after, text])
+        // before the name, so nothing after it (a comment, a missing comma) matters: `id: '…',` and then the name, on
+        // the name's own line and indent, or inline when it shares a line
+        const start = name.start as number
+        const lineStart = source.lastIndexOf('\n', start - 1) + 1
+        const indent = source.slice(lineStart, start)
+        const text = /^\s*$/.test(indent)
+          ? `id: '${want.suggested}',\n${indent}`
+          : `id: '${want.suggested}', `
+        inserts.push([start, text])
       }
     }
     for (const [at, text] of inserts.toSorted(([a], [b]) => b - a))
       source = source.slice(0, at) + text + source.slice(at)
-    writeFileSync(abs, source)
+    // never write a file the parser can't read back
+    const { errors } = parseSync(abs, source)
+    if (errors.length)
+      throw new CodegenError(
+        `${file}: adding ids would break it (${errors[0]!.message}), so no file was changed`,
+      )
+    rewritten.push([abs, source])
   }
+  for (const [abs, source] of rewritten) writeFileSync(abs, source)
   return missing
 }
