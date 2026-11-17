@@ -1,6 +1,6 @@
 import { createAffordances, createHandler } from '@affordances/core'
 import { beforeEach, expect, test } from 'vitest'
-import { serveExecute, serveView } from '../src/lib/serve.ts'
+import { serveExecute, serveExpand, serveView } from '../src/lib/serve.ts'
 import { checkedBy } from '../src/lib/runtime.ts'
 import * as store from '../src/lib/store.ts'
 import { cancel, subscribe } from '../src/manifest.ts'
@@ -205,4 +205,45 @@ test("v0's agent path: without confirm, v0's own confirm_required with the runti
     ok: true,
   })
   expect(store.account('s_v0c').project.plan).toBe('pro')
+})
+
+// bearer calls need no Origin: every other test here sends one without
+test('a cookie call needs a matching Origin, for execute and expand', async () => {
+  const sid = 's_origin'
+  const { id } = store.account(sid).project
+  store.subscribePlan(sid, id, 'p2')
+  const body = JSON.stringify({
+    offer: `hosting.subscription.cancel@hosting.project:${id}`,
+    input: { projectId: id },
+  })
+  const post = (headers: Record<string, string>) =>
+    serveExecute(
+      new Request('https://hosting.test/api/projection/execute', {
+        method: 'POST',
+        body,
+        headers: { 'content-type': 'application/json', ...headers },
+      }),
+    )
+  // a cross-site page, and a cookie call with no Origin at all, run nothing
+  const crossSite: Record<string, string>[] = [
+    { cookie: `sid=${sid}`, origin: 'https://evil.test' },
+    { cookie: `sid=${sid}` },
+  ]
+  for (const headers of crossSite) expect((await post(headers)).status).toBe(403)
+  const expand = await serveExpand(
+    new Request('https://hosting.test/api/projection/expand', {
+      method: 'POST',
+      body: JSON.stringify({ from: { type: 'hosting.project', key: id }, along: 'relations' }),
+      headers: {
+        'content-type': 'application/json',
+        cookie: `sid=${sid}`,
+        origin: 'https://evil.test',
+      },
+    }),
+  )
+  expect(expand.status).toBe(403)
+  expect(store.account(sid).project.renewsAs).not.toBe('hobby')
+  // the site's own page runs it
+  expect((await post({ cookie: `sid=${sid}`, origin: 'https://hosting.test' })).status).toBe(200)
+  expect(store.account(sid).project.renewsAs).toBe('hobby')
 })

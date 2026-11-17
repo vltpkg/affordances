@@ -24,6 +24,20 @@ const json = (body: unknown, status = 200) =>
 
 const refuse = (status: number, message: string) => json({ error: message }, status)
 
+// v0's rule for a call authenticated by cookie (packages/protocol/spec.md, Security): it must carry an Origin that
+// matches the site, so a cross-site page can't make a signed-in browser run one. A bearer call is exempt. Checked
+// here, for every POST, rather than left to the framework or the cookie's SameSite
+const crossSite = (request: Request): Response | undefined => {
+  if (request.headers.get('authorization')?.startsWith('Bearer ')) return
+  if (!request.headers.has('cookie')) return
+  const origin = request.headers.get('origin')
+  if (origin && origin === new URL(request.url).origin) return
+  return refuse(
+    403,
+    'Cookie-authenticated calls need a matching Origin header, or use a bearer token',
+  )
+}
+
 const MAX_AFTER = 32
 
 const POLICIES = new Set(builtInPolicies.map((p) => p.id))
@@ -109,6 +123,8 @@ const stepOf = (value: unknown): Step | string => {
 // taken. So `after` lists the expansions already taken to reach `from`, in order, and they're replayed first. It
 // reaches nothing a caller couldn't expand to directly
 export const serveExpand = async (request: Request): Promise<Response> => {
+  const refused = crossSite(request)
+  if (refused) return refused
   const body = (await request.json().catch(() => undefined)) as
     | (Params & { after?: unknown })
     | undefined
@@ -170,6 +186,8 @@ const STATUS: Record<string, number> = {
 // offers are the caller's view's request, as GET /api/projection takes them, so the result's changes are that view
 // before and after (§8.3), and disclose only what it does
 export const serveExecute = async (request: Request): Promise<Response> => {
+  const refused = crossSite(request)
+  if (refused) return refused
   const body = (await request.json().catch(() => undefined)) as Record<string, unknown> | undefined
   if (!body || typeof body !== 'object') return refuse(400, 'The body is a JSON object')
   const { offer, input, approval, ifRevision, start } = body
