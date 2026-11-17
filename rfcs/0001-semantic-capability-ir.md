@@ -714,7 +714,7 @@ These five rules are part of the IR. `validate` enforces the parts that a docume
 **Rule 1: an offer is never authorization.**
 
 - No field of the IR, and no claim, is an input to an authorization decision except `authorization` itself. That field can only _require_ something of a principal, never grant anything.
-- A projection derived from a manifest is advice, and every execution re-evaluates `authorization` and `preconditions` against current state. v0's handler already does this on its agent path (`packages/core/src/handler.ts:169-199`; repo audit §5).
+- A projection derived from a manifest is advice, and every execution re-evaluates `authorization` and `preconditions` against current state. v0's handler already does this on its agent path (`packages/core/src/handler.ts:169-199` at `8ef689f8`; repo audit §5).
 - The IR has no field that means "pre-authorized", "trusted caller" or "skip checks".
 
 **Rule 2: an annotation never makes an operation safe, or removes a confirmation.**
@@ -753,10 +753,10 @@ These five rules are part of the IR. `validate` enforces the parts that a docume
 Three of the audit's findings are properties of v0 that are reasonable in v0's own terms, but would be dangerous to restate more strongly than they are (repo audit §8). The IR, and any runtime built on it, describes them as they are:
 
 1. **Confirmation is a flag the client sets.**
-   - **In v0:** the server enforces that `confirm: true` is present (`packages/core/src/handler.ts:202`). It can't know whether a person saw the summary; that rests on the client (`packages/protocol/spec.md:155`).
+   - **In v0:** the server enforces that `confirm: true` is present (`packages/core/src/handler.ts:202` at `8ef689f8`). It can't know whether a person saw the summary; that rests on the client (`packages/protocol/spec.md:155`).
    - **For the IR:** `confirmation` says approval is _required_. Nothing in the IR or a projection may claim that approval _was given_. Whether a runtime can bind an approval to a summary, with a token for example, is RFC 0002's question, and until it does, docs and exports say "the caller asserts approval".
 2. **The guard and the execution aren't atomic.**
-   - **In v0:** state can change between the guard check (`packages/core/src/handler.ts:192-199`) and `run` (`:213`).
+   - **In v0:** state can change between the guard check (`packages/core/src/handler.ts:192-199` at `8ef689f8`) and `run` (`:213`).
    - **For the IR:** availability is an evaluation at one revision, not a promise. Rule 5 requires a precondition to be checked at execution, not that it still holds while the execution runs. Anything that must hold throughout is the handler's job, as v0's docs already tell authors (`apps/docs/content/concepts/guards.mdx:48`). RFC 0002's tests cover state that changes between projection and execution.
 3. **v0's UI path doesn't evaluate guards or `expose`, by design.**
    - **In v0:** a server action called from the application's own components validates its input and runs (`packages/core/src/action.ts:156-161`; documented at `apps/docs/content/guides/security.mdx:41`).

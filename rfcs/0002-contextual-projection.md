@@ -27,7 +27,7 @@ A manifest is context-free by design: it names no caller and no resource instanc
 Today's protocol answers part of this per page: a graph lists the route's actions with `available` and a `reason` (`packages/protocol/spec.md`, Graph). It doesn't answer the rest:
 
 - **Availability and discoverability are one thing.** An action is either in the page's list or not. "Exists, but you can't use it now" and "exists, but isn't shown here" can't be told apart.
-- **"Available" can't be told from "needs input".** The graph runs a guard with no input and treats `true` as available (`packages/core/src/handler.ts:110`, `packages/core/src/action.ts:38`).
+- **"Available" can't be told from "needs input".** The graph runs a guard with no input and treats `true` as available (`packages/core/src/handler.ts:110` at `8ef689f8`, `packages/core/src/action.ts:38`).
 - **The order is the route's order.** Nothing says whether an order reflects relevance, a recommendation or nothing at all.
 - **No revision.** A caller can't tell whether what it saw still holds, beyond the delta of its own last call.
 
