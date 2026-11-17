@@ -263,7 +263,7 @@ A check that needs them is a guard. That keeps every declarative condition check
 **Prior art for the shape:**
 
 - XState references guards by name and composes them with `and`, `or` and `not` (prior art §3.3).
-- SCXML's guidance that "Conditional expressions in conformant SCXML documents SHOULD NOT have side effects" (prior art §3.2) holds by construction here, since the vocabulary has no calls.
+- SCXML requires that each data model's condition language "MUST not have side effects" (App. B), and that "Conditional expressions in conformant SCXML documents SHOULD NOT have side effects" (§5.9.1; prior art §3.2). Both hold by construction here, since the vocabulary has no calls.
 - PDDL's preconditions are the semantics we follow, minus its closed-world assumption (prior art §6.4).
 
 ### 3.2 Preconditions and the two execution requirements
@@ -432,7 +432,9 @@ type Ref = string
 
 - **The canonical URI** is `<namespace>#<id>`, for example `https://store.example/capabilities#commerce.cart.addItem`. The model is ALPS, where the URI of a descriptor, fragment included, is its "abstract semantic type" (ALPS §2.2.9.2). The namespace is an absolute URI that the publisher controls.
 - **Resources and capabilities share one identifier space within a manifest.** So `commerce.cart` (a resource) and `commerce.cart.addItem` (a capability) can't be confused.
-- **The identifier syntax is a subset of the tool-name rule MCP and WebMCP use** (1-128 characters of `[A-Za-z0-9_.-]`; [MCP tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)). So a capability exports as a tool of the same name, unchanged.
+- **The identifier syntax fits both tool-name rules,** so a capability exports as a tool of the same name, unchanged:
+  - **MCP:** its guidance is that names SHOULD be 1-128 characters of `[A-Za-z0-9_.-]`, unique within a server ([MCP tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)).
+  - **WebMCP:** the same set and length are normative. `registerTool` rejects any other name ([WebMCP](https://webmachinelearning.github.io/webmcp/), the `registerTool` steps).
 - **Identity is authored, never derived** from a file path, a route or a build. Next.js Server Action IDs, for example, are "periodically recalculated between builds" (prior art §4.5). A compiler emits only identifiers that are written in source.
 
 ### 6.2 Stability across releases
@@ -1138,3 +1140,4 @@ This RFC started from an initial sketch of the model: a manifest of resources, c
 - D. Martin et al., [OWL-S](https://www.w3.org/submissions/OWL-S/), W3C Member Submission, 2004.
 - Model Context Protocol, [Tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools), revision 2026-07-28.
 - [Common Expression Language](https://cel.dev/); [JsonLogic](https://jsonlogic.com/).
+- W3C Web Machine Learning Community Group, [WebMCP](https://webmachinelearning.github.io/webmcp/), draft.
