@@ -42,25 +42,51 @@ export type Account = { id: string; project: Project; ledger: Charge[] }
 // each deploy uses this many build minutes, so a plan's allowance runs out in a few deploys on Hobby
 export const MINUTES_PER_DEPLOY = 25
 
-const accounts = new Map<string, Account>()
-
-// the plans, with the ids this process assigns them. A benchmark trial permutes the ids (RFC 0003 §4), and the
-// store and the resolvers read the same assignment, so an offer for p2 and the plan p2 executes are the same
-let plans: readonly Plan[] = catalogPlans
-export const currentPlans = () => plans
-export const setPlanIds = (order: readonly [string, string, string]) => {
-  plans = withPlanIds(order)
+// the process's store, on globalThis: Next.js can load this module once per route bundle, and pages, server actions
+// and the API routes must all see one store. Before, each copy made its own account with the same ids, which hid it
+type State = {
+  accounts: Map<string, Account>
+  // the plans, with the ids this process assigns them. A benchmark trial permutes the ids (RFC 0003 §4), and the
+  // store and the resolvers read the same assignment, so an offer for p2 and the plan p2 executes are the same
+  plans: readonly Plan[]
+  nextDeployment: number
 }
-let nextDeployment = 1
+const shared = globalThis as { hostingLabStore?: State }
+const state = (shared.hostingLabStore ??= {
+  accounts: new Map(),
+  plans: catalogPlans,
+  nextDeployment: 1,
+})
+
+export const currentPlans = () => state.plans
+export const setPlanIds = (order: readonly [string, string, string]) => {
+  state.plans = withPlanIds(order)
+}
 
 const now = () => new Date().toISOString()
 
-export const planBySlug = (slug: Plan['slug']) => plans.find((p) => p.slug === slug)!
+export const planBySlug = (slug: Plan['slug']) => state.plans.find((p) => p.slug === slug)!
 export const addOnBySlug = (slug: string) => addOns.find((a) => a.slug === slug)
 export const bundleBySlug = (slug: string) => bundles.find((b) => b.slug === slug)
 
+// the session's account if it has one. Reads use this, so a read for an unknown session creates nothing
+export const findAccount = (sid: string): Account | undefined => state.accounts.get(sid)
+
+// the plans as the plan list answers them
+export const planRows = () =>
+  state.plans.map(({ slug, name, priceUsd, buildMinutes, bandwidthGb, rollback, support }) => ({
+    slug,
+    name,
+    priceUsd,
+    buildMinutes,
+    bandwidthGb,
+    rollback,
+    support,
+  }))
+
+// the session's account, made on first use: for what a session does, never for what it reads
 export const account = (sid: string): Account => {
-  let found = accounts.get(sid)
+  let found = state.accounts.get(sid)
   if (!found) {
     found = {
       id: sid,
@@ -77,7 +103,7 @@ export const account = (sid: string): Account => {
       },
       ledger: [],
     }
-    accounts.set(sid, found)
+    state.accounts.set(sid, found)
   }
   return found
 }
@@ -132,7 +158,7 @@ const owned = (sid: string, projectId: string): Account => {
 
 export const subscribePlan = (sid: string, projectId: string, planId: string) => {
   const a = owned(sid, projectId)
-  const plan = plans.find((p) => p.id === planId)
+  const plan = state.plans.find((p) => p.id === planId)
   if (!plan) throw new Refused(`No plan ${planId}`)
   const slug = plan.slug
   if (a.project.plan === slug && !a.project.bundle)
@@ -196,7 +222,7 @@ export const deploy = (sid: string, projectId: string, ref: string) => {
   if (a.project.buildMinutesUsed >= planBySlug(a.project.plan).buildMinutes)
     throw new Refused("The plan's build minutes for this month are used up")
   const deployment: Deployment = {
-    id: `dep_${nextDeployment++}`,
+    id: `dep_${state.nextDeployment++}`,
     ref,
     // a build of a ref named "broken" fails, so a failed deployment can be shown
     status: ref.includes('broken') ? 'failed' : 'ready',
@@ -234,7 +260,7 @@ export const rollback = (sid: string, id: string) => {
 
 // for tests: forget every account
 export const reset = () => {
-  accounts.clear()
-  plans = catalogPlans
-  nextDeployment = 1
+  state.accounts.clear()
+  state.plans = catalogPlans
+  state.nextDeployment = 1
 }

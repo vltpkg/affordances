@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { defineAction } from '@/lib/affordances'
+import { checkedBy } from '@/lib/runtime'
 import { ensureSession } from '@/lib/session'
 import * as store from '@/lib/store'
 import {
@@ -14,23 +15,14 @@ import plansState from './state'
 export const listPlans = defineAction({
   capability: listCapability,
   name: 'listPlans',
-  run: () =>
-    store
-      .currentPlans()
-      .map(({ slug, name, priceUsd, buildMinutes, bandwidthGb, rollback, support }) => ({
-        slug,
-        name,
-        priceUsd,
-        buildMinutes,
-        bandwidthGb,
-        rollback,
-        support,
-      })),
+  ...checkedBy,
+  run: () => store.planRows(),
 })
 
 export const subscribe = defineAction({
   capability: subscribeCapability,
   name: 'subscribe',
+  ...checkedBy,
   state: plansState,
   effects: ['project', 'plans'],
   run: async ({ plan, projectId }, ctx) => {
@@ -44,6 +36,7 @@ export const subscribe = defineAction({
 export const subscribeBundle = defineAction({
   capability: bundleCapability,
   name: 'subscribeBundle',
+  ...checkedBy,
   state: plansState,
   effects: ['project', 'bundles'],
   run: async ({ bundle, projectId }, ctx) => {

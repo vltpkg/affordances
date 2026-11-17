@@ -10,6 +10,7 @@ const get = (query = '', headers: Record<string, string> = {}) =>
   serveView(new Request(`https://hosting.test/api/projection${query}`, { headers }))
 
 test('a caller with a bearer session gets a view of their own projection', async () => {
+  const id = store.account('s_view').project.id
   const response = await get('?policy=exhaustive', { authorization: 'Bearer s_view' })
   expect(response.status).toBe(200)
   expect(response.headers.get('cache-control')).toBe('private, no-store')
@@ -23,8 +24,26 @@ test('a caller with a bearer session gets a view of their own projection', async
     'revision',
   ])
   expect(view.offers.map((o: { id: string }) => o.id)).toContain(
-    `hosting.project.read@hosting.project:${store.account('s_view').project.id}`,
+    `hosting.project.read@hosting.project:${id}`,
   )
+})
+
+test('reading creates nothing: a projection for an unknown session makes no account', async () => {
+  const auth = { authorization: 'Bearer s_never' }
+  const view = await (await get('?policy=exhaustive', auth)).json()
+  expect(
+    view.offers.some((o: { target?: { type: string } }) => o.target?.type === 'hosting.project'),
+  ).toBe(false)
+  await post(
+    {
+      policy: 'exhaustive',
+      from: { type: 'hosting.project', key: 'proj_s_never' },
+      along: 'relations',
+    },
+    auth,
+  )
+  await inspectGet('?offer=hosting.plan.list', auth)
+  expect(store.findAccount('s_never')).toBeUndefined()
 })
 
 test("a caller never sees another session's project", async () => {
@@ -134,6 +153,7 @@ test('an unknown policy is refused, not defaulted', async () => {
 
 test("paging inside an expansion: the expansions already taken are replayed, so the page's cursor resolves", async () => {
   const auth = { authorization: 'Bearer s_page' }
+  store.account('s_page')
   const base = { policy: 'exhaustive', offers: 2 }
   const budget = { offers: 2 }
   type E = { from: unknown; along: string }
@@ -153,6 +173,10 @@ test("paging inside an expansion: the expansions already taken are replayed, so 
   const shown = new Set([...first.offers, ...page2.offers].map((o: { id: string }) => o.id))
   expect(page3.offers.length).toBeGreaterThan(0)
   expect(page3.offers.some((o: { id: string }) => shown.has(o.id))).toBe(false)
+  const tooMany = Array.from({ length: 33 }, () => after[0])
+  expect(
+    (await post({ ...base, from: more2.from, along: 'more', after: tooMany }, auth)).status,
+  ).toBe(400)
   const malformed = { ...base, from: more2.from, along: 'more', after: [{ along: 'more' }] }
   expect((await post(malformed, auth)).status).toBe(400)
 })

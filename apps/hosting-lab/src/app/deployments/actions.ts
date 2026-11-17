@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { defineAction } from '@/lib/affordances'
+import { checkedBy } from '@/lib/runtime'
 import { ownsDeployment, planHasRollback } from '@/lib/guards'
 import { ensureSession } from '@/lib/session'
 import * as store from '@/lib/store'
@@ -11,6 +12,7 @@ import deployments from './state'
 export const deploy = defineAction({
   capability: deployCapability,
   name: 'deploy',
+  ...checkedBy,
   state: deployments,
   effects: ['deployments', 'buildMinutes'],
   run: async ({ projectId, ref }, ctx) => {
@@ -25,6 +27,7 @@ export const deploy = defineAction({
 export const rollback = defineAction({
   capability: rollbackCapability,
   name: 'rollback',
+  ...checkedBy,
   state: deployments,
   effects: ['deployments'],
   // the same checks the runtime's handlers make (src/lib/guards.ts)

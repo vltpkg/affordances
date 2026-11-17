@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { defineAction } from '@/lib/affordances'
+import { checkedBy } from '@/lib/runtime'
 import { ensureSession } from '@/lib/session'
 import * as store from '@/lib/store'
 import { cancel as cancelCapability } from '@/manifest'
@@ -10,6 +11,7 @@ import overview from './state'
 export const cancel = defineAction({
   capability: cancelCapability,
   name: 'cancel',
+  ...checkedBy,
   state: overview,
   effects: ['project'],
   run: async ({ projectId }, ctx) => {

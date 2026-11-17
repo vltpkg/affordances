@@ -6,14 +6,24 @@ import * as trial from '../src/trial.ts'
 
 beforeEach(() => trial.reset())
 
-test('a trial projects the permuted plan ids, and the store executes the same assignment', async () => {
+const approvalKey = () =>
+  crypto.subtle.generateKey({ name: 'HMAC', hash: 'SHA-256' }, false, [
+    'sign',
+    'verify',
+  ]) as Promise<CryptoKey>
+
+test('a trial projects the permuted plan ids, and executes the same assignment', async () => {
   trial.setPlanIds(['p3', 'p1', 'p2'])
   const runtime = createRuntime({
     manifest: trial.manifest,
     resources: trial.resolvers,
     handlers: trial.handlers,
+    approvalKeys: { current: await approvalKey() },
+    seenTokens: trial.memoryTokens(),
   })
   const sid = 's_trial'
+  // the trial's account is made up front: reads never make one
+  const { project } = trial.account(sid)
   const projection = await runtime.project({ principal: trial.principalFor(sid) })
   const set = projection.choiceSets.find((c) => c.capability === 'hosting.plan.subscribe')!
   // canonical order is by id: p1 is now Pro, p2 Business, p3 Hobby
@@ -24,10 +34,16 @@ test('a trial projects the permuted plan ids, and the store executes the same as
   ])
   const p1 = projection.offers.find((o) => o.id === 'hosting.plan.subscribe@hosting.plan:p1')!
   expect(p1.claims.map((c) => c.id)).toContain('proRecommended')
-  // and the store reads the same ids
-  const { project } = trial.account(sid)
-  const { subscribePlan } = await import('../src/lib/store.ts')
-  subscribePlan(sid, project.id, 'p1')
+  // executing p1 through the runtime, approved as the simulated user approves (RFC 0003 §5.2), moves to Pro
+  const call = {
+    principal: trial.principalFor(sid),
+    offer: `hosting.plan.subscribe@hosting.plan:p1?project=${project.id}`,
+    input: { plan: 'p1', projectId: project.id },
+  }
+  const refused = await runtime.execute(call)
+  expect(refused).toMatchObject({ status: 'refused', code: 'confirmation_required' })
+  const approval = refused.status === 'refused' ? refused.confirmation?.approval : undefined
+  expect(await runtime.execute({ ...call, approval })).toMatchObject({ status: 'succeeded' })
   expect(trial.endState(sid)).toEqual({ plan: 'pro', bundle: null, addOns: [] })
   expect(trial.label(trial.endState(sid))).toBe('pro')
 })
@@ -42,6 +58,8 @@ test('the trial entry point loads no Next.js module', async () => {
     'structure.ts',
     'lib/resolvers.ts',
     'lib/store.ts',
+    'lib/guards.ts',
+    'lib/handlers.ts',
   ]
   for (const file of sources)
     expect(readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8')).not.toMatch(

@@ -1,21 +1,13 @@
 import { derive, type CapabilityManifest } from '@affordances/ir'
-import {
-  createRuntime,
-  type CapabilityOffer,
-  type PolicyId,
-  type Principal,
-} from '@affordances/runtime'
+import type { CapabilityOffer, PolicyId, Principal } from '@affordances/runtime'
 import { manifest } from '../manifest.ts'
-import { handlers } from './guards.ts'
-import { resolvers } from './resolvers.ts'
+import { runtime, runtimeFor } from './runtime.ts'
 
 // the inspector's data (roadmap M3f): the manifest's definitions, and a projection for one principal. It shows
 // every offer the principal may see, and marks which ones a policy's view leaves out, since what a view omits is
 // what a developer most needs to see
 
 export const POLICIES: PolicyId[] = ['exhaustive', 'resource', 'progressive', 'advocated']
-
-export const runtime = createRuntime({ manifest, resources: resolvers, handlers })
 
 export type InspectedOffer = CapabilityOffer & { inView: boolean }
 
@@ -25,9 +17,7 @@ export const inspect = async (
 ) => {
   const policy = options.policy ?? 'exhaustive'
   const m = options.m ?? manifest
-  const projection = await (
-    options.m ? createRuntime({ manifest: m, resources: resolvers, handlers }) : runtime
-  ).project({
+  const projection = await (options.m ? runtimeFor(m) : runtime).project({
     principal,
     policy,
   })

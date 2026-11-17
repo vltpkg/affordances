@@ -4,7 +4,7 @@ import {
   type Expansion,
   type ProjectionRequest,
 } from '@affordances/runtime'
-import { runtime } from './inspect.ts'
+import { runtime } from './runtime.ts'
 import { principalOf } from './principal.ts'
 
 // what the agent-facing routes answer: views, and one offer's details, never a projection (RFC 0002 §11). A
@@ -23,6 +23,8 @@ const json = (body: unknown, status = 200) =>
   })
 
 const refuse = (status: number, message: string) => json({ error: message }, status)
+
+const MAX_AFTER = 32
 
 const POLICIES = new Set(builtInPolicies.map((p) => p.id))
 const ALONG = new Set<Expansion['along']>([
@@ -115,6 +117,9 @@ export const serveExpand = async (request: Request): Promise<Response> => {
   if (typeof step === 'string') return refuse(400, step)
   if (body.after !== undefined && !Array.isArray(body.after))
     return refuse(400, 'after is the list of expansions already taken')
+  // every replay is an expansion the request pays for again: bounded, so one request can't do unbounded work
+  if (((body.after as unknown[] | undefined)?.length ?? 0) > MAX_AFTER)
+    return refuse(400, `after lists at most ${MAX_AFTER} expansions`)
   const after: Step[] = []
   for (const a of (body.after as unknown[] | undefined) ?? []) {
     const s = stepOf(a)
@@ -146,4 +151,44 @@ export const serveInspect = async (request: Request): Promise<Response> => {
     // an offer the principal may not see answers as one that doesn't exist
     return refuse(404, `No offer ${offer}`)
   }
+}
+
+// a refusal's HTTP status, so a client that reads only the status still gets it right
+const STATUS: Record<string, number> = {
+  not_found: 404,
+  unauthorized: 403,
+  rate_limited: 429,
+  invalid_input: 400,
+  precondition: 409,
+  stale: 409,
+  confirmation_required: 409,
+}
+
+// POST /api/projection/execute { offer, input?, approval?, ifRevision? }: run an offer, every check first (RFC 0002
+// §8.1). A capability that requires confirmation is refused with its summary and an approval token, the first time;
+// sending the same call with that token runs it, once
+export const serveExecute = async (request: Request): Promise<Response> => {
+  const body = (await request.json().catch(() => undefined)) as Record<string, unknown> | undefined
+  if (!body || typeof body !== 'object') return refuse(400, 'The body is a JSON object')
+  const { offer, input, approval, ifRevision } = body
+  if (typeof offer !== 'string' || !offer) return refuse(400, 'offer is an offer id')
+  if (approval !== undefined && typeof approval !== 'string')
+    return refuse(400, 'approval is a token')
+  if (ifRevision !== undefined && typeof ifRevision !== 'string')
+    return refuse(400, 'ifRevision is an offer revision')
+  const result = await runtime.execute({
+    principal: principalOf(request),
+    offer,
+    input,
+    approval,
+    ifRevision,
+  })
+  return json(
+    result,
+    result.status === 'succeeded'
+      ? 200
+      : result.status === 'failed'
+        ? 500
+        : (STATUS[result.code] ?? 400),
+  )
 }

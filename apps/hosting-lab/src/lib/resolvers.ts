@@ -1,9 +1,10 @@
 import type { Principal, ResourceResolver } from '@affordances/runtime'
 import { addOns, bundles } from '../catalog.ts'
-import { account, currentPlans, projectAttributes } from './store.ts'
+import { currentPlans, findAccount, projectAttributes } from './store.ts'
 
 // how the runtime reads the store (RFC 0002 §2.1), one resolver per resource type the manifest declares. A caller
-// sees only their own project and its deployments: anything else loads as null, as if it didn't exist
+// sees only their own project and its deployments: anything else loads as null, as if it didn't exist. Reads look
+// accounts up and never make one
 
 const sidOf = (principal: Principal) => (principal.authenticated ? principal.subject : undefined)
 
@@ -26,18 +27,19 @@ export const resolvers: Record<string, ResourceResolver> = {
   'hosting.project': {
     load: async (key, principal) => {
       const sid = sidOf(principal)
-      const project = sid ? account(sid).project : undefined
+      const project = sid ? findAccount(sid)?.project : undefined
       return project && project.id === key ? { attributes: projectAttributes(project) } : null
     },
     list: async (principal) => {
       const sid = sidOf(principal)
-      return sid ? [account(sid).project.id] : []
+      const project = sid ? findAccount(sid)?.project : undefined
+      return project ? [project.id] : []
     },
   },
   'hosting.deployment': {
     load: async (key, principal) => {
       const sid = sidOf(principal)
-      const project = sid ? account(sid).project : undefined
+      const project = sid ? findAccount(sid)?.project : undefined
       const d = project?.deployments.find((x) => x.id === key)
       return d && project
         ? { attributes: { id: d.id, projectId: project.id, status: d.status, current: d.current } }
@@ -45,7 +47,7 @@ export const resolvers: Record<string, ResourceResolver> = {
     },
     list: async (principal) => {
       const sid = sidOf(principal)
-      return sid ? account(sid).project.deployments.map((d) => d.id) : []
+      return (sid ? findAccount(sid)?.project.deployments : undefined)?.map((d) => d.id) ?? []
     },
   },
 }
