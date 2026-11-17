@@ -165,7 +165,7 @@ type CapabilityDefinition = {
 }
 
 type Reference = {
-  name: string // a condition reads its attributes as `<name>.<attribute>`
+  name: string // a condition reads its attributes as `<name>.<attribute>`; never a root name (§3.1)
   resource: Id
   // where in the input the referenced instance's key is
   at: JSONPointer // '/productId'
@@ -261,6 +261,8 @@ type Path = string
 - a reference's `name` (§2.2);
 - `item`: inside a quantifier's `where`, the current element of the array it ranges over.
 
+**Root names are reserved.** A reference's `name` can't be `target`, `input`, `principal` or `item`, so a path's root is never ambiguous (`E_PATH`).
+
 Each path is checked at validation time. A `target` or reference path has to name an attribute declared in that resource's `attributes`, a `principal` path one declared in the manifest's `principal` (§2.3), and an `input` path a property in the input schema.
 
 **Paths in `establishes`.** An effect's `establishes` uses only the `target` root, and only when the effect's `resource` is the capability's `target`. An effect on another resource (checkout's `create commerce.order`) has no `establishes` in this version.
@@ -291,7 +293,7 @@ Each path is checked at validation time. A `target` or reference path has to nam
   - **`some`** is `true` if `where` is `true` for any element; else `unknown` if it is `unknown` for any; else `false`. An empty array gives `false`.
   - **`every`** is `false` if `where` is `false` for any element; else `unknown` if it is `unknown` for any; else `true`. An empty array gives `true`.
   - **An `of` that is `missing` or `absent`, or isn't an array at run time,** makes the quantifier `unknown`.
-  - **Nesting is limited to 2:** a quantifier inside another's `where` is allowed, and a third level is `E_DEPTH`. Inside a nested quantifier, `item` is the inner element, and the outer element can't be named.
+  - **Nesting is limited to 2:** a quantifier inside another's `where` is allowed, and a third level is `E_DEPTH`. A quantifier's `of` is resolved in the enclosing scope, and its `where` in the new one. So in a nested quantifier, `item` in `of` is the outer element, and `item` in `where` is the inner one: `{ every: { of: 'target.products', where: { some: { of: 'item.variants', where: { gt: [{ path: 'item.stock' }, { value: 0 }] } } } } }`. Inside the inner `where`, the outer element can't be named.
 - **`count`** is the number of elements of the array at its path, as a number operand. Non-empty is `{ gt: [{ count: … }, { value: 0 }] }`, so there is no separate operator. A `count` of a `missing` or `absent` path, or of something that isn't an array, is a comparison with no value: `unknown`.
 
 **Types are checked at validation where the schemas allow.** Paths are typed by the `attributes` and input schemas. So `validate` rejects, as `E_TYPE`:
@@ -301,7 +303,7 @@ Each path is checked at validation time. A `target` or reference path has to nam
 - an `in` whose right side isn't an array literal or an array-typed path;
 - a quantifier's `of`, or a `count`'s path, that isn't array-typed.
 
-An `item` path is checked against the array's element schema (its `items`). Elements are objects, so an `item` path always names an attribute. For an array of scalars, use `in`: "the SKU is in the cart" is `{ in: [{ path: 'input.sku' }, { path: 'target.skus' }] }`.
+An `item` path is checked against the array's element schema (its `items`). For an array of objects it names an attribute (`item.sku`). For an array of scalars it is bare `item`, the element itself: "every quantity is at most 10" is `{ every: { of: 'input.quantities', where: { le: [{ path: 'item' }, { value: 10 }] } } }`. Membership in a scalar array is simpler with `in`: "the SKU is in the cart" is `{ in: [{ path: 'input.sku' }, { path: 'target.skus' }] }`.
 
 What a schema leaves open (a property without a `type`, a `oneOf`) is checked only at run time, with the rule above.
 
@@ -321,7 +323,7 @@ A check that needs them is a guard. That keeps every declarative condition check
 
 **Why quantifiers and `count` are in** (an amendment after the [guard survey](./research/guard-survey.md)):
 
-- **The evidence:** the survey split every guard in this repository into checks. Of the checks that didn't fit the first version of this vocabulary, all but the subtraction were "some element", "every element", "an element with this key" or "non-empty".
+- **The evidence:** the survey split every guard in this repository into checks. Of the checks that didn't fit the first version of this vocabulary, all but the two that need subtraction were "some element", "every element", "an element with this key" or "non-empty".
 - **The cost of leaving them out:** three of the example store's four capabilities kept an opaque guard. That's where conformance tests (rule 5) and derived edges matter most.
 - **The bound keeps the cost predictable:** quantifiers range over arrays already in the context, with at most two levels.
 
@@ -623,7 +625,7 @@ The canonical form is what composition compares, what the digest hashes, and wha
 | `E_DUPLICATE_ID`      | two definitions share an identifier; or two sources, or two claims; or, within one capability, two conditions (across `preconditions` and `authorization.conditions`) or two references                                     |
 | `E_UNRESOLVED`        | a local reference names no definition: `target`, a reference's `resource`, `contains`, an effect's `resource` or `compensatedBy`, `deprecated.replacedBy`, a relation's ends, a claim's `subject`, a binding's `capability` |
 | `E_KIND`              | a kind rule is broken (a query with effects, a safe action, an event with input)                                                                                                                                            |
-| `E_PATH`              | a condition or summary path doesn't name a declared attribute or input property                                                                                                                                             |
+| `E_PATH`              | a condition or summary path doesn't name a declared attribute or input property, or a reference is named after a root (§3.1)                                                                                                |
 | `E_KEY`               | a resource's `key` isn't one of its declared `attributes` (when it declares any)                                                                                                                                            |
 | `E_DEPTH`             | a quantifier nested more than two levels deep (§3.1)                                                                                                                                                                        |
 | `E_TYPE`              | a comparison whose operand types the schemas show to be incompatible, a `null` literal in one, or a quantifier or `count` over a path that isn't array-typed (§3.1)                                                         |
@@ -1318,10 +1320,11 @@ export type ValidationIssue = {
 | `CapabilityDefinition` | `required: ["id", "kind", "description"]`. With `kind: "query"`: `effects` absent or `maxItems: 0`, and `safe` not `false`. With `kind: "action"`: `safe` not `true`. With `kind: "event"`: no `input`, `preconditions`, `confirmation` or `effects`. `confirmation` requires `summary`                                                                                               |
 | `Condition`            | `required: ["id", "description"]`; `oneOf` with `expr`, or with `guard: { const: true }`                                                                                                                                                                                                                                                                                              |
 | `Expr`                 | `oneOf` of single-key objects (`minProperties: 1`, `maxProperties: 1`). Comparison values are `prefixItems` of two `Operand`s, with `items: false` and `minItems: 2`; `all` and `any` have `minItems: 1`; `some` and `every` take an object with `of` (a `Path`) and `where` (an `Expr`), both required, `additionalProperties: false`. The nesting limit is `validate`'s (`E_DEPTH`) |
-| `Operand`              | `oneOf` `{ path }`, `{ value }` and `{ count }`; `path` and `count` match `^(target\|input\|principal\|item\|[a-z][A-Za-z0-9]*)(\.[A-Za-z0-9_]+)+$`                                                                                                                                                                                                                                   |
+| `Operand`              | `oneOf` `{ path }`, `{ value }` and `{ count }`; `path` and `count` match `^(item\|(target\|input\|principal\|item\|[a-z][A-Za-z0-9]*)(\.[A-Za-z0-9_]+)+)$`, so bare `item` is a path                                                                                                                                                                                                 |
 | `Effect`               | `oneOf` on `category`. `state` requires `change` and `resource`. `compensatedBy` is required when `reversibility` is `compensable`                                                                                                                                                                                                                                                    |
 | `Relation`             | `type` enum. With `type: "relatedTo"`, `description` is required                                                                                                                                                                                                                                                                                                                      |
 | `Claim`                | `required: ["id", "subject", "kind", "statement", "provenance"]`; `quantity` requires `value` and `unit`                                                                                                                                                                                                                                                                              |
+| `Reference`            | `name` matches `^[a-z][A-Za-z0-9]*$` and is not `target`, `input`, `principal` or `item`; `at` is a `JSONPointer`                                                                                                                                                                                                                                                                     |
 | `Binding`              | `address` is an object of strings, `minProperties: 1`                                                                                                                                                                                                                                                                                                                                 |
 | `Extensions`           | `propertyNames` with the absolute-URI `pattern`                                                                                                                                                                                                                                                                                                                                       |
 
