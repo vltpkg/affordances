@@ -180,7 +180,7 @@ Canonical order is by the resource key (RFC 0002 §6.4), and position effects ar
 A **driver** runs one agent on one prompt with a fixed set of tools, and returns a trace. The roadmap's M5a builds them, and this is their shape:
 
 - `claude -p`, for Claude models;
-- `codex exec`, for OpenAI models, if its quota holds (§8).
+- `codex exec`, for Codex's default model, in the pilot (§8).
 
 There are no API keys in the environment, and the interface has a slot for an AI SDK provider if there are.
 
@@ -329,18 +329,18 @@ So H2 measures advocacy as the publisher actually presents it, both claims toget
 
 ### 7.3 Factors and confounds
 
-| Factor or confound            | How it's handled                                                                                                                                  |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Model                         | a factor: the confirmatory cells run on both models                                                                                               |
-| Driver (harness)              | the two confirmatory models share one driver, `claude -p`; a codex model, if run, is confounded with its driver, which is stated as a limit (§14) |
-| Position                      | counterbalanced (§4), and estimated (§7.4)                                                                                                        |
-| Length                        | C's claims add text. A length-matched variant of A (neutral filler of equal tokens) is exploratory                                                |
-| Serialization                 | fixed rendering (§5.1), the S control, and the exact bytes of every response in the trace                                                         |
-| Intent vagueness              | every task has ground truth (§2.2); T5's ambiguity is the probe's point                                                                           |
-| Capability floor              | the four-way grid (§6)                                                                                                                            |
-| Imperative wording            | every claim is a third-person, attributed statement; none says "choose"                                                                           |
-| Prior knowledge of tier names | the R control (§3.2)                                                                                                                              |
-| Caching                       | off where the CLI allows; cache reads and writes recorded                                                                                         |
+| Factor or confound            | How it's handled                                                                                                                                   |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Model                         | a factor: the confirmatory cells run on both models                                                                                                |
+| Driver (harness)              | the two confirmatory models share one driver, `claude -p`; Codex's pilot trials are confounded with their driver, which is stated as a limit (§14) |
+| Position                      | counterbalanced (§4), and estimated (§7.4)                                                                                                         |
+| Length                        | C's claims add text. A length-matched variant of A (neutral filler of equal tokens) is exploratory                                                 |
+| Serialization                 | fixed rendering (§5.1), the S control, and the exact bytes of every response in the trace                                                          |
+| Intent vagueness              | every task has ground truth (§2.2); T5's ambiguity is the probe's point                                                                            |
+| Capability floor              | the four-way grid (§6)                                                                                                                             |
+| Imperative wording            | every claim is a third-person, attributed statement; none says "choose"                                                                            |
+| Prior knowledge of tier names | the R control (§3.2)                                                                                                                               |
+| Caching                       | off where the CLI allows; cache reads and writes recorded                                                                                          |
 
 ### 7.4 Exploratory
 
@@ -381,18 +381,22 @@ n ≈ (z₀.₉₈₇₅ + z₀.₈)² · (p₁(1 − p₁) + p₂(1 − p₂)) 
 
 at the most demanding rates, near 0.4 against 0.6. All four contrasts, with Holm's first test at α = 0.0125 (z ≈ 2.50), would need about 134 per cell over five cells, which is about 1,340 trials, beyond the confirmatory share. Hence two (§7.1).
 
-| Part                          | Cells                                                                             | Trials per cell | Models | Trials      |
-| ----------------------------- | --------------------------------------------------------------------------------- | --------------- | ------ | ----------- |
-| **Pilot**                     | A, C, D, E and S on T3; B on T3, F on T1 and G on T1                              | 5               | 2      | 80          |
-| **Confirmatory**              | A, C and S on T3                                                                  | 114             | 2      | 684         |
-| **Exploratory**               | on T3: B, D, E, R, N, O; on T1: A, F, G; on T2: A, C, D; on T4: A, G; on T5: A, D | 20              | 1      | 320         |
-| **Retries and capped margin** | —                                                                                 | —               | —      | up to 116   |
-| **Total**                     |                                                                                   |                 |        | **≤ 1,200** |
+| Part                           | Cells                                                                             | Trials per cell | Models | Trials      |
+| ------------------------------ | --------------------------------------------------------------------------------- | --------------- | ------ | ----------- |
+| **Pilot, confirmatory models** | A, C, D, E and S on T3; B on T3, F on T1 and G on T1                              | 5               | 2      | 80          |
+| **Pilot, other models**        | A, C and S on T3                                                                  | 5               | 2      | 30          |
+| **Confirmatory**               | A, C and S on T3                                                                  | 114             | 2      | 684         |
+| **Exploratory**                | on T3: B, D, E, R, N, O; on T1: A, F, G; on T2: A, C, D; on T4: A, G; on T5: A, D | 20              | 1      | 320         |
+| **Retries and capped margin**  | —                                                                                 | —               | —      | up to 86    |
+| **Total**                      |                                                                                   |                 |        | **≤ 1,200** |
 
 - **The models:**
-  - **Confirmatory:** a smaller and a frontier Claude model, through `claude -p --model`.
-  - **Exploratory:** the frontier model.
-  - **A codex model:** run on the exploratory cells only if its quota holds, inside the margin. It's never confirmatory.
+  - **Confirmatory:** `claude-sonnet-5-5` and `claude-haiku-5-5`, through `claude -p --model`. Both run every pilot condition, and the confirmatory run.
+  - **Exploratory cells:** `claude-sonnet-5-5`.
+  - **In the pilot only:** `claude-opus-5-5` through `claude -p --model`, and Codex's default model through `codex exec`, on A, C and S on T3, at 5 trials each. Their 30 trials come from the margin, so the confirmatory and exploratory budgets are unchanged. They're exploratory, never confirmatory. Codex's are confounded with its driver (§14).
+- **Pinned:**
+  - **Model ids:** each Claude model is named by its exact id, never an alias. Codex's default is recorded as the id its CLI reports for the trial.
+  - **CLI versions:** each trace records the CLI's name and version (§9), and a run holds them fixed. A version that changes mid-run is recorded, and results are reported per version.
 - **What the pilot is for:**
   - measuring the variance and the tokens per trial;
   - finding harness problems;
@@ -413,7 +417,7 @@ One JSON Lines file per trial, under the harness's results directory, committed 
 - **The trial:**
   - its id;
   - condition, task, model, driver;
-  - the CLI name and version, and the exact model identifier;
+  - the CLI name and version, and the exact model identifier, both pinned for the run (§8);
   - the seed and the key permutation;
   - the start time.
 - **The fixture:** the manifest digest, F's or G's digest where used, and the policy id with its canonical definition.
@@ -431,7 +435,7 @@ One JSON Lines file per trial, under the harness's results directory, committed 
 
 The metrics are predicates over traces, as the dark-patterns study's validator is (dark patterns §1). Before the confirmatory run:
 
-- **What's coded:** every pilot trial (80) is coded by hand for choice, adherence, susceptibility, exploration and the final message's intent: decided, recommended, asked or gave up.
+- **What's coded:** every pilot trial (110) is coded by hand for choice, adherence, susceptibility, exploration and the final message's intent: decided, recommended, asked or gave up.
 - **Rare categories:** where a metric's rarer category has fewer than 15 cases in the pilot, more trials are coded from the first exploratory cells until it does, oversampling that category. At least 50 trials are coded per metric.
 - **Reporting:** for each metric, the prevalence, the raw agreement, and Cohen's κ.
 - **The bar:** a metric with κ below 0.8, or with too few cases for κ to be stable, is fixed and recomputed, or reported with raw agreement only and marked, before the confirmatory run.
@@ -507,7 +511,7 @@ Only the tools differ. Three surfaces use the benchmark's four tools (§5.1):
 
 ## 14. Limitations
 
-- **Driver and model:** the confirmatory models share one driver. A codex model, if run, is confounded with its driver (§7.3).
+- **Driver and model:** the confirmatory models share one driver. Codex's pilot trials are confounded with their driver, so a difference between Codex and the Claude models can't be laid at the model alone (§7.3).
 - **Conformance doesn't cover visibility:** rule 5's kit checks that declared preconditions are enforced. It can't check that a resolver returns every instance that exists, because nothing in a manifest says how many there are (§11). So the disclosure invariant protects an agent only from what the application chose to show the runtime.
 - **The bundle can't be refused as current:** the project records its plan and add-ons, not a bundle. So "already on Pro Plus" has no precondition. No task starts on a bundle, so no trial depends on it.
 - **No user replies:** a trial ends when the agent asks the user something (§5.2).
