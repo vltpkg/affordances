@@ -1,5 +1,13 @@
 import { expect, test } from 'vitest'
-import { conformanceCases, derive, digest, normalize, validate } from '@affordances/ir'
+import {
+  conformanceCases,
+  derive,
+  digest,
+  evaluate,
+  normalize,
+  validate,
+  type Context,
+} from '@affordances/ir'
 import { addOns, bundles, plans } from '../src/catalog.ts'
 import { manifest } from '../src/manifest.ts'
 
@@ -105,5 +113,36 @@ test('the catalog fits the declared attributes, and its prices are the experimen
     proPlus.addOns.reduce((sum, a) => sum + addOns.find((x) => x.slug === a)!.priceUsd, 0)
   expect(parts - proPlus.priceUsd).toBe(
     manifest.claims!.find((c) => c.id === 'bundleSaves')!.quantity!.value,
+  )
+})
+
+// what each effect's description promises holds right after success, as a state written out by hand from the
+// description. RFC 0002 §8.4 checks `establishes` against the state after a run, so a false one is a contradiction
+const afterSuccess: Record<string, Context> = {
+  'hosting.subscription.cancel': {
+    target: {
+      id: 'p_1',
+      ownerId: 'u_1',
+      plan: 'pro',
+      renewsAs: 'hobby',
+      addOns: [],
+      buildMinutesUsed: 0,
+      buildMinutesIncluded: 3000,
+    },
+  },
+  'hosting.deployment.rollback': {
+    target: { id: 'd_1', projectId: 'p_1', status: 'ready', current: true },
+  },
+}
+
+test('every establishes holds in the state its effect describes', () => {
+  const establishing = manifest.capabilities.flatMap((c) =>
+    (c.effects ?? []).flatMap((e) =>
+      'establishes' in e && e.establishes ? [{ id: c.id, expr: e.establishes }] : [],
+    ),
+  )
+  expect(establishing.map((e) => e.id).toSorted()).toEqual(Object.keys(afterSuccess).toSorted())
+  expect(establishing.map((e) => [e.id, evaluate(e.expr, afterSuccess[e.id]!)])).toEqual(
+    establishing.map((e) => [e.id, true]),
   )
 })

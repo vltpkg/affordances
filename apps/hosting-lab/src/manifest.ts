@@ -28,6 +28,8 @@ export const project = defineResource({
     id: z.string(),
     ownerId: z.string(),
     plan: z.enum(['hobby', 'pro', 'business']),
+    // the plan it moves to at the next renewal: its plan, unless it was cancelled
+    renewsAs: z.enum(['hobby', 'pro', 'business']),
     addOns: z.array(z.string()),
     buildMinutesUsed: z.number().int(), // this month
     buildMinutesIncluded: z.number().int(), // this month, from the plan
@@ -136,15 +138,17 @@ export const cancel = defineCapability({
     },
   },
   preconditions: {
-    paid: when.ne('target.plan', 'hobby').because('The project is on a paid plan'),
+    paid: when.ne('target.renewsAs', 'hobby').because('The project renews on a paid plan'),
   },
   effects: [
     {
       category: 'state',
       change: 'update',
       resource: project,
-      description: 'Moves the project to Hobby at the end of the month',
-      establishes: when.eq('target.plan', 'hobby'),
+      // the plan itself changes at the end of the month; what holds right after success is the renewal
+      description:
+        'Schedules the move to Hobby: the project renews as Hobby at the end of the month',
+      establishes: when.eq('target.renewsAs', 'hobby'),
       reversibility: 'reversible',
     },
   ],
