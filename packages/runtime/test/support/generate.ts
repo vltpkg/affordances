@@ -275,6 +275,17 @@ export const caseArb = manifestArb.chain((spec) =>
         fc.subarray(WORDS, { minLength: 1 }).map((w) => ({ statement: w.join(' ') })),
         { nil: undefined },
       ),
+      // instances to bind references from, including ones that don't load (§2)
+      bind: fc.option(
+        fc.array(
+          fc.record({
+            type: fc.constantFrom(...TYPES),
+            key: fc.constantFrom('k0', 'k1', 'k2', 'k9'),
+          }),
+          { maxLength: 3 },
+        ),
+        { nil: undefined },
+      ),
     }),
   }),
 )
@@ -304,6 +315,7 @@ export const requestOf = (c: Case): ProjectionRequest => {
   const r: ProjectionRequest = { principal: c.principal, policy: c.request.policy }
   if (c.request.start !== undefined) r.start = c.request.start
   if (c.request.task) r.task = c.request.task
+  if (c.request.bind) r.bind = c.request.bind
   if (c.request.budget) {
     const b: { offers?: number; depth?: number } = {}
     if (c.request.budget.offers !== undefined) b.offers = c.request.budget.offers

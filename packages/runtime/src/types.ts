@@ -17,6 +17,9 @@ export type ProjectionRequest = {
   seen?: Revision
   policy?: PolicyId
   budget?: Budget
+  // instances that bind references wherever their type matches, after the start's own: never a wider scope, never
+  // an offer, and one the principal can't load binds nothing (§2)
+  bind?: ResourceRef[]
 }
 export type ResourceRef = { type: Id; key: string }
 export type Task = { statement: string }

@@ -67,6 +67,7 @@ const member: Principal = { authenticated: true, attributes: { plan: 'hobby', or
 const outsider: Principal = { authenticated: true, attributes: { plan: 'hobby', orgIds: ['o2'] } }
 const anonymous: Principal = { authenticated: false, attributes: {} }
 const fromProject = { type: 'hosting.project', key: 'p1' }
+const SUBSCRIBE_ID = 'hosting.plan.subscribe'
 
 // everything a projection holds, as bytes: it refuses to serialize itself
 const bytes = (p: Projection) =>
@@ -594,6 +595,82 @@ describe('the M3 close-out code review', () => {
       expect(p.revision).toMatch(/^sha256-/)
     },
   )
+})
+
+// only the subscribe offers are in scope; bind gives them the project, as starting from it would
+const subscribeWith = (bind?: { type: string; key: string }[]) =>
+  runtimeOf().project({
+    principal: member,
+    start: SUBSCRIBE_ID,
+    policy: 'resource',
+    bind,
+  } as never)
+
+describe('bind: references bound from the request, never a wider scope (§2)', () => {
+  test('it binds the reference wherever the type matches, and adds no offer: the view is the scope’s', async () => {
+    const p = await subscribeWith([fromProject])
+    const v = p.view()
+    expect(v.offers.map((o) => o.id)).toEqual([
+      'hosting.plan.subscribe@hosting.plan:hobby?project=p1',
+      'hosting.plan.subscribe@hosting.plan:pro?project=p1',
+      'hosting.plan.subscribe@hosting.plan:team?project=p1',
+    ])
+    // without bind, the same scope: the same offers, unbound
+    expect((await subscribeWith()).view().offers.map((o) => o.id)).toEqual([
+      'hosting.plan.subscribe@hosting.plan:hobby',
+      'hosting.plan.subscribe@hosting.plan:pro',
+      'hosting.plan.subscribe@hosting.plan:team',
+    ])
+  })
+  test('availability is what binding the reference implies: the same as starting from the project', async () => {
+    const bound = await subscribeWith([fromProject])
+    const started = await runtimeOf().project({
+      principal: member,
+      start: fromProject,
+      policy: 'exhaustive',
+    })
+    for (const o of bound.offers.filter((x) => x.capability === SUBSCRIBE_ID))
+      expect(o.availability).toEqual(offer(started.offers, o.id).availability)
+  })
+  test('two instances of one type bind neither, whatever their order (design’s check)', async () => {
+    const two = [fromProject, { type: 'hosting.project', key: 'p2' }]
+    const [ab, ba] = await Promise.all([subscribeWith(two), subscribeWith(two.toReversed())])
+    expect(ab.view().offers.every((o) => o.with === undefined)).toBe(true)
+    expect(bytes(ba)).toBe(bytes(ab))
+  })
+  test('the start binds first: a type the start binds keeps the start’s instance', async () => {
+    const p = await runtimeOf().project({
+      principal: member,
+      start: fromProject,
+      policy: 'exhaustive',
+      bind: [{ type: 'hosting.project', key: 'p2' }],
+    })
+    expect(p.offers.filter((o) => o.with).every((o) => o.with!.project === 'p1')).toBe(true)
+  })
+  test('an instance that doesn’t exist and one the principal can’t see bind alike: byte-equal responses', async () => {
+    // p2 exists, and belongs to someone else: this resolver hides it from the member, as a real app would
+    const hiding: ResourceResolver = {
+      load: async (key, principal) =>
+        key === 'p2'
+          ? principal.subject === 'u2'
+            ? { attributes: { id: 'p2', orgId: 'o2', domains: [] } }
+            : null
+          : null,
+    }
+    const project = (key: string) =>
+      testRuntime({
+        manifest: fresh(),
+        resources: { 'hosting.plan': table(plansState()), 'hosting.project': hiding },
+        handlers: handlers(),
+      }).project({
+        principal: member,
+        start: SUBSCRIBE_ID,
+        policy: 'resource',
+        bind: [{ type: 'hosting.project', key }],
+      } as never)
+    const [missing, notYours] = await Promise.all([project('p9'), project('p2')])
+    expect(bytes(notYours)).toBe(bytes(missing))
+  })
 })
 
 describe('offer ids', () => {

@@ -485,11 +485,17 @@ export const createRuntime = ({
     const guardsFrom = guardLog.length
     const start = typeof request.start === 'object' ? request.start : undefined
     // a reference is bound when the request starts from an instance of its type
+    // a reference is bound from the start instance, or else from the first bind instance of its type. offerOn loads
+    // each as the request's principal, and one it can't load binds nothing (§2)
     const startBinding = (c: CapabilityDefinition) =>
       Object.fromEntries(
-        (c.references ?? []).flatMap((r) =>
-          start?.type === r.resource ? [[r.name, start.key]] : [],
-        ),
+        (c.references ?? []).flatMap((r) => {
+          if (start?.type === r.resource) return [[r.name, start.key]]
+          // exactly one bind instance of the type binds; two of one type bind neither, so the list's order never
+          // decides which (design's check of the §2 amendment)
+          const ofType = (request.bind ?? []).filter((b) => b.type === r.resource)
+          return ofType.length === 1 ? [[r.name, ofType[0]!.key]] : []
+        }),
       )
 
     // every offer the principal may see: a global capability once, a targeted one on each instance its resolver lists,

@@ -505,6 +505,27 @@ describe('the M3 close-out code review', () => {
   })
 })
 
+describe('bind and execution (RFC 0002 §2)', () => {
+  test('an execution’s reference comes from its offer and input, never from view.bind', async () => {
+    projects.p2 = { id: 'p2', orgId: 'o1', domains: ['b.example'] }
+    const rt = await setup()
+    const offer = `${pro}?project=p1`
+    const body = { seats: [3] }
+    const view = { bind: [{ type: 'hosting.project', key: 'p2' }] }
+    const first = refusal(await rt.execute({ principal: member, offer, input: body, view }))
+    const done = await rt.execute({
+      principal: member,
+      offer,
+      input: body,
+      view,
+      approval: first.confirmation!.approval,
+    })
+    expect(done.status).toBe('succeeded')
+    // the handler acted on p1, the offer's, not p2, the bind's
+    expect((ran[0] as { refs: { project: { key: string } } }).refs.project.key).toBe('p1')
+  })
+})
+
 describe('check, for v0’s agent path (C3.1)', () => {
   test('steps 1-7 without running, and the confirmation as v0’s flag, never a token', async () => {
     const rt = await setup()
