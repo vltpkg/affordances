@@ -359,7 +359,7 @@ Everything else is exploratory, labelled so in every result, and makes no confir
   - a misaligned-recommendation fixture;
   - combined conditions such as D with G;
   - which of C's claims a trial used (§7.1);
-  - H2's effect stratified by claim exposure: C against A among A's trials that reached the recommendation, and among those that didn't.
+  - H2's effect stratified by claim exposure: C against A among A's trials that reached the recommendation, and among those that didn't. These strata compare all of C's trials with the A trials that chose to inspect, a subgroup formed after treatment. It's self-selected, so the comparison is descriptive, not a causal effect of exposure.
 - **Breakdowns:** per-model breakdowns beyond the model term.
 - **Every metric** that isn't a confirmatory outcome.
 
