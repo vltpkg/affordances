@@ -209,6 +209,10 @@ export type ExecutionRequest = {
   ifRevision?: OfferRevision
   // where the caller's projection starts, so changes compare like with like (§8.3); the target unless given
   start?: ResourceRef | Id
+  // the rest of the caller's projection request: changes are of the view it shows (§8.3, review of M3e)
+  policy?: PolicyId
+  task?: Task
+  budget?: Budget
 }
 export type RefusalCode =
   | 'not_found'

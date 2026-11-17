@@ -629,6 +629,50 @@ describe('what an execution changed (§8.4, M3e)', () => {
     expect(r.observed).toEqual([expect.objectContaining({ change: 'update', contradicts: true })])
   })
 
+  test('establishes reads the target, so it’s checked only on the target (review of M3e)', async () => {
+    // pro's regions emptied as declared, and hobby, another plan, changed too: only pro can contradict
+    const rt = withRun(cancelling(), () => {
+      plans.pro!.regions = []
+      plans.hobby!.priceUsd = 1
+    })
+    const r = succeeded(await rt.execute({ principal: member, offer: cancelPro }))
+    expect(r.observed.map((o) => [o.resource.key, o.contradicts ?? false])).toEqual([
+      ['hobby', false],
+      ['pro', false],
+    ])
+  })
+
+  test('changes are the caller’s view’s, shaped as it shows them: no claims its policy omits (review of M3e)', async () => {
+    // cancel takes hobby away; subscribe on legacy appears. Under progressive, claims are omitted
+    const manifest = cancelling()
+    const rt = withRun(manifest, () => {
+      plans.legacy = { slug: 'legacy', priceUsd: 5, regions: up }
+    })
+    const r = succeeded(
+      await rt.execute({
+        principal: member,
+        offer: cancelPro,
+        policy: 'progressive',
+        task: { statement: 'a plan' },
+      }),
+    )
+    const added = r.changes.added
+    expect(added.length).toBeGreaterThan(0)
+    expect(added.every((o) => o.claims.length === 0)).toBe(true)
+    // and under resource from pro, list (a global offer, outside that view) is never in changes
+    const s = succeeded(
+      await withRun(manifest, () => {
+        plans.pro!.regions = []
+      }).execute({ principal: member, offer: cancelPro }),
+    )
+    const named = [
+      ...s.changes.added.map((o) => o.id),
+      ...s.changes.removed,
+      ...s.changes.changed.map((c) => c.id),
+    ]
+    expect(named).not.toContain('hosting.plan.list')
+  })
+
   test('a create is seen through the list, and a delete by its absence', async () => {
     const manifest = cancelling()
     manifest.capabilities[2]!.effects!.push(

@@ -30,6 +30,7 @@ import type {
   ResourceRef,
   ResourceResolver,
   TokenStore,
+  View,
 } from './types.ts'
 
 type Obj = Record<string, unknown>
@@ -109,8 +110,9 @@ const sign = async (key: CryptoKey, call: Obj) =>
     await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(canonicalJson(call))),
   )
 
-// §8.3: the offers whose existence or availability changed, under the same projection request
-const compare = (before: Projection, after: Projection): OfferChanges => {
+// §8.3: the offers whose existence or availability changed, in the caller's view: a result goes on the wire, so it
+// carries only what that view shows, shaped as it shows it (review of M3e; §11)
+const compare = (before: View, after: View): OfferChanges => {
   const was = new Map(before.offers.map((o) => [o.id, o]))
   const now = new Map(after.offers.map((o) => [o.id, o]))
   return {
@@ -420,6 +422,7 @@ export const executor = (deps: ExecutionDeps) => {
     c: CapabilityDefinition,
     before: Awaited<ReturnType<typeof snapshot>>,
     after: Awaited<ReturnType<typeof snapshot>>,
+    target: ResourceRef | undefined,
   ) => {
     // the effects in canonical order (RFC 0001 §7.2), so matches means the same effect to every reader
     const effects = canonical.get(c.id)?.effects ?? []
@@ -454,11 +457,13 @@ export const executor = (deps: ExecutionDeps) => {
       if (matches >= 0) {
         o.matches = matches
         const effect = effects[matches]!
-        // establishes, checked against the instance after the run
+        // establishes reads target.*, so it's checked on the target after the run, and only there
         if (
           effect.category === 'state' &&
           effect.establishes &&
           now &&
+          target?.type === type &&
+          target.key === key &&
           evaluate(effect.establishes, { target: now.attributes }) === false
         )
           o.contradicts = true
@@ -476,12 +481,13 @@ export const executor = (deps: ExecutionDeps) => {
     const handler = handlers[r.c.id]
     if (!handler?.run) throw new Error(`no handler runs ${r.c.id}`)
     // the caller's projection, before: what changes are measured against (§8.3)
-    const view = {
-      principal: request.principal,
-      start: request.start ?? r.target,
-      policy: 'exhaustive',
-    }
-    const projected = await deps.project(view)
+    const view: ProjectionRequest = { principal: request.principal }
+    const start = request.start ?? r.target
+    if (start !== undefined) view.start = start
+    if (request.policy !== undefined) view.policy = request.policy
+    if (request.task !== undefined) view.task = request.task
+    if (request.budget !== undefined) view.budget = request.budget
+    const projected = (await deps.project(view)).view()
     const before = await snapshot(request.principal, r.c, r.target)
     // 9. run the application's handler
     let output: unknown
@@ -498,8 +504,8 @@ export const executor = (deps: ExecutionDeps) => {
       failure = 'The action failed.'
     }
     // 10. observe: what changed, against what was declared, and the view after, a partial effect included
-    const seen = observe(r.c, before, await snapshot(request.principal, r.c, r.target))
-    const after = await deps.project(view)
+    const seen = observe(r.c, before, await snapshot(request.principal, r.c, r.target), r.target)
+    const after = (await deps.project(view)).view()
     const observed = { ...seen, revision: after.revision, changes: compare(projected, after) }
     if (failure !== undefined) return { status: 'failed', message: failure, ...observed }
     const result: ExecutionResult = { status: 'succeeded', ...observed }
