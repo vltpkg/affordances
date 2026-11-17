@@ -538,7 +538,8 @@ The canonical form is what composition compares, what the digest hashes, and wha
    - **The input must be I-JSON** ([RFC 7493](https://www.rfc-editor.org/rfc/rfc7493)): no duplicate member names, and numbers representable as IEEE 754 doubles.
    - **Strings are compared as written.** JCS doesn't normalize Unicode, so two definitions that differ only in normalization form are different, and composing them is `E_CONFLICT`.
 2. **Queries are completed:** `normalize` writes `safe: true` and `effects: []` on every query (§2.2).
-3. **Every array is either a set or a sequence,** and this list is complete:
+3. **Symmetric relations** put the lesser of `from` and `to` first. This comes before sorting, so `relations` sort on the swapped ends.
+4. **Every array is either a set or a sequence,** and this list is complete:
 
    | Sorted as a set                                                                                 | Sort key                                                   |
    | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -552,11 +553,10 @@ The canonical form is what composition compares, what the digest hashes, and wha
    - **Ties break on canonical bytes.** Elements that tie on their key are ordered by their full canonical bytes, and exact duplicates in a set are removed. So the order never depends on input order.
    - **Sequences keep their order:** a comparison's two operands (`lt` is ordered), everything inside an embedded JSON Schema (6, below), and everything inside an `extensions` value, which the IR doesn't interpret.
 
-4. **Symmetric relations** put the lesser of `from` and `to` first.
 5. **Defaults are removed:**
    - a field equal to the value it would inherit (provenance equal to the manifest default) is dropped;
    - an empty optional array is dropped, _except_ `effects: []`, which says something different from an absent `effects`.
-6. **JSON Schemas embedded as `input`, `output` and `attributes`** are canonicalized by RFC 8785 only. Their arrays keep their order, because in JSON Schema some array orders carry meaning (`prefixItems`) and an IR can't know which (3, above). A `$schema` keyword is dropped, since every embedded schema is JSON Schema 2020-12. v0 already drops it (`packages/core/src/action.ts:109`).
+6. **JSON Schemas embedded as `input`, `output` and `attributes`** are canonicalized by RFC 8785 only. Their arrays keep their order, because in JSON Schema some array orders carry meaning (`prefixItems`) and an IR can't know which (4, above). A `$schema` keyword is dropped, since every embedded schema is JSON Schema 2020-12. v0 already drops it (`packages/core/src/action.ts:109`).
 7. **Nothing that varies between builds may appear:** no timestamps, no absolute paths, no build identifiers.
 
 **No array in the IR is ordered by meaning.** Order in a manifest never expresses preference, priority or salience. SCXML's rule that the "first one in document order will be taken" (prior art §3.2) is the failure this avoids. Salience is a property of a projection's presentation, decided by a disclosure policy (RFC 0002), and so it can be varied without touching the definitions.
