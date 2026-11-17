@@ -534,6 +534,7 @@ type ExecutionRequest = {
   input?: unknown
   approval?: ApprovalToken // §8.2, for a capability that requires confirmation
   ifRevision?: OfferRevision // optional: refuse with 'stale' if this offer's state has moved on
+  start?: ResourceRef | Id // where the caller's projection starts, for `changes` (§8.3); the target unless given
 }
 ```
 
@@ -634,7 +635,7 @@ type OfferChanges = {
 - **Length:** at most 280 characters. A longer one is cut, and `detailTruncated: true` says so.
 - **What stays stable:** `condition` (`id` and `description`), so code can branch on the id and people can read the detail.
 
-**`changes`** lists the offers whose existence or availability changed, compared with the projection before the execution under the same request. It's v0's `actionsAdded` and `actionsRemoved` (`packages/protocol/spec.md`, Delta), with availability changes kept apart from additions.
+**`changes`** lists the offers whose existence or availability changed, compared with the projection before the execution under the same request: the same principal, starting from the request's `start`, or from the target when it gives none. It's v0's `actionsAdded` and `actionsRemoved` (`packages/protocol/spec.md`, Delta), with availability changes kept apart from additions.
 
 **`failed` after a partial effect.** A handler can fail after changing something. The result reports what was observed anyway, and carries the recomputed projection's `changes`, so the caller's view doesn't go stale. Nothing in the runtime assumes an action is atomic or reversible.
 
@@ -646,13 +647,14 @@ type ObservedChange = {
   change: 'create' | 'update' | 'delete'
   attributes?: string[] // which declared attributes changed, for an update
   matches?: number // the index, in canonical order, of the declared state effect it accounts for
+  contradicts?: true // that effect declares what it establishes, and it's false after the run
 }
 ```
 
 - **What the runtime can see.** It observes what resolvers report, before and after: the target, and every resource a declared state effect names. It can't observe external, financial or access effects, so it never claims to.
 - **`matches`** indexes the capability's `effects` in their canonical order (RFC 0001 §7.2), so every reader of the same manifest agrees which effect it means.
 - **`undeclared`** lists observed changes no declared effect accounts for. It's how a developer finds an effect they forgot to declare, and how the inspector (M3f) shows "declared against observed".
-- **`establishes` is checked.** When a state effect declares what it establishes, the runtime evaluates that expression after the run. A `false` result is reported as an observed change that contradicts its declaration.
+- **`establishes` is checked.** When a state effect declares what it establishes, the runtime evaluates that expression after the run. A `false` result is reported as an observed change that contradicts its declaration: the change carries `matches` and `contradicts: true`.
 - **Observations are records, with basis `observed`, never edits to the manifest** (RFC 0001 §4).
 
 ## 9. Safety rules of the runtime
