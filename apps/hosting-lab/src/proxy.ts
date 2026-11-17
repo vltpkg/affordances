@@ -1,8 +1,12 @@
 import { NextResponse, type NextRequest } from 'next/server'
+import { inspectorEnabled } from './lib/gate.ts'
 
 // every visitor gets a session before the page renders, so the project a page shows is the one its forms act on.
 // The cookie goes on the request too, so the first render already reads it
 export const proxy = (request: NextRequest) => {
+  // the inspector exists only where it's turned on (src/lib/gate.ts)
+  if (request.nextUrl.pathname.startsWith('/inspect') && !inspectorEnabled())
+    return new NextResponse('Not found', { status: 404 })
   if (request.cookies.has('sid') || request.headers.has('authorization')) return NextResponse.next()
   const sid = crypto.randomUUID()
   request.cookies.set('sid', sid)

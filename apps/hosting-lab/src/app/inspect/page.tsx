@@ -1,4 +1,6 @@
 import Link from 'next/link'
+import { notFound } from 'next/navigation'
+import { inspectorEnabled } from '@/lib/gate'
 import { getSessionId } from '@/lib/session'
 import { POLICIES, inspect, type InspectedOffer } from '@/lib/inspect'
 import { principalFor } from '@/lib/resolvers'
@@ -23,6 +25,8 @@ const Status = ({ offer }: { offer: InspectedOffer }) => {
 }
 
 const Page = async ({ searchParams }: PageProps<'/inspect'>) => {
+  // the proxy refuses it first; this is the page's own check, in case a deployment runs without the proxy
+  if (!inspectorEnabled()) notFound()
   const requested = (await searchParams).policy
   const policy =
     typeof requested === 'string' && POLICIES.includes(requested) ? requested : 'exhaustive'

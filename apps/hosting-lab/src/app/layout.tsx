@@ -14,7 +14,6 @@ const nav = [
   { href: '/plans', label: 'Plans' },
   { href: '/add-ons', label: 'Add-ons' },
   { href: '/deployments', label: 'Deployments' },
-  { href: '/inspect', label: 'Inspector' },
 ]
 
 const RootLayout = ({ children }: LayoutProps<'/'>) => (

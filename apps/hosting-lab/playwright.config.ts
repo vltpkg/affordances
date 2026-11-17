@@ -13,7 +13,8 @@ export default defineConfig({
     launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH },
   },
   webServer: {
-    command: `node_modules/.bin/next build && node_modules/.bin/next start -p ${port}`,
+    // the inspector is off unless turned on; the e2e server turns it on to test it
+    command: `node_modules/.bin/next build && HOSTING_LAB_INSPECTOR=1 node_modules/.bin/next start -p ${port}`,
     url: `http://localhost:${port}`,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
