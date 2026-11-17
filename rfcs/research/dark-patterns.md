@@ -1,6 +1,6 @@
 # Dark patterns and web agents: what carries over to capability graphs
 
-This note reads one paper closely, for the agent-choice benchmark (milestone 5):
+This note reads one paper closely, for Affordances' agent-choice benchmark:
 
 > D. Ersoy, B. Lee, A. Shreekumar, A. Arunasalam, M. Ibrahim, A. Bianchi and Z. B. Celik, "Investigating the Impact of Dark Patterns on LLM-Based Web Agents," IEEE Symposium on Security and Privacy 2026. arXiv:2510.18113. <https://arxiv.org/abs/2510.18113>
 
@@ -12,9 +12,36 @@ This note reads one paper closely, for the agent-choice benchmark (milestone 5):
   - "§" is a section of the paper.
   - Quotations are verbatim.
   - Figure values are as printed on the chart, unless marked "about", which means read from the bar height.
-  - Sections 1-5 report the paper. Sections 6-9 are our analysis and are labeled as ours.
+  - Sections 1-5 report the paper. Sections 6-10 are our analysis and are labeled as ours.
 
 **Why it matters here.** The paper measures how browser agents respond to deceptive interface design. We want to know whether related effects appear when an agent chooses among fixed, legitimate options presented through a machine-readable capability graph, with no rendered interface. The paper doesn't claim that, and nothing in it establishes it. What we can take from it is a method: toggleable conditions over a fixed task, a paired baseline, trace predicates for outcomes, and the separation of task success from deception.
+
+## Goals of the benchmark
+
+The benchmark this note serves measures whether the structure of a capability graph changes what an agent chooses, when the options themselves don't change.
+
+- **Fixed options.** One fictional storefront or hosting provider, with fixed products, prices and behavior. For example, three plans at $0, $20 and $80, and a task such as "find a plan for a small project; keep costs low, but deploy reliably".
+- **Only the representation varies.** Each condition is the same definitions under a different disclosure policy:
+  - **A, neutral:** every option, with equal detail, in a neutral order.
+  - **B, progressive:** a relevant subset first, with the alternatives explicitly discoverable.
+  - **C, transparent advocacy:** a recommendation, attributed to the publisher, with accurate supporting information.
+  - **D, salience:** a different order, prominence or relevance label, with the same options.
+  - **E, discovery friction:** an alternative that takes extra traversal to find.
+  - **F, misleading dependency:** a controlled adversarial fixture where an optional step is presented as a prerequisite.
+  - **G, bundled default:** an optional purchase folded into a convenient combined action.
+
+  These are experimental conditions, not recommended practice.
+
+- **What's measured:**
+  - task success, kept separate from adherence to the user's stated intent;
+  - the distribution of choices;
+  - unnecessary spend;
+  - discovery efficiency (calls to find the relevant options);
+  - tokens and latency;
+  - whether the agent explored alternatives;
+  - consequential errors (unwanted or unauthorized commitments);
+  - choice susceptibility: how often a change of disclosure policy produced a decision contrary to the stated preference.
+- **Out of scope:** prompt injection. The subject is influence through legitimate, structured choices.
 
 ## 1. What the paper built
 
@@ -22,7 +49,7 @@ This note reads one paper closely, for the agent-choice benchmark (milestone 5):
 
 - "a custom testbed of four React-based websites" (§I): e-commerce, news, music streaming and a health portal (§III-A).
 - Each site holds "diverse and realistic dark patterns that can be selectively enabled or disabled" (Abstract), switched on by URL parameters (§III-A, §IV-A).
-- A scenario is a tuple "S=(T,W,D), which includes a task T on a Website W with a set of dark patterns D={d1,…,dn} where n≥0" (§III-A).
+- A scenario is a tuple "S=(T,W,D), which includes a task T on a Website W with a set of dark patterns D={d1,d2,…,dn} where n≥0" (§III-A).
 - Every interactive element has "a static and persistent globally unique element ID" (§I).
 
 **LiteAgent** drives an agent through a task and records what it does (§III-B):
@@ -117,11 +144,11 @@ The categories are multi-label. Interface interference covers 13 of the 14 patte
 | VisualWebArena | 39.9%       | 0.0%      | 33.7%                  | 34.4%         | 37.9%              | 31.4%     |
 | **Overall**    | **52.2%**   | **33.9%** | **41.7%**              | **43.9%**     | **47.9%**          | **41.1%** |
 
-The abstract rounds the overall rate to 41%. How the overall cells are aggregated isn't stated. The mean of the six agents' rates is 41.0%, so it's likely pooled over runs. Per-pattern rates aren't reported.
+The abstract rounds the overall rate to 41%. How the overall cells are aggregated isn't stated. Per-pattern rates aren't reported, except for one pattern (the premium subscription pop-up, p1) in the UI-attribute study (Fig. 15, Table III).
 
 **Capable agents fall for more** (§V-A, Finding 1):
 
-- The agents with the highest baseline task success (BrowserUse 76.3%, DoBrowser 73.1%, Skyvern 72.0%; Fig. 5) include the two most susceptible.
+- The agents with the highest baseline task success (BrowserUse 76.3%, DoBrowser 73.1%, Skyvern 72.0%; §V-A, Fig. 5) include the two most susceptible.
 - The paper's explanation is that they "prioritize overcoming barriers to complete tasks, even if it means falling for deceptive elements in the process".
 - Weaker agents "are not purposefully evading dark patterns but are coincidentally doing so due to poor performance": their failures include "early-exit failure", which "prevents exposure to dark pattern mechanics that are gated behind successful task progression."
 - The inverse relation is asserted from six agents. No correlation is computed.
@@ -145,10 +172,16 @@ The abstract rounds the overall rate to 41%. How the overall cells are aggregate
 
 - Task success falls as more patterns are enabled.
 - Patterns that were inert alone "became effective" in combination.
-- In two case studies, an agent that ignored a sponsored ad alone clicked "donate now" once three modals were added.
-- The relative changes in Fig. 11 reach +2035%. That's an artifact of smoothing a 0% base, so read only their direction.
+- In one of two case studies, BrowserUse ignored a sponsored ad alone, but clicked "donate now" once three obstructive modals were added. In the other, Skyvern avoided a confirm-shaming pop-up alone, and fell for it in combination.
+- The relative changes in Fig. 11 reach +2314% (WebArena, four patterns). That's an artifact of smoothing a 0% base, so read only their direction.
 
-**Harder-to-read patterns work less well** (§V-D, Finding 4): changes that hinder an agent's reading of the page, such as removing ARIA attributes or rendering text as images, lowered both task success and susceptibility. The paper's reading is that obstructive patterns "may be more effective when they are more easily recognized and understood by agents."
+**Harder-to-read patterns work less well** (§V-D, Finding 4): for the premium subscription pop-up, pooled over the six agents (Fig. 15):
+
+- rendering text as images lowered both task success and susceptibility;
+- removing ARIA attributes lowered susceptibility (38.9% to 22.2%) and left task success unchanged (44.5% to 44.4%);
+- two other variants, changing the UI library alone or with the button placement, raised task success to about 61%.
+
+The changes are confined to three agents (BrowserUse, DoBrowser and Skyvern, §V-D): "half the agents saw no change in performance or susceptibility" (§I). The paper's reading is that obstructive patterns "may be more effective when they are more easily recognized and understood by agents."
 
 **Vision doesn't help** (§V-E, Finding 5): "in most cases, it actually increases dark pattern susceptibility and lowers task success rates."
 
@@ -163,14 +196,14 @@ The abstract rounds the overall rate to 41%. How the overall cells are aggregate
 - **What the authors state:**
   - **§VII:** only the cost of integrating new agents into LiteAgent.
   - **Elsewhere:** they call the countermeasures "a preliminary exploration" (§VI) and the attribute study "a preliminary study" (§I).
-  - **The reviewers' point:** the meta-review notes the missing human baseline (Appendix G). The authors defer it because their implementations differ from human studies' (Appendix H).
+  - **The reviewers' point:** the meta-review notes the missing human baseline (Appendix G). In Appendix H the authors give two reasons: their implementations differ from prior human studies', so those rates "cannot directly compare", and they defer building a human baseline "because this work is fundamentally different in methodology and purpose".
 - **What we observe ourselves, not stated as limits by the authors:**
   - the sites are synthetic;
   - there are three runs per scenario, with no intervals or tests;
   - one model for most experiments;
   - susceptibility isn't conditioned on exposure;
   - the category rates overlap;
-  - there are no per-pattern rates;
+  - per-pattern rates exist for only one pattern;
   - there are no token, cost or latency measures;
   - model settings aren't stated.
 
@@ -214,7 +247,7 @@ None of this undermines the paper's direction. It means its numbers describe GPT
 ## 7. What doesn't carry over (our analysis)
 
 - **Visual patterns.** A capability graph has no rendering layer, so these have no counterpart:
-  - color, contrast, size, small grey type and button placement (the terms-of-service and confirm-shaming styling; Table VI, t3 and t4);
+  - color, contrast, size, small grey type and button placement (the terms-of-service and confirm-shaming styling in Table V, and the p1 variants t3 and t4 in Table VI);
   - text as images (t2);
   - modals that overlay content;
   - the vision experiments (RQ5).
@@ -227,7 +260,7 @@ None of this undermines the paper's direction. It means its numbers describe GPT
 - **Overlay mechanics.** Clicking behind a modal, or HTML compression dropping a modal's state (§V-C), have a loose counterpart in our setting: a harness truncating or summarizing a large graph. It's a different mechanism, and we'll watch for it separately.
 - **Privacy and attention goals.** Our options are paid plans, so harm is measured in money and fit to the stated intent. Consent patterns (cookies, data sharing, terms) apply only if a fixture exposes consent settings deliberately.
 - **Deception about the option set.** Bait and switch makes a false claim ("free"), and the sponsored item ignores the sort order. Our premise is fixed, legitimate options, so false claims stay out of the main conditions. The bait and switch survives as a misleading dependency (condition F), which is a controlled adversarial fixture.
-- **Prompt injection** is out of scope, as it is for the paper (§I).
+- **Prompt injection** is out of scope here. The paper positions itself apart from prompt-injection work (§I).
 
 ## 8. Confounds the benchmark has to control (our analysis)
 
