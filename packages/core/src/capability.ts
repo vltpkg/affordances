@@ -3,6 +3,18 @@ import type { Expose } from '@affordances/protocol'
 import type { ActionConfig, Ctx, Entities, GuardResult, StateDef } from './action.ts'
 import { AffordancesError } from './errors.ts'
 
+// Everything this file exports is @experimental: binding a capability from `@affordances/ir`, and checking it with
+// `@affordances/runtime`, neither of which is published yet. Both may change before they are. Without a runtime,
+// v0's agent path refuses a capability's declarative conditions (fail closed, rule 5)
+
+// v0's config for the action a capability binds to
+type Config<Output, Session, State extends Entities> = ActionConfig<
+  StandardSchemaV1,
+  Output,
+  Session,
+  State
+>
+
 // what defineAction needs from a capability made with @affordances/ir's defineCapability (RFC 0001 §12.1). Written
 // structurally, so core takes no dependency on the IR package: a defined capability is plain data plus its schemas
 type BoundCondition = { readonly id: string; readonly description: string } & (
@@ -12,17 +24,13 @@ type BoundCondition = { readonly id: string; readonly description: string } & (
 
 // what defineAction needs from the projection runtime: its check, RFC 0002 §8.1's steps 1-7 without running.
 // Written structurally too, so core takes no dependency on the runtime package
-/**
- * @experimental The projection runtime's principal (RFC 0002 §3), as the application resolves it for a call.
- */
+/** @experimental The projection runtime's principal (RFC 0002 §3), as the application resolves it for a call. */
 export type CheckPrincipal = {
   readonly authenticated: boolean
   readonly subject?: string
   readonly attributes: Readonly<Record<string, unknown>>
 }
-/**
- * @experimental What v0's agent path asks the projection runtime before it runs an action.
- */
+/** @experimental What v0's agent path asks the projection runtime before it runs an action. */
 export type CheckRequest = {
   principal: CheckPrincipal
   // `capability@type:key`, or the capability's id when it has no target
@@ -32,9 +40,7 @@ export type CheckRequest = {
   // only when v0's client confirmed the call: v0's confirmation, never an RFC 0002 approval
   confirmed?: { basis: 'v0-client-flag' }
 }
-/**
- * @experimental The projection runtime's answer to a check.
- */
+/** @experimental The projection runtime's answer to a check. */
 export type CheckResult =
   | { status: 'ok'; revision: string; confirmation?: { basis: 'v0-client-flag' } }
   | {
@@ -54,15 +60,10 @@ export type CheckResult =
       confirmation?: { summary: string }
       revision: string
     }
-/**
- * @experimental The part of the projection runtime defineAction uses.
- */
+/** @experimental The part of the projection runtime defineAction uses. */
 export type CheckRuntime = { check(request: CheckRequest): Promise<CheckResult> }
 
-/**
- * @experimental Binding a capability from `@affordances/ir`, which isn't published yet. It may change before it is,
- * and its fail-closed refusal on v0's agent path is interim (M3d).
- */
+/** @experimental See the note at the top of this file. */
 export type BindableCapability<Guards extends string = string, Input = unknown> = {
   readonly definition: {
     readonly id: string
@@ -83,28 +84,19 @@ export type BindableCapability<Guards extends string = string, Input = unknown> 
   readonly '~input'?: Input
 }
 
-/**
- * @experimental Binding a capability from `@affordances/ir`, which isn't published yet. It may change before it is,
- * and its fail-closed refusal on v0's agent path is interim (M3d).
- */
+/** @experimental See the note at the top of this file. */
 export type CapabilityGuards<C> = C extends { readonly '~guards'?: infer G }
   ? Exclude<G, undefined> & string
   : never
 // a capability without input takes an empty object, as v0's z.object({}) does
-/**
- * @experimental Binding a capability from `@affordances/ir`, which isn't published yet. It may change before it is,
- * and its fail-closed refusal on v0's agent path is interim (M3d).
- */
+/** @experimental See the note at the top of this file. */
 export type CapabilityInput<C> = C extends { readonly '~input'?: infer I }
   ? [Exclude<I, undefined>] extends [never]
     ? Record<string, never>
     : Exclude<I, undefined>
   : never
 
-/**
- * @experimental Binding a capability from `@affordances/ir`, which isn't published yet. It may change before it is,
- * and its fail-closed refusal on v0's agent path is interim (M3d).
- */
+/** @experimental See the note at the top of this file. */
 export type GuardFn<Input, Session, State extends Entities> = (args: {
   // undefined when the graph is built, as for v0's guard
   input: Input | undefined
@@ -114,10 +106,7 @@ export type GuardFn<Input, Session, State extends Entities> = (args: {
 
 // defineAction's form for a capability: the description, input, readOnly, requires and expose come from the
 // capability, and this supplies only the code. A capability without guards takes no `guards`
-/**
- * @experimental Binding a capability from `@affordances/ir`, which isn't published yet. It may change before it is,
- * and its fail-closed refusal on v0's agent path is interim (M3d).
- */
+/** @experimental See the note at the top of this file. */
 export type CapabilityActionConfig<
   C extends BindableCapability,
   Output,
@@ -231,7 +220,7 @@ export const fromCapability = <
   State extends Entities,
 >(
   config: CapabilityActionConfig<C, Output, Session, State>,
-): ActionConfig<StandardSchemaV1, Output, Session, State> => {
+): Config<Output, Session, State> => {
   const def = config.capability.definition
   if (def.kind === 'event')
     throw new TypeError(`${def.id} is an event: defineAction binds queries and actions`)
@@ -334,18 +323,17 @@ export const fromCapability = <
     state: config.state,
     expose: exposeOf(def),
     requires: conditions.length ? conditions.map((c) => c.description).join('; ') : undefined,
-    guard: guard as ActionConfig<StandardSchemaV1, Output, Session, State>['guard'],
+    guard: guard as Config<Output, Session, State>['guard'],
     summary: (config.summary ??
-      (template && (({ input }: { input: unknown }) => fill(template, input)))) as ActionConfig<
-      StandardSchemaV1,
+      (template && (({ input }: { input: unknown }) => fill(template, input)))) as Config<
       Output,
       Session,
       State
     >['summary'],
-    message: config.message as ActionConfig<StandardSchemaV1, Output, Session, State>['message'],
+    message: config.message as Config<Output, Session, State>['message'],
     effects: config.effects,
     readOnly: def.kind === 'query' || undefined,
     output: config.capability.schemas.output,
-    run: config.run as ActionConfig<StandardSchemaV1, Output, Session, State>['run'],
+    run: config.run as Config<Output, Session, State>['run'],
   }
 }
