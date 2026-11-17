@@ -135,7 +135,7 @@ v0's single guard function (`packages/core/src/action.ts:39-44`) and `expose` (`
 ### 2.9 Identity and binding
 
 - **A semantic identifier** names a definition, independently of every transport, as a dotted name such as `commerce.cart.addItem`.
-  - Dots are already legal in MCP tool names (`admin.tools.list` is the spec's own example; [MCP tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)).
+  - Dots fit MCP's tool-name guidance (`admin.tools.list` is the spec's own example; [MCP tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)) and WebMCP's normative rule ([WebMCP](https://webmachinelearning.github.io/webmcp/), `registerTool`).
   - For cross-application use, the canonical form is a URI: the manifest's namespace URI with the identifier as a fragment. That follows ALPS, where "the complete URI to an ALPS 'descriptor' (including the fragment) forms an 'abstract semantic type' identifier" (ALPS §2.2.9.2).
 - **A binding** connects a capability to one concrete way of invoking it: a v0 route and action name, an MCP tool, an HTTP operation, a UI component interaction.
   - WoT calls the abstract version a [Protocol Binding](https://www.w3.org/TR/wot-thing-description11/#dfn-protocol-binding) and serializes it as [forms](https://www.w3.org/TR/wot-thing-description11/#form). OWL-S calls it a grounding ([OWL-S §6](https://www.w3.org/submissions/OWL-S/#6)).
