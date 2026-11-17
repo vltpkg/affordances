@@ -1,6 +1,6 @@
 # RFC 0001: The semantic capability IR
 
-- **Status:** accepted (2026-11-17); amended 2026-11-17 (§3.1: quantifiers and `count`, after the guard survey)
+- **Status:** accepted (2026-11-17); amended 2026-11-17 (§3.1: quantifiers and `count`, after the guard survey; §2.3: declared principal attributes, for RFC 0002)
 - **Package:** `@affordances/ir` (private until published)
 - **Depends on:** [terminology](./research/terminology.md), [repo audit](./research/repo-audit.md), [prior art](./research/prior-art.md)
 
@@ -70,6 +70,7 @@ The IR is the layer that fills those gaps. Three uses shape it:
 ```text
 CapabilityManifest
 ├── namespace, schemaVersion, provenance (the default), sources
+├── principal       PrincipalDefinition: the attributes conditions can read about the caller (optional)
 ├── resources[]     ResourceDefinition: a type of domain entity, its key and attributes
 ├── capabilities[]  CapabilityDefinition: kind query | action | event
 │     ├── target, references         what it acts on, what it takes as input
@@ -187,6 +188,34 @@ type Reference = {
 
 **Behavioral properties are tri-state** (terminology §2.4). `true` and `false` are claims by the definition's source, and absent means no claim. They never loosen enforcement (§8, rule 2).
 
+### 2.3 Principal
+
+```ts
+type PrincipalDefinition = {
+  description?: string
+  // the caller's attributes a condition can read as principal.<attribute>, as a JSON Schema object
+  attributes: JSONSchema
+}
+// CapabilityManifest.principal?: PrincipalDefinition
+```
+
+A manifest declares the shape of what it knows about the caller, the way a resource definition declares a resource's attributes: a plan, an organization, a region, roles. Conditions read them as `principal.<attribute>`, and `validate` checks those paths like any other (`E_PATH`).
+
+- **Nothing undeclared can be read.** A manifest without `principal` can't have `principal.*` paths. A typo can't become a condition that is silently always `unknown`.
+- **Shape, never values.** The manifest stays context-independent. Values come from the application for each request (RFC 0002).
+- **Whether the caller is authenticated is not an attribute.** `authorization.principal` (§3.2) is the one place that reads it, so a condition has no `principal.authenticated` path.
+- **A caller's permission on one resource is a comparison, not an attribute.** "A member of this organization" is `{ in: [{ path: 'target.orgId' }, { path: 'principal.orgIds' }] }`.
+
+**Alternatives considered:**
+
+| Alternative                                                      | Rejected because                                                                                                                                        |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Declare principal attributes only in the runtime's configuration | `validate` couldn't check `principal.*` paths without running the application, and a tool reading the manifest would meet conditions it can't interpret |
+| A fixed set: id, roles, scopes                                   | Applications model callers differently: plans, organizations, regions, verified age. A fixed set would be wrong for most                                |
+| OAuth scopes as the model                                        | Scopes are one grant vocabulary on the wire. They can be one declared attribute (`principal.scopes`), not the model                                     |
+
+This section is an amendment, proposed by RFC 0002 (§3), which defines how a runtime is given the values.
+
 ## 3. Conditions (question 2)
 
 **The question:** what can be expressed declaratively, and what must stay runtime-enforced?
@@ -228,11 +257,11 @@ type Path = string
 
 - `target`: the target resource's attributes;
 - `input`: the input;
-- `principal`: the principal's attributes, which RFC 0002 defines;
+- `principal`: the principal's attributes, as the manifest declares them (§2.3);
 - a reference's `name` (§2.2);
 - `item`: inside a quantifier's `where`, the current element of the array it ranges over.
 
-Each path is checked at validation time. A `target` or reference path has to name an attribute declared in that resource's `attributes`, and an `input` path has to name a property in the input schema.
+Each path is checked at validation time. A `target` or reference path has to name an attribute declared in that resource's `attributes`, a `principal` path one declared in the manifest's `principal` (§2.3), and an `input` path a property in the input schema.
 
 **Paths in `establishes`.** An effect's `establishes` uses only the `target` root, and only when the effect's `resource` is the capability's `target`. An effect on another resource (checkout's `create commerce.order`) has no `establishes` in this version.
 
@@ -577,7 +606,7 @@ The canonical form is what composition compares, what the digest hashes, and wha
 5. **Defaults are removed:**
    - a field equal to the value it would inherit (provenance equal to the manifest default) is dropped;
    - an empty optional array is dropped, _except_ `effects: []`, which says something different from an absent `effects`.
-6. **JSON Schemas embedded as `input`, `output` and `attributes`** are canonicalized by RFC 8785 only. Their arrays keep their order, because in JSON Schema some array orders carry meaning (`prefixItems`) and an IR can't know which (4, above). A `$schema` keyword is dropped, since every embedded schema is JSON Schema 2020-12. v0 already drops it (`packages/core/src/action.ts:109`).
+6. **JSON Schemas embedded as `input`, `output`, `attributes` and `principal.attributes`** are canonicalized by RFC 8785 only. Their arrays keep their order, because in JSON Schema some array orders carry meaning (`prefixItems`) and an IR can't know which (4, above). A `$schema` keyword is dropped, since every embedded schema is JSON Schema 2020-12. v0 already drops it (`packages/core/src/action.ts:109`).
 7. **Nothing that varies between builds may appear:** no timestamps, no absolute paths, no build identifiers.
 
 **No array in the IR is ordered by meaning.** Order in a manifest never expresses preference, priority or salience. SCXML's rule that the "first one in document order will be taken" (prior art §3.2) is the failure this avoids. Salience is a property of a projection's presentation, decided by a disclosure policy (RFC 0002), and so it can be varied without touching the definitions.
@@ -1114,6 +1143,7 @@ export type CapabilityManifest = {
   namespace: URI
   title?: string
   provenance: Provenance // the default for everything below
+  principal?: PrincipalDefinition
   sources: Source[]
   resources: ResourceDefinition[]
   capabilities: CapabilityDefinition[]
@@ -1121,6 +1151,11 @@ export type CapabilityManifest = {
   claims?: Claim[]
   bindings?: Binding[]
   extensions?: Extensions
+}
+
+export type PrincipalDefinition = {
+  description?: string
+  attributes: JSONSchema
 }
 
 export type Source = {
@@ -1276,6 +1311,7 @@ export type ValidationIssue = {
 | `Id`                   | `pattern` as in §13, `maxLength: 128`                                                                                                                                                                                                                                                                                                                                                 |
 | `Ref`                  | `pattern`: an `Id`, or an absolute URI without a fragment, then `#` and an `Id`: `^(?:ID\|[A-Za-z][A-Za-z0-9+.-]*:[^#\s]*#ID)$`, with `ID` the `Id` pattern                                                                                                                                                                                                                           |
 | `CapabilityManifest`   | `schemaVersion` `const: "0.1"`; `namespace` `pattern: "^[A-Za-z][A-Za-z0-9+.-]*:[^#\\s]*$"`, an absolute URI with no fragment; `additionalProperties: false`                                                                                                                                                                                                                          |
+| `PrincipalDefinition`  | `required: [\"attributes\"]`; `additionalProperties: false`                                                                                                                                                                                                                                                                                                                           |
 | `Source`               | `role` enum                                                                                                                                                                                                                                                                                                                                                                           |
 | `Provenance`           | `basis` enum. `if: { properties: { basis: { const: "verified" } } }, then: { required: ["evidence"], properties: { evidence: { minItems: 1 } } }`, and the same for `imported` and `observed`                                                                                                                                                                                         |
 | `ResourceDefinition`   | `required: ["id", "description", "key"]`; `contains` is an array of unique `Id`s                                                                                                                                                                                                                                                                                                      |
@@ -1316,7 +1352,7 @@ This RFC started from an initial sketch of the model: a manifest of resources, c
 
 ## 16. Open questions
 
-1. **`principal` attributes.** RFC 0002 defines which principal attributes a condition can read, and how an application declares them.
+1. **`principal` attributes.** Resolved: the manifest declares them (§2.3), and RFC 0002 defines how a runtime gets their values.
 2. **A guard language.** Guards are opaque. A later version could let a guard name an implementation in a portable language, CEL for example. That would make it inspectable without making the IR executable, and the decision is deferred. The [guard survey](./research/guard-survey.md) found that, with quantifiers and `count`, only arithmetic is left to guards in this repository, so there is no case for a guard language yet.
 3. **Conditional outcomes.** Whether to add OWL-S-style `outcomes` (§4), once there are post-state conditions.
 4. **Namespace ownership.** Whether a namespace must be proved, for example by serving the manifest at its namespace URI or with reverse-DNS verification as the MCP Registry does (prior art §5), before third-party claims can name it.
