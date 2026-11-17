@@ -166,14 +166,18 @@ const NO_INPUT: StandardSchemaV1<unknown, Record<string, never>> & {
   },
 }
 
+// a capability with no declared authorization is never exposed: RFC 0002 §4.3 refuses it, so an agent could never
+// run it, confirmation or not
 const exposeOf = (def: BindableCapability['definition']): Expose | undefined =>
-  def.confirmation
-    ? 'confirm'
-    : def.authorization?.principal === 'any'
-      ? 'public'
-      : def.authorization?.principal === 'authenticated'
-        ? 'session'
-        : undefined
+  !def.authorization
+    ? undefined
+    : def.confirmation
+      ? 'confirm'
+      : def.authorization?.principal === 'any'
+        ? 'public'
+        : def.authorization?.principal === 'authenticated'
+          ? 'session'
+          : undefined
 
 // the v0 action config a capability binds to
 export const fromCapability = <

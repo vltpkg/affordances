@@ -252,6 +252,21 @@ describe('what comes from the capability', () => {
     })
   })
 
+  test('a capability with no declared authorization is never exposed, even one that requires confirmation', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const unauthorized = defineCapability({
+      id: 'commerce.cart.wipe',
+      kind: 'action',
+      description: 'Empty every cart',
+      confirmation: { summary: 'Empty every cart' },
+    })
+    const wipe = defineAction({ capability: unauthorized, name: 'wipe', run: () => 'wiped' })
+    expect(wipe[AFFORDANCES].expose).toBeUndefined()
+    expect((await graph(handlerFor([wipe]), 'a')).actions).toEqual([])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('declares no authorization'))
+    warn.mockRestore()
+  })
+
   test('an event capability is refused', () => {
     const changed = defineCapability({
       id: 'commerce.stock.changed',
