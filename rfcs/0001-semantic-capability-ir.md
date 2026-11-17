@@ -34,7 +34,7 @@ Affordances v0 describes what a page exposes to an agent at one moment: the page
 
 - An action's identity is its route plus its name. The same operation is named differently on each transport (`packages/protocol/spec.md:55`, `packages/mcp/src/server.ts:45-46`, `packages/react/src/provider.tsx:95`).
 - `effects` lists state keys used to build a delta, not consequences. A checkout that creates an order declares only `['cart']` (`apps/example/src/app/checkout/actions.ts:26-32`).
-- Preconditions are prose, and guards are closures that no tool can inspect (`packages/core/src/action.ts:39-44`).
+- Preconditions are prose (`packages/core/src/action.ts:36-37`), and guards are closures that no tool can inspect (`:39-44`).
 - Navigation is the only typed relation, and there are no resource types (`packages/protocol/src/schema.ts:29-33`, `:40`).
 - The build artifact is a TypeScript module that imports the application's code (`packages/next/src/codegen.ts:109-131`).
 - Nothing distinguishes availability from discoverability, or the publisher's preference from relevance or from the user's benefit.
@@ -62,7 +62,7 @@ The IR is the layer that fills those gaps. Three uses shape it:
 - **A workflow language.** The IR says what can lead to what, never what must happen next (terminology §5). A chosen multi-step path can be exported to Arazzo.
 - **RDF or OWL reasoning.** Identifiers are URI-compatible, so a JSON-LD context can be published later, but nothing requires one.
 - **A planner.** Derived edges (§5.5) make simple reachability questions answerable. Planning stays with the agent.
-- **A wire protocol.** Transports are bindings (§4.3). The v0 protocol is one of them.
+- **A wire protocol.** Transports are bindings (§6.3). The v0 protocol is one of them.
 - **Replacing v0.** v0 keeps working unchanged. An adapter maps between them (§10).
 
 ## 1. The model at a glance
@@ -173,7 +173,7 @@ type Reference = {
 
 **Validation rules on the kind:**
 
-- **A `query`:** has no effects other than `[]`, and `safe` is `true` or absent. Absent is read as `true` for a query, because that's what a query means.
+- **A `query`:** `safe` is `true` or absent, and `effects` is `[]` or absent. `normalize` writes `safe: true` and `effects: []` for every query, so the kind is the claim and the fields agree with it. A query with `safe: false` or with effects is `E_KIND`.
 - **An `action`:** `safe` is not `true`. A safe action is a query.
 - **An `event`:** has no `input`, no `preconditions`, no `confirmation` and no effects. It describes something the application emits. Subscribing is a binding concern.
 
@@ -231,12 +231,38 @@ type Path = string
 
 Each path is checked at validation time. A `target` or reference path has to name an attribute declared in that resource's `attributes`, and an `input` path has to name a property in the input schema.
 
-**Evaluation is three-valued.** It uses Kleene's strong three-valued logic, the same logic SQL uses for `NULL`:
+**Paths in `establishes`.** An effect's `establishes` uses only the `target` root, and only when the effect's `resource` is the capability's `target`. An effect on another resource (checkout's `create commerce.order`) has no `establishes` in this version.
 
-- a path that can't be resolved at evaluation time is `unknown`;
-- a comparison with an `unknown` operand is `unknown`;
-- `all` is `false` if any argument is `false`, else `unknown` if any is `unknown`, else `true`; `any` is the dual;
-- a guard that hasn't run is `unknown`.
+**Evaluation is three-valued.** It uses Kleene's strong three-valued logic (K3), the same logic SQL uses for `NULL`. The evaluator is given a context with a value, or nothing, for each root.
+
+- **Resolving a path:**
+  - **`missing`:** the root has no value in the context. The target wasn't loaded, or the principal attribute wasn't supplied.
+  - **`absent`:** the root has a value, but an attribute on the path isn't present, or is `null`.
+  - **Otherwise** the path resolves to its value.
+- **`exists`:**
+  - `true` when the path resolves to a value;
+  - `false` when it's `absent`;
+  - `unknown` when it's `missing`.
+- **Comparisons** (`eq`, `ne`, `lt`, `le`, `gt`, `ge`, `in`):
+  - **`unknown`** when either operand is `missing` or `absent`. A comparison with no value has no truth value, as with SQL `NULL`.
+  - **Ordering:** `lt`, `le`, `gt` and `ge` compare two numbers numerically, or two strings by UTF-16 code units, the order RFC 8785 uses for member names.
+  - **Equality:** `eq` and `ne` compare two values of the same JSON type.
+  - **Membership:** `in` is `true` when the left scalar equals a member of the right array.
+  - **A mismatch at run time** gives `unknown`, never `false`: operands of different types, or an `in` whose right side isn't an array. So rule 5 (§8.2) refuses, rather than treating a malformed comparison as a clean failure.
+- **Literals:**
+  - `{ value: null }` isn't allowed in a comparison (`E_TYPE`); use `exists`.
+  - An array literal is allowed only as `in`'s right side (`E_TYPE` elsewhere).
+- **`not`** maps `true` to `false`, `false` to `true`, and `unknown` to `unknown`.
+- **`all`** is `false` if any argument is `false`, else `unknown` if any is `unknown`, else `true`. **`any`** is the dual: `true` if any is `true`, else `unknown` if any is `unknown`, else `false`. Both have at least one argument.
+- **A guard** that hasn't run is `unknown`.
+
+**Types are checked at validation where the schemas allow.** Paths are typed by the `attributes` and input schemas. So `validate` rejects, as `E_TYPE`:
+
+- an ordering comparison between operands whose declared types aren't both numbers or both strings;
+- an `eq` or `ne` between declared types that differ;
+- an `in` whose right side isn't an array literal or an array-typed path.
+
+What a schema leaves open (a property without a `type`, a `oneOf`) is checked only at run time, with the rule above.
 
 So a projection can say `unknown` instead of guessing (terminology §3.4, availability).
 
@@ -252,13 +278,13 @@ A check that needs them is a guard. That keeps every declarative condition check
 
 **Alternatives considered:**
 
-| Alternative                                             | Rejected because                                                                                                                                                                                                                                                                                                      |
-| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Serialize the guard function's source                   | Not portable, not analyzable, and it executes application code in whatever reads the manifest                                                                                                                                                                                                                         |
-| [CEL](https://cel.dev/), the Common Expression Language | A full language with a string syntax and functions. Every reader would need a CEL implementation, and static reasoning over it is a project of its own. It is a reasonable future _guard_ language, but not the IR's                                                                                                  |
-| [JSON Logic](https://jsonlogic.com/)                    | The closest existing shape, but its semantics are JavaScript truthiness, it has no `unknown`, and its operator set includes `map`, `reduce` and string operations. A subset with different semantics under the same name would mislead. Exporting the IR's vocabulary to JSON Logic is trivial if a consumer wants it |
-| JSON Schema as a predicate over a context document      | It can't compare two values (input against stock), and it has no third value                                                                                                                                                                                                                                          |
-| Only prose, as in v0's `requires`                       | Leaves every condition opaque, which is the gap this RFC exists to close                                                                                                                                                                                                                                              |
+| Alternative                                             | Rejected because                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Serialize the guard function's source                   | Not portable, not analyzable, and it executes application code in whatever reads the manifest                                                                                                                                                                                                                 |
+| [CEL](https://cel.dev/), the Common Expression Language | A full language with a string syntax and functions. Every reader would need a CEL implementation, and static reasoning over it is a project of its own. It is a reasonable future _guard_ language, but not the IR's                                                                                          |
+| [JSON Logic](https://jsonlogic.com/)                    | The closest existing shape, but it has its own truthiness rules, it has no `unknown`, and its operator set includes `map`, `reduce` and string operations. A subset with different semantics under the same name would mislead. Exporting the IR's vocabulary to JSON Logic is trivial if a consumer wants it |
+| JSON Schema as a predicate over a context document      | It can't compare two values (input against stock), and it has no third value                                                                                                                                                                                                                                  |
+| Only prose, as in v0's `requires`                       | Leaves every condition opaque, which is the gap this RFC exists to close                                                                                                                                                                                                                                      |
 
 **Prior art for the shape:**
 
@@ -331,11 +357,11 @@ type Effect = {
 - did it spend money or create an obligation (`financial`);
 - did it change who can see or do what (`access`).
 
-One action can have several effects: checkout creates an order (`state`), charges a card (`financial`) and sends a receipt (`external`).
+One action can have several effects. A real checkout creates an order (`state`), charges a card (`financial`) and sends a receipt (`external`).
 
 **Unknown is not "none".** An absent `effects` means nobody said. `[]` means the source declares there are none. An importer that can't tell leaves `effects` absent, and an exporter treats absent as consequential (terminology §2.4).
 
-**`establishes` links effects to preconditions.** It is what lets a runtime derive `enables` (§5.5): A enables B when an expression A establishes can make one of B's preconditions true. Without it, `enables` can only be declared, as a claim.
+**`establishes` links effects to preconditions.** It is what lets a reader derive `enables` and prerequisites (§5.5). Its paths use the `target` root, for an effect on the capability's own target (§3.1).
 
 **One outcome per capability.** The effects listed are those of a successful execution. A failed execution has no declared effects. OWL-S's conditional results (`inCondition` with `withOutput` and `hasEffect`) would let one capability declare different effects under different conditions. That would need conditions over the state _after_ execution, which this vocabulary doesn't have. The name **outcome** is reserved for it (terminology §2.6), and a future version can add `outcomes` without changing `effects`.
 
@@ -387,7 +413,7 @@ type Relation = {
 ### 5.3 `relatedTo`
 
 - **Domain and range:** any definition → any definition.
-- **Semantics:** an association, explained by its `description`, with no other meaning. It is the import target for v0's `nav`.
+- **Semantics:** an association, explained by its `description`, with no other meaning. It is what a v0 `nav` item would become, but only once both ends are definitions: a v0 `nav` item links to a URL path, not to a definition (§10.1).
 
 ### 5.4 Cross-manifest references
 
@@ -399,8 +425,18 @@ A reader can compute these, and a projection does. They are never stored:
 
 - **`supports`** (resource → capability): from `target` and `references`.
 - **`produces`** (capability → resource): from a `state` effect with `change: 'create'`.
-- **`enables`** (capability → capability): from `establishes` against `preconditions`, when both are declarative.
-- **`prerequisite`** (capability → capability): B is a prerequisite of A when one of A's preconditions can only become true through an effect of B.
+- **`enables`** (capability B → capability A), in two cases:
+  - **by state:** B has a `state` effect on the resource A targets, whose `establishes` satisfies one of A's declarative preconditions (below);
+  - **by creation:** B has a `state` effect with `change: 'create'` on the resource A targets. That's terminology §4.1's "create a resource the range operates on".
+- **`prerequisite`** (capability B → capability A): B is a derived prerequisite of A when B's `establishes` satisfies a declarative precondition P of A, and no other capability in the manifest has an `establishes` that satisfies P.
+
+**When an `establishes` E satisfies a precondition P.** The test is syntactic, so any reader computes the same edges:
+
+- **The shapes it applies to:** both E and P are _atoms_ (a comparison or `exists` whose paths are all `target` paths, with literal values), or `all` of atoms. P with `any`, `not`, or a path on another root never matches.
+- **The test:** every atom of P is matched by an atom of E on the same path, either identical to it, or an `eq` whose value makes P's atom `true`.
+- **Same resource:** E's effect is on the resource that A targets.
+
+**Statements about the manifest, not the world.** A derived prerequisite says that, among the declared capabilities, only B is declared to establish what A needs. Whether P already holds for a given instance, or whether something outside the manifest can make it hold, is a question for a projection (RFC 0002).
 
 Every derived edge records what it was derived from, and has basis `inferred` (§8).
 
@@ -474,9 +510,10 @@ A Next.js application defines capabilities in many modules, and an importer may 
 
 1. **Definitions are united by identifier.** Two definitions with the same identifier must be equal in canonical form (§7.2). If they differ, it is an error (`E_CONFLICT`), never a silent override.
 2. **Sources are united by identifier,** under the same rule.
-3. **Relations and claims are united.** Duplicates (equal in canonical form) collapse. Claims from different sources never merge, even when they disagree, because disagreement is information.
-4. **Bindings are united.** Two bindings that give the same capability the same protocol and address collapse.
-5. **The default provenance must be equal across fragments,** or each fragment's definitions must carry their own (§8).
+3. **Claims are united by identifier,** under the same rule as definitions: equal claims collapse, and different claims with one id are `E_CONFLICT`. Claims from different sources never merge, even when they disagree, because disagreement is information.
+4. **Relations are united.** Exact duplicates (equal in canonical form) collapse.
+5. **Bindings are united.** Exact duplicates collapse.
+6. **The default provenance must be equal across fragments,** or each fragment's definitions must carry their own (§8).
 
 Composition is commutative, associative and idempotent, so the build order of modules can't change the result. The canonical form (§7.2) makes that checkable: `canonical(compose(a, b)) === canonical(compose(b, a))`.
 
@@ -484,34 +521,43 @@ Composition is commutative, associative and idempotent, so the build order of mo
 
 ## 7. Versioning and determinism
 
-### 7.1 Two versions
+### 7.1 The format version and the manifest digest
 
-- **`schemaVersion`** is the version of the IR format, `"0.1"` for this RFC. It follows semantic versioning:
+- **`schemaVersion`** is the version of the IR format, `"0.1"` for this RFC: major.minor, in the spirit of semantic versioning.
   - a change of major version may break readers;
   - a minor version only adds optional fields;
   - while the major is `0`, a minor may also break, because the package is private.
-- **A manifest's revision** is the SHA-256 digest of its canonical form (§7.2), written `sha256-<base64url>`. It isn't stored in the manifest, since it is a function of it. A runtime uses it to tell whether a projection was derived from the definitions a caller holds (terminology §3.2).
+- **A manifest's digest** is the SHA-256 hash of its canonical bytes (§7.2), written `sha256-` followed by base64url without padding ([RFC 4648 §5](https://www.rfc-editor.org/rfc/rfc4648#section-5)). It isn't stored in the manifest, since it is a function of it. A runtime uses it to tell which definitions a projection was derived from. A projection's _revision_, the application state it was derived from (terminology §3.2), is a separate value, defined by RFC 0002.
 
 ### 7.2 Canonical form
 
-The canonical form is what composition compares, what the revision digests, and what a compiler must produce byte-for-byte on the same inputs.
+The canonical form is what composition compares, what the digest hashes, and what a compiler must produce byte-for-byte on the same inputs.
 
-1. **Serialization:** the JSON Canonicalization Scheme, [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785). Object members are sorted by UTF-16 code units, numbers have ECMAScript's shortest form, and strings use minimal escaping.
-2. **Arrays that are sets are sorted:**
-   - definitions by `id`, sources by `id`;
-   - relations by `type`, `from`, `to`;
-   - claims by `id`;
-   - bindings by `capability`, then `protocol`, then the canonical bytes of `address`;
-   - `contains` lexicographically;
-   - preconditions and conditions by `id`;
-   - effects by the canonical bytes of each effect;
-   - `all` and `any` arguments by their canonical bytes.
-3. **Symmetric relations** put the lesser of `from` and `to` first.
-4. **Defaults are removed:**
+1. **Serialization:** the JSON Canonicalization Scheme, [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785).
+   - **How it serializes:** object members are sorted by UTF-16 code units, numbers have ECMAScript's shortest form, strings use minimal escaping, and no whitespace is emitted between tokens.
+   - **The input must be I-JSON** ([RFC 7493](https://www.rfc-editor.org/rfc/rfc7493)): no duplicate member names, and numbers representable as IEEE 754 doubles.
+   - **Strings are compared as written.** JCS doesn't normalize Unicode, so two definitions that differ only in normalization form are different, and composing them is `E_CONFLICT`.
+2. **Queries are completed:** `normalize` writes `safe: true` and `effects: []` on every query (§2.2).
+3. **Every array is either a set or a sequence,** and this list is complete:
+
+   | Sorted as a set                                                                                 | Sort key                                                   |
+   | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+   | `resources`, `capabilities`, `sources`, `claims`                                                | `id` (unique: `E_DUPLICATE_ID`)                            |
+   | `preconditions`, `authorization.conditions`                                                     | `id` (unique within the capability)                        |
+   | `references`                                                                                    | `name` (unique within the capability)                      |
+   | `relations`                                                                                     | `type`, `from`, `to`                                       |
+   | `bindings`                                                                                      | `capability`, `protocol`, the canonical bytes of `address` |
+   | `contains`                                                                                      | the identifier                                             |
+   | `effects`, `evidence` (wherever it appears), `all` and `any` arguments, an `in` literal's array | the element's canonical bytes                              |
+   - **Ties break on canonical bytes.** Elements that tie on their key are ordered by their full canonical bytes, and exact duplicates in a set are removed. So the order never depends on input order.
+   - **Sequences keep their order:** a comparison's two operands (`lt` is ordered), everything inside an embedded JSON Schema (6, below), and everything inside an `extensions` value, which the IR doesn't interpret.
+
+4. **Symmetric relations** put the lesser of `from` and `to` first.
+5. **Defaults are removed:**
    - a field equal to the value it would inherit (provenance equal to the manifest default) is dropped;
    - an empty optional array is dropped, _except_ `effects: []`, which says something different from an absent `effects`.
-5. **JSON Schemas embedded as `input`, `output` and `attributes`** are canonicalized by RFC 8785 only. Their arrays keep their order, because in JSON Schema some array orders carry meaning (`prefixItems`) and an IR can't know which. A `$schema` keyword is dropped, since every embedded schema is JSON Schema 2020-12. v0 already drops it (`packages/core/src/action.ts:108`).
-6. **Nothing that varies between builds may appear:** no timestamps, no absolute paths, no build identifiers.
+6. **JSON Schemas embedded as `input`, `output` and `attributes`** are canonicalized by RFC 8785 only. Their arrays keep their order, because in JSON Schema some array orders carry meaning (`prefixItems`) and an IR can't know which (3, above). A `$schema` keyword is dropped, since every embedded schema is JSON Schema 2020-12. v0 already drops it (`packages/core/src/action.ts:109`).
+7. **Nothing that varies between builds may appear:** no timestamps, no absolute paths, no build identifiers.
 
 **No array in the IR is ordered by meaning.** Order in a manifest never expresses preference, priority or salience. SCXML's rule that the "first one in document order will be taken" (prior art §3.2) is the failure this avoids. Salience is a property of a projection's presentation, decided by a disclosure policy (RFC 0002), and so it can be varied without touching the definitions.
 
@@ -521,18 +567,19 @@ The canonical form is what composition compares, what the revision digests, and 
 
 `validate` reports errors with stable codes:
 
-| Code                  | Meaning                                                                                               |
-| --------------------- | ----------------------------------------------------------------------------------------------------- |
-| `E_SCHEMA`            | the document doesn't match the IR schema                                                              |
-| `E_DUPLICATE_ID`      | two definitions share an identifier                                                                   |
-| `E_UNRESOLVED`        | a local reference (target, reference, contains, relation, claim subject, binding) names no definition |
-| `E_KIND`              | a kind rule is broken (a query with effects, a safe action, an event with input)                      |
-| `E_PATH`              | a condition or summary path doesn't name a declared attribute or input property                       |
-| `E_KEY`               | a resource's `key` isn't one of its declared `attributes` (when it declares any)                      |
-| `E_ENFORCEMENT_CLAIM` | a claim targets an enforcement field (§8, rule 2)                                                     |
-| `E_BASIS`             | a provenance basis without what it requires (§8, rule 3)                                              |
-| `E_SOURCE`            | provenance names a source that isn't declared                                                         |
-| `E_CONFLICT`          | composition found two different definitions with one identifier                                       |
+| Code                  | Meaning                                                                                                                                                                                                                     |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `E_SCHEMA`            | the document doesn't match the IR schema                                                                                                                                                                                    |
+| `E_DUPLICATE_ID`      | two definitions share an identifier; or two sources, or two claims; or, within one capability, two conditions (across `preconditions` and `authorization.conditions`) or two references                                     |
+| `E_UNRESOLVED`        | a local reference names no definition: `target`, a reference's `resource`, `contains`, an effect's `resource` or `compensatedBy`, `deprecated.replacedBy`, a relation's ends, a claim's `subject`, a binding's `capability` |
+| `E_KIND`              | a kind rule is broken (a query with effects, a safe action, an event with input)                                                                                                                                            |
+| `E_PATH`              | a condition or summary path doesn't name a declared attribute or input property                                                                                                                                             |
+| `E_KEY`               | a resource's `key` isn't one of its declared `attributes` (when it declares any)                                                                                                                                            |
+| `E_TYPE`              | a comparison whose operand types the schemas show to be incompatible, or a `null` literal in one (§3.1)                                                                                                                     |
+| `E_ENFORCEMENT_CLAIM` | a claim targets an enforcement field (§8, rule 2)                                                                                                                                                                           |
+| `E_BASIS`             | a provenance basis without what it requires (§8, rule 3)                                                                                                                                                                    |
+| `E_SOURCE`            | provenance names a source that isn't declared                                                                                                                                                                               |
+| `E_CONFLICT`          | composition found two different definitions, sources or claims with one identifier                                                                                                                                          |
 
 Warnings, which don't fail validation:
 
@@ -601,7 +648,7 @@ These five rules are part of the IR. `validate` enforces the parts that a docume
 
 **Rule 2: an annotation never makes an operation safe, or removes a confirmation.**
 
-- **The enforcement fields:** `safe`, `idempotent`, `authorization`, `confirmation`, `effects` and `preconditions`. Enforcement reads them _monotonically_: they can add a check, never remove one.
+- **The enforcement fields:** `kind` (which fixes `safe` and `effects` for a query), `safe`, `idempotent`, `authorization`, `confirmation`, `effects` and `preconditions`. Enforcement reads them _monotonically_: they can add a check, never remove one.
   - **`confirmation`** can only be required. It is present or absent, and has no "not required" value.
   - **`safe: true` and `effects: []`** may make a client _present_ a capability as read-only. They may not lift a confirmation required by `confirmation`, by a host's policy, or by a client's own rules.
   - **An absent value** is read as the cautious one: not safe, not idempotent, effects unknown, so consequential (terminology §2.4).
@@ -632,7 +679,7 @@ These five rules are part of the IR. `validate` enforces the parts that a docume
 
 ### 8.3 v0 boundaries the IR must not paper over
 
-The audit found three properties of v0 that are reasonable in v0's own terms, but would be dangerous to restate more strongly than they are (repo audit §8). The IR, and any runtime built on it, describes them as they are:
+Three of the audit's findings are properties of v0 that are reasonable in v0's own terms, but would be dangerous to restate more strongly than they are (repo audit §8). The IR, and any runtime built on it, describes them as they are:
 
 1. **Confirmation is a flag the client sets.**
    - **In v0:** the server enforces that `confirm: true` is present (`packages/core/src/handler.ts:199`). It can't know whether a person saw the summary; that rests on the client (`packages/protocol/spec.md:155`).
@@ -681,22 +728,22 @@ This section shows that the IR isn't v0 renamed. Most of what it holds has no v0
 
 ### 10.1 From v0 to the IR
 
-| v0                        | IR                                                                                           | Provenance of the result                                        |
-| ------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `defineAction`            | `CapabilityDefinition`, kind `action`, or `query` when `readOnly: true`                      | the id must be declared (§6.1, below); everything else as below |
-| route plus `name`         | a `Binding`, protocol `affordances/v0`, address `{ route, action }`                          | `inferred`                                                      |
-| `description`             | `description`                                                                                | `declared`                                                      |
-| `input` (Standard Schema) | `input` (JSON Schema)                                                                        | `inferred`, by conversion                                       |
-| `output`                  | `output`                                                                                     | `inferred`                                                      |
-| `readOnly: true`          | kind `query`                                                                                 | `declared`                                                      |
-| `requires` and `guard`    | one `Condition`, id `guard`, with `guard: true` and `requires` as its description            | `declared`                                                      |
-| `expose: 'public'`        | `authorization: { principal: 'any' }`                                                        | `declared`                                                      |
-| `expose: 'session'`       | `authorization: { principal: 'authenticated' }`                                              | `declared`                                                      |
-| `expose: 'confirm'`       | `authorization: { principal: 'authenticated' }` plus `confirmation: { summary }`             | `declared`                                                      |
-| `summary` (a function)    | `confirmation.summary`, a prose template the developer writes                                | `declared`, if written; otherwise a generic summary, `inferred` |
-| `effects` (state keys)    | **not an effect.** It stays a binding detail, the keys the v0 delta reports, in `extensions` | —                                                               |
-| `defineState`'s entities  | no counterpart until the developer declares resource types                                   | —                                                               |
-| `nav`                     | `relatedTo` relations, only where both ends are known definitions                            | `inferred`                                                      |
+| v0                        | IR                                                                                                                                                                                          | Provenance of the result                                        |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `defineAction`            | `CapabilityDefinition`, kind `action`, or `query` when `readOnly: true`                                                                                                                     | the id must be declared (§6.1, below); everything else as below |
+| route plus `name`         | a `Binding`, protocol `affordances/v0`, address `{ route, action }`                                                                                                                         | `inferred`                                                      |
+| `description`             | `description`                                                                                                                                                                               | `declared`                                                      |
+| `input` (Standard Schema) | `input` (JSON Schema)                                                                                                                                                                       | `inferred`, by conversion                                       |
+| `output`                  | `output`                                                                                                                                                                                    | `inferred`                                                      |
+| `readOnly: true`          | kind `query`                                                                                                                                                                                | `declared`                                                      |
+| `requires` and `guard`    | one `Condition`, id `guard`, with `guard: true` and `requires` as its description                                                                                                           | `declared`                                                      |
+| `expose: 'public'`        | `authorization: { principal: 'any' }`                                                                                                                                                       | `declared`                                                      |
+| `expose: 'session'`       | `authorization: { principal: 'authenticated' }`                                                                                                                                             | `declared`                                                      |
+| `expose: 'confirm'`       | `authorization: { principal: 'authenticated' }` plus `confirmation: { summary }`                                                                                                            | `declared`                                                      |
+| `summary` (a function)    | `confirmation.summary`, a prose template the developer writes                                                                                                                               | `declared`, if written; otherwise a generic summary, `inferred` |
+| `effects` (state keys)    | **not an effect.** It stays a binding detail, the keys the v0 delta reports, in `extensions`                                                                                                | —                                                               |
+| `defineState`'s entities  | no counterpart until the developer declares resource types                                                                                                                                  | —                                                               |
+| `nav`                     | nothing yet. A `nav` item links a page to a URL path (`packages/protocol/src/schema.ts:29-33`), not to a definition, so it becomes a `relatedTo` only once the developer declares resources | —                                                               |
 
 **Identifiers on import.** A v0 action has only a route-local `name`, and identity is never derived (§6.1). So without help, importing an existing application gives no capabilities at all. The adapter therefore:
 
@@ -736,21 +783,84 @@ Where the IR is richer, the descriptor shows only what v0's fields allow. Nothin
 
 ## 11. Example
 
-A small store, in canonical form except for line breaks.
+A small store, in canonical form except for whitespace. It was generated by applying §7.2's rules, and its digest is `sha256-Xk1fHhf2LNCBFO3YtDgEDXkZTlHlFV-ucS5a1vpMxpc`, computed over the canonical bytes without whitespace.
 
 ```json
 {
   "capabilities": [
     {
-      "authorization": { "principal": "authenticated" },
-      "confirmation": { "summary": "Place an order for {target.count} items, and pay its total" },
+      "authorization": {
+        "principal": "any"
+      },
+      "description": "Add a variant of a product to the cart, by SKU",
+      "effects": [
+        {
+          "category": "state",
+          "change": "update",
+          "description": "Adds the item to the cart",
+          "establishes": {
+            "gt": [
+              {
+                "path": "target.count"
+              },
+              {
+                "value": 0
+              }
+            ]
+          },
+          "resource": "commerce.cart",
+          "reversibility": "reversible"
+        }
+      ],
+      "id": "commerce.cart.addItem",
+      "input": {
+        "properties": {
+          "productId": {
+            "type": "string"
+          },
+          "quantity": {
+            "maximum": 10,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "sku": {
+            "type": "string"
+          }
+        },
+        "required": ["productId", "sku"],
+        "type": "object"
+      },
+      "kind": "action",
+      "preconditions": [
+        {
+          "description": "The variant is in stock",
+          "guard": true,
+          "id": "inStock"
+        }
+      ],
+      "references": [
+        {
+          "at": "/productId",
+          "name": "product",
+          "resource": "commerce.product"
+        }
+      ],
+      "target": "commerce.cart"
+    },
+    {
+      "authorization": {
+        "principal": "authenticated"
+      },
+      "confirmation": {
+        "summary": "Place an order for {target.count} items, and pay its total"
+      },
       "description": "Place an order for everything in the cart. Reserves the stock and empties the cart.",
       "effects": [
         {
           "category": "financial",
+          "compensatedBy": "commerce.order.refund",
           "description": "Charges the cart's total to the saved payment method",
-          "reversibility": "compensable",
-          "compensatedBy": "commerce.order.refund"
+          "reversibility": "compensable"
         },
         {
           "category": "state",
@@ -762,80 +872,136 @@ A small store, in canonical form except for line breaks.
           "category": "state",
           "change": "update",
           "description": "Empties the cart",
-          "establishes": { "eq": [{ "path": "target.count" }, { "value": 0 }] },
+          "establishes": {
+            "eq": [
+              {
+                "path": "target.count"
+              },
+              {
+                "value": 0
+              }
+            ]
+          },
           "resource": "commerce.cart",
           "reversibility": "irreversible"
         }
       ],
       "id": "commerce.cart.checkout",
-      "input": { "type": "object", "additionalProperties": false },
-      "kind": "action",
-      "preconditions": [
-        {
-          "description": "The cart has items",
-          "expr": { "gt": [{ "path": "target.count" }, { "value": 0 }] },
-          "id": "notEmpty"
-        },
-        { "description": "Every item is in stock", "guard": true, "id": "inStock" }
-      ],
-      "target": "commerce.cart"
-    },
-    {
-      "authorization": { "principal": "any" },
-      "description": "Add a variant of a product to the cart, by SKU",
-      "effects": [
-        {
-          "category": "state",
-          "change": "update",
-          "description": "Adds the item to the cart",
-          "establishes": { "gt": [{ "path": "target.count" }, { "value": 0 }] },
-          "resource": "commerce.cart",
-          "reversibility": "reversible"
-        }
-      ],
-      "id": "commerce.cart.addItem",
       "input": {
-        "properties": {
-          "productId": { "type": "string" },
-          "quantity": { "maximum": 10, "minimum": 1, "type": "integer" },
-          "sku": { "type": "string" }
-        },
-        "required": ["productId", "sku"],
+        "additionalProperties": false,
         "type": "object"
       },
       "kind": "action",
       "preconditions": [
-        { "description": "The variant is in stock", "guard": true, "id": "inStock" }
+        {
+          "description": "Every item is in stock",
+          "guard": true,
+          "id": "inStock"
+        },
+        {
+          "description": "The cart has items",
+          "expr": {
+            "gt": [
+              {
+                "path": "target.count"
+              },
+              {
+                "value": 0
+              }
+            ]
+          },
+          "id": "notEmpty"
+        }
       ],
-      "references": [{ "at": "/productId", "name": "product", "resource": "commerce.product" }],
       "target": "commerce.cart"
+    },
+    {
+      "authorization": {
+        "principal": "authenticated"
+      },
+      "confirmation": {
+        "summary": "Refund order {target.id}"
+      },
+      "description": "Refund an order's charge",
+      "effects": [
+        {
+          "category": "financial",
+          "description": "Returns the order's total to the payment method",
+          "reversibility": "irreversible"
+        }
+      ],
+      "id": "commerce.order.refund",
+      "input": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "kind": "action",
+      "target": "commerce.order"
     }
   ],
   "namespace": "https://store.example/capabilities",
-  "provenance": { "basis": "declared", "source": "store" },
+  "provenance": {
+    "basis": "declared",
+    "source": "store"
+  },
   "resources": [
     {
-      "attributes": { "properties": { "count": { "type": "integer" } }, "type": "object" },
+      "attributes": {
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "contains": ["commerce.product"],
       "description": "A shopper's cart",
       "id": "commerce.cart",
       "key": "id"
     },
-    { "description": "A placed order", "id": "commerce.order", "key": "id" },
-    { "description": "A product with variants", "id": "commerce.product", "key": "slug" }
+    {
+      "attributes": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "description": "A placed order",
+      "id": "commerce.order",
+      "key": "id"
+    },
+    {
+      "description": "A product with variants",
+      "id": "commerce.product",
+      "key": "slug"
+    }
   ],
   "schemaVersion": "0.1",
-  "sources": [{ "id": "store", "name": "Example Store", "role": "owner" }]
+  "sources": [
+    {
+      "id": "store",
+      "name": "Example Store",
+      "role": "owner"
+    }
+  ]
 }
 ```
 
 What a reader can do with it, without running the store:
 
-- **Derive edges:** `commerce.cart.addItem` _enables_ `commerce.cart.checkout`, because adding establishes `target.count > 0`, which is checkout's `notEmpty` precondition. The edge is marked `inferred`, from that pair.
-- **Check a prerequisite:** checkout's only derived prerequisite is an action that fills the cart. A claim that "checkout requires extended protection" would either have nothing to back it, or need a declared precondition (say, `target.protected`) that the store then has to enforce: a conformance test calling checkout on an unprotected cart must get the declared refusal (§8.2, rule 5).
+- **Derive edges:**
+  - `commerce.cart.addItem` _enables_ `commerce.cart.checkout` by state, because adding establishes `target.count > 0`, which is checkout's `notEmpty` precondition, on the same cart.
+  - `commerce.cart.checkout` _enables_ `commerce.order.refund` by creation, because checkout creates the order that refund operates on.
+  - Both edges are marked `inferred`, from those pairs.
+- **Check a prerequisite:** `commerce.cart.addItem` is checkout's only derived prerequisite. It is the only capability whose `establishes` satisfies `notEmpty`, and `inStock` is a guard, which derives nothing. A claim that "checkout requires extended protection" would either have nothing to back it, or need a declared precondition (say, `target.protected`) that the store then has to enforce: a conformance test calling checkout on an unprotected cart must get the declared refusal (§8.2, rule 5).
 - **Treat checkout as consequential:** it has a `financial` effect and an `irreversible` one, and its confirmation is required regardless of any claim.
 - **Know where the truth stops:** the stock check is a guard, so its availability is `unknown` until a runtime evaluates it.
-- **Map it to v0:** the stock check is v0's `requires: 'The variant is in stock'` (`apps/example/src/app/products/[slug]/actions.ts:20`). Checkout's consequences are the ones v0's `effects: ['cart']` couldn't state (`apps/example/src/app/checkout/actions.ts:26-32`).
+- **Map it to v0:** the stock check is v0's `requires: 'The variant is in stock'` (`apps/example/src/app/products/[slug]/actions.ts:20`). v0's `placeOrder` declares `effects: ['cart']`, but it places an order, reserves the stock, empties the cart and redirects (`apps/example/src/app/checkout/actions.ts:26-32`). The example's `state` effects state those consequences. Its `financial` effect, and the refund, are illustrative: the demo store charges nothing.
 
 A publisher recommendation is a separate claim, which an agent sees with its source attached:
 
@@ -892,13 +1058,13 @@ Nobody writes §11's JSON by hand. The IR's types are chosen so that a typed aut
 - **Exports:**
   - the types in §13;
   - the JSON Schema, which is generated from the same zod source as the types, as `@affordances/protocol` does today (`packages/protocol/src/schema.ts:3`);
-  - the readers: `validate`, `normalize`, `canonicalize` (to bytes), `revision`, `compose`, and `derive` (the edges of §5.5);
+  - the readers: `validate`, `normalize`, `canonicalize` (to bytes), `digest`, `compose`, and `derive` (the edges of §5.5);
   - the authoring helpers of §12.1: `defineResource`, `defineCapability`, `defineClaims`, `defineManifest`, `guard` and `when`.
 - **No runtime dependencies** beyond the schema library. No Next.js, React or MCP.
 - **Private** (`"private": true`) until published.
 - **Tests:**
   - **Fixtures:** valid manifests and one invalid manifest per error code.
-  - **Determinism:** canonical-form round trips, `compose` commutativity and associativity over generated fragments, and a revision stable across platforms.
+  - **Determinism:** canonical-form round trips, `compose` commutativity and associativity over generated fragments, and a digest stable across platforms.
   - **Three-valued evaluation:** truth tables for `all`, `any` and `not` with `unknown`.
   - **One test per safety rule:**
     - a claim on `confirmation` is rejected;
@@ -1084,20 +1250,22 @@ export type ValidationIssue = {
 | `$defs` entry          | Constraints                                                                                                                                                                                                                                                                             |
 | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Id`                   | `pattern` as in §13, `maxLength: 128`                                                                                                                                                                                                                                                   |
-| `Ref`                  | an `Id`, or `format: "uri"` with a fragment that is an `Id`                                                                                                                                                                                                                             |
-| `CapabilityManifest`   | `schemaVersion` `const: "0.1"`; `namespace` `format: "uri"`; `additionalProperties: false`                                                                                                                                                                                              |
+| `Ref`                  | `pattern`: an `Id`, or an absolute URI without a fragment, then `#` and an `Id`: `^(?:ID\|[A-Za-z][A-Za-z0-9+.-]*:[^#\s]*#ID)$`, with `ID` the `Id` pattern                                                                                                                             |
+| `CapabilityManifest`   | `schemaVersion` `const: "0.1"`; `namespace` `pattern: "^[A-Za-z][A-Za-z0-9+.-]*:[^#\\s]*$"`, an absolute URI with no fragment; `additionalProperties: false`                                                                                                                            |
 | `Source`               | `role` enum                                                                                                                                                                                                                                                                             |
 | `Provenance`           | `basis` enum. `if: { properties: { basis: { const: "verified" } } }, then: { required: ["evidence"], properties: { evidence: { minItems: 1 } } }`, and the same for `imported` and `observed`                                                                                           |
 | `ResourceDefinition`   | `required: ["id", "description", "key"]`; `contains` is an array of unique `Id`s                                                                                                                                                                                                        |
 | `CapabilityDefinition` | `required: ["id", "kind", "description"]`. With `kind: "query"`: `effects` absent or `maxItems: 0`, and `safe` not `false`. With `kind: "action"`: `safe` not `true`. With `kind: "event"`: no `input`, `preconditions`, `confirmation` or `effects`. `confirmation` requires `summary` |
 | `Condition`            | `required: ["id", "description"]`; `oneOf` with `expr`, or with `guard: { const: true }`                                                                                                                                                                                                |
-| `Expr`                 | `oneOf` of single-key objects (`minProperties: 1`, `maxProperties: 1`). Comparison values are `prefixItems` of two `Operand`s; `all` and `any` have `minItems: 1`                                                                                                                       |
+| `Expr`                 | `oneOf` of single-key objects (`minProperties: 1`, `maxProperties: 1`). Comparison values are `prefixItems` of two `Operand`s, with `items: false` and `minItems: 2`; `all` and `any` have `minItems: 1`                                                                                |
 | `Operand`              | `oneOf` `{ path }` and `{ value }`; `path` matches `^(target\|input\|principal\|[a-z][A-Za-z0-9]*)(\.[A-Za-z0-9_]+)+$`                                                                                                                                                                  |
 | `Effect`               | `oneOf` on `category`. `state` requires `change` and `resource`. `compensatedBy` is required when `reversibility` is `compensable`                                                                                                                                                      |
 | `Relation`             | `type` enum. With `type: "relatedTo"`, `description` is required                                                                                                                                                                                                                        |
 | `Claim`                | `required: ["id", "subject", "kind", "statement", "provenance"]`; `quantity` requires `value` and `unit`                                                                                                                                                                                |
 | `Binding`              | `address` is an object of strings, `minProperties: 1`                                                                                                                                                                                                                                   |
-| `Extensions`           | `propertyNames: { format: "uri" }`                                                                                                                                                                                                                                                      |
+| `Extensions`           | `propertyNames` with the absolute-URI `pattern`                                                                                                                                                                                                                                         |
+
+**`format` is not relied on.** JSON Schema 2020-12 makes `format` an annotation unless a validator opts in (Validation §7.2.1), so the schema states URIs with `pattern`s, and `validate` checks the full RFC 3986 syntax.
 
 **What the schema can't express, `validate` checks:**
 
