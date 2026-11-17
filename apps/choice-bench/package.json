@@ -10,6 +10,7 @@
     "smoke": "node src/smoke.ts"
   },
   "dependencies": {
+    "@affordances/hosting-lab": "workspace:*",
     "@affordances/ir": "workspace:*",
     "@affordances/runtime": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.32.2",
