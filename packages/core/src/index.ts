@@ -24,6 +24,10 @@ export {
   type CapabilityActionConfig,
   type CapabilityGuards,
   type CapabilityInput,
+  type CheckPrincipal,
+  type CheckRequest,
+  type CheckResult,
+  type CheckRuntime,
   type GuardFn,
 } from './capability.ts'
 export { AffordancesError, redirect } from './errors.ts'

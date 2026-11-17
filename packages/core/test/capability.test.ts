@@ -3,7 +3,14 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { z } from 'zod'
 // the IR's authoring, as a dev dependency: core itself doesn't depend on the (private) IR package
 import { defineCapability, defineResource, guard, when } from '@affordances/ir'
-import { AFFORDANCES, createAffordances, createHandler, type AnyAction } from '../src/index.ts'
+import {
+  AFFORDANCES,
+  createAffordances,
+  createHandler,
+  type AnyAction,
+  type CheckRequest,
+  type CheckRuntime,
+} from '../src/index.ts'
 
 type Session = { id: string }
 let stock: Record<string, number>
@@ -144,7 +151,7 @@ describe('a capability with only guards', () => {
   })
 })
 
-describe('a capability with declarative preconditions (interim, until M3d)', () => {
+describe('a capability with declarative preconditions, and no runtime', () => {
   let warn: ReturnType<typeof vi.spyOn>
   beforeEach(() => {
     warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -200,6 +207,9 @@ describe('a capability with declarative preconditions (interim, until M3d)', () 
     checkout()
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('commerce.cart.checkout has declarative conditions (notEmpty)'),
+    )
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('until defineAction is given the runtime'),
     )
   })
 
@@ -336,5 +346,232 @@ describe('the confirmation summary (RFC 0001 §3.2)', () => {
           'Ship ["a","b"] to {"city":"Springfield","street":"1 Main"} (leave at door, gift true, wrap null) for unknown {as is}',
       },
     })
+  })
+})
+
+// the projection runtime's check, as RFC 0001 §12.1 and RFC 0002 §8.1 (steps 1-7) give it, standing in for the
+// runtime: the cart's count is the declarative condition, and the summary is filled from the target
+describe('a capability checked by the runtime', () => {
+  let count: number
+  let requests: CheckRequest[]
+  beforeEach(() => {
+    count = 0
+    requests = []
+  })
+  const runtime: CheckRuntime = {
+    check: async (request) => {
+      requests.push(request)
+      if (!request.principal.authenticated)
+        return { status: 'refused', code: 'unauthorized', revision: 'sha256-r' }
+      if (count === 0)
+        return {
+          status: 'refused',
+          code: 'precondition',
+          condition: { id: 'notEmpty', description: 'The cart has items' },
+          detail: 'The cart is empty',
+          revision: 'sha256-r',
+        }
+      if (request.offer.startsWith('commerce.cart.checkout') && !request.confirmed)
+        return {
+          status: 'refused',
+          code: 'confirmation_required',
+          confirmation: { summary: `Place the order for ${count} items` },
+          revision: 'sha256-r',
+        }
+      return {
+        status: 'ok',
+        revision: 'sha256-r',
+        ...(request.confirmed && { confirmation: request.confirmed }),
+      }
+    },
+  }
+  const principal = (ctx: { session: Session | null }) => ({
+    authenticated: !!ctx.session,
+    subject: ctx.session?.id,
+    attributes: {},
+  })
+  const keyed = z.object({ cart: z.string() })
+  const checkout = defineCapability({
+    id: 'commerce.cart.checkout',
+    kind: 'action',
+    description: 'Place the order',
+    target: cartResource,
+    input: keyed,
+    targetAt: 'cart',
+    authorization: { principal: 'authenticated' },
+    preconditions: { notEmpty: when.gt('target.count', 0).because('The cart has items') },
+    confirmation: { summary: 'Place the order for {target.count} items' },
+  })
+  const action = () => {
+    const ran = vi.fn()
+    const bound = defineAction({
+      capability: checkout,
+      name: 'checkout',
+      state: product,
+      runtime,
+      principal,
+      run: () => {
+        ran()
+        return 'ordered'
+      },
+    })
+    return { bound, ran }
+  }
+
+  test('refused while the condition is false, and available once it is true', async () => {
+    const { bound, ran } = action()
+    const refused = await call(handlerFor([bound]), {
+      action: 'checkout',
+      input: { cart: 'c1' },
+      confirm: true,
+    })
+    expect(refused).toMatchObject({
+      ok: false,
+      error: { code: 'unavailable', message: 'The cart is empty' },
+    })
+    expect(ran).not.toHaveBeenCalled()
+    // the offer names the target at targetAt, for the principal from v0's session
+    expect(requests.at(-1)).toMatchObject({
+      offer: 'commerce.cart.checkout@commerce.cart:c1',
+      input: { cart: 'c1' },
+      principal: { authenticated: true, subject: 'a' },
+    })
+    count = 2
+    expect(
+      await call(handlerFor([bound]), { action: 'checkout', input: { cart: 'c1' }, confirm: true }),
+    ).toMatchObject({ ok: true, output: 'ordered' })
+    expect(ran).toHaveBeenCalledOnce()
+  })
+
+  test("without v0's confirm, it's v0's own confirm_required with the check's summary; with it, the basis is v0's flag", async () => {
+    count = 2
+    const { bound, ran } = action()
+    const handler = handlerFor([bound])
+    const response = await handler(
+      new Request(`${origin}/api/affordances/products/tee`, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'checkout', input: { cart: 'c1' } }),
+        headers: { 'content-type': MEDIA_TYPE, authorization: 'Bearer a' },
+      }),
+    )
+    expect(response.status).toBe(409)
+    expect(Delta.parse(await response.json())).toMatchObject({
+      ok: false,
+      error: { code: 'confirm_required', message: 'Place the order for 2 items' },
+    })
+    expect(ran).not.toHaveBeenCalled()
+    expect(requests.at(-1)!.confirmed).toBeUndefined()
+    expect(
+      await call(handler, { action: 'checkout', input: { cart: 'c1' }, confirm: true }),
+    ).toMatchObject({ ok: true })
+    // v0's confirmation, never an RFC 0002 approval: the request carries no token
+    expect(requests.at(-1)).toMatchObject({ confirmed: { basis: 'v0-client-flag' } })
+    expect(requests.at(-1)).not.toHaveProperty('approval')
+  })
+
+  test('listing the graph, a refusal only the call settles leaves the action available', async () => {
+    count = 2
+    const untargeted = defineCapability({
+      id: 'commerce.cart.checkoutAll',
+      kind: 'action',
+      description: 'Place every order',
+      input: keyed,
+      authorization: { principal: 'authenticated' },
+    })
+    for (const code of ['invalid_input', 'confirmation_required'] as const) {
+      const listing = defineAction({
+        capability: untargeted,
+        name: 'checkoutAll',
+        state: product,
+        runtime: { check: async () => ({ status: 'refused', code, revision: 'sha256-r' }) },
+        principal,
+        run: () => 'ordered',
+      })
+      expect((await graph(handlerFor([listing]), 'a')).actions[0]).toMatchObject({
+        available: true,
+      })
+    }
+    // a condition on the input can't be settled without one; one on the target can
+    const quantity = defineCapability({
+      id: 'commerce.cart.checkoutSome',
+      kind: 'action',
+      description: 'Place some orders',
+      input: z.object({ count: z.number().int().optional() }),
+      authorization: { principal: 'authenticated' },
+      preconditions: { some: when.gt('input.count', 0).because('At least one order') },
+    })
+    // `some` reads the input; a refusal naming any other condition stands
+    for (const [id, available] of [
+      ['some', true],
+      ['closed', false],
+    ] as const) {
+      const listing = defineAction({
+        capability: quantity,
+        name: 'checkoutSome',
+        state: product,
+        runtime: {
+          check: async () => ({
+            status: 'refused',
+            code: 'precondition',
+            condition: { id, description: id },
+            revision: 'sha256-r',
+          }),
+        },
+        principal,
+        run: () => 'ordered',
+      })
+      expect((await graph(handlerFor([listing]), 'a')).actions[0]).toMatchObject({ available })
+    }
+    // what the call itself can't change is shown as unavailable
+    const refused = defineAction({
+      capability: untargeted,
+      name: 'checkoutAll',
+      state: product,
+      runtime: {
+        check: async () => ({
+          status: 'refused',
+          code: 'unauthorized',
+          detail: 'Only the cart owner',
+          revision: 'sha256-r',
+        }),
+      },
+      principal,
+      run: () => 'ordered',
+    })
+    expect((await graph(handlerFor([refused]), 'a')).actions[0]).toMatchObject({
+      available: false,
+      reason: 'Only the cart owner',
+    })
+  })
+
+  test("a refusal reads the condition's description when the runtime gives no detail", async () => {
+    const quiet: CheckRuntime = {
+      check: async () => ({
+        status: 'refused',
+        code: 'precondition',
+        condition: { id: 'notEmpty', description: 'The cart has items' },
+        revision: 'sha256-r',
+      }),
+    }
+    const described = defineAction({
+      capability: checkout,
+      name: 'checkout',
+      runtime: quiet,
+      principal,
+      run: () => 'ordered',
+    })
+    expect(
+      await call(handlerFor([described]), { action: 'checkout', input: { cart: 'c1' } }),
+    ).toMatchObject({ error: { message: 'The cart has items' } })
+  })
+
+  test('with a runtime there is no fail-closed warning, and the UI path is unchanged', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { bound, ran } = action()
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('declarative conditions'))
+    warn.mockRestore()
+    expect(await bound({ cart: 'c1' })).toBe('ordered')
+    expect(ran).toHaveBeenCalledOnce()
+    expect(requests).toHaveLength(0)
   })
 })
