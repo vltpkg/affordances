@@ -1,5 +1,7 @@
 import { beforeEach, expect, test } from 'vitest'
 import { inspect } from '../src/lib/inspect.ts'
+import { runtimeFor } from '../src/lib/runtime.ts'
+import { manifest } from '../src/manifest.ts'
 import { principalFor, resolvers } from '../src/lib/resolvers.ts'
 import * as store from '../src/lib/store.ts'
 
@@ -61,4 +63,17 @@ test('resolvers show a caller only their own project and deployments', async () 
   expect(
     await resolvers['hosting.deployment']!.list!(principalFor(sid), { capability: 'x' }),
   ).toEqual(['dep_1'])
+})
+
+test("what depends only on the manifest is made once, and each request projects only the caller's view", async () => {
+  store.account('s_once')
+  const first = await inspect(principalFor('s_once'))
+  const second = await inspect(principalFor('s_once'), { policy: 'resource' })
+  // the same definitions object, derived edges included, for every request on a manifest
+  expect(second.definitions).toBe(first.definitions)
+  expect(runtimeFor(manifest)).toBe(runtimeFor(manifest))
+  // and the caller's part is fresh: the policy shapes the view, while the projection's offers are the same
+  expect(second.policy).toBe('resource')
+  expect(second.offers.map((o) => o.id)).toEqual(first.offers.map((o) => o.id))
+  expect(second.offers.filter((o) => o.inView).length).toBeLessThan(first.offers.length)
 })

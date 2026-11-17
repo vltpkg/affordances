@@ -17,14 +17,22 @@ const approvals = (shared.hostingLabApprovals ??= {
   seen: memoryTokens(),
 })
 
-export const runtimeFor = (m: CapabilityManifest) =>
-  createRuntime({
-    manifest: m,
-    resources: resolvers,
-    handlers,
-    approvalKeys: { current: approvals.key },
-    seenTokens: approvals.seen,
-  })
+// one runtime per manifest: createRuntime finds a manifest's facts once (derive, edges, schemas), so it's built once
+const runtimes = new WeakMap<CapabilityManifest, ReturnType<typeof createRuntime>>()
+export const runtimeFor = (m: CapabilityManifest) => {
+  let made = runtimes.get(m)
+  if (!made) {
+    made = createRuntime({
+      manifest: m,
+      resources: resolvers,
+      handlers,
+      approvalKeys: { current: approvals.key },
+      seenTokens: approvals.seen,
+    })
+    runtimes.set(m, made)
+  }
+  return made
+}
 
 export const runtime = runtimeFor(manifest)
 

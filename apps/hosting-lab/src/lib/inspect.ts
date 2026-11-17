@@ -16,12 +16,30 @@ export const POLICIES: PolicyId[] = builtInPolicies.map((p) => p.id)
 
 export type InspectedOffer = CapabilityOffer & { inView: boolean }
 
+// what the inspector shows of a manifest itself, derived edges included: the same for every request, so made once
+const definitionsOf = (m: CapabilityManifest) => ({
+  sources: m.sources,
+  principal: m.principal,
+  resources: m.resources,
+  capabilities: m.capabilities,
+  claims: m.claims ?? [],
+  relations: m.relations ?? [],
+  derived: derive(m),
+})
+const definitions = new WeakMap<CapabilityManifest, ReturnType<typeof definitionsOf>>()
+const definitionsFor = (m: CapabilityManifest) => {
+  let made = definitions.get(m)
+  if (!made) definitions.set(m, (made = definitionsOf(m)))
+  return made
+}
+
 export const inspect = async (
   principal: Principal,
   options: { policy?: PolicyId; m?: CapabilityManifest } = {},
 ) => {
   const policy = options.policy ?? 'exhaustive'
   const m = options.m ?? manifest
+  // per request, only what depends on the caller: the projection and its view
   const projection = await (options.m ? runtimeFor(m) : runtime).project({
     principal,
     policy,
@@ -39,15 +57,7 @@ export const inspect = async (
       ...c,
       inView: view.choiceSets.some((v) => v.id === c.id),
     })),
-    definitions: {
-      sources: m.sources,
-      principal: m.principal,
-      resources: m.resources,
-      capabilities: m.capabilities,
-      claims: m.claims ?? [],
-      relations: m.relations ?? [],
-      derived: derive(m),
-    },
+    definitions: definitionsFor(m),
   }
 }
 
