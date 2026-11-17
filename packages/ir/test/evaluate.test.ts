@@ -367,3 +367,29 @@ test('a count’s witness elements take the type its schema declares, so the sta
     references: { project: { domains: ['', ''] } },
   })
 })
+
+test('fitContext fills an object placeholder’s required properties, and takes an enum’s or a const’s value', () => {
+  const m = fixture('plans.json')
+  const c = m.capabilities.find((x) => x.id === 'hosting.plan.subscribe')!
+  const project = m.resources.find((r) => r.id === 'hosting.project')!
+  project.attributes = {
+    type: 'object',
+    properties: {
+      zones: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['code', 'tier'],
+          properties: { code: { type: 'string' }, tier: { enum: ['gold', 'silver'] } },
+        },
+      },
+      kinds: { type: 'array', items: { enum: ['a', 'b'] } },
+      fixed: { type: 'array', items: { const: 7 } },
+    },
+  }
+  expect(
+    fitContext(m, c, { references: { project: { zones: [{}], kinds: [{}], fixed: [{}] } } }),
+  ).toEqual({
+    references: { project: { zones: [{ code: '', tier: 'gold' }], kinds: ['a'], fixed: [7] } },
+  })
+})

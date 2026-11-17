@@ -186,15 +186,29 @@ export type ConformanceCase = {
 }
 // a count's witness is an array of empty placeholders. Fitted to the schema the root is declared by, each becomes a
 // value of the item's type, so an application's own resolver accepts the state the kit arranges (code review 7)
-type Schemaish = { type?: unknown; items?: unknown; properties?: Record<string, unknown> }
+type Schemaish = {
+  type?: unknown
+  items?: unknown
+  properties?: Record<string, unknown>
+  required?: unknown
+  enum?: unknown
+  const?: unknown
+}
 const placeholder = (schema: Schemaish | undefined): unknown => {
+  // a value the schema allows, so a conformant resolver accepts it (review of the code-review fixes, b)
+  if (schema?.const !== undefined) return schema.const
+  if (Array.isArray(schema?.enum) && schema.enum.length) return schema.enum[0]
   const type = Array.isArray(schema?.type) ? schema.type[0] : schema?.type
   if (type === 'string') return ''
   if (type === 'number' || type === 'integer') return 0
   if (type === 'boolean') return false
   if (type === 'null') return null
   if (type === 'array') return []
-  return {}
+  // an object, with each required property filled from its own schema
+  const required = Array.isArray(schema?.required) ? (schema.required as string[]) : []
+  return Object.fromEntries(
+    required.map((k) => [k, placeholder(schema?.properties?.[k] as Schemaish | undefined)]),
+  )
 }
 const fit = (value: unknown, schema: unknown): unknown => {
   const s = (schema ?? {}) as Schemaish

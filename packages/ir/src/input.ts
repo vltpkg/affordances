@@ -23,7 +23,8 @@ const compile = (schema: unknown): z.ZodType | null => {
 
 export const inputIssues = (schema: unknown, input: unknown): InputIssue[] => {
   const check = compile(schema)
-  if (!check) return [{ at: '', message: "the input schema can't be checked, so no input passes it" }]
+  if (!check)
+    return [{ at: '', message: "the input schema can't be checked, so no input passes it" }]
   const result = check.safeParse(input)
   return result.success
     ? []
