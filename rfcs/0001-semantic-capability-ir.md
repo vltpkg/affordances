@@ -714,7 +714,7 @@ These five rules are part of the IR. `validate` enforces the parts that a docume
 **Rule 1: an offer is never authorization.**
 
 - No field of the IR, and no claim, is an input to an authorization decision except `authorization` itself. That field can only _require_ something of a principal, never grant anything.
-- A projection derived from a manifest is advice, and every execution re-evaluates `authorization` and `preconditions` against current state. v0's handler already does this on its agent path (`packages/core/src/handler.ts:168-196`; repo audit §5).
+- A projection derived from a manifest is advice, and every execution re-evaluates `authorization` and `preconditions` against current state. v0's handler already does this on its agent path (`packages/core/src/handler.ts:169-199`; repo audit §5).
 - The IR has no field that means "pre-authorized", "trusted caller" or "skip checks".
 
 **Rule 2: an annotation never makes an operation safe, or removes a confirmation.**
@@ -753,10 +753,10 @@ These five rules are part of the IR. `validate` enforces the parts that a docume
 Three of the audit's findings are properties of v0 that are reasonable in v0's own terms, but would be dangerous to restate more strongly than they are (repo audit §8). The IR, and any runtime built on it, describes them as they are:
 
 1. **Confirmation is a flag the client sets.**
-   - **In v0:** the server enforces that `confirm: true` is present (`packages/core/src/handler.ts:199`). It can't know whether a person saw the summary; that rests on the client (`packages/protocol/spec.md:155`).
+   - **In v0:** the server enforces that `confirm: true` is present (`packages/core/src/handler.ts:202`). It can't know whether a person saw the summary; that rests on the client (`packages/protocol/spec.md:155`).
    - **For the IR:** `confirmation` says approval is _required_. Nothing in the IR or a projection may claim that approval _was given_. Whether a runtime can bind an approval to a summary, with a token for example, is RFC 0002's question, and until it does, docs and exports say "the caller asserts approval".
 2. **The guard and the execution aren't atomic.**
-   - **In v0:** state can change between the guard check (`packages/core/src/handler.ts:193-196`) and `run` (`:210`).
+   - **In v0:** state can change between the guard check (`packages/core/src/handler.ts:192-199`) and `run` (`:213`).
    - **For the IR:** availability is an evaluation at one revision, not a promise. Rule 5 requires a precondition to be checked at execution, not that it still holds while the execution runs. Anything that must hold throughout is the handler's job, as v0's docs already tell authors (`apps/docs/content/concepts/guards.mdx:48`). RFC 0002's tests cover state that changes between projection and execution.
 3. **v0's UI path doesn't evaluate guards or `expose`, by design.**
    - **In v0:** a server action called from the application's own components validates its input and runs (`packages/core/src/action.ts:156-161`; documented at `apps/docs/content/guides/security.mdx:41`).
@@ -1114,7 +1114,13 @@ Nobody writes §11's JSON by hand. The IR's types are chosen so that a typed aut
 - **The namespace and the owner come from configuration,** written once: `withAffordances({ namespace, owner })` in Next.js, or `defineManifest` elsewhere.
   - The tools fill in `sources`, adding themselves with role `tool`, and the default `provenance` (`declared`, by the owner).
   - A fragment never invents an `owner` source, so only the configured owner can produce `declared` (rule 3).
-- **Until a runtime evaluates declarative preconditions, v0's agent path fails closed.** A capability bound through `defineAction({ capability })` that declares any declarative precondition refuses on v0's agent path, as `unavailable` naming each such condition, until M3's runtime evaluates them. Its guards run as v0's guard does, and v0's UI path is unchanged. A declared precondition is therefore never skipped just because nothing could evaluate it yet (rule 5). This is interim: M3's runtime replaces the refusal by evaluating the conditions, and M3d removes the refusal and its development warning.
+- **On v0's agent path, the projection runtime checks a bound capability.**
+  - **The binding:** `defineAction({ capability, guards, runtime, principal })` takes the application's runtime, and maps v0's session to a principal (RFC 0002 §3).
+  - **The check:** before v0's own guard and `run`, the agent path calls `runtime.check`. That's RFC 0002 §8.1's steps 1 to 7 without running, for the offer named by the target's key at `targetAt`, and the input. When it passes, v0's guards and `run` go on exactly as before, and v0's UI path is unchanged.
+  - **Refusals:** `confirmation_required` answers as v0's own `confirm_required`, with the runtime's summary, so a v0 client knows to resend with `confirm: true`. Any other refusal is v0's `unavailable`, with the runtime's detail, or else the condition's description.
+  - **Confirmation:** v0's `confirm: true` reaches the check as `confirmed: { basis: 'v0-client-flag' }`. That's v0's confirmation as §8.3 describes it, a flag the client sets. It's never an RFC 0002 approval: `check` neither issues nor accepts a token, and the runtime's own execution path still requires one.
+  - **The gap:** the check and v0's `run` aren't atomic. That's the same gap as v0's guard and run (§8.3, item 2): availability is an evaluation at one revision, and anything that must hold throughout is the handler's job.
+  - **Without a runtime, v0's agent path fails closed.** A bound capability that declares any declarative precondition refuses on the agent path as `unavailable`, naming each such condition, and warns in development. A declared precondition is therefore never skipped because nothing could evaluate it (rule 5).
 - **IR effects never sit in `defineAction`.** v0's `effects` there keeps its v0 meaning, the state keys for the delta. The capability's `effects` are consequences, and the two never meet in one object (§4, §10.1). Renaming v0's field is RFC 0004's question.
 - **Kinds:**
   - **`defineCapability`:** `kind` is required.
