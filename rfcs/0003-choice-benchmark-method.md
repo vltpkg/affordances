@@ -147,9 +147,11 @@ As RFC 0002 §6.1 maps them. Five are policies over the unchanged manifest, and 
 
 ### 3.2 Controls
 
-- **S, structure only:** the same information as A, in a different structure.
-  - **What varies:** the order of fields within offers, choice-set members nested under the choice set or listed flat, and JSON key order. Each trial draws one of the variants.
-  - **What it controls for:** a change S causes can't be steering, because nothing a policy decides differs. That separates sensitivity to serialization from the effect of disclosure (dark patterns §6, item 6).
+- **S, structure only:** A's view, rendered in a different structure, with exactly A's information.
+  - **The one named transform:** every choice set's member offers move out of the view's `offers` and into their choice set's `members`, as full offers, in the choice set's order. Everything else is A's, including the order basis (`{ by: 'canonical' }`) and the counterbalancing through the fixture's keys (§4).
+  - **It's a rendering, not a policy.** The runtime produces A's view, and the harness renders it nested. So nothing a policy decides differs, and RFC 0002 R6's order basis is A's.
+  - **A test shows it's information-constant:** `apps/hosting-lab/src/structure.ts` holds the transform and its exact inverse. The fixture's test undoes the transform and compares S with A as data. It fails if S adds a label, a claim, a detail or a field, changes either order basis, reorders or drops a member (`apps/hosting-lab/test/structure.test.ts`).
+  - **What it measures:** a change S causes can't be steering, because the information and its stated order are identical. That separates sensitivity to structure from the effect of disclosure (dark patterns §6, item 6).
 - **R, renamed tiers:** A with the plans' names replaced by neutral ones (Plan 1, Plan 2, Plan 3, in a counterbalanced assignment).
   - **What it controls for:** "Hobby", "Pro" and "Business" match tier names at real providers that models will have seen. Prior knowledge of real tiers could steer a choice independently of the fixture's own data.
   - **What it measures:** a difference between R and A estimates that prior. Everything else, prices and limits included, is unchanged.
@@ -215,7 +217,7 @@ type DriverResult = {
 | `project` | `{ start?: { type: string; key: string } }`                                                                                                 | the first `View` (RFC 0002 §6.2) for the trial's principal |
 | `expand`  | `{ from: string \| { type: string; key: string }, along: 'alternatives' \| 'members' \| 'relations' \| 'contains' \| 'enables' \| 'more' }` | a `View` (RFC 0002 §6.5)                                   |
 | `inspect` | `{ offer: string }`                                                                                                                         | `OfferDetails` (RFC 0002 §11)                              |
-| `invoke`  | `{ offer: string; input?: object; approval?: string }`                                                                                      | an `ExecutionResult` (RFC 0002 §8.3)                       |
+| `execute` | `{ offer: string; input?: object; approval?: string }`                                                                                      | an `ExecutionResult` (RFC 0002 §8.3)                       |
 
 - **Identical across conditions.** The tool names, descriptions and input schemas are byte-identical in every condition. The harness, not the agent, sets the policy and budget, and the agent can't pass a policy. What differs is only what the runtime returns, under the condition's policy and fixture.
 - **How results render:** each tool returns its RFC 0002 value as JSON text: members in RFC 8785 order, then pretty-printed with a two-space indent (`JSON.stringify(JSON.parse(canonicalJson(value)), null, 2)`), so the bytes are deterministic. The S control alone changes this rendering (§3.2).
@@ -226,7 +228,7 @@ type DriverResult = {
 
 **The simulated user approves every request.**
 
-- **The mechanism:** when `invoke` is refused with `confirmation_required`, the tool's response carries the refusal (its rendered summary and approval token), with `"userApproved": true` added. The agent proceeds by calling `invoke` again with `approval` set to that token.
+- **The mechanism:** when `execute` is refused with `confirmation_required`, the tool's response carries the refusal (its rendered summary and approval token), with `"userApproved": true` added. The agent proceeds by calling `execute` again with `approval` set to that token.
 - **What the token allows:** it's single-use and bound to the offer, the input, the subject and the offer revision (RFC 0002 §8.2). So the approval covers exactly the refused call, never a later or different one.
 - **Why approve everything:** it measures what an agent commits a person to when the person trusts it, which is the case where disclosure matters most.
 - **What it lets play out:** multi-step choices, such as Pro and then an add-on, and choices G's default changes.
@@ -285,20 +287,21 @@ Each is computed from a trace (§9) and the task's ground truth (§2.2) by a com
 
 The budget (§8) allows two confirmatory contrasts, sized to detect a 20-point shift. Each is against A, on the primary task T3, with two models:
 
-| ID  | Contrast                                                                                                      | Outcome                  |
-| --- | ------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| H1  | **D against A:** a declared recommendation order, with the claim's text omitted, lowers optimal choices on T3 | the optimal share, in pp |
-| H2  | **C against A:** attributed advocacy, with the owner's claims shown, changes optimal choices on T3            | the optimal share, in pp |
+| ID  | Contrast                                                                                           | Outcome                  |
+| --- | -------------------------------------------------------------------------------------------------- | ------------------------ |
+| H1  | **S against A:** the same information in a different structure changes optimal choices on T3       | the optimal share, in pp |
+| H2  | **C against A:** attributed advocacy, with the owner's claims shown, changes optimal choices on T3 | the optimal share, in pp |
 
 **Why these two,** of the four contrasts the method considered confirmatory (C, D, E and S against A):
 
-- **Most central:** D and C are the two most central questions.
-  - **D:** does presentation steer when the information doesn't change? That's the core of choice architecture.
-  - **C:** does transparent, attributed advocacy steer? That's the legitimate persuasion the project means to support.
-- **Too costly:** at the same power, the four don't fit the budget (§8).
-- **Exploratory instead:**
-  - E, the friction the disclosure invariant permits, is estimated at 20 trials a cell;
-  - S, the structure-only control, needs an equivalence test that's far more expensive than a difference test.
+- **At the same power, the four don't fit the budget** (§8).
+- **S is the one information-constant contrast.**
+  - Its views carry exactly A's information, order basis included, and a test checks it (§3.2).
+  - So a difference between S and A is choice architecture with nothing else changed, the core question.
+  - If S shows no difference, the interval says how large a structural effect the data rules out.
+- **C is the other central question:** does transparent, attributed advocacy steer? That's the legitimate persuasion the project means to support.
+- **D isn't information-constant.** Under RFC 0002 R6, a view ordered by a claim states that basis, so D tells the agent the order is the publisher's recommendation. That's disclosed publisher ordering, a form of advocacy rather than structure alone, so it's exploratory (§7.4).
+- **E,** the friction the disclosure invariant permits, is exploratory too, at 20 trials a cell.
 
 **Reading H2 on T3.** The owner's claims point both ways on T3:
 
@@ -338,13 +341,13 @@ So H2 measures advocacy as the publisher actually presents it, both claims toget
 Everything else is exploratory, labelled so in every result, and makes no confirmatory claim:
 
 - **Conditions:**
-  - B, E, F and G against A;
-  - the S, R and N controls;
+  - B, D, E, F and G against A;
+  - the R and N controls;
   - O, hard obstruction (§11).
 - **Tasks:**
   - T1, T2 and T4;
   - the T5 probe, including which reading choices fit.
-- **Position effects:** from A's counterbalanced trials (T3, and the T5 probe), the share choosing whichever plan was listed first, against the third expected with no position effect.
+- **Position effects:** from A's and S's counterbalanced trials (T3, and the T5 probe), the share choosing whichever plan was listed first, against the third expected with no position effect.
 - **Variants:**
   - the length-matched A;
   - a misaligned-recommendation fixture;
@@ -369,13 +372,13 @@ The six-surface comparison (§12) has its own budget later.
 
 n ≈ (z₀.₉₈₇₅ + z₀.₈)² · (p₁(1 − p₁) + p₂(1 − p₂)) / 0.20² ≈ (2.24 + 0.84)² · 0.48 / 0.04 ≈ **114 per cell**,
 
-at the most demanding rates, near 0.4 against 0.6. All four contrasts would need about 129 per cell over five cells, which is about 1,290 trials, beyond the confirmatory share. Hence two (§7.1).
+at the most demanding rates, near 0.4 against 0.6. All four contrasts, with Holm's first test at α = 0.0125 (z ≈ 2.50), would need about 134 per cell over five cells, which is about 1,340 trials, beyond the confirmatory share. Hence two (§7.1).
 
 | Part                          | Cells                                                                             | Trials per cell | Models | Trials      |
 | ----------------------------- | --------------------------------------------------------------------------------- | --------------- | ------ | ----------- |
 | **Pilot**                     | A, C, D, E and S on T3; B on T3, F on T1 and G on T1                              | 5               | 2      | 80          |
-| **Confirmatory**              | A, C and D on T3                                                                  | 114             | 2      | 684         |
-| **Exploratory**               | on T3: B, E, S, R, N, O; on T1: A, F, G; on T2: A, C, D; on T4: A, G; on T5: A, D | 20              | 1      | 320         |
+| **Confirmatory**              | A, C and S on T3                                                                  | 114             | 2      | 684         |
+| **Exploratory**               | on T3: B, D, E, R, N, O; on T1: A, F, G; on T2: A, C, D; on T4: A, G; on T5: A, D | 20              | 1      | 320         |
 | **Retries and capped margin** | —                                                                                 | —               | —      | up to 116   |
 | **Total**                     |                                                                                   |                 |        | **≤ 1,200** |
 
@@ -393,7 +396,7 @@ at the most demanding rates, near 0.4 against 0.6. All four contrasts would need
 - **Tokens:** assuming about 40,000 tokens per trial, the planning figure the pilot replaces, the ceiling is about 48 million tokens.
 - **What intake approves after the pilot:** the confirmatory run's size, against the measured tokens per trial.
   - **If the pilot's rates are far from 0.5,** n shrinks by the formula, and the saved trials go to the margin, not to more cells.
-  - **If the measured tokens exceed what intake allows,** the exploratory cells shrink first, and then the confirmatory run drops to H1 alone, which is the single most important contrast.
+  - **If the measured tokens exceed what intake allows,** the exploratory cells shrink first, and then the confirmatory run drops to H1 alone, the information-constant contrast.
 
 ## 9. Traces
 
