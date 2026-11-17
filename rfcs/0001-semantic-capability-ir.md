@@ -1,6 +1,6 @@
 # RFC 0001: The semantic capability IR
 
-- **Status:** accepted (2026-11-17); amended 2026-11-17 (§3.1: quantifiers and `count`, after the guard survey; §2.3: declared principal attributes, for RFC 0002)
+- **Status:** accepted (2026-11-17); amended 2026-11-17: §3.1, §5.5 and §6.3 (quantifiers and `count` after the guard survey, with route parameters mapped into input by bindings); §2.3, §3.1, §5.5 and §6.4 (declared principal attributes, missing against absent, and composition, for RFC 0002)
 - **Package:** `@affordances/ir` (private until published)
 - **Depends on:** [terminology](./research/terminology.md), [repo audit](./research/repo-audit.md), [prior art](./research/prior-art.md)
 
@@ -195,6 +195,9 @@ type PrincipalDefinition = {
   description?: string
   // the caller's attributes a condition can read as principal.<attribute>, as a JSON Schema object
   attributes: JSONSchema
+  provenance?: Provenance
+  fieldProvenance?: Record<JSONPointer, Provenance>
+  extensions?: Extensions
 }
 // CapabilityManifest.principal?: PrincipalDefinition
 ```
@@ -270,8 +273,8 @@ Each path is checked at validation time. A `target` or reference path has to nam
 **Evaluation is three-valued.** It uses Kleene's strong three-valued logic (K3), the same logic SQL uses for `NULL`. The evaluator is given a context with a value, or nothing, for each root.
 
 - **Resolving a path:**
-  - **`missing`:** the root has no value in the context. The target wasn't loaded, or the principal attribute wasn't supplied.
-  - **`absent`:** the root has a value, but an attribute on the path isn't present, or is `null`.
+  - **`missing`:** the value wasn't supplied, so it's unknown. Either the root has no value in the context (the target wasn't loaded, or no input was given yet), or the root's value doesn't include a _declared_ attribute, because the application didn't supply it. A resolver signals "not supplied" by omitting the key.
+  - **`absent`:** the value was supplied, and there is none: a declared attribute supplied as `null`, or, inside a value supplied whole (an attribute's own attributes, an array's elements, an input), a key that isn't present or is `null`.
   - **Otherwise** the path resolves to its value.
 - **`exists`:**
   - `true` when the path resolves to a value;
@@ -494,9 +497,9 @@ Every derived edge records what it was derived from, and has basis `inferred` (�
 **Why prerequisites aren't stored.** A stored "A requires B" is exactly how an optional purchase can be presented as necessary. Deriving necessity from conditions and effects doesn't stop a publisher from declaring a false precondition, and the derived edge would faithfully show it. What it changes is that the claim becomes checkable:
 
 - **Unbacked:** a prerequisite with nothing behind it is visible as such, because no effect of B establishes anything A needs.
-- **Backed:** a prerequisite that does rest on something rests on a named precondition, which rule 5 (§8.2) requires the binding to enforce. A conformance test can call A without it and must get the declared refusal.
+- **Backed:** a prerequisite that does rest on something rests on a named precondition, which rule 5 (§8.2) requires every binding to enforce. A runtime enforces declarative preconditions itself (RFC 0002), so a declared precondition is a real dependency, not a misleading one.
 
-A misleading dependency is then either visibly unbacked, or a precondition the application fails to enforce, which conformance catches (terminology §4.2).
+A misleading dependency is therefore one that nothing backs: a description, or a `benefit` or `recommendation` claim, asserting a dependency that no precondition states. It has no derived prerequisite edge, so it is visibly unbacked (terminology §4.2). The one other case is a binding that bypasses the runtime and doesn't enforce a declared precondition, such as a v0 route. Rule 5's conformance tests catch that.
 
 ## 6. Identity and composition (question 4)
 
@@ -565,7 +568,8 @@ A Next.js application defines capabilities in many modules, and an importer may 
 3. **Claims are united by identifier,** under the same rule as definitions: equal claims collapse, and different claims with one id are `E_CONFLICT`. Claims from different sources never merge, even when they disagree, because disagreement is information.
 4. **Relations are united.** Exact duplicates (equal in canonical form) collapse.
 5. **Bindings are united.** Exact duplicates collapse.
-6. **The default provenance must be equal across fragments,** or each fragment's definitions must carry their own (§8).
+6. **`principal` must be equal in canonical form** across the fragments that declare it, or it is `E_CONFLICT`. A fragment without one takes the others'.
+7. **The default provenance must be equal across fragments,** or each fragment's definitions must carry their own (§8).
 
 Composition is commutative, associative and idempotent, so the build order of modules can't change the result. The canonical form (§7.2) makes that checkable: `canonical(compose(a, b)) === canonical(compose(b, a))`.
 
@@ -632,7 +636,7 @@ The canonical form is what composition compares, what the digest hashes, and wha
 | `E_ENFORCEMENT_CLAIM` | a claim targets an enforcement field (§8, rule 2)                                                                                                                                                                           |
 | `E_BASIS`             | a provenance basis without what it requires (§8, rule 3)                                                                                                                                                                    |
 | `E_SOURCE`            | provenance names a source that isn't declared                                                                                                                                                                               |
-| `E_CONFLICT`          | composition found two different definitions, sources or claims with one identifier                                                                                                                                          |
+| `E_CONFLICT`          | composition found two different definitions, sources or claims with one identifier, or two different `principal` declarations                                                                                               |
 
 Warnings, which don't fail validation:
 
@@ -728,7 +732,7 @@ These five rules are part of the IR. `validate` enforces the parts that a docume
 
 - A binding that serves a capability refuses an execution whose declarative preconditions evaluate to `false` or `unknown`, or whose authorization or confirmation requirement isn't met. It answers with the declared condition's `id` and `description`, and may add a runtime `detail`: the specific reason, such as the `` `Only ${left} left of ${what}` `` that the example store's guard returns (`apps/example/src/app/products/[slug]/actions.ts:27-32`). The `id` and `description` are the stable, inspectable part. The `detail` is never in the manifest, and RFC 0002 defines its shape.
 - A guard is enforced by the handler registered for it. An execution whose guard can't be evaluated is refused, not allowed: `unknown` doesn't pass.
-- **It is a conformance property, testable from outside.** For each declarative precondition, a test puts the target in a state where it's false, calls the capability, and must get that refusal. A manifest whose preconditions the application doesn't enforce fails conformance. A misleading dependency (§5.5) is caught this way, and the choice benchmark's misleading-dependency fixture is, by construction, a manifest that fails it.
+- **It is a conformance property, testable from outside.** For each declarative precondition, a test puts the context in a state where it's false (the target, the references, the principal and the input, whichever the condition reads), calls the capability, and must get that refusal. A binding that doesn't enforce its capability's preconditions fails conformance. That's the second kind of misleading dependency in §5.5; the first, an unbacked assertion, is visible without running anything.
 
 ### 8.3 v0 boundaries the IR must not paper over
 
@@ -1085,7 +1089,7 @@ Nobody writes §11's JSON by hand. The IR's types are chosen so that a typed aut
   - `defineAction({ capability, guards })` is typed so that `guards` has exactly one implementation per guard the capability declares. A missing or stray implementation is a type error. That is rule 5 (§8.2), caught in the editor as well as by conformance tests.
 - **Paths are typed against the schemas.**
   - **The helpers** emit `Expr` from a path and a value: `when.gt`, `when.eq`, `when.all`, `when.not` and the rest.
-  - **Paths are checked** against the target's `attributes`, the input and the references, so `'target.cout'` is a type error: `validate`'s `E_PATH`, moved to the editor.
+  - **Paths are checked** against the target's `attributes`, the input, the references and the declared `principal`, so `'target.cout'` is a type error: `validate`'s `E_PATH`, moved to the editor.
   - **Helpers live under `when`,** not as top-level `eq` or `all`, which collide with common local names and query builders.
   - **Plain helpers, not a proxy builder** (`target.count.gt(0)`). A proxy looks like code, and would invite code the closed vocabulary can't express.
 - **Authoring takes Standard Schema, and the IR stores JSON Schema,** as v0 already does for `input` (`packages/core/src/action.ts:101-111`). Conversion is recorded as `inferred` in `fieldProvenance`.
@@ -1155,7 +1159,7 @@ export type CapabilityManifest = {
   extensions?: Extensions
 }
 
-export type PrincipalDefinition = {
+export type PrincipalDefinition = Attributed & {
   description?: string
   attributes: JSONSchema
 }
@@ -1313,7 +1317,7 @@ export type ValidationIssue = {
 | `Id`                   | `pattern` as in §13, `maxLength: 128`                                                                                                                                                                                                                                                                                                                                                 |
 | `Ref`                  | `pattern`: an `Id`, or an absolute URI without a fragment, then `#` and an `Id`: `^(?:ID\|[A-Za-z][A-Za-z0-9+.-]*:[^#\s]*#ID)$`, with `ID` the `Id` pattern                                                                                                                                                                                                                           |
 | `CapabilityManifest`   | `schemaVersion` `const: "0.1"`; `namespace` `pattern: "^[A-Za-z][A-Za-z0-9+.-]*:[^#\\s]*$"`, an absolute URI with no fragment; `additionalProperties: false`                                                                                                                                                                                                                          |
-| `PrincipalDefinition`  | `required: [\"attributes\"]`; `additionalProperties: false`                                                                                                                                                                                                                                                                                                                           |
+| `PrincipalDefinition`  | `required: ["attributes"]`; `additionalProperties: false`                                                                                                                                                                                                                                                                                                                             |
 | `Source`               | `role` enum                                                                                                                                                                                                                                                                                                                                                                           |
 | `Provenance`           | `basis` enum. `if: { properties: { basis: { const: "verified" } } }, then: { required: ["evidence"], properties: { evidence: { minItems: 1 } } }`, and the same for `imported` and `observed`                                                                                                                                                                                         |
 | `ResourceDefinition`   | `required: ["id", "description", "key"]`; `contains` is an array of unique `Id`s                                                                                                                                                                                                                                                                                                      |
@@ -1338,7 +1342,7 @@ export type ValidationIssue = {
 - the enforcement-field rule for claims;
 - source roles against bases.
 
-**What is left for RFC 0002:** principal attributes, the runtime's projection request and response, availability values, disclosure and relevance policies, observed-change records, and the handler registry.
+**What is left for RFC 0002:** principal attribute values, the runtime's projection request and response, availability values, disclosure and relevance policies, observed-change records, and the handler registry.
 
 ## 15. Deviations from the initial design sketch
 
