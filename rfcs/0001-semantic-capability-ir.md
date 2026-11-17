@@ -1,6 +1,6 @@
 # RFC 0001: The semantic capability IR
 
-- **Status:** draft
+- **Status:** accepted (2026-11-17)
 - **Package:** `@affordances/ir` (private until published)
 - **Depends on:** [terminology](./research/terminology.md), [repo audit](./research/repo-audit.md), [prior art](./research/prior-art.md)
 
