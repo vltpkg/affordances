@@ -6,7 +6,6 @@ import {
   putPointer,
   evaluate,
   inputIssues,
-  normalize,
   type CapabilityDefinition,
   type CapabilityManifest,
   type Condition,
@@ -15,6 +14,7 @@ import {
   renderSummary as render,
 } from '@affordances/ir'
 import { decideCondition, instancesOf } from './decide.ts'
+import type { Facts } from './facts.ts'
 import type { Loaded, Session } from './session.ts'
 import { offerId, parseOfferId } from './offer-id.ts'
 import type {
@@ -42,8 +42,9 @@ type Obj = Record<string, unknown>
 // what execution needs from the runtime: the definitions, the handlers, and a per-request session (project.ts)
 export type ExecutionDeps = {
   manifest: CapabilityManifest
+  facts: Facts
   resources: Record<Id, ResourceResolver>
-  project: (request: ProjectionRequest) => Promise<Projection>
+  project: (request: ProjectionRequest, shared?: Session) => Promise<Projection>
   handlers: Record<Id, Handler>
   session: (principal: Principal) => Promise<Session>
   approval: {
@@ -89,7 +90,6 @@ const compare = (before: View, after: View): OfferChanges => {
 export const executor = (deps: ExecutionDeps) => {
   const { manifest, handlers, approval } = deps
   const definitions = new Map(manifest.capabilities.map((c) => [c.id, c]))
-  const canonical = new Map(normalize(manifest).capabilities.map((c) => [c.id, c]))
 
   // §8.2: HMAC-SHA-256 over the canonical call. The token carries only its expiry, its nonce and the MAC, so it
   // echoes nothing about the caller; verifying recomputes the MAC from the call being made
@@ -135,8 +135,8 @@ export const executor = (deps: ExecutionDeps) => {
         refs: Record<string, { key: string; attributes: Obj } | undefined>
         revision: string
         confirmed?: true
-        // the walk's session, whose loads the before snapshot reuses
-        load: (type: Id, key: string) => Promise<Loaded>
+        // the walk's session, whose loads the before projection and snapshot reuse
+        session: Session
       }
   > => {
     const s = await deps.session(request.principal)
@@ -147,7 +147,7 @@ export const executor = (deps: ExecutionDeps) => {
     const bound: Record<string, string> = {}
     // the offer revision the decision is made at: of the offer the caller named, as a projection computes it now
     const revision = async () =>
-      (c && (await s.offerOn(c, target, named))?.revision) ??
+      (c && (await s.revisionOf(c, target, named))) ??
       (await digestOf({ ...s.base, resources: [], guards: [] }))
     const refuse = async (
       code: RefusalCode,
@@ -308,7 +308,7 @@ export const executor = (deps: ExecutionDeps) => {
           refs,
           revision: now,
           confirmed: true,
-          load: s.load,
+          session: s,
         }
       }
       if (!request.principal.subject)
@@ -331,7 +331,7 @@ export const executor = (deps: ExecutionDeps) => {
           confirmation: { summary, ...(await issue(call)) },
         })
     }
-    return { status: 'ready', c, input, target, refs, revision: now, load: s.load }
+    return { status: 'ready', c, input, target, refs, revision: now, session: s }
   }
 
   const check = async (request: CheckRequest): Promise<CheckResult> => {
@@ -345,12 +345,6 @@ export const executor = (deps: ExecutionDeps) => {
   }
 
   // §8.4: what the resolvers report for the target and every instance of a type a state effect names
-  const declaredAttributes = (type: Id) => {
-    const props = (
-      manifest.resources.find((x) => x.id === type)?.attributes as { properties?: Obj } | undefined
-    )?.properties
-    return props ? new Set(Object.keys(props)) : undefined
-  }
   type Seen = Map<string, { type: Id; key: string; attributes: Obj }>
   // through a session's load, so what the checks just read isn't read again; after the run, a fresh session's
   const snapshot = async (
@@ -388,7 +382,7 @@ export const executor = (deps: ExecutionDeps) => {
     target: ResourceRef | undefined,
   ) => {
     // the effects in canonical order (RFC 0001 §7.2), so matches means the same effect to every reader
-    const effects = canonical.get(c.id)?.effects ?? []
+    const effects = deps.facts.effects(c.id)
     const observed: ObservedChange[] = []
     const keys = new Set([...before.seen.keys(), ...after.seen.keys()])
     for (const where of [...keys].toSorted()) {
@@ -401,7 +395,7 @@ export const executor = (deps: ExecutionDeps) => {
       if (!was) change = 'create'
       else if (!now) change = 'delete'
       else {
-        const declared = declaredAttributes(type)
+        const declared = deps.facts.declared(type)
         attributes = [...new Set([...Object.keys(was.attributes), ...Object.keys(now.attributes)])]
           .filter(
             (k) =>
@@ -447,8 +441,11 @@ export const executor = (deps: ExecutionDeps) => {
     const view: ProjectionRequest = { ...request.view, principal: request.principal }
     const start = view.start ?? r.target
     if (start !== undefined) view.start = start
-    const projected = (await deps.project(view)).view()
-    const before = await snapshot(r.load, request.principal, r.c, r.target)
+    // the before pair shares the walk's session, so nothing the checks read is read again, and runs at once
+    const [projected, before] = await Promise.all([
+      deps.project(view, r.session).then((p) => p.view()),
+      snapshot(r.session.load, request.principal, r.c, r.target),
+    ])
     // 9. run the application's handler
     let output: unknown
     let failure: string | undefined
@@ -464,14 +461,13 @@ export const executor = (deps: ExecutionDeps) => {
       failure = 'The action failed.'
     }
     // 10. observe: what changed, against what was declared, and the view after, a partial effect included
+    // and the after pair a fresh session, so it sees what the run changed
     const fresh = await deps.session(request.principal)
-    const seen = observe(
-      r.c,
-      before,
-      await snapshot(fresh.load, request.principal, r.c, r.target),
-      r.target,
-    )
-    const after = (await deps.project(view)).view()
+    const [afterSnapshot, after] = await Promise.all([
+      snapshot(fresh.load, request.principal, r.c, r.target),
+      deps.project(view, fresh).then((p) => p.view()),
+    ])
+    const seen = observe(r.c, before, afterSnapshot, r.target)
     const observed = { ...seen, revision: after.revision, changes: compare(projected, after) }
     if (failure !== undefined) return { status: 'failed', message: failure, ...observed }
     const result: ExecutionResult = { status: 'succeeded', ...observed }

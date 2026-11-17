@@ -1,11 +1,5 @@
-import {
-  base64url,
-  canonicalJson,
-  derive,
-  localId,
-  type CapabilityManifest,
-  type Id,
-} from '@affordances/ir'
+import { base64url, canonicalJson, type CapabilityManifest, type Id } from '@affordances/ir'
+import { words, type Facts } from './facts.ts'
 import type {
   Budget,
   CapabilityOffer,
@@ -61,21 +55,6 @@ export const BUILT_IN: DiscoveryPolicy[] = [
 const sameRef = (a: ResourceRef | undefined, b: ResourceRef) =>
   a !== undefined && a.type === b.type && a.key === b.key
 
-// words of a task or a definition, for the basic method: letters and digits, lowercased, three or more long, and
-// not the commonest English words, which match everything
-const STOP = new Set(
-  'and the for but not you your our are was were with from that this have has had can will just into about also'.split(
-    ' ',
-  ),
-)
-const words = (text: string) =>
-  new Set(
-    text
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter((w) => w.length >= 3 && !STOP.has(w)),
-  )
-
 // where a sequence of offers comes from (the first view, or one expansion), and a 'more' cursor: its origin and the
 // budget of every cut since, under a projection revision, as base64url of its RFC 8785 text. Any projection of the
 // same revision and request rebuilds the page, and the same view asked for twice has the same bytes (simplify C4)
@@ -109,47 +88,20 @@ export type Views = {
 // views over one projection's offers: what a policy shows first, and every expansion from there (§6)
 export const views = (args: {
   manifest: CapabilityManifest
+  facts: Facts
   request: ProjectionRequest
   policy: DiscoveryPolicy
   revision: string
   offers: CapabilityOffer[] // every offer the principal may see, in canonical order
   choiceSets: ChoiceSet[]
 }): Views => {
-  const { manifest, request, policy, revision, choiceSets } = args
+  const { manifest, facts, request, policy, revision, choiceSets } = args
   const byId = new Map(args.offers.map((o) => [o.id, o]))
   const sets = new Map(choiceSets.map((s) => [s.id, s]))
   const start = request.start
 
-  // relations between capabilities, declared and derived, both ways, with what each is (§6.5)
-  const derived = derive(manifest)
-  const local = (ref: string) => localId(manifest, ref)
-  const edges: { from: Id; to: Id; relation: string }[] = []
-  for (const r of manifest.relations ?? []) {
-    const [from, to] = [local(r.from), local(r.to)]
-    // a relation to another manifest's definition has no offer here to reach
-    if (from !== undefined && to !== undefined) edges.push({ from, to, relation: r.type })
-  }
-  for (const e of derived)
-    if (e.relation === 'enables' || e.relation === 'prerequisite') edges.push(e)
-  const capabilityIds = new Set(manifest.capabilities.map((c) => c.id))
-  const neighbors = (id: Id) =>
-    edges.flatMap((e) =>
-      e.from === id && capabilityIds.has(e.to)
-        ? [{ id: e.to, relation: e.relation }]
-        : e.to === id && capabilityIds.has(e.from)
-          ? [{ id: e.from, relation: e.relation }]
-          : [],
-    )
-  // alternativeTo runs both ways: each capability's partners, found once
-  const partnerMap = new Map<Id, Set<Id>>()
-  for (const e of edges)
-    if (e.relation === 'alternativeTo')
-      for (const [a, b] of [
-        [e.from, e.to],
-        [e.to, e.from],
-      ] as const)
-        partnerMap.set(a, (partnerMap.get(a) ?? new Set()).add(b))
-  const partners = (id: Id) => partnerMap.get(id) ?? new Set<Id>()
+  // relations between capabilities, declared and derived, both ways, found once for the manifest (simplify D1)
+  const { derived, edges, neighbors, partners } = facts
   const byCapability = new Map<Id, OfferId[]>()
   for (const o of args.offers)
     byCapability.set(o.capability, [...(byCapability.get(o.capability) ?? []), o.id])
@@ -161,7 +113,7 @@ export const views = (args: {
     return sameRef(o.target, start) || boundAs(o, start)
   }
   const boundAs = (o: CapabilityOffer, ref: ResourceRef) => {
-    const c = manifest.capabilities.find((x) => x.id === o.capability)
+    const c = facts.capability(o.capability)
     return (c?.references ?? []).some(
       (r) => r.resource === ref.type && o.with?.[r.name] === ref.key,
     )
@@ -178,13 +130,7 @@ export const views = (args: {
         kind: 'start',
         detail: typeof start === 'string' ? start : `${start!.type}:${start!.key}`,
       })
-    const c = manifest.capabilities.find((x) => x.id === o.capability)!
-    const resource = manifest.resources.find((r) => r.id === c.target)
-    const own = words(
-      [c.id, c.title ?? '', c.description, resource?.id ?? '', resource?.description ?? ''].join(
-        ' ',
-      ),
-    )
+    const own = facts.wordsOf(o.capability)
     const matched = [...task].filter((w) => own.has(w)).toSorted()
     if (matched.length) basis.push({ kind: 'task-text', matched })
     const direct = basis.length > 0
@@ -383,7 +329,7 @@ export const views = (args: {
       }
       case 'contains': {
         if (typeof from !== 'object') return
-        const contains = new Set(manifest.resources.find((r) => r.id === from.type)?.contains ?? [])
+        const contains = new Set(facts.resource(from.type)?.contains ?? [])
         return {
           ids: ordered(
             whole(
@@ -420,7 +366,7 @@ export const views = (args: {
   const inspect = (id: OfferId): OfferDetails | undefined => {
     const offer = byId.get(id)
     if (!offer) return
-    const definition = manifest.capabilities.find((c) => c.id === offer.capability)!
+    const definition = facts.capability(offer.capability)!
     return {
       offer: { ...offer, relevance: relevance.get(id)! },
       definition,

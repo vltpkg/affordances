@@ -30,6 +30,18 @@ const versioned = (rows: Instances): ResourceResolver => ({
 const handlers = (billing: GuardImpl = () => true) => ({
   'hosting.plan.subscribe': { guards: { billing } },
 })
+// each load and list waits a random while, so the order they settle in changes from run to run
+const slow = (rows: Instances): ResourceResolver => ({
+  load: async (key) => {
+    await new Promise((r) => setTimeout(r, Math.random() * 5))
+    return rows[key] ? { attributes: rows[key] } : null
+  },
+  list: async () => {
+    await new Promise((r) => setTimeout(r, Math.random() * 5))
+    return Object.keys(rows)
+  },
+})
+
 const runtimeOf = (
   state = { plans: plansState(), projects: projectsState() },
   manifest = fresh(),
@@ -40,6 +52,16 @@ const runtimeOf = (
     resources: { 'hosting.plan': table(state.plans), 'hosting.project': table(state.projects) },
     handlers: handlers(billing),
   })
+
+// one projection, from the start, over resolvers that answer in a random order, as bytes
+const shuffledBytes = async () => {
+  const p = await testRuntime({
+    manifest: fresh(),
+    resources: { 'hosting.plan': slow(plansState()), 'hosting.project': slow(projectsState()) },
+    handlers: handlers(),
+  }).project({ principal: member, start: fromProject, policy: 'exhaustive' })
+  return bytes(p)
+}
 
 const member: Principal = { authenticated: true, attributes: { plan: 'hobby', orgIds: ['o1'] } }
 const outsider: Principal = { authenticated: true, attributes: { plan: 'hobby', orgIds: ['o2'] } }
@@ -192,6 +214,11 @@ describe('deterministic for its input', () => {
     }).project({ principal: member, start: fromProject })
     expect(bytes(b)).toBe(bytes(a))
     expect(bytes(reversed)).toBe(bytes(a))
+  })
+
+  test('resolvers answering in any order give the same bytes: projection calls them concurrently (simplify D6)', async () => {
+    const first = await shuffledBytes()
+    for (let i = 0; i < 5; i++) expect(await shuffledBytes()).toBe(first)
   })
 
   test('an attribute the manifest doesn’t declare changes nothing, not even the revision', async () => {

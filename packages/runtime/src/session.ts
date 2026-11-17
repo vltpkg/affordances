@@ -18,14 +18,23 @@ export type Read = { type: Id; key: string; version?: string }
 export type Session = {
   attributes: Obj // the principal's declared attributes
   base: { manifest: string; principal: string } // what every revision of this request starts from (§7)
-  loads: Map<string, Promise<Loaded>>
   load: (type: Id, key: string) => Promise<Loaded>
-  // an instance as a revision reads it (§7), or undefined for one that isn't there
-  read: (type: Id, key: string, loaded: Loaded) => Promise<Read | undefined>
+  // an instance as a revision reads it (§7), or undefined for one that isn't there: once per instance
+  reading: (type: Id, key: string) => Promise<Read | undefined>
+  // every instance this request has read, sorted by type and key
+  readAll: () => Promise<Read[]>
+  // the instances these offers read, sorted: a projection's own reads, on a session another reader shares
+  readsFor: (offers: CapabilityOffer[]) => Read[]
   guardLog: { capability: Id; condition: string; value: boolean | string | null }[]
   offerOn: (
     c: CapabilityDefinition,
     target: ResourceRef | undefined,
     bind?: Record<string, string>,
   ) => Promise<CapabilityOffer | undefined>
+  // an offer's revision alone, as offerOn would compute it, without touching guardLog
+  revisionOf: (
+    c: CapabilityDefinition,
+    target: ResourceRef | undefined,
+    bind?: Record<string, string>,
+  ) => Promise<string | undefined>
 }

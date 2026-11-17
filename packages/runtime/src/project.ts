@@ -3,10 +3,8 @@ import {
   byCanonical,
   canonicalJson,
   compare,
-  digest,
   digestOf,
   evaluate,
-  localId,
   resolvePath,
   validate,
   type CapabilityDefinition,
@@ -19,7 +17,8 @@ import {
   renderSummary as render,
 } from '@affordances/ir'
 import { attributesFor } from './data.ts'
-import { decideCondition, instancesOf } from './decide.ts'
+import { decideCondition, guardTruth, instancesOf } from './decide.ts'
+import { factsOf } from './facts.ts'
 import type { Loaded, Read, Session } from './session.ts'
 import { executor } from './execute.ts'
 import { offerId } from './offer-id.ts'
@@ -169,25 +168,14 @@ export const createRuntime = ({
       `${confirming.id} requires confirmation: give createRuntime approvalKeys and seenTokens`,
     )
   // a definition's own id, for a Ref that may name it with the manifest's namespace (RFC 0001 §2)
-  const local = (ref: string) => localId(manifest, ref)
+  // what depends on the manifest alone, found once (simplify D1)
+  const facts = factsOf(manifest)
   const types = new Map(manifest.resources.map((r) => [r.id, r]))
   const attributesOf = attributesFor(manifest)
   const sources = new Map(manifest.sources.map((s) => [s.id, s]))
   const declared = Object.keys(
     (manifest.principal?.attributes as { properties?: Obj } | undefined)?.properties ?? {},
   )
-  // alternativeTo runs both ways (RFC 0001 §5.1)
-  const partners = new Map<string, Set<string>>()
-  for (const r of manifest.relations ?? [])
-    if (r.type === 'alternativeTo')
-      for (const [a, b] of [
-        [local(r.from), local(r.to)],
-        [local(r.to), local(r.from)],
-      ] as const)
-        // a relation to another manifest's definition has no partner here
-        if (a !== undefined && b !== undefined)
-          partners.set(a, (partners.get(a) ?? new Set()).add(b))
-  const manifestDigest = digest(manifest)
 
   // what one request reads, shared by projection and execution: the principal's declared attributes, the instances
   // loaded (each once), the guards run, and an offer computed as a projection computes it
@@ -199,32 +187,64 @@ export const createRuntime = ({
         .map((k) => [k, principal.attributes[k]]),
     )
     const base = {
-      manifest: await manifestDigest,
+      manifest: await facts.manifestDigest,
       principal: await digestOf({ authenticated: principal.authenticated, attributes }),
     }
 
-    const loads = new Map<string, Promise<Loaded>>()
-    const load = (type: Id, key: string) => {
+    // each instance this request reads: loaded once, and read for a revision (its version or its attributes' digest)
+    // once (simplify D4)
+    const entries = new Map<
+      string,
+      { type: Id; key: string; loaded: Promise<Loaded>; read?: Promise<Read | undefined> }
+    >()
+    const entry = (type: Id, key: string) => {
       const at = canonicalJson([type, key])
-      let loaded = loads.get(at)
-      if (!loaded) {
-        loaded = (async (): Promise<Loaded> => {
-          try {
-            const found = await resources[type]!.load(key, principal)
-            if (!found) return { state: 'none' }
-            // attributes that aren't plain data fitting the type's schema are attributes it couldn't supply
-            const fitting = attributesOf(type, found.attributes)
-            if (!fitting) return { state: 'failed' }
-            return typeof found.version === 'string'
-              ? { state: 'found', attributes: fitting, version: found.version }
-              : { state: 'found', attributes: fitting }
-          } catch {
-            return { state: 'failed' }
-          }
-        })()
-        loads.set(at, loaded)
+      let found = entries.get(at)
+      if (!found) {
+        found = {
+          type,
+          key,
+          loaded: (async (): Promise<Loaded> => {
+            try {
+              const given = await resources[type]!.load(key, principal)
+              if (!given) return { state: 'none' }
+              // attributes that aren't plain data fitting the type's schema are attributes it couldn't supply
+              const fitting = attributesOf(type, given.attributes)
+              if (!fitting) return { state: 'failed' }
+              return typeof given.version === 'string'
+                ? { state: 'found', attributes: fitting, version: given.version }
+                : { state: 'found', attributes: fitting }
+            } catch {
+              return { state: 'failed' }
+            }
+          })(),
+        }
+        entries.set(at, found)
       }
-      return loaded
+      return found
+    }
+    const load = (type: Id, key: string) => entry(type, key).loaded
+    const reading = (type: Id, key: string) => {
+      const e = entry(type, key)
+      return (e.read ??= e.loaded.then((loaded) => read(type, key, loaded)))
+    }
+    // the instances each offer read, so a projection's revision is over what its own offers read, whatever else a
+    // shared session has loaded (simplify D3)
+    const readsOf = new WeakMap<CapabilityOffer, Read[]>()
+    const readsFor = (offers: CapabilityOffer[]) => {
+      const union = new Map<string, Read>()
+      for (const o of offers)
+        for (const r of readsOf.get(o) ?? []) union.set(canonicalJson([r.type, r.key]), r)
+      return [...union.values()].toSorted(byRead)
+    }
+    // every instance read so far, as revisions read them, sorted by type and key (§7)
+    const readAll = async () => {
+      const collected: Read[] = []
+      for (const e of entries.values()) {
+        const r = await reading(e.type, e.key)
+        if (r) collected.push(r)
+      }
+      return collected.toSorted(byRead)
     }
     // every guard run at projection time, for the projection's revision (§7)
     const guardLog: { capability: Id; condition: string; value: boolean | string | null }[] = []
@@ -242,7 +262,7 @@ export const createRuntime = ({
         // an instance the resolver doesn't return isn't there for this principal
         if (loaded.state === 'none') return
         if (loaded.state === 'found') context.target = loaded.attributes
-        reads.push((await read(target.type, target.key, loaded))!)
+        reads.push((await reading(target.type, target.key))!)
       }
       // a reference is bound when its key is known and the instance is there
       const bound: Record<string, string> = {}
@@ -253,7 +273,7 @@ export const createRuntime = ({
         if (loaded.state === 'none') continue
         bound[r.name] = key
         if (loaded.state === 'found') context.references![r.name] = loaded.attributes
-        reads.push((await read(r.resource, key, loaded))!)
+        reads.push((await reading(r.resource, key))!)
       }
 
       // conditions, then requirements, then availability in RFC 0002 §4.2's order
@@ -277,11 +297,11 @@ export const createRuntime = ({
         if (d.detail !== undefined) r.detail = d.detail
         if ('expr' in x) {
           // needs-input only when every path that's missing is on the input (review of M3a)
-          const reading = paths(x.expr)
+          const pathsRead = paths(x.expr)
           if (
             r.value === 'unknown' &&
-            reading.some((path) => path.startsWith('input.')) &&
-            reading.every((path) => !missing(path, context))
+            pathsRead.some((path) => path.startsWith('input.')) &&
+            pathsRead.every((path) => !missing(path, context))
           )
             forInput.add(x.id)
           return r
@@ -357,12 +377,9 @@ export const createRuntime = ({
         return { status: 'available' }
       })()
 
-      const claims: ClaimView[] = (manifest.claims ?? [])
-        .filter(
-          (k) =>
-            local(k.subject) === c.id &&
-            (!k.applies || evaluate(k.applies, { target: context.target }) !== false),
-        )
+      const claims: ClaimView[] = facts
+        .claims(c.id)
+        .filter((k) => !k.applies || evaluate(k.applies, { target: context.target }) !== false)
         .map((k) => {
           const source = sources.get(k.provenance.source)!
           const view: ClaimView = {
@@ -395,20 +412,77 @@ export const createRuntime = ({
         consequential: consequential(c),
         claims,
         relevance: { level: 'undetermined' },
-        alternatives: { count: partners.get(c.id)?.size ?? 0 },
+        alternatives: { count: facts.partners(c.id).size },
       }
       if (target) offer.target = target
       if (Object.keys(bound).length) offer.with = bound
       if (target && types.get(target.type)?.alternatives) offer.choiceSet = `${c.id}@${target.type}`
+      readsOf.set(offer, reads)
       return offer
     }
 
-    return { attributes, base, loads, load, read, guardLog, offerOn }
+    // an offer's revision alone (§7), as offerOn computes it but without the rest of the offer, and without adding to
+    // the projection's guard log: for execution's refusals and freshness (simplify D3)
+    const revisionOf = async (
+      c: CapabilityDefinition,
+      target: ResourceRef | undefined,
+      bind: Record<string, string> = {},
+    ): Promise<string | undefined> => {
+      const reads: Read[] = []
+      let targetArg: { key: string; attributes: Obj } | undefined
+      if (target) {
+        const loaded = await load(target.type, target.key)
+        if (loaded.state === 'none') return
+        if (loaded.state === 'found') targetArg = { key: target.key, attributes: loaded.attributes }
+        reads.push((await reading(target.type, target.key))!)
+      }
+      const refs: Record<string, { key: string; attributes: Obj } | undefined> = {}
+      for (const r of c.references ?? []) {
+        const key = bind[r.name]
+        if (key === undefined) {
+          refs[r.name] = undefined
+          continue
+        }
+        const loaded = await load(r.resource, key)
+        if (loaded.state === 'none') {
+          refs[r.name] = undefined
+          continue
+        }
+        refs[r.name] = loaded.state === 'found' ? { key, attributes: loaded.attributes } : undefined
+        reads.push((await reading(r.resource, key))!)
+      }
+      // the guards offerOn runs: every precondition's, and authorization's when it gets that far
+      const conditions = [
+        ...(c.preconditions ?? []),
+        ...(c.authorization &&
+        !(c.authorization.principal === 'authenticated' && !principal.authenticated)
+          ? (c.authorization.conditions ?? [])
+          : []),
+      ]
+      const guardsRun: { condition: string; value: boolean | string | null }[] = []
+      for (const x of conditions) {
+        const guard = 'guard' in x ? handlers[c.id]?.guards?.[x.id] : undefined
+        if (!guard || guard.executionOnly) continue
+        guardsRun.push({
+          condition: x.id,
+          value: await guardTruth(guard, { input: undefined, target: targetArg, refs, principal }),
+        })
+      }
+      return digestOf({
+        ...base,
+        resources: reads.toSorted(byRead),
+        guards: guardsRun.toSorted((a, b) => compare(a.condition, b.condition)),
+      })
+    }
+    return { attributes, base, load, reading, readAll, readsFor, guardLog, offerOn, revisionOf }
   }
 
-  const project = async (request: ProjectionRequest): Promise<Projection> => {
+  // a projection, in its own session or one an execution shares with it (simplify D3)
+  const project = async (request: ProjectionRequest, shared?: Session): Promise<Projection> => {
     const { principal } = request
-    const { base, loads, guardLog, offerOn } = await session(principal)
+    const { base, readsFor, guardLog, offerOn } = shared ?? (await session(principal))
+    // the guards this projection runs, from where the log stands now
+    const guardsFrom = guardLog.length
     const start = typeof request.start === 'object' ? request.start : undefined
     // a reference is bound when the request starts from an instance of its type
     const startBinding = (c: CapabilityDefinition) =>
@@ -420,25 +494,23 @@ export const createRuntime = ({
 
     // every offer the principal may see: a global capability once, a targeted one on each instance its resolver lists,
     // and on the start instance. events are announced, not invoked, so they have no offers
-    const offers: CapabilityOffer[] = []
-    for (const c of manifest.capabilities) {
-      if (c.kind === 'event') continue
-      if (!c.target) {
-        const offer = await offerOn(c, undefined, startBinding(c))
-        if (offer) offers.push(offer)
-        continue
-      }
-      const keys = await instancesOf(
-        resources[c.target]!,
-        principal,
-        c.id,
-        start?.type === c.target ? start.key : undefined,
-      )
-      for (const key of keys) {
-        const offer = await offerOn(c, { type: c.target, key }, startBinding(c))
-        if (offer) offers.push(offer)
-      }
-    }
+    // the resolvers are called concurrently, and the offers sorted after, so the bytes don't depend on which answered
+    // first (simplify D6)
+    const lists = await Promise.all(
+      manifest.capabilities.map(async (c) => {
+        if (c.kind === 'event') return []
+        if (!c.target) return [await offerOn(c, undefined, startBinding(c))]
+        const target = c.target
+        const keys = await instancesOf(
+          resources[target]!,
+          principal,
+          c.id,
+          start?.type === target ? start.key : undefined,
+        )
+        return Promise.all(keys.map((key) => offerOn(c, { type: target, key }, startBinding(c))))
+      }),
+    )
+    const offers = lists.flat().filter((o): o is CapabilityOffer => o !== undefined)
     offers.sort(canonically)
 
     // §5: the offers of one capability over every instance of a type with alternatives
@@ -458,29 +530,25 @@ export const createRuntime = ({
     const choiceSets = [...sets.values()].toSorted((a, b) => compare(a.id, b.id))
 
     // §7: every instance this projection read, sorted by type and key
-    const everyRead: Read[] = []
-    for (const [at, loaded] of loads) {
-      const [type, key] = JSON.parse(at) as [Id, string]
-      const r = await read(type, key, await loaded)
-      if (r) everyRead.push(r)
-    }
-    everyRead.sort(byRead)
+    const everyRead = readsFor(offers)
     const revision = await digestOf({
       ...base,
       resources: everyRead,
-      guards: guardLog.toSorted(
-        (a, b) =>
-          compare(a.capability, b.capability) ||
-          compare(a.condition, b.condition) ||
-          byCanonical(a, b),
-      ),
+      guards: guardLog
+        .slice(guardsFrom)
+        .toSorted(
+          (a, b) =>
+            compare(a.capability, b.capability) ||
+            compare(a.condition, b.condition) ||
+            byCanonical(a, b),
+        ),
     })
 
     // what's shown first, and how to find the rest (§6)
     const policyId = request.policy ?? defaultPolicy
     const policy = policies.get(policyId)
     if (!policy) throw new Error(`no discovery policy ${policyId}`)
-    const shown = views({ manifest, request, policy, revision, offers, choiceSets })
+    const shown = views({ manifest, facts, request, policy, revision, offers, choiceSets })
     return {
       revision,
       offers,
@@ -501,11 +569,12 @@ export const createRuntime = ({
 
   const { check, execute } = executor({
     manifest,
+    facts,
     resources,
-    project: (request) => project(request),
+    project: (request, shared) => project(request, shared),
     handlers,
     session,
     approval: { keys: approvalKeys, store: seenTokens, ttlMs: approvalTtlMs, now },
   })
-  return { manifest, project, check, execute }
+  return { manifest, project: (request) => project(request), check, execute }
 }
