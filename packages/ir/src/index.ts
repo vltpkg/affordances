@@ -17,7 +17,7 @@ export {
 } from './evaluate.ts'
 export { decodePointer, encodePointer, getPointer, putPointer } from './pointer.ts'
 export { localId } from './ref.ts'
-export { renderSummary } from './summary.ts'
+export { renderConfirmation, renderSummary } from './summary.ts'
 export {
   conformanceCases,
   falsifying,
@@ -26,5 +26,5 @@ export {
   type ConformanceCase,
   type Falsified,
 } from './falsify.ts'
-export { inputIssues, type InputIssue } from './input.ts'
+export { applyDefaults, inputIssues, type InputIssue } from './input.ts'
 export * from './author/index.ts'

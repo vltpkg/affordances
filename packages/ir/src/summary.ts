@@ -1,5 +1,6 @@
 import { canonicalJson } from './canonical.ts'
-import { resolvePath, type Context } from './evaluate.ts'
+import { evaluate, resolvePath, type Context } from './evaluate.ts'
+import type { Effect, FinancialEffect } from './schema.ts'
 
 // RFC 0001 §3.2: a confirmation summary's template, filled from a context. Strings as written, other values as their
 // RFC 8785 text, an unresolved path as `unknown`, and {{ }} for literal braces. A path resolves as conditions resolve
@@ -13,3 +14,41 @@ export const renderSummary = (template: string, context: Context): string =>
       return typeof resolved.value === 'string' ? resolved.value : canonicalJson(resolved.value)
     return resolved.kind === 'absent' && resolved.null ? 'null' : 'unknown'
   })
+
+// RFC 0001 §3.2 and §4 (intake, 2026-11-18): a summary ends by listing every charge its financial effects make, each
+// with its amount, in declaration order and never totalled. A charge whose applies is false isn't made, so it isn't
+// listed; one whose applies is unknown is listed as one that may apply, since a charge is never hidden. An amount that
+// can't be resolved says so
+const chargeOf = (e: FinancialEffect, context: Context): string | undefined => {
+  const applies = e.applies === undefined ? true : evaluate(e.applies, context)
+  if (applies === false) return
+  let amount = 'amount unknown'
+  if (e.amount) {
+    const v =
+      typeof e.amount.value === 'number'
+        ? { kind: 'value' as const, value: e.amount.value }
+        : resolvePath(e.amount.value, context)
+    if (v.kind === 'value' && typeof v.value === 'number' && Number.isFinite(v.value))
+      amount = `${canonicalJson(v.value)} ${e.amount.currency}`
+  }
+  const when = e.amount?.per === 'month' ? ' a month' : ' now'
+  const terms =
+    e.reversibility === 'irreversible' && e.amount?.per !== 'month'
+      ? ', not refunded'
+      : e.reversibility === 'compensable'
+        ? ', until undone'
+        : ''
+  return `${amount === 'amount unknown' ? amount : amount + when}${terms}${applies === true ? '' : ' (may apply)'}`
+}
+
+export const renderConfirmation = (
+  template: string,
+  effects: readonly Effect[] | undefined,
+  context: Context,
+): string => {
+  const summary = renderSummary(template, context)
+  const charges = (effects ?? [])
+    .filter((e): e is FinancialEffect => e.category === 'financial')
+    .flatMap((e) => chargeOf(e, context) ?? [])
+  return charges.length ? `${summary.replace(/\.$/, '')}. Charges: ${charges.join('; ')}` : summary
+}

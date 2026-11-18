@@ -102,8 +102,15 @@ namespace Spec {
     resource: Id
     establishes?: Expr
   }
-  export type OtherEffect = EffectBase & { category: 'external' | 'financial' | 'access' }
-  export type Effect = StateEffect | OtherEffect
+  // a charge's amount: a path or a literal, its currency, and its period; none means once (§4)
+  export type Amount = { value: Path | number; currency: 'USD'; per?: 'month' }
+  export type FinancialEffect = EffectBase & {
+    category: 'financial'
+    amount?: Amount
+    applies?: Expr
+  }
+  export type OtherEffect = EffectBase & { category: 'external' | 'access' }
+  export type Effect = StateEffect | FinancialEffect | OtherEffect
   export type Relation = {
     type: 'alternativeTo' | 'enables' | 'relatedTo'
     from: Ref
@@ -151,6 +158,8 @@ test('the inferred types are RFC 0001 §13', () => {
     same<Same<IR.AuthorizationRequirement, Spec.AuthorizationRequirement>>(),
     same<Same<IR.ConfirmationRequirement, Spec.ConfirmationRequirement>>(),
     same<Same<IR.StateEffect, Spec.StateEffect>>(),
+    same<Same<IR.Amount, Spec.Amount>>(),
+    same<Same<IR.FinancialEffect, Spec.FinancialEffect>>(),
     same<Same<IR.OtherEffect, Spec.OtherEffect>>(),
     same<Same<IR.Effect, Spec.Effect>>(),
     same<Same<IR.Relation, Spec.Relation>>(),

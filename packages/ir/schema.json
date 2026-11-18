@@ -803,6 +803,9 @@
           "$ref": "#/$defs/StateEffect"
         },
         {
+          "$ref": "#/$defs/FinancialEffect"
+        },
+        {
           "$ref": "#/$defs/OtherEffect"
         }
       ],
@@ -858,6 +861,59 @@
       "required": ["description", "category", "change", "resource"],
       "additionalProperties": false
     },
+    "FinancialEffect": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "reversibility": {
+          "type": "string",
+          "enum": ["reversible", "compensable", "irreversible"]
+        },
+        "compensatedBy": {
+          "$ref": "#/$defs/Id"
+        },
+        "category": {
+          "type": "string",
+          "const": "financial"
+        },
+        "amount": {
+          "$ref": "#/$defs/Amount"
+        },
+        "applies": {
+          "$ref": "#/$defs/Expr"
+        }
+      },
+      "required": ["description", "category"],
+      "additionalProperties": false
+    },
+    "Amount": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Path"
+            },
+            {
+              "type": "number",
+              "minimum": 0
+            }
+          ]
+        },
+        "currency": {
+          "type": "string",
+          "const": "USD"
+        },
+        "per": {
+          "type": "string",
+          "const": "month"
+        }
+      },
+      "required": ["value", "currency"],
+      "additionalProperties": false
+    },
     "OtherEffect": {
       "type": "object",
       "properties": {
@@ -873,7 +929,7 @@
         },
         "category": {
           "type": "string",
-          "enum": ["external", "financial", "access"]
+          "enum": ["external", "access"]
         }
       },
       "required": ["description", "category"],

@@ -30,3 +30,21 @@ export const inputIssues = (schema: unknown, input: unknown): InputIssue[] => {
     ? []
     : result.error.issues.map((i) => ({ at: encodePointer(i.path), message: i.message }))
 }
+
+// the effective input (intake, 2026-11-18): the input with its schema's declared defaults applied wherever a property
+// is omitted, at any depth of object properties. What's approved, summarized and run is this one value, so a handler
+// never defaults on its own. A copy: the input passed in is left as it was
+type SchemaNode = { type?: unknown; properties?: Record<string, SchemaNode>; default?: unknown }
+export const applyDefaults = (schema: unknown, input: unknown): unknown => {
+  const s = schema as SchemaNode | undefined
+  if (!s || typeof s !== 'object' || !s.properties) return input
+  if (input !== undefined && (input === null || typeof input !== 'object' || Array.isArray(input)))
+    return input
+  const out: Record<string, unknown> = { ...(input as Record<string, unknown> | undefined) }
+  for (const [key, prop] of Object.entries(s.properties)) {
+    if (!(key in out) && prop && typeof prop === 'object' && 'default' in prop)
+      out[key] = structuredClone(prop.default)
+    if (key in out) out[key] = applyDefaults(prop, out[key])
+  }
+  return out
+}

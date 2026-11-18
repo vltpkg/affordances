@@ -369,6 +369,38 @@ export const validate = (input: unknown): Validation => {
     c.effects?.forEach((e, j) => {
       const eat = `${at}/effects/${j}`
       if (e.compensatedBy) resolves(e.compensatedBy, `${eat}/compensatedBy`, 'capability')
+      // a charge's amount and its applies read what a summary reads: target, input or a reference, never the
+      // principal (§3.2, §4). A confirmed charge with no amount can't be listed with one, so it's a warning (intake)
+      if (e.category === 'financial') {
+        if (typeof e.amount?.value === 'string') {
+          if (e.amount.value.startsWith('principal.'))
+            report(
+              'E_PATH',
+              `${eat}/amount/value`,
+              `a charge's amount can't read ${e.amount.value}`,
+            )
+          else resolvePath(e.amount.value, scope, `${eat}/amount/value`)
+        }
+        if (e.applies)
+          expr(
+            e.applies,
+            {
+              ...scope,
+              forbidden: (root) =>
+                root === 'principal'
+                  ? 'a charge applies by what the summary shows, not principal'
+                  : undefined,
+            },
+            `${eat}/applies`,
+          )
+        if (c.confirmation && !e.amount)
+          report(
+            'W_NO_AMOUNT',
+            eat,
+            `${c.id} needs confirmation and declares a charge with no amount, so its summary can only say 'amount unknown'`,
+          )
+        return
+      }
       if (e.category !== 'state') return
       resolves(e.resource, `${eat}/resource`, 'resource')
       if (!e.establishes) return

@@ -242,6 +242,7 @@
         {
           "category": "financial",
           "description": "Starts a monthly charge",
+          "amount": { "value": "target.priceUsd", "currency": "USD", "per": "month" },
           "reversibility": "compensable",
           "compensatedBy": "hosting.plan.cancel"
         }

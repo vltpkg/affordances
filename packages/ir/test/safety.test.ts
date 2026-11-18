@@ -120,11 +120,13 @@ describe('rule 4: no unexplained confidence numbers', () => {
     for (const [k, v] of Object.entries(n)) walk(v, `${at}/${k}`)
   }
   walk(defs, '')
-  test('the only number in the schema is a claim quantity’s value, which has a unit', () => {
-    expect(numbers.filter((at) => !at.includes('/Scalar') && !at.includes('/Operand'))).toEqual([
-      '/Claim/properties/quantity/properties/value',
-    ])
+  test('the only numbers in the schema are a claim quantity’s value and a charge’s amount, each with its unit', () => {
+    expect(
+      numbers.filter((at) => !at.includes('/Scalar') && !at.includes('/Operand')).toSorted(),
+    ).toEqual(['/Amount/properties/value/anyOf/1', '/Claim/properties/quantity/properties/value'])
     expect(defs.Claim!.properties!.quantity).toMatchObject({ required: ['value', 'unit'] })
+    // a charge's amount carries its currency, always (intake, 2026-11-18)
+    expect(defs.Amount).toMatchObject({ required: ['value', 'currency'] })
   })
   test('a confidence or score field is a schema error', () => {
     for (const field of ['confidence', 'score', 'trust']) {

@@ -18,9 +18,12 @@ describe('valid fixtures', () => {
     expect(codes(validate(fixture('plans.json')).issues)).toEqual([])
   })
   test("the RFC's example warns where it should", () => {
-    // addItem's only precondition is a guard
+    // addItem's only precondition is a guard; checkout's and refund's charges declare no amount, since the example's
+    // cart and order declare no total (RFC 0001 §4, intake 2026-11-18)
     expect(codes(validate(fixture('rfc-0001-example.json')).issues)).toEqual([
       'W_OPAQUE /capabilities/0/preconditions',
+      'W_NO_AMOUNT /capabilities/1/effects/0',
+      'W_NO_AMOUNT /capabilities/2/effects/0',
     ])
   })
 })

@@ -170,11 +170,29 @@ export const StateEffect = z
     establishes: Expr.optional(),
   })
   .meta({ id: 'StateEffect' })
+// what a charge costs (intake, 2026-11-18): a path into the target, references or input, or a literal, with its unit
+// and period. The IR does no arithmetic: a summary lists each charge as declared, and never totals them
+export const Amount = z
+  .strictObject({
+    value: z.union([Path, z.number().nonnegative()]),
+    currency: z.literal('USD'),
+    per: z.literal('month').optional(), // none: once
+  })
+  .meta({ id: 'Amount' })
+export const FinancialEffect = z
+  .strictObject({
+    ...effectBase,
+    category: z.literal('financial'),
+    amount: Amount.optional(),
+    // the charge is made only when this holds: G's default add-on, charged only if the input keeps it
+    applies: Expr.optional(),
+  })
+  .meta({ id: 'FinancialEffect' })
 export const OtherEffect = z
-  .strictObject({ ...effectBase, category: z.enum(['external', 'financial', 'access']) })
+  .strictObject({ ...effectBase, category: z.enum(['external', 'access']) })
   .meta({ id: 'OtherEffect' })
 export const Effect = z
-  .union([StateEffect, OtherEffect])
+  .union([StateEffect, FinancialEffect, OtherEffect])
   .superRefine((e, ctx) => {
     if (e.reversibility === 'compensable' && !e.compensatedBy)
       ctx.addIssue({
@@ -344,6 +362,8 @@ export type AuthorizationRequirement = z.infer<typeof AuthorizationRequirement>
 export type ConfirmationRequirement = z.infer<typeof ConfirmationRequirement>
 export type Reversibility = z.infer<typeof Reversibility>
 export type StateEffect = z.infer<typeof StateEffect>
+export type Amount = z.infer<typeof Amount>
+export type FinancialEffect = z.infer<typeof FinancialEffect>
 export type OtherEffect = z.infer<typeof OtherEffect>
 export type Effect = z.infer<typeof Effect>
 export type Reference = z.infer<typeof Reference>
