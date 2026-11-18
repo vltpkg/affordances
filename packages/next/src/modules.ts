@@ -71,7 +71,7 @@ export const findModules = (root: string): { modules: string[]; diagnostics: Dia
 }
 
 // the app's tsconfig paths, for aliased imports (`@/x`), as Next resolves them
-const aliasesOf = (root: string): { prefix: string; targets: string[] }[] => {
+export const aliasesOf = (root: string): { prefix: string; targets: string[] }[] => {
   const file = path.join(root, 'tsconfig.json')
   if (!existsSync(file)) return []
   try {

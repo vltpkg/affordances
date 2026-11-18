@@ -113,6 +113,12 @@ export const CATALOG = {
       "A capability module uses import(), require, process, Date, Math.random, crypto, fetch or a timer, so the manifest would depend on the machine or the moment it's built on",
     fix: 'Write the value as a literal; a capability module is data',
   },
+  E_CAPABILITY_EVALUATION: {
+    severity: 'error',
+    means:
+      'A capability module threw while it was evaluated, or the evaluation itself failed, so there is no manifest',
+    fix: 'Fix the error the detail names; a capability module is data, so it needs nothing that can fail at import',
+  },
   E_CAPABILITY_NONDETERMINISTIC: {
     severity: 'error',
     means:

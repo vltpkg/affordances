@@ -178,6 +178,7 @@ These are never extracted, because code doesn't state them. Each one missing is 
 | `E_CAPABILITY_IMPORT`           | a capability module imports application code                                                                                                      |
 | `E_CAPABILITY_SYNTAX`           | a capability module or slice uses syntax Node can't erase (an `enum`, a `namespace`)                                                              |
 | `E_CAPABILITY_AMBIENT`          | a capability module uses a dynamic `import()`, `require`, `process`, `Date`, `Math.random`, `crypto`, `fetch` or a timer                          |
+| `E_CAPABILITY_EVALUATION`       | a capability module throws while it's evaluated, or the evaluation itself fails; the detail names the error                  |
 | `E_CAPABILITY_NONDETERMINISTIC` | two evaluations, in fresh processes with an empty environment, give different manifests                                                           |
 | `E_CAPABILITY_DUPLICATE`        | two capability modules define one id differently                                                                                                  |
 | `E_CAPABILITY_MANIFEST`         | a definition exported beside a `defineManifest` export that doesn't hold it                                                                       |
