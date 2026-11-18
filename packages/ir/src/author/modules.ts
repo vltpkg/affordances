@@ -57,7 +57,12 @@ const withoutProvenance = (value: object) => {
 export const fromModules = (
   modules: readonly CapabilityModule[],
   identity: ModuleIdentity,
-): { manifest?: CapabilityManifest; diagnostics: ModuleDiagnostic[] } => {
+): {
+  manifest?: CapabilityManifest
+  diagnostics: ModuleDiagnostic[]
+  // set when nothing was built only because no namespace is configured, so a caller can't read silence as success
+  reason?: 'no-namespace'
+} => {
   const diagnostics: ModuleDiagnostic[] = []
   // a module's exports are all that's read; one value exported twice, or re-exported, is one value
   const seen = new Set<unknown>()
@@ -160,8 +165,8 @@ export const fromModules = (
   // the namespace is the app's identity, so it's never inferred: without one there's no manifest (RFC 0005 §1). The
   // modules are still checked, so their errors show before a namespace is set. W_NO_NAMESPACE is the caller's to report,
   // once, with the line that turns the manifest on (withAffordances)
-  if (!identity.namespace || diagnostics.some((d) => d.code.startsWith('E_')))
-    return { diagnostics }
+  if (diagnostics.some((d) => d.code.startsWith('E_'))) return { diagnostics }
+  if (!identity.namespace) return { diagnostics, reason: 'no-namespace' }
 
   const spec: ManifestSpec = {
     namespace: identity.namespace,

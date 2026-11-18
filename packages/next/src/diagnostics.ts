@@ -145,7 +145,7 @@ export const CATALOG = {
 
 // a code the catalog doesn't hold, relayed from the IR: its prefix says its severity, and its own message says the rest
 const entryOf = (code: Diagnostic['code']): Entry =>
-  code in CATALOG
+  Object.hasOwn(CATALOG, code)
     ? CATALOG[code as DiagnosticCode]
     : { severity: code.startsWith('E_') ? 'error' : 'warning', means: '', fix: '' }
 

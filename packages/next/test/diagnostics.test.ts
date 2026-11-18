@@ -120,4 +120,9 @@ test('a code the catalog doesn’t hold, relayed from the IR, is formatted from 
   )
   expect(fails('E_PATH')).toBe(true)
   expect(fails('W_SOMETHING_NEW', true)).toBe(false)
+  // an inherited key isn't a catalog entry
+  expect(fails('E_toString' as never)).toBe(true)
+  expect(format({ code: 'W_constructor' as never, file: 'a.ts', message: 'm' })).toBe(
+    'a.ts warning W_constructor: m.',
+  )
 })

@@ -210,8 +210,10 @@ test('without a namespace nothing is built, and the modules are still checked; W
     owner,
   })
   expect(result.manifest).toBeUndefined()
-  // reported once, by withAffordances, with the line to paste; not again here (M5 boundary review, #10)
+  // reported once, by withAffordances, with the line to paste; not again here (M5 boundary review, #10). The reason
+  // says why nothing was built, so a caller can't read the silence as success
   expect(result.diagnostics).toEqual([])
+  expect(result.reason).toBe('no-namespace')
 
   // a module's own errors show before a namespace is set, not only after
   const other = defineResource({ id: 'hosting.plan', description: 'Another plan', key: 'slug' })
@@ -223,6 +225,8 @@ test('without a namespace nothing is built, and the modules are still checked; W
     {},
   )
   expect(broken.manifest).toBeUndefined()
+  // the modules' own errors are the reason here
+  expect(broken.reason).toBeUndefined()
   expect(broken.diagnostics.map((d) => d.code).toSorted()).toEqual([
     'E_CAPABILITY_DUPLICATE',
     'E_CLAIMS_NO_OWNER',
