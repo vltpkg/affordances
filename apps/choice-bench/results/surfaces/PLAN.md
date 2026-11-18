@@ -1,6 +1,6 @@
 # M7f: the six-surface comparison, the plan
 
-**Status:** DRAFT (design, 2026-11-18), updated to intake's ruling (09:20Z). Nothing here has run. This plan, the analysis code and the preflight are committed before any trial. Its method is RFC 0003, as amended, with §12's surfaces and §16's lesson for condition construction.
+**Status:** DRAFT (design, 2026-11-18), updated to intake's rulings (09:20Z and 09:26Z). Nothing here has run. This plan, the analysis code and the preflight are committed before any trial. Its method is RFC 0003, as amended, with §12's surfaces and §16's lesson for condition construction.
 
 ## 1. The question
 
@@ -44,23 +44,29 @@ Everything else is byte-identical across the six, and the preflight refuses a ru
 
 **The confirmatory four** (intake, 09:20Z), each on the same hosting-lab app:
 
-| id            | surface                           | the agent's tools                                                                                                                                                                                                                                            | approval                                                                                                                                               |
-| ------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `full`        | protocol 1, the full graph        | the four tools, policy `exhaustive`, with §6.6's comparison                                                                                                                                                                                                  | the approval token                                                                                                                                     |
-| `progressive` | protocol 1, the progressive graph | the four tools, policy `progressive`, with §6.6's comparison                                                                                                                                                                                                 | the approval token                                                                                                                                     |
-| `v0`          | Affordances v0                    | packages/mcp's existing v0 tools, `affordances_open` and `affordances_call`, over the app's SiteIndex. Every capability must be a v0 action on a page, which the parity walk checks                                                                          | a `confirm: true` resend                                                                                                                               |
-| `browser`     | browser automation                | choice-bench's own small MCP server over Playwright, which is already a devDependency, so nothing new. Its tools are fixed: `open(url)`, `snapshot()` (the accessibility tree as text, with element refs), `click(ref)`, `fill(ref, text)` and `submit(ref)` | none: the app's pages have no confirmation step, so the submit is the purchase. That's part of the surface, and the `browser` contrast is read with it |
+| id            | surface                           | the agent's tools                                                                                                                                                                                                                                            | approval                                                     |
+| ------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| `full`        | protocol 1, the full graph        | the four tools, policy `exhaustive`, with §6.6's comparison                                                                                                                                                                                                  | the approval token                                           |
+| `progressive` | protocol 1, the progressive graph | the four tools, policy `progressive`, with §6.6's comparison                                                                                                                                                                                                 | the approval token                                           |
+| `v0`          | Affordances v0                    | packages/mcp's existing v0 tools, `affordances_open` and `affordances_call`, over the app's SiteIndex. Every capability must be a v0 action on a page, which the parity walk checks                                                                          | a `confirm: true` resend                                     |
+| `browser`     | browser automation                | choice-bench's own small MCP server over Playwright, which is already a devDependency, so nothing new. Its tools are fixed: `open(url)`, `snapshot()` (the accessibility tree as text, with element refs), `click(ref)`, `fill(ref, text)` and `submit(ref)` | the confirm click on the review-and-confirm page (§3, below) |
 
 **Pilot only:** MCP and WebMCP. They're described, not estimated, and their confirmatory comparison is a later round.
 
 **The browser cell's server:** hosting-lab's production build, from the pinned export, with one server per worker on its own port. Each trial gets a fresh session cookie, since the store is per session. The outcome is read through the trial's own session (`project.read` over the API with its bearer), never through the inspector, which stays off.
 
-**Two questions for intake, before the final form:**
+**The review-and-confirm page** (intake, 09:26Z). The new M7f export gives hosting-lab's purchase flow a review step before any charge, so every surface has a request event short of completion. It's design's work, after the boundary fixes, with e2e tests.
 
-1. **Which MCP?** RFC 0003 §12's surface is one tool per capability, with no relations or claims. RFC 0004 §4's default is the generic four tools, with elicitation by the server. This draft assumes RFC 0004's, since it's the shipped surface.
-   - **If it's the per-capability export,** a consequential tool returns the summary and an approval token, and the agent re-calls with `approval`, as the four tools do (backend). Otherwise it would differ in two factors, not one.
-   - **Targeted tools** take the target's key in the input (`targetAt`).
-2. **The advocated graph** (M5's C) isn't in the ruling. This draft leaves it out of both the pilot and the confirmatory run.
+- **What it shows:** the capability's own confirmation summary, the same text the API surfaces return, with every charge, and the effective input rendered the same way.
+  - A test checks that the page's text equals the runtime's summary for every consequential capability and input the tasks use.
+- **What doesn't change:** v0's and the API's behaviour, and the manifest. The digest test guards the manifest.
+
+**MCP, in the pilot,** is RFC 0004 §4's generic MCP, with the approval elicited by the server.
+
+- **What the pilot records:** how `claude -p` handles elicitation non-interactively (declined, unsupported, or other).
+- **If elicitation can't complete,** MCP reports the intended measure only. That's stated as a harness limit, not as the surface's.
+
+**There's no advocated cell,** in the pilot or the confirmatory run (intake, 09:26Z). §6.6's fix is checked by M7a's deterministic test instead.
 
 ## 4. Budget, and the pilot
 
@@ -76,17 +82,17 @@ Everything else is byte-identical across the six, and the preflight refuses a ru
 - **The request event, per surface.** It sets a trial's intended end state: the first request that applies wins (RFC 0003 §5.2).
   - **`full` and `progressive`:** an `execute` that's refused for confirmation, or that runs.
   - **`v0`:** the first consequential call, whether `confirm` is required or the call runs, and its `confirm: true` resend.
-  - **`browser`:** a submit. The app's pages have no confirmation step, so a submit is always a completion.
+  - **`browser`:** the first load of the review-and-confirm page carrying a selection, and the confirm click.
   - **MCP and WebMCP (pilot):** the surface's own consequential call, or its elicited approval.
-- **The two measures, on every surface:**
-  - **intended:** the intended end state is optimal;
-  - **completed:** the end state read from the app's store is optimal.
-  - On `browser`, they coincide.
-- **The primary outcome, per contrast:** the strongest measure both arms can express. (This is design's proposal, for intake: it's decided before any trial, since the contrasts depend on it.)
-  - **`full` against `v0`, and `progressive` against `full`:** intended, as in M5. Both arms have a request event short of completion.
-  - **`full` against `browser`:** completed. The browser can only give completed states, and scoring `full` as intended would compare "asked for" with "bought". In M5, A on Haiku was 43/114 intended and 0/114 completed.
-  - **The other measure** is reported beside the primary, for every contrast and surface.
-  - **The alternative,** completed for all three, would floor Haiku on every API surface, and turn two contrasts into measures of the approval mechanics.
+- **One rule everywhere** (intake, 09:26Z):
+  - **the primary outcome:** the intended end state is optimal;
+  - **beside it, on every surface:** completed, the end state read from the app's store is optimal.
+- **The fallback, and its check,** fixed before the pilot.
+  - **When it applies:** only if the pilot shows the review page distorting the browser arm. Then each contrast's primary becomes the strongest measure both arms can express: completed for `full` against `browser`, and intended for the others.
+  - **The check:** the unconfirmed-request rate, the share of trials with a request event but no completed purchase. It's compared between `browser` and `full`, pooled over both models, with 10 trials per arm in the pilot.
+  - **The threshold:** an absolute difference of 40 points or more, 4 of 10, triggers the fallback.
+    - With 10 trials per arm, the check can only catch a gross distortion, such as agents stalling at the review page at a different rate. The threshold is set to that, so noise alone rarely triggers it.
+    - A stall caused by the harness, such as a confirm button the driver can't find, is a harness failure: it's fixed and the trials re-run, and it isn't counted toward the check.
 - **The three contrasts, fixed now:**
   1. `full` against `v0`;
   2. `full` against `browser`;
@@ -102,7 +108,7 @@ Everything else is byte-identical across the six, and the preflight refuses a ru
   - median tokens, excluding cache reads, with a bootstrap percentile interval, 10,000 resamples and a fixed seed recorded in the code;
   - tool calls, and latency (wall time per trial), as medians with the same interval;
   - the consequential-error rate, with a Wilson interval. A trial has a consequential error when any request event (above) would produce a state that satisfies no reading of T6, by `tasks.ts`'s readings, or when any call is refused as `unauthorized` (RFC 0003 §6's definition, applied per surface).
-    - **How it's read:** the request events come from the trace, and their resulting states from the labeller's dry run, as for the outcome. On `browser`, from the store after each submit.
+    - **How it's read:** the request events come from the trace, and their resulting states from the labeller's dry run, as for the outcome. On `browser`, the selection carried by each review-page load is labelled the same way.
 - **Also descriptive:**
   - the text-stated rate (an upper bound, as in M5's audit);
   - completed purchases;
@@ -123,4 +129,4 @@ Everything else is byte-identical across the six, and the preflight refuses a ru
 1. **Committed first:** this plan in final form, the analysis code, and the preflight. The preflight proves the conditions differ ONLY in the surface (§2): byte-identity outside each surface's tool layer, plus the parity walk.
 2. **Agreed with backend (09:21Z):** the browser driver, the v0 tools, the parity oracle and the preflight's checks. Backend builds the drivers and the export after M6, the boundary fixes and M7a, in intake's order. The WebMCP driver is still to agree.
 3. **The new export,** with §6.6 built (M7a), named by its commit.
-4. **Intake's answers** to §3's two questions.
+4. **The review-and-confirm page** (§3), built and tested, on the export the run uses.
