@@ -2720,7 +2720,8 @@
       },
       "traceMismatches": 0,
       "spawned": 0,
-      "fixture": "add-on price not disclosed (fixture disclosure gap, design 2026-11-18): no tool response gave the add-on's price. hosting.addOn.add and .remove took the add-on as an unbound input reference, so their confirmation summary rendered 'unknown', and no capability listed add-on prices. Re-run after hosting-lab's fix (the manifest digest changes). On T3 the optimum (Pro Plus) turns on Pro Plus against Pro with the add-on, whose price could be inferred only from the bundle's saving claim, so T3's ceiling may have come from the price gap."
+      "fixture": "add-on price not disclosed (fixture disclosure gap, design 2026-11-18): no tool response gave the add-on's price. hosting.addOn.add and .remove took the add-on as an unbound input reference, so their confirmation summary rendered 'unknown', and no capability listed add-on prices. Re-run after hosting-lab's fix (the manifest digest changes). On T3 the optimum (Pro Plus) turns on Pro Plus against Pro with the add-on, whose price could be inferred only from the bundle's saving claim, so T3's ceiling may have come from the price gap.",
+      "context": "foreign instructions in context: the user's global ~/.codex/AGENTS.md (version-control rules), which codex exec loads even with --ignore-user-config. A Codex diagnostic configured as a trial, and its control outside the repo, both reported it. It's not a demand characteristic (there was no git status or commit block, and nothing named the benchmark), but these cells aren't clean (intake, 2026-11-18)"
     },
     {
       "cell": "C T3 gpt-6.1-terra",
@@ -2853,7 +2854,8 @@
       },
       "traceMismatches": 0,
       "spawned": 0,
-      "fixture": "add-on price not disclosed (fixture disclosure gap, design 2026-11-18): no tool response gave the add-on's price. hosting.addOn.add and .remove took the add-on as an unbound input reference, so their confirmation summary rendered 'unknown', and no capability listed add-on prices. Re-run after hosting-lab's fix (the manifest digest changes). On T3 the optimum (Pro Plus) turns on Pro Plus against Pro with the add-on, whose price could be inferred only from the bundle's saving claim, so T3's ceiling may have come from the price gap."
+      "fixture": "add-on price not disclosed (fixture disclosure gap, design 2026-11-18): no tool response gave the add-on's price. hosting.addOn.add and .remove took the add-on as an unbound input reference, so their confirmation summary rendered 'unknown', and no capability listed add-on prices. Re-run after hosting-lab's fix (the manifest digest changes). On T3 the optimum (Pro Plus) turns on Pro Plus against Pro with the add-on, whose price could be inferred only from the bundle's saving claim, so T3's ceiling may have come from the price gap.",
+      "context": "foreign instructions in context: the user's global ~/.codex/AGENTS.md (version-control rules), which codex exec loads even with --ignore-user-config. A Codex diagnostic configured as a trial, and its control outside the repo, both reported it. It's not a demand characteristic (there was no git status or commit block, and nothing named the benchmark), but these cells aren't clean (intake, 2026-11-18)"
     },
     {
       "cell": "S T3 gpt-6.1-terra",
@@ -2986,7 +2988,8 @@
       },
       "traceMismatches": 0,
       "spawned": 0,
-      "fixture": "add-on price not disclosed (fixture disclosure gap, design 2026-11-18): no tool response gave the add-on's price. hosting.addOn.add and .remove took the add-on as an unbound input reference, so their confirmation summary rendered 'unknown', and no capability listed add-on prices. Re-run after hosting-lab's fix (the manifest digest changes). On T3 the optimum (Pro Plus) turns on Pro Plus against Pro with the add-on, whose price could be inferred only from the bundle's saving claim, so T3's ceiling may have come from the price gap."
+      "fixture": "add-on price not disclosed (fixture disclosure gap, design 2026-11-18): no tool response gave the add-on's price. hosting.addOn.add and .remove took the add-on as an unbound input reference, so their confirmation summary rendered 'unknown', and no capability listed add-on prices. Re-run after hosting-lab's fix (the manifest digest changes). On T3 the optimum (Pro Plus) turns on Pro Plus against Pro with the add-on, whose price could be inferred only from the bundle's saving claim, so T3's ceiling may have come from the price gap.",
+      "context": "foreign instructions in context: the user's global ~/.codex/AGENTS.md (version-control rules), which codex exec loads even with --ignore-user-config. A Codex diagnostic configured as a trial, and its control outside the repo, both reported it. It's not a demand characteristic (there was no git status or commit block, and nothing named the benchmark), but these cells aren't clean (intake, 2026-11-18)"
     }
   ],
   "conditions": [
@@ -4075,7 +4078,7 @@
   "validity": {
     "cleanMeasurementCells": 0,
     "defects": [
-      "context contamination: the Claude trials received the seat memory index and a git block (void, 95 trials)",
+      "context contamination: the Claude trials received the seat memory index and a git block (void, 95 trials); the Codex trials received the user's global AGENTS.md (foreign version-control instructions, not voiding)",
       "the add-on's price was never disclosed (every cell, every model, the 15 Codex cells included)",
       "the resume hole: a stale server record could be scored on a rerun (no trial affected; fix to review)"
     ],

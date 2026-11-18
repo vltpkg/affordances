@@ -1,0 +1,20 @@
+# Codex context diagnostic: a factual summary (intake, 2026-11-18)
+
+## The calls
+
+- **What:** `codex exec -m gpt-6.1-terra`, configured exactly as a pilot trial, with the driver's flags, including `--ignore-user-config`. One ran in-repo, with its cwd in a fresh directory under `apps/choice-bench/results/`. The control ran from an empty directory outside the repo.
+- **Not trials:** neither was scored, and neither is counted among the 110.
+- **Codex wouldn't quote its context verbatim.** So each was asked a second time, not for quotes: did it receive any AGENTS.md or user instructions, and any environment, working-directory or git information? For each, answer yes or no and list its section headings and rule topics.
+
+## What both reported
+
+- **AGENTS.md instructions: yes.** Three sections, all about version control and commit practice: using GitButler, amending local fixes, and splitting unrelated changes. They match the user's global `~/.codex/AGENTS.md`, which Codex loads from its home directory even with `--ignore-user-config`. The repo has no AGENTS.md. Its content isn't copied here.
+- **Environment information: yes.** The working directory, shell, date and filesystem permissions.
+- **Git status, history or commit subjects: no.** Both said no repository status or history was provided.
+- **Nothing named the hosting plans, prices, tasks or the benchmark.**
+
+## Reading
+
+- **The pilot's 15 Codex trials had foreign instructions in context:** version-control rules, not task information.
+- **It's not the demand characteristic that voided the Claude cells,** since there was no commit block, but the cells aren't clean. They're labelled so in `report.json`, and they also carry the add-on price gap.
+- **From calibration on:** each trial gets a throwaway `CODEX_HOME` holding only the auth file and the bench's config, so no global AGENTS.md can load. A preflight canary checks it.

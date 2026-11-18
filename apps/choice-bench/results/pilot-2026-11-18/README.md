@@ -6,7 +6,7 @@ RFC 0003 §8's pilot: 110 trials, run by `node src/run.ts pilot` at `ejkorol/sem
 
 **The pilot has no clean measurement cells.** It found 3 validity defects before any confirmatory trial:
 
-1. **Context contamination:** the Claude trials are void (below).
+1. **Context contamination:** the Claude trials are void (below). The Codex trials received the user's global `AGENTS.md` (version-control rules), which is foreign context but not a demand characteristic; see `diagnostic/codex.txt`.
 2. **The add-on's price was never disclosed,** in every cell and on every model, the 15 Codex cells included. No tool response gave it: `hosting.addOn.add` and `.remove` took the add-on as an unbound input reference, so their summary read "unknown", and nothing listed add-on prices.
    - **T1 (F, G):** invalid in full.
    - **T3:** Pro Plus against Pro with the add-on could be priced only from the bundle's saving claim, so T3's ceiling may have come from the price gap.
@@ -14,7 +14,7 @@ RFC 0003 §8's pilot: 110 trials, run by `node src/run.ts pilot` at `ejkorol/sem
 3. **The resume hole** (review of 4893655c): a stale server record could have been scored on a rerun. No trial was affected, and the fix goes to review.
 
 - **The 95 Claude trials are void** (intake, 2026-11-18 01:13Z), because their context may have been contaminated. That's every Sonnet, Haiku and Opus cell. See "Context contamination" below.
-- **The 15 Codex trials stand on contamination,** but carry the price-gap label: gpt-6.1-terra on A, C and S, task T3, 5 each.
+- **The 15 Codex trials aren't void, and they aren't clean** (gpt-6.1-terra on A, C and S, task T3, 5 each). They carry two labels: 'context: the user's global AGENTS.md (version-control rules)', and 'add-on price not disclosed'.
 - `report.json`'s per-condition rows pool both drivers, so they're void too. Use the Codex cells.
 
 ## Files
@@ -23,6 +23,7 @@ RFC 0003 §8's pilot: 110 trials, run by `node src/run.ts pilot` at `ejkorol/sem
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `report.json`       | The report: per cell (condition, task, model), and per condition. Void cells are marked `void`, with the reason. `traces` gives the raw traces' sha256                                                   |
 | `interruption.json` | The first launch's interruption, the resume, the resume hole review found, and the mid-run memory write                                                                                                  |
+| `diagnostic/`       | `in-repo.txt`, `control.txt` and `codex.txt`: the context diagnostics, as factual summaries                                                                                                              |
 | `traces.tar.gz`     | The raw traces, unedited: each trial's `.jsonl` trace (RFC 0003 §9), `.config.json`, `.server.json`, and the CLI's raw output. sha256 `b11d89db73c598fada89ff3fac99fcb3f44458e8e2119f44de13fb766afadf4d` |
 
 ## The run
@@ -66,3 +67,11 @@ The Codex cells (gpt-6.1-terra, T3), from `report.json`:
 | S    | 5/5     | 12,993        | 9            | 19.8 s         |
 
 All 15 trials chose Pro Plus, the optimum, and none completed an approved re-execution. T3 is at ceiling for this model, which may have come from the price gap.
+
+## What is and isn't edited
+
+- **`traces.tar.gz` holds the raw traces, unedited.** They contain absolute local paths (the trials' working directories, and the CLI's memory path) and CLI session ids. They hold no credentials, no email address and no downstream names; intake checked.
+- **Only the diagnostics are edited:**
+  - `diagnostic/in-repo.txt` and `diagnostic/codex.txt` are factual summaries in place of verbatim outputs.
+  - `diagnostic/control.txt` is redacted, with each redaction marked.
+  - The verbatim outputs stay off the repo; their sha256s are above.
