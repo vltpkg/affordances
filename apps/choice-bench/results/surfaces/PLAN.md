@@ -148,7 +148,7 @@ Everything else is byte-identical across the six, and the preflight refuses a ru
 - **Also descriptive:**
   - the text-stated rate (an upper bound, as in M5's audit);
   - completed purchases;
-  - the information path: whether Pro's allowance was seen before the first approval request, and what each surface's first response carried.
+  - the information path: whether Pro's allowance was seen before the first approval request (`proAllowanceSeen`: some tool result before the first request event holds Pro's `bandwidthGb`, as the parity walk's matcher finds it, per surface), and what each surface's first response carried.
 - **What isn't claimed:** a mechanism. Any reading of why a surface differs is labelled a hypothesis for a later pre-registered run, as in M5's §4.2.
 
 ## 6. Integrity, as in M5

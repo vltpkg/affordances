@@ -66,7 +66,9 @@ def load(trace_dir):
             'calls': met.get('calls') if met else None,
             'durationMs': met.get('durationMs') if met else None,
             'consequentialError': bool(met and met.get('consequentialError')),
-            'exposedOptimum': bool(met and met.get('exposedOptimum')),
+            # §5's information path: Pro's allowance seen before the first request event, as the parity oracle's
+            # matcher finds it (backend, 14:57Z). None where the trace doesn't record it, never read as False
+            'proAllowanceSeen': met.get('proAllowanceSeen') if met else None,
             # the browser's, from the harness when it records them (§5's browsing rule); None where it doesn't
             'browsingLoad': met.get('browsingLoad') if met else None,
             'optimalConfirmLoad': met.get('optimalConfirmLoad') if met else None,
@@ -153,7 +155,7 @@ def per_cell(rows, surfaces, rnd):
                 'intendedOptimal': rate(c, 'optimal'),
                 'completedOptimal': rate(c, 'completedOptimal'),
                 'consequentialError': rate(c, 'consequentialError'),
-                'exposedOptimum': rate(c, 'exposedOptimum'),
+                'proAllowanceSeen': rate([r for r in c if r['proAllowanceSeen'] is not None], 'proAllowanceSeen'),
                 'tokens': median_ci([r['tokens'] for r in c], rnd),
                 'calls': median_ci([r['calls'] for r in c], rnd),
                 'durationMs': median_ci([r['durationMs'] for r in c], rnd),
@@ -269,7 +271,7 @@ def selftest():
     def row(surface, model, optimal, **kw):
         base = {'id': None, 'surface': surface, 'model': model, 'end': 'final', 'optimal': optimal,
                 'completedOptimal': optimal, 'unconfirmed': False, 'tokens': 1000, 'calls': 5, 'durationMs': 60000,
-                'consequentialError': False, 'exposedOptimum': True, 'browsingLoad': False,
+                'consequentialError': False, 'proAllowanceSeen': True, 'browsingLoad': False,
                 'optimalConfirmLoad': optimal}
         base.update(kw)
         return base
@@ -352,13 +354,14 @@ def selftest():
                       {'kind': 'end', 'end': 'final'},
                       {'kind': 'metrics', 'optimal': True, 'endOptimal': False, 'choseNone': False,
                        'completed': False, 'tokens': 1234, 'calls': 7, 'durationMs': 5000,
-                       'consequentialError': False, 'exposedOptimum': True}):
+                       'consequentialError': False, 'proAllowanceSeen': True}):
                 f.write(json.dumps(l) + '\n')
         os.makedirs(os.path.join(d, 'interrupted', 'x'))
         with open(os.path.join(d, 'interrupted', 'x', 't2.fault.json'), 'w') as f:
             json.dump({'kind': 'cross-check', 'detail': '', 'spec': {'surface': 'v0', 'model': MODELS[1]}}, f)
         rows, faults = load(d)
         assert len(rows) == 1 and rows[0]['optimal'] and not rows[0]['completedOptimal'] and rows[0]['unconfirmed']
+        assert rows[0]['proAllowanceSeen'] is True
         assert rows[0]['browsingLoad'] is None and faults == [{'kind': 'cross-check', 'surface': 'v0',
                                                                'model': MODELS[1]}]
     print('selftest ok')
