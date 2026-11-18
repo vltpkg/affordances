@@ -20,11 +20,17 @@ export const REDACTED = '[email redacted]'
 
 export const archive = (results: string, tarball: string, email = userEmail()) => {
   const scan = emailScan(results, email)
+  // fails closed (review's boundary #6): a scan that couldn't check, because no address was readable, can't vouch
+  // that the traces hold none, so nothing is archived. Before any copy is made, so nothing is left behind
+  if (!email || !scan.checked)
+    throw new Error(
+      "the email scan couldn't check (no address to scan for), so no archive is written",
+    )
   // the copy is made beside the trials, never in /tmp
   const work = mkdtempSync(path.join(path.dirname(TRIALS_ROOT), 'archive-'))
   try {
     cpSync(results, work, { recursive: true })
-    if (email && scan.checked && scan.found)
+    if (scan.found)
       for (const rel of readdirSync(work, { recursive: true, encoding: 'utf8' })) {
         const file = path.join(work, rel)
         if (!statSync(file).isFile()) continue

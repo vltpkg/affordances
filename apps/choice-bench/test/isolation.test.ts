@@ -207,6 +207,19 @@ test('an archive redacts the user’s email, marked, and reports only counts; th
   expect(readFileSync(path.join(results, 'a.jsonl'), 'utf8')).toContain(fakeEmail)
 })
 
+// review's boundary #6 (2026-11-18): personal data overrides 'raw traces unedited', so an archive whose email scan
+// can't check is never written. It fails closed
+test('an archive whose email scan can’t check refuses, and writes nothing', async () => {
+  const { archive } = await import('../src/archive.ts')
+  const { existsSync } = await import('node:fs')
+  const results = mkdtempSync(path.join(scratch, 'archive-unchecked-'))
+  writeFileSync(path.join(results, 'a.jsonl'), '{"note":"anything"}\n')
+  const tarball = path.join(scratch, 'unchecked.tar.gz')
+  // an empty address can't be scanned for, as when no git email is readable
+  expect(() => archive(results, tarball, '')).toThrow(/email scan couldn't check/)
+  expect(existsSync(tarball)).toBe(false)
+})
+
 test('login status reads both streams, and Not logged in never counts', async () => {
   const { readLogins } = await import('../src/drivers/isolation.ts')
   const ok = { code: 0, stdout: JSON.stringify({ loggedIn: true }), stderr: '' }
