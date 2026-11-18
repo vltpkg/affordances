@@ -73,6 +73,11 @@ Optimal over trials, by start load (cuts at 31.75 and 43.45):
 
 ## Descriptive
 
+- **The outcome is the intended end state** ([`PLAN.md`](PLAN.md): the share of trials whose choice is optimal, where the choice is the intended end state, RFC 0003 §5.2). It isn't a completed purchase.
+  - **Trials that completed the purchase** (`metrics.completed`):
+    - Sonnet: 102/114 in A, 93/114 in C, 100/114 in S;
+    - Haiku: 0/114 in A, 1/114 in C, 0/114 in S.
+  - So "Haiku, S 46/114" counts 46 trials whose intended end state was optimal, not 46 purchases.
 - **Business, the option the owner's claim advocates, was chosen in 0 of the 684 trials.**
 - **Mechanism: held.** Intake holds any claim about why C is lower until a post-hoc audit of the traces is in. That audit is under `audit/`, labelled post hoc and descriptive, and it changes no number above.
 
