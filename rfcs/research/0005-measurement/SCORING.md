@@ -34,7 +34,7 @@ The form an app has before it adopts capabilities (RFC 0005 §7). Each bound `de
 - **Kept as written:** `name`, `run`, `state`, `effects` (v0's delta keys) and `message`.
 - **No `id`:** the app hasn't adopted capabilities. Stage B's codemod supplies suggestions.
 - **`description`:** the capability's `description`, verbatim.
-- **`input`:** the capability's input schema, as the same zod expression, inline.
+- **`input`:** the capability's input schema, as the same zod expression, inline. A capability with no input gets `z.object({})`, since v0 requires an input.
 - **`expose`,** from the capability:
   - `confirm` if it requires confirmation;
   - otherwise `public` for `authorization.principal: 'any'`;
@@ -59,20 +59,20 @@ For each field:
 
 So a mismatch counts as both an FP and an FN. Precision is TP / (TP + FP), and recall is TP / (TP + FN), each computed over matched capabilities, per app and stage.
 
-| Field                   | A value                                            | Matches when                                                                                                                       |
-| ----------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| binding                 | (route, action)                                    | equal. Scored over all capabilities, as §4 says                                                                                    |
-| id                      | the capability id                                  | equal strings                                                                                                                      |
-| kind                    | `query` or `action`                                | equal                                                                                                                              |
-| input                   | the input JSON Schema                              | equal RFC 8785 bytes, after removing `$schema`. There is no other normalization, so any other difference is reported with its diff |
-| authorization           | `authorization.principal`                          | equal                                                                                                                              |
-| confirmation            | whether confirmation is required                   | equal booleans. The summary text is reported, not scored: v0's is generic by design (E6)                                           |
-| target                  | the target resource id                             | equal strings                                                                                                                      |
-| resource types and keys | each (id, key) pair in `resources`                 | equal pairs, as sets, per app. A key that matches under a different id is reported separately, not counted                         |
-| effects                 | each reference effect                              | none is extracted, by design (§2.2), so recall is counted, and precision is reported as n/a when nothing is extracted              |
-| preconditions           | each reference **declarative** precondition, by id | equal ids, declarative on both sides. Extracted guard preconditions, which are opaque, are counted and reported, not scored        |
-| claims                  | each reference claim                               | as effects                                                                                                                         |
-| relations               | each reference relation                            | as effects                                                                                                                         |
+| Field                   | A value                                            | Matches when                                                                                                                                                                                                                                                     |
+| ----------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| binding                 | (route, action)                                    | equal. Scored over all capabilities, as §4 says                                                                                                                                                                                                                  |
+| id                      | the capability id                                  | equal strings                                                                                                                                                                                                                                                    |
+| kind                    | `query` or `action`                                | equal                                                                                                                                                                                                                                                            |
+| input                   | the input JSON Schema                              | equal RFC 8785 bytes, after removing `$schema`. A reference with no input matches an extracted object schema with no properties and no `required` (v0 requires an input, §3). There is no other normalization, so any other difference is reported with its diff |
+| authorization           | `authorization.principal`                          | equal                                                                                                                                                                                                                                                            |
+| confirmation            | whether confirmation is required                   | equal booleans. The summary text is reported, not scored: v0's is generic by design (E6)                                                                                                                                                                         |
+| target                  | the target resource id                             | equal strings                                                                                                                                                                                                                                                    |
+| resource types and keys | each (id, key) pair in `resources`                 | equal pairs, as sets, per app. A key that matches under a different id is reported separately, not counted                                                                                                                                                       |
+| effects                 | each reference effect                              | none is extracted, by design (§2.2), so recall is counted, and precision is reported as n/a when nothing is extracted                                                                                                                                            |
+| preconditions           | each reference **declarative** precondition, by id | equal ids, declarative on both sides. Extracted guard preconditions, which are opaque, are counted and reported, not scored                                                                                                                                      |
+| claims                  | each reference claim                               | as effects                                                                                                                                                                                                                                                       |
+| relations               | each reference relation                            | as effects                                                                                                                                                                                                                                                       |
 
 ## 6. What's reported
 
