@@ -1,6 +1,6 @@
 # M7f: the six-surface comparison, the plan
 
-**Status:** FINAL (design, 2026-11-18), fixed before any trial; amended after the pilot and before the confirmatory run, see §8. It takes intake's rulings (09:20Z, 09:26Z, 14:24Z, 16:28Z and 16:33Z, and for §8, 18:37Z and 18:38Z), the planner's (14:10Z to 18:47Z) and the agreements with backend through 16:53Z. The pilot ran on 58535950 (`pilot-2026-11-18/`, its pin in `pilot-2026-11-18/pin.json`). The re-pilot and the confirmatory run haven't run, and run on a later pin, named in their own records. Its method is RFC 0003, as amended, with §12's surfaces and §16's lessons for condition construction and for pre-set decision rules.
+**Status:** FINAL (design, 2026-11-18), fixed before any trial; amended after the pilot and before the confirmatory run, see §8. It takes intake's rulings (09:20Z, 09:26Z, 14:24Z, 16:28Z and 16:33Z, and for §8, 18:37Z and 18:38Z), the planner's (14:10Z to 18:47Z) and the agreements with backend through 16:53Z. The pilot ran on 58535950 (`pilot-2026-11-18/`, its pin in `pilot-2026-11-18/pin.json`). The re-pilot ran on caf5a59e (`repilot-2026-11-18/`) and passed §8.3 on all four surfaces. The confirmatory run hasn't run, and runs on a later pin, named in its own record. Its method is RFC 0003, as amended, with §12's surfaces and §16's lessons for condition construction and for pre-set decision rules.
 
 ## 1. The question
 
