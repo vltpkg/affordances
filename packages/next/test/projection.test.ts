@@ -528,3 +528,54 @@ test('the generic tools’ input schemas and the route accept the same calls', a
     ])
   expect(await status(get('/inspect'))).toBe(400)
 })
+
+// simplify #12: an app's own runtime, served as it is, so the route and the app's other pages share one. Its keys are
+// the runtime's, so the route's own gate doesn't apply
+test('a route given the app’s runtime serves that runtime, and its gate is the runtime’s', async () => {
+  const { createRuntime } = await import('@affordances/runtime')
+  // the app's runtime over a manifest the route's options don't name, so the view says which one answered
+  const own = createRuntime({
+    manifest: { ...(routeOptions.manifest as object), title: 'The app’s own' } as never,
+    resources: routeOptions.resources,
+    handlers: {
+      'shop.cart.add': { run: async () => ({ added: 0 }), guards: { guard: () => true } },
+      'shop.cart.peek': { run: async () => ({ total: 0 }) },
+    },
+    approvalKeys: {
+      current: (await crypto.subtle.generateKey({ name: 'HMAC', hash: 'SHA-256' }, false, [
+        'sign',
+        'verify',
+      ])) as CryptoKey,
+    },
+    seenTokens: { claim: async () => true },
+  })
+  try {
+    vi.stubEnv('NODE_ENV', 'production')
+    // no approvalKey or seenTokens given to the route: the runtime has them
+    const served = createProjectionRoute({ ...routeOptions, runtime: own })
+    const theirs = (await (
+      await served.GET(
+        new Request('https://shop.test/api/projection?policy=exhaustive', { headers: signedIn }),
+      )
+    ).json()) as { revision: string }
+    const ownView = (
+      await own.project({
+        principal: { authenticated: true, subject: 'u1', attributes: {} },
+        policy: 'exhaustive',
+      })
+    ).view()
+    expect(theirs.revision).toBe(ownView.revision)
+    vi.stubEnv('NODE_ENV', 'test')
+    const made = (await (
+      await createProjectionRoute(routeOptions).GET(
+        new Request('https://shop.test/api/projection?policy=exhaustive', { headers: signedIn }),
+      )
+    ).json()) as { revision: string }
+    expect(made.revision).not.toBe(ownView.revision)
+    vi.stubEnv('NODE_ENV', 'production')
+    // without a runtime, the route's own gate still holds
+    expect(() => createProjectionRoute(routeOptions)).toThrow(/needs approvalKey and seenTokens/)
+  } finally {
+    vi.unstubAllEnvs()
+  }
+})

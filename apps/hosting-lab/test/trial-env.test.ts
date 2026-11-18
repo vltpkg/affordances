@@ -15,7 +15,8 @@ const probe = (env: Record<string, string>) =>
       '--input-type=module',
       '-e',
       [
-        "const { trialEnv } = await import('./src/lib/trial-env.ts')",
+        "const { trialEnv, forTrial } = await import('./src/lib/trial-env.ts')",
+        "const { manifest } = await import('./src/app/capabilities.ts')",
         "const store = await import('./src/lib/store.ts')",
         "const { runtime } = await import('./src/lib/runtime.ts')",
         'const claims = runtime.manifest.claims.map((c) => c.id).toSorted()',
@@ -24,7 +25,9 @@ const probe = (env: Record<string, string>) =>
         'const nobody = { authenticated: false, attributes: {} }',
         'const keys = await r.list(nobody)',
         'const plans = Object.fromEntries(await Promise.all(keys.map(async (k) => [(await r.load(k, nobody)).attributes.slug, k])))',
-        'console.log(JSON.stringify({ trialEnv, accounts: store.accountCount(), session: trialEnv?.session ? !!store.findAccount(trialEnv.session) : null, plans, claims }))',
+        // one manifest for the trial: every forTrial call and the app's runtime read the same object
+        'const oneManifest = forTrial(manifest) === forTrial(manifest) && runtime.manifest === forTrial(manifest)',
+        'console.log(JSON.stringify({ trialEnv, accounts: store.accountCount(), session: trialEnv?.session ? !!store.findAccount(trialEnv.session) : null, plans, claims, oneManifest }))',
       ].join('\n'),
     ],
     // only PATH and the case's own: no seat's environment, and no trial env unless the case sets it
@@ -61,6 +64,7 @@ test('set, once at boot: the plan-id order, the session’s account, and the tas
   expect(r.plans).toEqual({ hobby: 'p3', pro: 'p1', business: 'p2' })
   expect(r.claims).toContain('businessRecommended')
   expect(r.claims).not.toContain('proRecommended')
+  expect(r.oneManifest).toBe(true)
 })
 
 test('a plan order that isn’t one of p1, p2 and p3 refuses to start', () => {

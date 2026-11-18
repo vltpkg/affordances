@@ -46,6 +46,11 @@ export type ProjectionRouteOptions<Session = unknown> = {
   approvalKey?: CryptoKey
   seenTokens?: TokenStore
   /**
+   * @experimental The app's own runtime, served as it is, so the route and the app's other pages share one: its
+   * manifest, resolvers, handlers and approval keys are then the runtime's, and the options for them go unread
+   */
+  runtime?: RuntimeInstance
+  /**
    * Origins a cookie-authenticated POST may also come from, each compared exactly (scheme, host and port): for a
    * reverse proxy, or another host name the site is reached by. The request's own origin always counts. Forwarded
    * headers (X-Forwarded-Host, X-Forwarded-Proto) are never read, so a proxy's public origin is listed here
@@ -56,6 +61,7 @@ export type ProjectionRouteOptions<Session = unknown> = {
 // @affordances/runtime, next's optional peer: imported on the first request, so a missing peer is one error that
 // names it. Next's bundler resolves the import at build time, and its own error names the package too
 type Runtime = typeof import('@affordances/runtime')
+type RuntimeInstance = ReturnType<Runtime['createRuntime']>
 let loaded: Promise<Runtime> | undefined
 const loadRuntime = () =>
   (loaded ??= import('@affordances/runtime').catch((error: unknown) => {
@@ -244,7 +250,8 @@ export const createProjectionRoute = <Session = unknown>(
   const allowedOrigins: ReadonlySet<string> = new Set(options.allowedOrigins)
   // the runtime's approval gate (its approvalGate), kept here because the runtime is loaded only on the first request
   // and the gate holds when the route is made. A test holds the two texts equal
-  approvalGate('createProjectionRoute', options)
+  // a runtime the app made holds its own keys: createRuntime refused it without them, wherever a capability confirms
+  if (!options.runtime) approvalGate('createProjectionRoute', options)
   // made once, on the first request, as one promise, so concurrent first requests share one runtime and its approval
   // key: createRuntime finds the manifest's facts once (derive, edges, schemas)
   let made:
@@ -271,13 +278,15 @@ export const createProjectionRoute = <Session = unknown>(
       ALONG,
       decodeStart,
     } = await loadRuntime()
-    const rt = createRuntime({
-      manifest: options.manifest as never,
-      resources: options.resources,
-      handlers: options.handlers ?? handlersOf(options.bindings),
-      approvalKeys: { current: options.approvalKey ?? (await devApprovalKey()) },
-      seenTokens: options.seenTokens ?? memoryTokenStore(),
-    })
+    const rt =
+      options.runtime ??
+      createRuntime({
+        manifest: options.manifest as never,
+        resources: options.resources,
+        handlers: options.handlers ?? handlersOf(options.bindings),
+        approvalKeys: { current: options.approvalKey ?? (await devApprovalKey()) },
+        seenTokens: options.seenTokens ?? memoryTokenStore(),
+      })
     return {
       rt,
       statusOf,

@@ -3,7 +3,7 @@ import { manifest } from '../app/capabilities.ts'
 import { handlers } from './handlers.ts'
 import { principalOf } from './principal.ts'
 import { resolvers } from './resolvers.ts'
-import { approvals } from './runtime.ts'
+import { approvals, runtime } from './runtime.ts'
 import { forTrial } from './trial-env.ts'
 
 // what the agent-facing routes answer: RFC 0004 §2's protocol 1, through next's projection route (M7d: design's
@@ -20,6 +20,8 @@ const route = createProjectionRoute({
   principal: principalOf,
   approvalKey: approvals.key,
   seenTokens: approvals.seen,
+  // the app's one runtime, which the review page and v0's agent path use too, so every route reads the same
+  runtime,
 })
 
 // each operation by the path it's served at, the route telling them apart by their last segment

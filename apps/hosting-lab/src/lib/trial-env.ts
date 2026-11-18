@@ -51,7 +51,10 @@ const read = (): TrialEnv | null => {
   return out
 }
 
-const shared = globalThis as { hostingLabTrialEnv?: TrialEnv | null }
+const shared = globalThis as {
+  hostingLabTrialEnv?: TrialEnv | null
+  hostingLabTrialManifests?: WeakMap<object, object>
+}
 /** The trial's configuration, or null when the server isn't a trial's: read once, at the first module load. */
 export const trialEnv: TrialEnv | null =
   shared.hostingLabTrialEnv === undefined
@@ -65,5 +68,9 @@ export const forTrial = <
   m: M,
 ): M => {
   const edit = trialEnv?.task ? TASK_EDITS[trialEnv.task] : undefined
-  return (edit ? edit.apply(m) : m) as M
+  if (!edit) return m
+  // once per manifest, on globalThis like the store, so every route bundle and the runtime read the same object
+  const made = (shared.hostingLabTrialManifests ??= new WeakMap<object, object>())
+  if (!made.has(m)) made.set(m, edit.apply(m))
+  return made.get(m) as M
 }
