@@ -61,7 +61,7 @@ What's needed is a build step that reads what's already written, asks for only w
 - **`namespace`:** the manifest's namespace, and the prefix suggested ids take;
 - **`owner`:** the manifest's owner source, `{ id, name }`. Only the configured owner produces `declared` provenance (RFC 0001 §12.1, rule 3).
 
-A `defineManifest` export overrides both. Without either, the manifest's namespace falls back to `name`, and the owner is unset. That's a warning, `W_NO_OWNER`, since no field can then be `declared`.
+A `defineManifest` export overrides both. Without either, the manifest's namespace is inferred from `name` as an identifier ("Acme Store" gives `acmeStore`), and said to be inferred, and the owner is unset. That's a warning, `W_NO_OWNER`, since no field can then be `declared`.
 
 **Alternatives considered:**
 
