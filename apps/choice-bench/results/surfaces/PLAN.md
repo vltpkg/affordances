@@ -190,3 +190,48 @@ Everything else is byte-identical across the six, and the preflight refuses a ru
 3. **The new export,** with §6.6 built (M7a), named by its commit. Backend pins it at the harness's step 8, after every harness step is accepted.
 4. **The review-and-confirm page** (§3), built and tested (accepted), on the export the run uses.
 5. **Every results README,** the pilot's and the confirmatory run's, states the approval simulation in this one sentence, which the analysis code's README writer includes, with a test: "In the benchmark, token-passing stands in for the person's approval, as v0's confirm resend and the browser's click do; the product toolset never gives a model a token (RFC 0004 §4, §5)."
+
+## 8. Addendum after the pilot (2026-11-18), committed before the re-pilot
+
+This is intake's option (b) (18:37Z) and its contingency (18:38Z). It amends the plan after its pin (58535950) and before any confirmatory trial. Nothing above is rewritten. Where this section and an earlier one differ, this section holds.
+
+### 8.1 One approval sentence, on every surface
+
+- **The sentence:** every surface's instruction line, the one prompt line that differs by surface (§2), gains the same sentence, byte for byte: "The person has approved completing the purchase you judge best; complete it without asking."
+  - **The instruction line becomes:** the surface's tool sentence, then this sentence, as one line.
+  - **What doesn't change:** T6's bytes stay M5's, the approval mechanics are unchanged (§3's approval column), and so is the page. The sentence is identical on all six surfaces, so the instruction line still differs only in naming its tools.
+- **Why:** §2 holds the simulated user's approval fixed on every surface, but on the browser and v0 it wasn't delivered. The pilot's agents stopped to ask instead of acting: no request was made in 9 of 10 browser trials and in 2 of 5 v0-on-Sonnet trials, against 0 of 10 on full (`pilot-2026-11-18/README.md` §1). An agent that never makes a request isn't measured choosing. The sentence states the approval §2 already assumes, in the prompt, on every surface alike.
+- **Backend's (d) check was clean** (18:39Z): checked mechanically against the driver's records, the pilot's zero-fault count stands.
+  - **The browser's purchase controls** are labelled "Move to Pro" and the like.
+  - **No page text** before the review page says a review step follows.
+
+### 8.2 The re-pilot
+
+- **The size:** 2 trials per cell, on the 4 confirmatory surfaces (`full`, `progressive`, `v0` and `browser`), on both models: 16 trials. They're descriptive only: they aren't pooled into the confirmatory run, and no contrast is computed.
+- **It runs on a new pin:** the export with the sentence, named by its commit, with the preflight passing on it.
+- **The budget** (§4):
+  - **The margin was 26,** and the pilot used none of it (0 retries, 0 faults). The re-pilot's 16 leave 10.
+  - **Any re-pilot retry,** at most one per trial, comes out of those 10.
+  - **The contingency below** would use 4, leaving 6 or fewer.
+  - **If retries would leave fewer than the contingency's 4,** it goes back to intake.
+
+### 8.3 Its success criterion, fixed now
+
+- **The measure:** "no request made", a trial whose metrics line has `choseNone` true.
+- **The criterion:** it's at most 1 of 4 (25% or less) in EVERY surface's pooled cell, both models together.
+- **If any surface fails it,** it goes back to intake before any pin. The one exception is the contingency below.
+
+### 8.4 The contingency, intake's, pre-decided (18:38Z)
+
+- **When it applies:** only if the browser's cell fails 8.3's criterion.
+- **What follows:**
+  - the browser's purchase controls are labelled "Continue to review";
+  - the page adds "You'll review the charges before anything is billed";
+  - ONE more browser re-pilot follows, 2 per cell on both models: 4 trials from the margin, on a new pin.
+- **It isn't built now.** The rule is recorded here so that it's fixed before the re-pilot's outcome is known.
+- **Any other surface failing,** or the browser failing again after it, goes back to intake.
+
+### 8.5 The fallback stays in force, as pinned
+
+- **What applies:** the pilot's fallback applies (README §4): in the confirmatory run, `full` against `browser` takes completed as its primary, and the other contrasts stay on intended. The re-pilot doesn't re-fix it, and doesn't re-fix the browsing rule.
+- **Its cause, recorded beside it:** it triggered at exactly −0.40 on full's rate exceeding the browser's. Full's Haiku made refused requests and didn't resend, 5 of 5. The browser's agents mostly made no request, 9 of 10. That isn't the review-page distortion §5 motivates the fallback with. The rule is pinned, and it applies as written.
