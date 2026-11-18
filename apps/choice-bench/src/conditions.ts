@@ -9,8 +9,9 @@ import { builtInPolicies, type DiscoveryPolicy, type Handler } from '@affordance
 export type ConditionId = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'S' | 'C-full-scope' | 'A-scope'
 
 // what a condition varies against A (RFC 0003's lesson for condition construction, intake 2026-11-18): the preflight
-// refuses a condition whose first view's offer set differs from A's unless it declares scope or start, so a factor
-// can't ride in undeclared, as the advocated policy's scope did in C
+// refuses a condition whose first view's offer set differs from its control's, which is A with only the scope and
+// start the condition declares (offerset.ts), so a factor can't ride in undeclared, as the advocated policy's scope did
+// in C
 export type Factor = 'claims' | 'order' | 'relevance' | 'scope' | 'start' | 'nesting' | 'edit'
 
 export type Condition = {
