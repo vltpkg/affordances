@@ -453,8 +453,27 @@ const placeholder = (schema: Schemaish | undefined): unknown => {
     required.map((k) => [k, placeholder(schema?.properties?.[k] as Schemaish | undefined)]),
   )
 }
-const fit = (value: unknown, schema: unknown): unknown => {
+const kindOf = (v: unknown) =>
+  v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v === 'object' ? 'object' : typeof v
+const fits = (kind: string, type: string) =>
+  kind === type ||
+  (type === 'integer' && kind === 'number') ||
+  (type === 'number' && kind === 'number')
+// a value of the declared type for a leaf the search gave another type: a search's fresh value only had to be some
+// other value, and a resolver's attributes must fit their schema or the instance loads as unknown (review of bb61e4e2).
+// Numbers take the search's own fresh number, so it can't meet a literal; null stays, since it's what makes exists false
+const coerce = (value: unknown, s: Schemaish): unknown => {
+  const declared = Array.isArray(s.type) ? (s.type as string[]) : s.type ? [s.type as string] : []
+  const kind = kindOf(value)
+  if (!declared.length || kind === 'null' || declared.some((d) => fits(kind, d))) return value
+  const type = declared[0]
+  if (type === 'number' || type === 'integer') return 7919
+  if (type === 'string') return '~fresh'
+  return placeholder(s)
+}
+const fit = (raw: unknown, schema: unknown): unknown => {
   const s = (schema ?? {}) as Schemaish
+  const value = coerce(raw, s)
   if (Array.isArray(value)) {
     const items = s.items as Schemaish | undefined
     return value.map((v) =>

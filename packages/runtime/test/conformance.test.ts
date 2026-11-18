@@ -193,6 +193,40 @@ describe('rule 5’s conformance kit (§9, R5)', () => {
     expect(r.pass).toBe(false)
   })
 
+  // review of bb61e4e2: the search's witness for 'some US region with zones' had zones: '~fresh', which the declared
+  // array schema rejects, so the plan loaded as unknown and a conformant app failed
+  const usRegion: { id: string; description: string; expr: Expr } = {
+    id: 'usRegion',
+    description: 'Served from a US region with zones',
+    expr: {
+      some: {
+        of: 'target.regions',
+        where: {
+          all: [{ eq: [{ path: 'item.code' }, { value: 'us' }] }, { exists: 'item.zones' }],
+        },
+      },
+    },
+  }
+  const cheap: { id: string; description: string; expr: Expr } = {
+    id: 'cheap',
+    description: 'Under 30 USD',
+    expr: { lt: [{ path: 'target.priceUsd' }, { value: 30 }] },
+  }
+  test('arranged attributes fit their declared schemas: a conformant app passes every case', async () => {
+    const { fixture } = await application(honest)
+    fixture.options.manifest.capabilities[1]!.preconditions = [usRegion, cheap]
+    const results = await conformance(fixture)
+    for (const id of ['usRegion', 'cheap'])
+      expect(results.find((r) => r.condition === id)).toMatchObject({ pass: true })
+  })
+  test('and a resolver that misreports the price still fails its case', async () => {
+    const { fixture } = await application(free)
+    fixture.options.manifest.capabilities[1]!.preconditions = [usRegion, cheap]
+    const results = await conformance(fixture)
+    expect(results.find((r) => r.condition === 'cheap')).toMatchObject({ pass: false })
+    expect(results.find((r) => r.condition === 'usRegion')).toMatchObject({ pass: true })
+  })
+
   test('a condition the kit can’t test is a failure with its reason, never a silent skip (review’s close-out)', async () => {
     const { fixture } = await application(honest)
     const subscribe = fixture.options.manifest.capabilities[1]!
