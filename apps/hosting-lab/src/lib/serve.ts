@@ -11,7 +11,7 @@ import { credentialOf, principalOf } from './principal.ts'
 // projection holds every offer the principal may see; a view is what the policy discloses, with what it left out
 // counted. Each request projects afresh: the runtime is stateless, and the revision says when a view is stale
 
-const json = (body: unknown, status = 200) =>
+const json = (body: unknown, status = 200, extra: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), {
     status,
     // per caller, and never cached by anything shared
@@ -19,6 +19,7 @@ const json = (body: unknown, status = 200) =>
       'content-type': 'application/json',
       'cache-control': 'private, no-store',
       vary: 'Authorization, Cookie',
+      ...extra,
     },
   })
 
@@ -150,15 +151,30 @@ export const serveInspect = async (request: Request): Promise<Response> => {
   }
 }
 
-// a refusal's HTTP status, so a client that reads only the status still gets it right
+// a refusal's HTTP status, so a client that reads only the status still gets it right (RFC 0004 §2.3). HTTP's own
+// meanings: unauthorized is 401 for a caller who isn't signed in, with a challenge, and 403 for one who is; input that
+// fails the schema is 422, while a body that isn't a call at all is the routes' own 400, before the runtime. v0's
+// responses keep v0's statuses (packages/protocol/spec.md)
 const STATUS: Record<string, number> = {
   not_found: 404,
-  unauthorized: 403,
   rate_limited: 429,
-  invalid_input: 400,
+  invalid_input: 422,
   precondition: 409,
   stale: 409,
   confirmation_required: 409,
+}
+
+export const statusOf = (
+  result: { status: string; code?: string },
+  principal: { authenticated: boolean },
+): { status: number; headers: Record<string, string> } => {
+  if (result.status === 'succeeded') return { status: 200, headers: {} }
+  if (result.status === 'failed') return { status: 500, headers: {} }
+  if (result.code === 'unauthorized')
+    return principal.authenticated
+      ? { status: 403, headers: {} }
+      : { status: 401, headers: { 'www-authenticate': 'Bearer' } }
+  return { status: STATUS[result.code ?? ''] ?? 400, headers: {} }
 }
 
 // POST /api/projection/execute { offer, input?, approval?, ifRevision?, start?, policy?, task?, offers?, seen? }:
@@ -184,12 +200,6 @@ export const serveExecute = async (request: Request): Promise<Response> => {
   // the caller's view request, whole, as GET /api/projection builds it: its changes are that view's (RFC 0002 §8.3)
   const { principal, ...view } = projection
   const result = await runtime.execute({ principal, offer, input, approval, ifRevision, view })
-  return json(
-    result,
-    result.status === 'succeeded'
-      ? 200
-      : result.status === 'failed'
-        ? 500
-        : (STATUS[result.code] ?? 400),
-  )
+  const { status, headers } = statusOf(result, principal)
+  return json(result, status, headers)
 }

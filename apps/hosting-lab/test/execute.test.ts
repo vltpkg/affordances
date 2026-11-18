@@ -1,7 +1,7 @@
 import { createAffordances, createHandler } from '@affordances/core'
 import { offerId, parseOfferId } from '@affordances/runtime'
 import { beforeEach, expect, test } from 'vitest'
-import { serveExecute, serveExpand, serveView } from '../src/lib/serve.ts'
+import { serveExecute, serveExpand, serveView, statusOf } from '../src/lib/serve.ts'
 import { checkedBy } from '../src/lib/runtime.ts'
 import * as store from '../src/lib/store.ts'
 import { cancel, subscribe } from '../src/app/capabilities.ts'
@@ -293,4 +293,48 @@ test('a generated key reaches the runtime as written: its own offer id parses ba
     const { delta } = await v0({ action: 'cancel', input: { projectId: key } }, sid)
     expect(delta.error?.message).toBe(`No hosting.project '${key}'`)
   }
+})
+
+// RFC 0004 §2.3's statuses, in HTTP's own meanings: who isn't signed in gets 401 and a challenge, who is but may not
+// gets 403; input that fails the schema is 422, and a body that isn't a call is 400
+test('a caller who isn’t signed in is refused with 401 and a Bearer challenge', async () => {
+  const { id } = store.account('s_owner').project
+  const response = await execute({
+    offer: `hosting.plan.subscribe@hosting.plan:p2?project=${id}`,
+    input: { plan: 'p2', projectId: id },
+  })
+  expect(response.status).toBe(401)
+  expect(response.headers.get('www-authenticate')).toBe('Bearer')
+  expect(await response.json()).toMatchObject({ status: 'refused', code: 'unauthorized' })
+})
+
+test('a signed-in caller refused authorization gets 403, with no challenge', () => {
+  const refused = { status: 'refused', code: 'unauthorized' }
+  expect(statusOf(refused, { authenticated: true })).toEqual({ status: 403, headers: {} })
+  expect(statusOf(refused, { authenticated: false })).toEqual({
+    status: 401,
+    headers: { 'www-authenticate': 'Bearer' },
+  })
+})
+
+test('input that fails the schema is 422, and a body that isn’t a call is 400', async () => {
+  const { id } = store.account('s_input').project
+  const bad = await execute(
+    {
+      offer: `hosting.plan.subscribe@hosting.plan:p2?project=${id}`,
+      input: { plan: 7, projectId: id },
+    },
+    's_input',
+  )
+  expect(bad.status).toBe(422)
+  expect(await bad.json()).toMatchObject({ code: 'invalid_input' })
+  const notJson = await serveExecute(
+    new Request('https://hosting.test/api/projection/execute', {
+      method: 'POST',
+      body: 'not json',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer s_input' },
+    }),
+  )
+  expect(notJson.status).toBe(400)
+  expect((await execute({ input: {} }, 's_input')).status).toBe(400)
 })
