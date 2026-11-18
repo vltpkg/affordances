@@ -90,6 +90,10 @@ confirmation exactly, but not the ids themselves, which the developer chooses (R
 - **Reference-sourced parameters** (RFC 0005 §4): not built. Compilation doesn't yet derive a route parameter from a resource reference.
 - **Strict JSON Schema validators** reject unknown fields in the published v0 schemas, against the v0 spec's rule that clients ignore them. The fix, opening the received documents' schemas, is prepared and not released. A release that emits the discovery field should ship that fix with it or before it.
 
+- **Smaller pieces not built,** each listed in its architecture page's "Not built" section (`rfcs/architecture/`):
+  - manifest diffing across releases (RFC 0001 §6.2);
+  - rate limiting, so `rate_limited` exists only in the types;
+  - the v0 spec text for the site index's `capabilities` field.
 - **Two open optimizations,** recorded rather than changed (M8's simplification pass):
   - the stateless HTTP `inspect` and `expand` re-project on every call; offer-scoped inspection would avoid it;
   - a checked v0 call projects twice.
