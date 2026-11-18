@@ -252,17 +252,27 @@ export const freeIdentifiers = (root: Node, outer: Set<string>[] = []) => {
     else if (p.type === 'AssignmentPattern') patternNames(p.left as Node, into)
     else if (p.type === 'RestElement') patternNames(p.argument as Node, into)
   }
-  // a destructuring key reads the member it names, as `.name` does, so it's held to the same rule (code review of
-  // M8, #3): `const { constructor: F } = Object` is Object.constructor
-  const patternKeys = (p: Node) => {
-    for (const q of p.properties as Node[]) {
-      if (q.type === 'RestElement' || q.computed) continue
-      const k = q.key as Node
-      const name = k.type === 'Identifier' ? (k.name as string) : String(k.value)
-      if (BANNED_MEMBERS.has(name)) banned.push(`the ${name} property`)
-    }
+  // every key in a slice is static and allowed (code review of M8, #3; intake's allowlist, 22:19Z): in a member
+  // expression, an object literal, a destructuring pattern or a class, it's an identifier, or a plain string or number
+  // literal, never computed, and never one of the banned members. A computed key could name anything, whatever it
+  // computes to, so it's refused without being read; a real schema needs none
+  const staticKey = (owner: Node, k: Node) => {
+    if (owner.computed) return void banned.push('a computed key')
+    const name =
+      k.type === 'Identifier'
+        ? (k.name as string)
+        : k.type === 'Literal' && (typeof k.value === 'string' || typeof k.value === 'number')
+          ? String(k.value)
+          : undefined
+    if (name === undefined) banned.push('a key that isn’t an identifier, a string or a number')
+    else if (BANNED_MEMBERS.has(name)) banned.push(`the ${name} property`)
   }
-  // the expressions inside a binding pattern: each default, and each computed key, at any depth. They run when the
+  // a destructuring key reads the member it names, as `.name` does: `const { constructor: F } = Object`
+  const patternKeys = (p: Node) => {
+    for (const q of p.properties as Node[])
+      if (q.type !== 'RestElement') staticKey(q, q.key as Node)
+  }
+  // the expressions inside a binding pattern: each default, at any depth, with its keys checked. They run when the
   // binding does, so they're read as the initializer is (review of aef81dc1)
   const patternExpressions = (p: Node | null | undefined): Node[] => {
     if (!p) return []
@@ -273,22 +283,13 @@ export const freeIdentifiers = (root: Node, outer: Set<string>[] = []) => {
       return (p.properties as Node[]).flatMap((q) =>
         q.type === 'RestElement'
           ? patternExpressions(q.argument as Node)
-          : [...(q.computed ? [q.key as Node] : []), ...patternExpressions(q.value as Node)],
+          : patternExpressions(q.value as Node),
       )
     }
     if (p.type === 'ArrayPattern')
       return (p.elements as (Node | null)[]).flatMap((e) => patternExpressions(e))
     if (p.type === 'RestElement') return patternExpressions(p.argument as Node)
     return []
-  }
-  // a computed key: a literal is a name like any other; anything else could name anything
-  const computedKey = (k: Node) => {
-    if (k.type === 'Literal') {
-      if (BANNED_MEMBERS.has(String(k.value))) banned.push(`the ${String(k.value)} property`)
-      return
-    }
-    if (k.type === 'TemplateLiteral' && (k.expressions as Node[]).length === 0) return
-    banned.push('a computed key that isn’t a literal')
   }
   const hoisted = (body: Node[]) => {
     const s = new Set<string>()
@@ -317,26 +318,16 @@ export const freeIdentifiers = (root: Node, outer: Set<string>[] = []) => {
         return
       case 'MemberExpression':
         visit(node.object, scope)
-        if (node.computed) {
-          computedKey(node.property as Node)
-          visit(node.property, scope)
-        } else if (BANNED_MEMBERS.has((node.property as Node).name as string))
-          banned.push(`the ${(node.property as Node).name as string} property`)
+        staticKey(node, node.property as Node)
         return
+      // an object literal's, or an assignment target pattern's, which no declaration reads
       case 'Property':
-        if (node.computed) {
-          computedKey(node.key as Node)
-          visit(node.key, scope)
-        }
+        staticKey(node, node.key as Node)
         visit(node.value, scope)
         return
-      // an assignment's target pattern, which no declaration reads: its properties are visited below
-      case 'ObjectPattern':
-        patternKeys(node)
-        break
       case 'MethodDefinition':
       case 'PropertyDefinition':
-        if (node.computed) visit(node.key, scope)
+        staticKey(node, node.key as Node)
         visit(node.value, scope)
         return
       case 'LabeledStatement':
@@ -432,17 +423,13 @@ export const planSlice = (file: string, source: string, input: Node) => {
       const name =
         callee.type === 'MemberExpression' && !callee.computed
           ? ((callee.property as Node).name as string)
-          : // a literal computed member is the method it names: z.string()['refine'](…)
-            callee.type === 'MemberExpression' &&
-              (callee.property as Node).type === 'Literal' &&
-              typeof (callee.property as Node).value === 'string'
-            ? ((callee.property as Node).value as string)
-            : callee.type === 'Identifier'
-              ? (() => {
-                  const b = m.bindings.get(callee.name as string)
-                  return b?.kind === 'library' ? b.imported : undefined
-                })()
-              : undefined
+          : // a computed member never gets here: the allowlist refused it above
+            callee.type === 'Identifier'
+            ? (() => {
+                const b = m.bindings.get(callee.name as string)
+                return b?.kind === 'library' ? b.imported : undefined
+              })()
+            : undefined
       if (!name) continue
       called.add(name)
       if (

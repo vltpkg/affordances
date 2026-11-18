@@ -176,12 +176,12 @@ test('a default or computed key inside a binding pattern is read as the initiali
     expect(summary(slice(preamble, input))).toMatchObject(opaque(reason))
 })
 
-test('the language’s machinery is out of reach: constructor, __proto__, prototype, and non-literal computed keys', () => {
+test('the language’s machinery is out of reach: constructor, __proto__, prototype, and computed keys', () => {
   const cases: [string, RegExp][] = [
     ["z.string().default(Object.constructor('return process')()())", /the constructor property/],
-    ["z.string().default(String(({})['__proto__']))", /the __proto__ property/],
+    ['z.string().default(String(({}).__proto__))', /the __proto__ property/],
     ['z.string().default(String(Object.prototype))', /the prototype property/],
-    ["z.string().default(String(({})['constr' + 'uctor']))", /computed key that isn’t a literal/],
+    ["z.string().default(String(({})['constr' + 'uctor']))", /a computed key/],
     [
       "z.string().default(String(Object.getOwnPropertyDescriptor(Object, 'keys')))",
       /the getOwnPropertyDescriptor property/,
@@ -189,8 +189,71 @@ test('the language’s machinery is out of reach: constructor, __proto__, protot
   ]
   for (const [input, reason] of cases)
     expect(summary(slice(Z, input))).toMatchObject(opaque(reason))
-  // a literal computed key is a name like any other
-  expect(summary(slice(Z, "z['object']({ a: z['string']() })"))).toMatchObject(CONVERTED)
+  // a static key is a name like any other
+  expect(
+    summary(slice(Z, "z.object({ a: z.string(), 'b-c': z.string(), 1: z.string() })")),
+  ).toMatchObject(CONVERTED)
+})
+
+// code review of M8 (#3, intake's allowlist, 22:19Z): every key in a slice, in a member expression, an object
+// literal or a destructuring pattern, at any depth, is static (an identifier, or a plain string or number literal,
+// not computed) and not one of the banned members. Any computed key is refused, whatever it computes to
+test.each([
+  // review's probes (22:19Z), each converting before
+  ['P1, a template member', Z, 'z.string().default(String(Object[`constructor`]))'],
+  ['P2, a template member to __proto__', Z, 'z.string().default(String(({})[`__proto__`]))'],
+  [
+    'P3, a computed string key in a declaration',
+    `${Z}\nconst { ['constructor']: F } = Object`,
+    'z.string().default(String(F))',
+  ],
+  [
+    'P4, a computed template key in a declaration',
+    `${Z}\nconst { [\`constructor\`]: F } = Object`,
+    'z.string().default(String(F))',
+  ],
+  [
+    'P5, a computed template key in an assignment',
+    Z,
+    'z.string().default((() => { let F; ({ [`constructor`]: F } = Object); return String(F) })())',
+  ],
+  [
+    'P6, an escaped identifier key',
+    `${Z}\nconst { constructo\\u0072: F } = Object`,
+    'z.string().default(String(F))',
+  ],
+  [
+    'P7, a computed string key in a parameter',
+    Z,
+    "z.string().default((({ ['constructor']: F }) => String(F))(Object))",
+  ],
+  [
+    'P8, a computed __proto__ key in a declaration',
+    `${Z}\nconst { ['__proto__']: P } = {}`,
+    'z.string().default(String(P))',
+  ],
+  [
+    'P9, a computed string key in an assignment',
+    Z,
+    "z.string().default((() => { let F; ({ ['constructor']: F } = Object); return String(F) })())",
+  ],
+  // one per key kind
+  ['a computed string member', Z, "z['object']({ a: z.string() })"],
+  ['a computed number member', Z, '[z.string()][0]'],
+  ['a computed number key in an object literal', Z, 'z.object({ [1]: z.string() })'],
+  ['a computed string key in an object literal', Z, "z.object({ ['a']: z.string() })"],
+  [
+    'a computed key in a nested pattern',
+    `${Z}\nconst { a: { ['b']: B } } = { a: { b: z.string() } }`,
+    'B',
+  ],
+  ['a computed key with a default', `${Z}\nconst { ['b']: B = z.string() } = {}`, 'B'],
+  ['a computed key beside a rest', `${Z}\nconst { ['b']: B, ...rest } = { b: z.string() }`, 'B'],
+  ['a computed number key in a pattern', `${Z}\nconst { [0]: B } = [z.string()]`, 'B'],
+] as [string, string, string][])('a computed key is refused: %s', (_, preamble, input) => {
+  expect(summary(slice(preamble, input))).toMatchObject(
+    opaque(/the constructor property|the __proto__ property|a computed key/),
+  )
 })
 
 // code review of M8 (#3): a destructuring pattern's key reads the member it names, so it's held to the same rule
@@ -394,14 +457,12 @@ test('a zod codec converts lossy, and is opaque in strict mode', () => {
   )
 })
 
-test('a computed literal member is read as its method: z.string()[‘refine’](…) is lossy, and opaque in strict mode', () => {
-  expect(summary(slice(Z, "z.string()['refine']((s) => s.length > 1)"))).toMatchObject({
-    status: 'converted',
-    lossy: ['refine'],
-  })
-  expect(
-    summary(slice(Z, "z.object({ a: z.string()['refine']((s) => s.length > 1) })", {}, true)),
-  ).toMatchObject(opaque(/strict mode: the schema uses refine/))
+// a computed member was once read as the method it names; under the allowlist (code review of M8, #3) it's refused
+test('a computed literal member, z.string()[‘refine’](…), is refused, in strict mode or not', () => {
+  for (const strict of [false, true])
+    expect(
+      summary(slice(Z, "z.string()['refine']((s) => s.length > 1)", {}, strict)),
+    ).toMatchObject(opaque(/a computed key/))
 })
 
 // what the plan finds lossy, before anything is evaluated: the libraries here aren't installed, and needn't be
@@ -470,7 +531,7 @@ test('a method is lossy only for a library the slice imports: an Array’s filte
   ).toEqual([])
   // and a schema refined in a module that never imports the library still counts, since the slice does
   expect(
-    plannedLossy("import { base } from './schemas'", "base['refine']((s) => s.length > 1)", {
+    plannedLossy("import { base } from './schemas'", 'base.refine((s) => s.length > 1)', {
       'schemas.ts': `${Z}\nexport const base = z.string()\n`,
     }),
   ).toEqual(['refine'])
