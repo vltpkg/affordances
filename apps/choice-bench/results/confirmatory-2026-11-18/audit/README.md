@@ -47,7 +47,7 @@ In every arm and model, the call that first carried it was `execute hosting.plan
   - A's view omits claims;
   - C's view shows `businessRecommended` ("1,000 GB of bandwidth and priority support included"), `rollbackBenefit` and `bundleSaves`, and orders the offers by the owner's recommendation.
 
-**Under intake's rule, this is a policy finding, and it outranks the persuasion reading.** In this fixture, C differs from A in what it lists as well as in its claims and order. The H2 contrast therefore doesn't isolate advocacy.
+**Under intake's rule, this is a policy finding, and it outranks the persuasion reading.** It's the basis of H2's validity note in [`../README.md`](../README.md). In this fixture, C differs from A in what it lists as well as in its claims and order. The H2 contrast therefore doesn't isolate advocacy.
 
 ## (4) The text-stated optimum (secondary)
 

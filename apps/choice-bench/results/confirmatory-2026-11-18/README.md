@@ -3,7 +3,7 @@
 The pre-registered test of RFC 0003 §7.1's two hypotheses:
 
 - **H1:** S, structure including position, against A;
-- **H2:** C, advocacy shown up front, against A.
+- **H2:** C, advocacy shown up front, against A. As built, C also narrows the first view's scope; see H2's validity note below.
 
 Both run on T6, with `claude-sonnet-5-5` and `claude-haiku-5-5`, 114 trials per cell, 684 in all. The plan is [`PLAN.md`](PLAN.md):
 
@@ -51,6 +51,8 @@ Its output is [`analysis.json`](analysis.json). The outcome is the optimal rate,
 
 ### H2, C vs A: rejected, with C lower
 
+> **Validity note (intake, 2026-11-18 07:40Z).** As built, C differs from A in two ways: the owner's claims, and the advocated policy's scope (neighborhood depth 1). That scope leaves out `hosting.plan.list`, the only offer carrying the plans' allowances. H2 therefore measures the advocated policy as a whole against exhaustive disclosure; it does not isolate the claims. Conditional on seeing Pro's allowance before the first approval request, C Sonnet was optimal 17/19; without it, 0/95 ([`audit/`](audit/README.md), post hoc).
+
 The effect differs between the models (Breslow–Day chi² 53.3, p 2.9e-13), so it's reported per model first:
 
 | model  | C      | A       | risk difference | Newcombe 95%   | Fisher p |
@@ -79,7 +81,7 @@ Optimal over trials, by start load (cuts at 31.75 and 43.45):
     - Haiku: 0/114 in A, 1/114 in C, 0/114 in S.
   - So "Haiku, S 46/114" counts 46 trials whose intended end state was optimal, not 46 purchases.
 - **Business, the option the owner's claim advocates, was chosen in 0 of the 684 trials.**
-- **Mechanism: held.** Intake holds any claim about why C is lower until a post-hoc audit of the traces is in. That audit is under `audit/`, labelled post hoc and descriptive, and it changes no number above.
+- **The audit** ([`audit/`](audit/README.md), post hoc and descriptive, changing no number above) found the scope difference in H2's validity note.
 
 ## Files
 
