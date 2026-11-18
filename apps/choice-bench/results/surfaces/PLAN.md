@@ -1,6 +1,6 @@
 # M7f: the six-surface comparison, the plan
 
-**Status:** FINAL (design, 2026-11-18), fixed before any trial. It takes intake's rulings (09:20Z, 09:26Z, 14:24Z, 16:28Z and 16:33Z), the planner's (14:10Z to 17:13Z) and the agreements with backend through 16:53Z. Nothing here has run. Its method is RFC 0003, as amended, with §12's surfaces and §16's lesson for condition construction. Pinned at 58535950, see pin.json (`pilot-2026-11-18/pin.json`).
+**Status:** FINAL (design, 2026-11-18), fixed before any trial; amended after the pilot and before the confirmatory run, see §8. It takes intake's rulings (09:20Z, 09:26Z, 14:24Z, 16:28Z and 16:33Z), the planner's (14:10Z to 17:13Z) and the agreements with backend through 16:53Z. Nothing here has run. Its method is RFC 0003, as amended, with §12's surfaces and §16's lesson for condition construction. Pinned at 58535950, see pin.json (`pilot-2026-11-18/pin.json`).
 
 ## 1. The question
 
