@@ -163,12 +163,12 @@ As RFC 0002 §6.1 maps them. Five are policies over the unchanged manifest, and 
     1. every choice set's member offers move out of the view's `offers` and into their choice set's `members`, as full offers, in the choice set's order;
     2. the view's other offers are grouped by their target's resource type, in the manifest's resource order, with untargeted offers first and A's order kept within each group.
 
-    Everything else is A's, including the order basis (`{ by: 'canonical' }`) and the counterbalancing through the fixture's keys (§4). On this fixture the second move takes the add-on offers, which A's canonical order puts first, below the project's own. So on T6 and T7 the optimum's add-on is no longer in A's first position, though nothing is removed.
+    Everything else is A's, including the counterbalancing through the fixture's keys (§4). S states its own order basis, truthfully: `{ by: 'group', key: 'targetType', within: { by: 'canonical' } }` (RFC 0002 §6.4). So S's view states the order the agent actually sees (R6), which matters because D tests whether agents use the stated basis. That basis is structural: its group key is a manifest-derived attribute, never free text, and it names no claim, recommendation or source. So the information check lets it differ from A's, and fails any basis that names a claim, a recommendation or a source, or that adds a field. This replaces the earlier rule that S keeps A's basis byte for byte, since R6's honesty comes first (intake, 2026-11-18). On this fixture the second move takes the add-on offers, which A's canonical order puts first, below the project's own. So on T6 and T7 the optimum's add-on is no longer in A's first position, though nothing is removed.
 
-  - **It's a rendering, not a policy.** The runtime produces A's view, and the harness renders it nested. So nothing a policy decides differs, and RFC 0002 R6's order basis is A's.
+  - **It's a rendering, not a policy.** The runtime produces A's view, and the harness renders it nested. So nothing a policy decides differs. The basis S states is its rendering's, structural and truthful (above).
   - **`inspect` is the same in S and A.** The transform applies to views alone. `inspect` and `expand` are the same runtime calls on the same projection, and their answers aren't transformed, so what an S trial can reach on request is exactly what an A trial can.
-  - **A test shows it's information-constant,** for both moves, on the real fixture under every plan-id permutation: `apps/hosting-lab/src/structure.ts` holds the transform and its exact inverse. The fixture's test undoes the transform and compares S with A as data. It fails if S adds a label, a claim, a detail or a field, changes either order basis, reorders or drops a member (`apps/hosting-lab/test/structure.test.ts`).
-  - **What it measures:** a change S causes can't be steering, because the information and its stated order are identical. That separates sensitivity to structure from the effect of disclosure (dark patterns §6, item 6).
+  - **A test shows it's information-constant,** for both moves, on the real fixture under every plan-id permutation: `apps/hosting-lab/src/structure.ts` holds the transform and its exact inverse. The fixture's test undoes the transform and compares S with A as data. It fails if S adds a label, a claim, a detail or a field, states any basis but its own structural one (or one that names a claim, a recommendation or a source), changes a choice set's basis, reorders or drops a member (`apps/hosting-lab/test/structure.test.ts`).
+  - **What it measures:** a change S causes can't be steering, because the information is identical, and the order S states is structural and true. Only the structure, and with it the offers' position, differs (§7.1). That separates sensitivity to structure from the effect of disclosure (dark patterns §6, item 6).
 - **R, renamed tiers:** A with the plans' names replaced by neutral ones (Plan 1, Plan 2, Plan 3, in a counterbalanced assignment).
   - **What it controls for:** "Hobby", "Pro" and "Business" match tier names at real providers that models will have seen. Prior knowledge of real tiers could steer a choice independently of the fixture's own data.
   - **What it measures:** a difference between R and A estimates that prior. Everything else, prices and limits included, is unchanged.
@@ -330,17 +330,18 @@ Each is computed from a trace (§9) and the task's ground truth (§2.2) by a com
 
 The budget (§8) allows two confirmatory contrasts, sized to detect a 20-point shift. Each is against A, on the primary task chosen in calibration (§8) from T6 and T7, with two models:
 
-| ID  | Contrast                                                                                                                     | Outcome                  |
-| --- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| H1  | **S against A:** the same information in a different structure changes optimal choices on the primary task                   | the optimal share, in pp |
-| H2  | **C against A:** advocacy shown up front, against advocacy available on request, changes optimal choices on the primary task | the optimal share, in pp |
+| ID  | Contrast                                                                                                                                 | Outcome                  |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| H1  | **S against A:** the same information in a different structure, including the offers' order, changes optimal choices on the primary task | the optimal share, in pp |
+| H2  | **C against A:** advocacy shown up front, against advocacy available on request, changes optimal choices on the primary task             | the optimal share, in pp |
 
 **Why these two,** of the four contrasts the method considered confirmatory (C, D, E and S against A):
 
 - **At the same power, the four don't fit the budget** (§8).
 - **S is the one information-constant contrast.**
-  - Its views carry exactly A's information, order basis included, and a test checks it (§3.2).
-  - So a difference between S and A is choice architecture with nothing else changed, the core question.
+  - Its views carry exactly A's information, and a test checks it (§3.2).
+  - Its structure includes the offers' position. Moving the optimum off A's first position is part of the contrast, as intake set it (01:11, 2026-11-18), not a confound. So H1 measures structure including position, and §4's and §7.3's position effects are read from A's own counterbalanced orders, apart from it.
+  - So a difference between S and A is choice architecture, structure and position, with the information unchanged: the core question.
   - If S shows no difference, the interval says how large a structural effect the data rules out.
 - **C is the other central question:** does transparent, attributed advocacy steer? That's the legitimate persuasion the project means to support.
 - **D isn't information-constant.** Under RFC 0002 R6, a view ordered by a claim states that basis, so D tells the agent the order is the publisher's recommendation. That's disclosed publisher ordering, a form of advocacy rather than structure alone, so it's exploratory (§7.4).
