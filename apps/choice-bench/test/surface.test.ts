@@ -9,6 +9,7 @@ import { DriverFailure, faultsByCell, type TrialSpec } from '../src/harness.ts'
 import { purchaseMade, surfaceMetrics, type SurfaceFacts } from '../src/surface-metrics.ts'
 import { runSurfaceSpecs, runSurfaceTrial, surfacePromptFor } from '../src/surface.ts'
 import { surfaces, type SurfaceId } from '../src/surfaces.ts'
+import { setupTrial } from '../src/trial.ts'
 
 // M7f's surface runner (the planner, 14:50Z): one runner for every surface, proven with the fake driver only
 
@@ -50,6 +51,45 @@ test('completed is the task’s purchase made, read from the store: a refused co
   // a downgrade, or a removal, changes the state but buys nothing
   expect(purchaseMade(pro, hobby)).toBe(false)
   expect(purchaseMade({ ...pro, addOns: ['daily-backups'] } as lab.EndState, pro)).toBe(false)
+})
+
+// purchaseMade's assumption (the planner, 16:10Z), checked against the catalog so it fails loudly if it changes:
+// every charge T6 can reach is monthly, or comes with a monthly charge of the same amount, and the only target that
+// costs nothing is the plan every T6 trial starts on. So any purchase left in the end state raises its monthly price
+test('every T6 purchase raises the monthly price: no one-time-only charge, and no free target but the start plan', async () => {
+  for (const c of lab.manifest.capabilities) {
+    const charges = (c.effects ?? []).filter((e) => e.category === 'financial')
+    const once = charges.filter((e) => !e.amount?.per)
+    const monthly = charges.filter((e) => e.amount?.per === 'month')
+    expect({
+      capability: c.id,
+      onceWithoutMonthly: once.filter(
+        (e) => !monthly.some((m) => m.amount?.value === e.amount?.value),
+      ),
+    }).toEqual({ capability: c.id, onceWithoutMonthly: [] })
+    expect({
+      capability: c.id,
+      otherPeriods: charges.filter((e) => e.amount?.per && e.amount.per !== 'month'),
+    }).toEqual({ capability: c.id, otherPeriods: [] })
+  }
+  const nobody = { authenticated: false, attributes: {} } as never
+  const free: string[] = []
+  for (const [type, capability] of [
+    ['hosting.plan', 'hosting.plan.subscribe'],
+    ['hosting.bundle', 'hosting.bundle.subscribe'],
+    ['hosting.addOn', 'hosting.addOn.add'],
+  ] as const) {
+    const r = lab.resolvers[type]!
+    for (const key of (await r.list?.(nobody, { capability })) ?? []) {
+      const a = (await r.load(key, nobody))?.attributes as { slug: string; priceUsd: number }
+      if (a.priceUsd <= 0) free.push(`${type}:${a.slug}`)
+    }
+  }
+  const start = await (await setupTrial(surfaces.full.condition!, 0, 'T6')).endState()
+  expect(free).toEqual([`hosting.plan:${start.plan}`])
+  expect(start).toEqual({ plan: 'hobby', bundle: null, addOns: [] })
+  // review (16:10Z): the start costs nothing a month, so any purchase raises it
+  expect(lab.monthlyUsd(start)).toBe(0)
 })
 
 test('a consequential error is any request event’s state satisfying no reading, or an unauthorized refusal', () => {
