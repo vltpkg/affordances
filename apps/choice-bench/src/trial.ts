@@ -34,6 +34,9 @@ export type Trial = {
   plans: readonly [string, string, string]
   // what every projection of the trial asks for, past the principal: the condition's start, bind and policy
   request: Omit<ProjectionRequest, 'principal'>
+  // the project's state as the ground truth reads it: the in-process store, or a surface trial's server through its
+  // own session (surfaces/PLAN.md §5)
+  endState: () => lab.EndState | Promise<lab.EndState>
 }
 
 export const setupTrial = async (
@@ -68,7 +71,15 @@ export const setupTrial = async (
   const request: Omit<ProjectionRequest, 'principal'> = condition.start
     ? { start: condition.start, bind: [project], policy: condition.policy.id }
     : { start: project, policy: condition.policy.id }
-  return { runtime, principal: lab.principalFor(sid), sid, project, plans, request }
+  return {
+    runtime,
+    principal: lab.principalFor(sid),
+    sid,
+    project,
+    plans,
+    request,
+    endState: () => lab.endState(sid),
+  }
 }
 
 // a condition's policy, unless the runtime has it built in. One that shares a built-in's id must be that policy, or

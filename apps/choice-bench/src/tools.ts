@@ -69,7 +69,13 @@ export const render = (value: unknown) => JSON.stringify(JSON.parse(canonicalJso
 
 export class Aborted extends Error {}
 
-export const createTools = (trial: Trial, condition: Condition, task: lab.Task) => {
+// what the tools need of a trial: its projections and executions, from the runtime in process or a server's
+// protocol-1 client (remote.ts), and where its state is read
+export type ToolsTrial = Omit<Trial, 'runtime'> & {
+  runtime: Pick<Trial['runtime'], 'project' | 'execute'>
+}
+
+export const createTools = (trial: ToolsTrial, condition: Condition, task: lab.Task) => {
   const calls: CallRecord[] = []
   const exposures: Exposure[] = []
   const approvals: Approval[] = []
@@ -163,18 +169,20 @@ export const createTools = (trial: Trial, condition: Condition, task: lab.Task) 
     ): Promise<{ text: string; error?: true }> {
       const n = calls.length + 1
       const t0 = performance.now()
-      const record = (text: string, error?: true) => {
+      const record = async (text: string, error?: true) => {
         const ran =
           tool === 'execute' &&
           !error &&
           (JSON.parse(text) as { status: string }).status !== 'refused'
+        // the state after a run, wherever the trial's store is: in process, or its server through its session
+        const state = ran ? await trial.endState() : undefined
         calls.push({
           call: n,
           tool,
           input,
           response: text,
           ...(error && { error }),
-          ...(ran && { state: lab.endState(trial.sid) }),
+          ...(state && { state }),
           ms: performance.now() - t0,
         })
         return { text, ...(error && { error }) }
@@ -187,7 +195,7 @@ export const createTools = (trial: Trial, condition: Condition, task: lab.Task) 
         return record(await run(tool, input, n))
       } catch (e) {
         if (e instanceof Aborted) {
-          record(e.message, true)
+          await record(e.message, true)
           throw e
         }
         return record(e instanceof Error ? e.message : String(e), true)
