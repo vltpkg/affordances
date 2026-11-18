@@ -1,0 +1,3 @@
+# benchmark records are committed byte for byte (a run's report, and sealed files whose sha256s are on record), so the
+# formatter leaves them as written, as .oxfmtrc.json does apps/bench/results/**
+apps/choice-bench/results/**/*.json
