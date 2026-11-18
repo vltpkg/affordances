@@ -1,3 +1,6 @@
+import { remoteRuntime } from '../src/remote.ts'
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import * as lab from '@affordances/hosting-lab/trial'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -447,6 +450,101 @@ test.skipIf(!build)(
     expect(accepted.metrics.endChoice).toBe(accepted.metrics.choice)
     // the same request either way: the intended state doesn't depend on the confirmation
     expect(accepted.metrics.choice).toBe(unconfirmed.metrics.choice)
+  },
+  600_000,
+)
+
+// review's reproduction of step 4 (16:04Z), and the planner's rulings: completion is read from the store, never from
+// navigation; and a refused confirm is the agent's outcome, scored, with no serverErrors entry (design's review page
+// handles the runtime's refusal). Two tabs on one session: the 'other tab' buys Pro over protocol 1 while this one
+// sits on Pro's review; this tab's confirm, now stale, is refused, and then it opens another page
+// a snapshot's button's ref, by its exact name
+const button = (snapshot: string, name: string) =>
+  snapshot.match(new RegExp(`button "${name}" \\[ref=(\\w+)\\]`))![1]
+
+const staleConfirm: Driver = {
+  id: 'stale-confirm',
+  async run(trial) {
+    if ('url' in trial.mcp) throw new Error('a stdio server')
+    const config = JSON.parse(readFileSync(trial.mcp.args[1]!, 'utf8')) as {
+      url: string
+      session: string
+    }
+    const client = new Client({ name: 'stale', version: '0' })
+    await client.connect(
+      new StdioClientTransport({ command: trial.mcp.command, args: trial.mcp.args }),
+    )
+    const trace: { name: string; input: unknown; resultBytes: number; ms: number }[] = []
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const r = (await client.callTool({ name, arguments: args })) as {
+        content: { text: string }[]
+      }
+      trace.push({ name, input: args, resultBytes: r.content[0]!.text.length, ms: 0 })
+      return r.content[0]!.text
+    }
+    const plans = await call('open', { path: '/plans' })
+    const review = await call('click', { ref: button(plans, 'Move to Pro') })
+    const [, plan, projectId] = review.match(/plan=(\w+)&projectId=(\w+)/)!
+    // the other tab: the same session buys Pro through protocol 1, approving as the person does
+    const rt = remoteRuntime({ base: `${config.url}/api/projection`, session: config.session })
+    const view = (
+      await rt.project({ principal: {} as never, policy: 'exhaustive' })
+    ).view() as unknown as {
+      offers: { id: string; capability: string; target?: { key: string } }[]
+    }
+    const pro = view.offers.find(
+      (o) => o.capability === 'hosting.plan.subscribe' && o.target?.key === plan,
+    )!
+    const first = (await rt.execute({
+      principal: {} as never,
+      offer: pro.id,
+      input: { plan, projectId },
+    } as never)) as {
+      confirmation: { approval: string }
+    }
+    await rt.execute({
+      principal: {} as never,
+      offer: pro.id,
+      input: { plan, projectId },
+      approval: first.confirmation.approval,
+    } as never)
+    // this tab's confirm, stale now, then any other page
+    await call('click', { ref: button(review, 'Confirm') })
+    await call('open', { path: '/plans' })
+    await client.close()
+    return {
+      trace,
+      finalText: 'done',
+      usage: { inputTokens: 1, outputTokens: 1 },
+      durationMs: 1,
+      exitCode: 0,
+      cli: { name: 'stale-confirm', version: '0' },
+      raw: '',
+    }
+  },
+}
+
+test.skipIf(!build)(
+  'a stale confirm, refused, then an open: scored, no 5xx, and completed is what the store shows',
+  async () => {
+    const at = path.join(dir, 'stale')
+    const s = spec('browser', 'stale-confirm')
+    const r = await runSurfaceTrial(s, staleConfirm, at, { labBuild: build!, port: PORT })
+    // the refusal is the agent's outcome: no harness fault, and the app recorded no server error
+    expect(r).not.toHaveProperty('fault')
+    expect(
+      JSON.parse(readFileSync(path.join(at, `${s.id}.state.json`), 'utf8')).serverErrors,
+    ).toEqual([])
+    const lines = readFileSync(path.join(at, `${s.id}.jsonl`), 'utf8')
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l))
+    const end = lines.find((l) => l.kind === 'end')
+    const metrics = lines.at(-1)
+    // the store holds the other tab's Pro, so completed is true because of the store, not the refused click: the
+    // click's own call left no load off the review step
+    expect(end.endState).toEqual({ plan: 'pro', bundle: null, addOns: [] })
+    expect(metrics.completed).toBe(true)
   },
   600_000,
 )
