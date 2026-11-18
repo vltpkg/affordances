@@ -11,7 +11,7 @@ import addOnsState from '@/app/add-ons/state'
 import deploymentsState from '@/app/deployments/state'
 import plansState from '@/app/plans/state'
 import { checkedBy } from '../src/lib/runtime.ts'
-import * as capabilities from '../src/manifest.ts'
+import * as capabilities from '../src/app/capabilities.ts'
 
 // the code review's findings 1 to 4 (the M3 close-out): a session's credential is never its identity, the
 // proxy never gives an agent-facing request a session, and reading never makes an account

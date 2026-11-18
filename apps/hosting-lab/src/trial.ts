@@ -2,7 +2,7 @@
 // manifest, the resolvers over the app's in-memory store, the trial's principal, and the per-trial setup. One
 // process is one trial, so the store's module state is the trial's state
 
-export { manifest } from './manifest.ts'
+export { manifest } from './app/capabilities.ts'
 export { resolvers, principalFor } from './lib/resolvers.ts'
 // what the runtime runs for each capability, and a seen-token store: pass both to createRuntime, with an approval
 // key the trial makes

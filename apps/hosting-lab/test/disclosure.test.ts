@@ -3,7 +3,7 @@ import { beforeEach, expect, test } from 'vitest'
 import { principalFor, resolvers } from '../src/lib/resolvers.ts'
 import { runtime } from '../src/lib/runtime.ts'
 import * as store from '../src/lib/store.ts'
-import { manifest } from '../src/manifest.ts'
+import { manifest } from '../src/app/capabilities.ts'
 
 // every offer that costs money shows what it costs, in every view an agent can get and in inspect: its
 // confirmation summary renders, with no `unknown`, and names the target's price. The set is derived from the

@@ -5,7 +5,7 @@ import {
   type PolicyId,
   type Principal,
 } from '@affordances/runtime'
-import { manifest } from '../manifest.ts'
+import { manifest } from '../app/capabilities.ts'
 import { runtime, runtimeFor } from './runtime.ts'
 
 // the inspector's data (roadmap M3f): the manifest's definitions, and a projection for one principal. It shows

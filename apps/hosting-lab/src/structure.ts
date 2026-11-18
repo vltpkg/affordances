@@ -11,7 +11,7 @@
 
 import { canonicalJson } from '@affordances/ir'
 import { checkOrderBasis, claimFree, type ClaimFreeOrderBasis } from '@affordances/runtime'
-import { manifest } from './manifest.ts'
+import { manifest } from './app/capabilities.ts'
 
 type Offer = { id: string; target?: { type: string }; [field: string]: unknown }
 type ChoiceSet = { id: string; members: string[]; [field: string]: unknown }

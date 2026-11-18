@@ -5,7 +5,7 @@ import { defineAction } from '@/lib/affordances'
 import { checkedBy } from '@/lib/runtime'
 import { ensureSession } from '@/lib/session'
 import * as store from '@/lib/store'
-import { addAddOn as addCapability, removeAddOn as removeCapability } from '@/manifest'
+import { addAddOn as addCapability, removeAddOn as removeCapability } from '@/app/capabilities'
 import addOnsState from './state'
 
 export const addAddOn = defineAction({

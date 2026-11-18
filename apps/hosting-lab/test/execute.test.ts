@@ -4,7 +4,7 @@ import { beforeEach, expect, test } from 'vitest'
 import { serveExecute, serveExpand, serveView } from '../src/lib/serve.ts'
 import { checkedBy } from '../src/lib/runtime.ts'
 import * as store from '../src/lib/store.ts'
-import { cancel, subscribe } from '../src/manifest.ts'
+import { cancel, subscribe } from '../src/app/capabilities.ts'
 
 // v0's media type (packages/protocol): hosting-lab doesn't depend on the protocol package itself
 const MEDIA_TYPE = 'application/vnd.affordances+json'

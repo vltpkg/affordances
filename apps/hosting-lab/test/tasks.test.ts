@@ -3,7 +3,7 @@ import { evaluate } from '@affordances/ir'
 import * as catalog from '../src/catalog.ts'
 import { plans, withPlanIds } from '../src/catalog.ts'
 import * as store from '../src/lib/store.ts'
-import { manifest } from '../src/manifest.ts'
+import { manifest } from '../src/app/capabilities.ts'
 import {
   endStates,
   groundTruth,

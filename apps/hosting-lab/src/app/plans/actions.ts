@@ -9,7 +9,7 @@ import {
   listPlans as listCapability,
   subscribe as subscribeCapability,
   subscribeBundle as bundleCapability,
-} from '@/manifest'
+} from '@/app/capabilities'
 import plansState from './state'
 
 export const listPlans = defineAction({

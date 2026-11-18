@@ -1,6 +1,6 @@
 import type { CapabilityManifest } from '@affordances/ir'
 import { createRuntime, type TokenStore } from '@affordances/runtime'
-import { manifest } from '../manifest.ts'
+import { manifest } from '../app/capabilities.ts'
 import { handlers, memoryTokens } from './handlers.ts'
 import { principalFor, resolvers } from './resolvers.ts'
 

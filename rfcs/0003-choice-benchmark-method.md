@@ -61,7 +61,7 @@ The confirmatory contrasts (§7.1) and the exploratory questions (§7.4) come fr
 
 The fixture is `apps/hosting-lab`, a fictional hosting provider:
 
-- **The manifest:** its resources, capabilities, claims and relations, in `src/manifest.ts`.
+- **The manifest:** its resources, capabilities, claims and relations, in `src/app/capabilities.ts`, a capability module (RFC 0005 §1). In M5's export, c81eeeb1, it was `src/manifest.ts`.
 - **The catalog:** the instance values, in `src/catalog.ts`.
 
 | Option                  | Price (USD a month) | Build minutes | Rollback | Support   |

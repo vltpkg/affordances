@@ -16,7 +16,7 @@ The manifest never imports application code. Extraction marks everything it read
 An application that already describes its actions for agents shouldn't have to describe them twice. Today it can't avoid it:
 
 - **The route manifest isn't portable.** `@affordances/next` generates `.affordances/manifest.ts`, a module that imports the app's state and action exports (`packages/next/src/codegen.ts:152-176`). It's executable, so nothing outside the app can read it.
-- **RFC 0001's manifest has no compiler.** An app that wants one writes it by hand with `defineCapability` and `defineManifest`, as `apps/hosting-lab/src/manifest.ts` does. It then repeats, in the IR, what its `defineAction` calls already say: ids, input schemas, exposure, confirmation.
+- **RFC 0001's manifest has no compiler.** An app that wants one writes it by hand with `defineCapability` and `defineManifest`, as `apps/hosting-lab/src/app/capabilities.ts` does. It then repeats, in the IR, what its `defineAction` calls already say: ids, input schemas, exposure, confirmation.
 
 What's needed is a build step that reads what's already written, asks for only what isn't, and emits an artifact any tool can read.
 
@@ -267,4 +267,4 @@ These are never extracted, because code doesn't state them. Each one missing is 
 - RFC 0001, the semantic capability IR: §4, §6.1, §8, §10 and §12.1.
 - RFC 0002, contextual projection: §4.3 and §11.
 - `packages/next/src/codegen.ts`, the route walk and `writeIds`.
-- `apps/hosting-lab/src/manifest.ts` and `apps/example/src/app/**`.
+- `apps/hosting-lab/src/app/capabilities.ts` and `apps/example/src/app/**`.

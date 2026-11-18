@@ -4,14 +4,28 @@ import {
   derive,
   digest,
   evaluate,
+  fromModules,
   normalize,
   validate,
   type Context,
 } from '@affordances/ir'
 import { addOns, bundles, plans } from '../src/catalog.ts'
-import { manifest } from '../src/manifest.ts'
+import * as capabilities from '../src/app/capabilities.ts'
+import { manifest } from '../src/app/capabilities.ts'
 
 // the fixed option set every benchmark condition shares (roadmap M4a)
+
+// the benchmark's records pin this manifest by digest, so moving it into a capability module (RFC 0005 §1) must leave
+// it byte for byte as it was: this is the digest of src/manifest.ts at 8298a927, before the move
+const ON_RECORD = 'sha256-5wGv2c-mT5wJu9N542it5-327q9I3dVboRvAGUDucs4'
+
+test('the capability module gives the manifest on record, byte for byte', async () => {
+  expect(await digest(manifest)).toBe(ON_RECORD)
+  // as a compiler reads it: the module's exports, its parts beside its defineManifest, give that same manifest
+  const read = fromModules([{ file: 'src/app/capabilities.ts', exports: { ...capabilities } }], {})
+  expect(read.diagnostics).toEqual([])
+  expect(read.manifest).toBe(manifest)
+})
 
 test('the manifest is valid IR, with no errors and nothing left unknown', () => {
   const result = validate(manifest)

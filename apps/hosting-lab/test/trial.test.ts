@@ -52,7 +52,7 @@ test('the trial entry point loads no Next.js module', async () => {
   const { readFileSync } = await import('node:fs')
   const sources = [
     'trial.ts',
-    'manifest.ts',
+    'app/capabilities.ts',
     'catalog.ts',
     'tasks.ts',
     'structure.ts',

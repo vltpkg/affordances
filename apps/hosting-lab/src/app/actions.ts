@@ -6,7 +6,7 @@ import { messages } from '@/lib/messages'
 import { checkedBy } from '@/lib/runtime'
 import { ensureSession } from '@/lib/session'
 import * as store from '@/lib/store'
-import { cancel as cancelCapability } from '@/manifest'
+import { cancel as cancelCapability } from '@/app/capabilities'
 import overview from './state'
 
 export const cancel = defineAction({

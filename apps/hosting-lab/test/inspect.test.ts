@@ -1,7 +1,7 @@
 import { beforeEach, expect, test } from 'vitest'
 import { inspect } from '../src/lib/inspect.ts'
 import { runtimeFor } from '../src/lib/runtime.ts'
-import { manifest } from '../src/manifest.ts'
+import { manifest } from '../src/app/capabilities.ts'
 import { principalFor, resolvers } from '../src/lib/resolvers.ts'
 import * as store from '../src/lib/store.ts'
 

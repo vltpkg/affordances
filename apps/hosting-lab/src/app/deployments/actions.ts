@@ -7,7 +7,7 @@ import { checkedBy } from '@/lib/runtime'
 import { ownsDeployment, planHasRollback } from '@/lib/guards'
 import { ensureSession } from '@/lib/session'
 import * as store from '@/lib/store'
-import { deploy as deployCapability, rollback as rollbackCapability } from '@/manifest'
+import { deploy as deployCapability, rollback as rollbackCapability } from '@/app/capabilities'
 import deployments from './state'
 
 export const deploy = defineAction({
