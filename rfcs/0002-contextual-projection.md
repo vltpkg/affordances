@@ -573,7 +573,7 @@ type ExecutionRequest = {
 1. **Resolve** the offer id to a capability and a target, and load the target. Failure: `not_found`.
 2. **Authorization:** evaluate `authorization` against the principal and target. Authorization conditions read only `principal.*` and `target.*` (RFC 0001 §3.2, as amended), so they can run before input and references are read. Failure: `unauthorized`. A capability with no declared authorization is refused here (§4.3).
 3. **Rate limit.** Failure: `rate_limited`.
-4. **Input:** validate against the input schema. Failure: `invalid_input`, with the issues.
+4. **Input:** validate against the input schema. Failure: `invalid_input`, with the issues. Then the schema's declared defaults are applied wherever a property is omitted: that's the **effective input**, and every later step sees it. The summary renders it, the approval token binds its digest, and the handler runs it, so a handler never defaults on its own (amended 2026-11-18).
    - **The target's key in the input.** For a capability that declares `targetAt` (RFC 0001 §2.2), the input's key there must name the offer's target.
      - **Absent:** the runtime fills it in from the offer.
      - **A different key:** the call is refused with `invalid_input`, and a `detail` naming both keys. The offer and the input can never disagree about what is acted on.
@@ -596,8 +596,8 @@ RFC 0001 left open whether a runtime can bind an approval to what was approved (
 
 - **What a refusal carries.** When step 8 refuses, the result carries the rendered summary and a token:
   - **What it is:** HMAC-SHA-256, under a key the application holds, ([RFC 2104](https://www.rfc-editor.org/rfc/rfc2104)) over the RFC 8785 canonical bytes of `{ offer, input, summary, subject, revision, expiresAt, nonce }`, written base64url without padding ([RFC 4648 §5](https://www.rfc-editor.org/rfc/rfc4648#section-5)).
-  - **Its fields:** `input` is the digest of the canonical input, `subject` the principal's `subject` (§3), `revision` the offer revision (§7), and `nonce` a random value that identifies the token.
-- **What the next call needs.** The next execution must carry that token, and it passes step 8 only for the same offer, input, subject and offer revision, before the expiry.
+  - **Its fields:** `input` is the digest of the canonical effective input (§8.1, step 4), `summary` the rendered summary with its charges (RFC 0001 §3.2), `subject` the principal's `subject` (§3), `revision` the offer revision (§7), and `nonce` a random value that identifies the token.
+- **What the next call needs.** The next execution must carry that token, and it passes step 8 only for the same offer, effective input, summary, subject and offer revision, before the expiry. So approving one set of charges can't run another: an input that drops or adds a charge renders a different summary, and gets a fresh token.
 - **No subject, no approval.** A principal without a `subject` can't be issued a token, because nothing would tie the approval to that caller. Step 8 refuses it with `unauthorized` and a `detail` saying approval needs an identified caller.
 - **Single use.**
   - **The store:** the runtime records each token's nonce as used until its expiry, in a store the application provides (`seenTokens`, a set with a time to live). A second use refuses with `confirmation_required`, and a new token.

@@ -1,6 +1,6 @@
 # RFC 0001: The semantic capability IR
 
-- **Status:** accepted (2026-11-17); amended 2026-11-17: §3.1, §5.5 and §6.3 (quantifiers and `count` after the guard survey, with route parameters mapped into input by bindings); §2.3, §3.1, §3.2, §5.5, §6.4 and §9 (declared principal attributes, missing against absent, the roots authorization conditions and claims read, and composition, for RFC 0002); §12.1 (v0's agent path fails closed on declarative preconditions); §7.2 and §7.3 (empty `extensions` dropped, and `W_PATH_UNCHECKED`, from M2b's review); §3.2 (how a summary renders strings); §12.1 and §12.2 (`definePrincipal`); §2.2 (`targetAt`, for bindings without offers)
+- **Status:** accepted (2026-11-17); amended 2026-11-17: §3.1, §5.5 and §6.3 (quantifiers and `count` after the guard survey, with route parameters mapped into input by bindings); §2.3, §3.1, §3.2, §5.5, §6.4 and §9 (declared principal attributes, missing against absent, the roots authorization conditions and claims read, and composition, for RFC 0002); §12.1 (v0's agent path fails closed on declarative preconditions); §7.2 and §7.3 (empty `extensions` dropped, and `W_PATH_UNCHECKED`, from M2b's review); §3.2 (how a summary renders strings); §12.1 and §12.2 (`definePrincipal`); §2.2 (`targetAt`, for bindings without offers); amended 2026-11-18: §3.2, §4, §7.3 and §13 (a summary lists every charge with its amount, from the effective input)
 - **Package:** `@affordances/ir` (private until published)
 - **Depends on:** [terminology](./research/terminology.md), [repo audit](./research/repo-audit.md), [prior art](./research/prior-art.md)
 
@@ -388,6 +388,11 @@ type ConfirmationRequirement = {
 - **What a placeholder can name:** a `target`, `input` or reference path. `validate` checks each one as it checks condition paths (`E_PATH`).
 - **How it is rendered:** the runtime puts in a string as written, every other value as its JSON text (RFC 8785), and an unresolved path as `unknown`. So `{target.slug}` shows `hobby`, and `{target.priceUsd}` shows `20`. There are no formatting functions.
 - **Literal braces** are written `{{` and `}}`.
+- **The summary ends with its charges** (amended 2026-11-18). After the template, one clause per financial effect lists each charge in declaration order, with no total. For example: "…. Charges: 20 USD a month, until undone; 5 USD now, not refunded".
+  - **The amount:** a resolved amount is shown with its currency and period ("now" for a once charge). One that can't be resolved, or isn't declared, is shown as "amount unknown", never left out.
+  - **The terms:** a once charge that's irreversible adds "not refunded", and a compensable one adds "until undone".
+  - **When it applies:** a charge whose `applies` is false isn't made, so it isn't listed. One whose `applies` is unknown is listed with "(may apply)": a charge is never hidden.
+  - **The input it renders:** the template and the charges render the **effective input**, the input with its schema's declared defaults applied wherever a property is omitted (RFC 0002 §8.1). So an omitted input with a default shows its default, never "unknown". A value that's truly unknown still renders "unknown".
 - **Why data, not a function.** The person approving sees this text, so it is the one sentence that mustn't depend on each runtime's guess, or on application code a reader can't inspect. v0's `summary` function (`packages/core/src/action.ts:45-48`) stays possible in v0's own `defineAction`. The IR's summary is the inspectable version.
 
 - **An absent `authorization` means no requirement was declared.** It doesn't mean "anyone". RFC 0002 decides the runtime default, and v0's own default is deny (`packages/protocol/spec.md:153`).
@@ -412,9 +417,22 @@ type Effect = {
       // what holds after success, in the expression vocabulary: { eq: [{ path: 'target.status' }, { value: 'paid' }] }
       establishes?: Expr
     }
-  | { category: 'external' | 'financial' | 'access' }
+  | {
+      category: 'financial'
+      // what the charge costs: a path into the target, references or input, or a literal, with its currency and period
+      amount?: { value: Path | number; currency: 'USD'; per?: 'month' } // no per: once
+      applies?: Expr // the charge is made only when this holds
+    }
+  | { category: 'external' | 'access' }
 )
 ```
+
+**A charge declares its amount** (amended 2026-11-18, after the M5 pilot, where an add-on's price never reached an agent).
+
+- **The form:** an operand, a path or a literal, with a currency and a period. The IR does no arithmetic. A summary lists each charge as declared, and never totals them.
+- **Its roots:** the amount and `applies` read what a summary reads, never the principal.
+- **`applies` makes a charge conditional:** a default add-on is charged only while the input keeps it.
+- **No amount:** a charge on a capability that needs confirmation, with no amount, is a warning (`W_NO_AMOUNT`, §7.3), since its summary can only say "amount unknown".
 
 **Four categories, not one free-text field.** These are the consequences an agent acting for a person has to tell apart before it commits:
 
@@ -656,6 +674,7 @@ Warnings, which don't fail validation:
 - `W_OPAQUE`: a capability whose preconditions are all guards;
 - `W_EFFECTS_UNKNOWN`: an action whose `effects` is absent;
 - `W_UNCONFIRMED_ENABLES`: a declared `enables` with no derived counterpart.
+- `W_NO_AMOUNT`: a financial effect with no `amount`, on a capability that needs confirmation (amended 2026-11-18).
 - `W_PATH_UNCHECKED`: a path that passes through a schema that doesn't declare its next segment (a `$ref`, a `oneOf`, an untyped node, `additionalProperties: true` or `{}`), so it's checked only at run time (§3.1).
 - `W_NO_ID` (from the v0 adapter, §10.1): a v0 action without an identifier, with a suggested one.
 
@@ -1294,9 +1313,16 @@ export type StateEffect = EffectBase & {
   establishes?: Expr
 }
 
-export type OtherEffect = EffectBase & { category: 'external' | 'financial' | 'access' }
+// a charge's amount: a path or a literal, its currency, and its period; none means once (§4)
+export type Amount = { value: Path | number; currency: 'USD'; per?: 'month' }
+export type FinancialEffect = EffectBase & {
+  category: 'financial'
+  amount?: Amount
+  applies?: Expr
+}
+export type OtherEffect = EffectBase & { category: 'external' | 'access' }
 
-export type Effect = StateEffect | OtherEffect
+export type Effect = StateEffect | FinancialEffect | OtherEffect
 
 export type Relation = {
   type: 'alternativeTo' | 'enables' | 'relatedTo'
