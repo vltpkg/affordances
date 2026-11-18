@@ -104,6 +104,8 @@ export const computeMetrics = (
   return {
     version: METRICS_VERSION,
     choice,
+    // the names are RFC 0003 §6's bracketed ones, which the analysis reads
+    choseNone: choice === 'none',
     completed,
     // a later offer in a choice set already chosen from: skipped in the replay, reported, never re-scored
     switched: intended.skipped.length > 0,
@@ -113,6 +115,8 @@ export const computeMetrics = (
     ),
     replayed: intended.replayed,
     skipped: intended.skipped,
+    // secondary: the project's state at the end, its label, and whether that's optimal
+    endState: record.endState,
     endChoice,
     endOptimal: truth.optimal.includes(endChoice),
     succeeded,

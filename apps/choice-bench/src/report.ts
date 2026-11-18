@@ -65,7 +65,7 @@ export const pilotReport = (results: Result[]) => {
         condition,
         n: rs.length,
         cappedRate: share(rs, (r) => r.end === 'capped'),
-        noneRate: share(rs, (r) => r.metrics.choice === 'none'),
+        noneRate: share(rs, (r) => r.metrics.choseNone),
         completionRate: share(rs, (r) => r.metrics.completed),
         switching: rs.filter((r) => r.metrics.switched).length,
         // a switch to the optimum within a decision; under E, the friction-recovery rate

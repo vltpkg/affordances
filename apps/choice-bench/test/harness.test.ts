@@ -167,3 +167,18 @@ test('metrics: a capped trial isn’t optimal (intent to treat), and the sensiti
     callsToOptimum: 3,
   })
 })
+
+test('every metric RFC 0003 §6 names, in brackets, is a field of a trial’s metrics', async () => {
+  const { readFileSync: read } = await import('node:fs')
+  const rfc = read(
+    new URL('../../../rfcs/0003-choice-benchmark-method.md', import.meta.url),
+    'utf8',
+  )
+  const section = rfc.slice(rfc.indexOf('## 6. Metrics'), rfc.indexOf('## 7.'))
+  const names = [...section.matchAll(/\[((?:`\w+`(?:, )?)+)\]/g)].flatMap((m) =>
+    m[1]!.split(',').map((n) => n.trim().replaceAll('`', '')),
+  )
+  expect(names.length).toBeGreaterThan(15)
+  const m = computeMetrics(record({}), usage, 'final', intended())
+  expect(names.filter((n) => !(n in m))).toEqual([])
+})
