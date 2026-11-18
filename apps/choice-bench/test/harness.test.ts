@@ -207,12 +207,15 @@ test('a trial’s stale files are moved into interrupted/, never deleted, before
   mk(d, { recursive: true })
   write(path.join(d, 'X.server.json'), '{"stale":true}')
   write(path.join(d, 'X.config.json'), '{}')
+  // a browser trial's confirm-load replay too (code review of M8): the attempt is kept whole
+  write(path.join(d, 'X.replay-confirm.json'), '{}')
   write(path.join(d, 'Y.server.json'), '{}')
   setAside(d, 'X')
   expect(existsSync(path.join(d, 'X.server.json'))).toBe(false)
   const [moved] = readdirSync(path.join(d, 'interrupted'))
   expect(readdirSync(path.join(d, 'interrupted', moved!)).toSorted()).toEqual([
     'X.config.json',
+    'X.replay-confirm.json',
     'X.server.json',
   ])
   // another trial's files are untouched

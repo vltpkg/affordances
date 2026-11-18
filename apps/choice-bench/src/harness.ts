@@ -54,6 +54,8 @@ const TRIAL_FILES = [
   '.state.json',
   '.server.log',
   '.replay.json',
+  // a browser trial's confirm-load replay (code review of M8)
+  '.replay-confirm.json',
 ]
 // what an earlier, unfinished attempt left of a trial: moved into interrupted/, never deleted (intake), so a rerun is
 // scored only from its own record (review of 4893655c: a stale server record would have passed the started check)
