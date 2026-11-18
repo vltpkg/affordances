@@ -1,6 +1,6 @@
 # M7f: the six-surface comparison, the plan
 
-**Status:** DRAFT (design, 2026-11-18). It's for intake and backend. Nothing here has run, and the plan is committed in final form before any trial. Its method is RFC 0003, as amended, with §12's surfaces and §16's lesson for condition construction.
+**Status:** DRAFT (design, 2026-11-18), updated to intake's ruling (09:20Z). Nothing here has run. This plan, the analysis code and the preflight are committed before any trial. Its method is RFC 0003, as amended, with §12's surfaces and §16's lesson for condition construction.
 
 ## 1. The question
 
@@ -24,50 +24,74 @@ Everything else is byte-identical across the six, and the preflight refuses a ru
 
 **Information parity, per surface.** Surfaces are expected to differ in what they show first, so that's measured, not refused. The deciding facts must still be _reachable_ on every surface: every plan's price and `bandwidthGb`, the add-ons' prices, and the bundle's price.
 
-- **The check:** before any trial, an oracle walk through each surface's own tools reaches all of them, and it extends ffb00260's disclosure test to every surface.
+- **The check:** before any trial, an oracle walk through each surface's own tools reaches all of them, extending ffb00260's disclosure test to every surface (backend, 09:21Z):
+  - **`full` and `progressive`:** ffb00260's walk, every expansion plus inspect;
+  - **`v0`:** open every route in the SiteIndex, and read each graph;
+  - **MCP and WebMCP:** call every query tool, and read the tool schemas;
+  - **`browser`:** visit every page reachable from the start by links, and read each snapshot. This check reads text, so it's weaker: a fact passes only when its value appears in the same element as its label ("Pro" and "100 GB").
+  - The preflight prints each surface's found and missing facts.
 - **On failure:** a surface that can't reach a deciding fact is refused, because its result would measure the gap, not the surface. That's M5's F lesson.
+
+**Three more preflight checks** (backend, 09:21Z):
+
+- **Server instructions:** no MCP server the run starts sends an `instructions` field. Otherwise the server would be prompt text that differs by cell, and the canary wouldn't see it.
+- **Tool lists:** each surface's tool list, with its names, descriptions and schemas, is hashed and recorded. The instruction line naming the tools is the only prompt difference allowed.
+- **The browser's pages:** the server is the export's own production build, with its `.next` build id recorded, so the pages are pinned too.
 
 **What each surface shows first is recorded and diffed** per cell, as the audit's first-view diff did: the facts present in its first response. That's descriptive, and the analysis conditions on it (§5).
 
 ## 3. The surfaces
 
-From RFC 0003 §12, each on the same hosting-lab app:
+**The confirmatory four** (intake, 09:20Z), each on the same hosting-lab app:
 
-| id         | surface                      | the agent's tools                                       | notes                                                                                              |
-| ---------- | ---------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `browser`  | browser automation           | a browser driver over the app's pages                   | the harness part to agree with backend: which driver, and the justification for any new dependency |
-| `v0`       | Affordances v0               | v0's page graph and call, through the M7 adapter        | the approval is a `confirm: true` resend                                                           |
-| `mcp-flat` | MCP, one tool per capability | RFC 0001 §6.1's export, with no relations and no claims | the input schemas as tool schemas                                                                  |
-| `graph-A`  | the full graph, exhaustive   | the four tools, policy `exhaustive`                     | M5's A, on the new runtime                                                                         |
-| `graph-B`  | the progressive graph        | the four tools, policy `progressive`                    | M5's B                                                                                             |
-| `graph-C`  | the graph with advocacy      | the four tools, policy `advocated`                      | M5's C, now with §6.6's comparison on every view                                                   |
+| id            | surface                           | the agent's tools                                                                                                                                                                                                                                            | approval                        |
+| ------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
+| `full`        | protocol 1, the full graph        | the four tools, policy `exhaustive`, with §6.6's comparison                                                                                                                                                                                                  | the approval token              |
+| `progressive` | protocol 1, the progressive graph | the four tools, policy `progressive`, with §6.6's comparison                                                                                                                                                                                                 | the approval token              |
+| `v0`          | Affordances v0                    | packages/mcp's existing v0 tools, `affordances_open` and `affordances_call`, over the app's SiteIndex. Every capability must be a v0 action on a page, which the parity walk checks                                                                          | a `confirm: true` resend        |
+| `browser`     | browser automation                | choice-bench's own small MCP server over Playwright, which is already a devDependency, so nothing new. Its tools are fixed: `open(url)`, `snapshot()` (the accessibility tree as text, with element refs), `click(ref)`, `fill(ref, text)` and `submit(ref)` | the final submit is let through |
 
-**One thing M5 makes explicit:** on the amended runtime, `graph-C`'s first view carries the plans' comparison, so the confound that voided H2's reading as advocacy is removed for this study. That's why M7f waits for M7a.
+**Pilot only:** MCP and WebMCP. They're described, not estimated, and their confirmatory comparison is a later round.
+
+**The browser cell's server:** hosting-lab's production build, from the pinned export, with one server per worker on its own port. Each trial gets a fresh session cookie, since the store is per session. The outcome is read through the trial's own session (`project.read` over the API with its bearer), never through the inspector, which stays off.
+
+**Two questions for intake, before the final form:**
+
+1. **Which MCP?** RFC 0003 §12's surface is one tool per capability, with no relations or claims. RFC 0004 §4's default is the generic four tools, with elicitation by the server. This draft assumes RFC 0004's, since it's the shipped surface.
+   - **If it's the per-capability export,** a consequential tool returns the summary and an approval token, and the agent re-calls with `approval`, as the four tools do (backend). Otherwise it would differ in two factors, not one.
+   - **Targeted tools** take the target's key in the input (`targetAt`).
+2. **The advocated graph** (M5's C) isn't in the ruling. This draft leaves it out of both the pilot and the confirmatory run.
 
 ## 4. Budget, and the pilot
 
 - **The models:** Claude only, `claude-sonnet-5-5` and `claude-haiku-5-5`, with ids and the CLI pinned. Codex stays out until its isolation is solved.
-- **The pilot:** 6 surfaces × 2 models × 5 trials = **60**, from the remaining 86. The 26 left are the margin, for retries and refused preflights, capped at 1 retry per trial.
-- **What the pilot is for:** the variance per surface, tokens per trial, harness problems, and whether the parity check holds on real runs. Its results are exploratory, whatever they show.
-- **The confirmatory size** goes to intake with the pilot's variance, under a ceiling of 400 trials unless intake approves more.
-  - **What 400 buys:** split 12 ways, it's about 33 per cell. Near 0.5, that's a ±17-point interval for one cell, and about ±24 for a difference between two: estimation, not detection.
-  - **So the choice for intake is between:**
-    - (a) one model, 6 × 66, at about ±12 per cell and ±17 per difference;
-    - (b) fewer surfaces;
-    - (c) both models at 33 per cell.
-  - The plan's final form fixes one before any confirmatory trial.
+- **The pilot:** 6 surfaces (the four, plus MCP and WebMCP) × 2 models × 5 trials = **60**, from the remaining 86. The 26 left are the margin, for retries and refused preflights, capped at 1 retry per trial.
+- **What the pilot is for:** harness problems, tokens per trial, the per-surface variance, and whether the parity check holds on real runs. Its results are exploratory, and MCP's and WebMCP's are descriptive only.
+- **The confirmatory run:** 4 surfaces × 2 models × **50** = **400**, the ceiling. It's interleaved and rotated as in M5.
 
 ## 5. Outcomes and analysis
 
-- **Primary:** the optimal rate, intent to treat, per surface and model, with Wilson 95% intervals.
-- **The contrasts:** each surface against `graph-A`, as risk differences with Newcombe intervals.
-  - If intake wants tests, they're pre-registered here with Holm's correction across the five.
-  - Otherwise this is estimation only, and says so.
-- **Secondary** (descriptive):
-  - the text-stated rate (an upper bound, as in the audit);
+**Estimation is primary, with no p-values** (intake, 09:20Z).
+
+- **The outcome:** the optimal rate, intent to treat, with the intended end state as the choice (RFC 0003 §5.2).
+- **The three contrasts, fixed now:**
+  1. `full` against `v0`;
+  2. `full` against `browser`;
+  3. `progressive` against `full`.
+- **For each contrast:**
+  - the Mantel–Haenszel risk difference across the two models, with its 95% interval (Sato's variance), and per-model risk differences with Newcombe's intervals;
+  - heterogeneity between the models is reported, as M5's H2 was, and per-model results lead when it's large.
+- **The precision target,** at 50 per cell and near a rate of 0.5:
+  - about ±19.6 points for a per-model difference;
+  - about ±13.9 for the pooled difference.
+  - Rates far from 0.5 give narrower intervals.
+- **The cost side, secondary,** per surface and model, each with a 95% interval:
+  - median tokens, excluding cache reads, with a bootstrap percentile interval, 10,000 resamples and a fixed seed recorded in the code;
+  - tool calls, and latency (wall time per trial), as medians with the same interval;
+  - the consequential-error rate, with a Wilson interval.
+- **Also descriptive:**
+  - the text-stated rate (an upper bound, as in M5's audit);
   - completed purchases;
-  - tokens (excluding cache reads), tool calls and wall time;
-  - consequential errors;
   - the information path: whether Pro's allowance was seen before the first approval request, and what each surface's first response carried.
 - **What isn't claimed:** a mechanism. Any reading of why a surface differs is labelled a hypothesis for a later pre-registered run, as in M5's §4.2.
 
@@ -80,11 +104,9 @@ From RFC 0003 §12, each on the same hosting-lab app:
 - the load gate;
 - partial traces moved aside, never deleted.
 
-## 7. Open, for agreement before the final form
+## 7. Before any trial
 
-1. **With backend:**
-   - the harness parts: the browser driver, the v0 adapter and the flat MCP export;
-   - the parity oracle;
-   - the preflight's checks in §2.
-2. **With intake:** the confirmatory shape, (a), (b) or (c) in §4, and whether §5's contrasts are tested or only estimated.
-3. **The run waits for M7a's comparison,** and for the fixture export that carries it.
+1. **Committed first:** this plan in final form, the analysis code, and the preflight. The preflight proves the conditions differ ONLY in the surface (§2): byte-identity outside each surface's tool layer, plus the parity walk.
+2. **Agreed with backend (09:21Z):** the browser driver, the v0 tools, the parity oracle and the preflight's checks. Backend builds the drivers and the export after M6, the boundary fixes and M7a, in intake's order. The WebMCP driver is still to agree.
+3. **The new export,** with §6.6 built (M7a), named by its commit.
+4. **Intake's answers** to §3's two questions.
