@@ -18,11 +18,27 @@ export const planAttributes = async (slug: string) => {
   throw new Error(`the catalog has no plan ${slug}`)
 }
 
-/** Whether a structured result shows the plan's fact: some object holds slug and the fact's value together. */
+/**
+ * Whether a structured result shows an item's fact: some object holds its slug and the fact's value together; or, for a
+ * price, an offer targeting it (its target's key is the slug) whose rendered confirmation summary names the price, as
+ * '5 USD', ffb00260's disclosure rule (an add-on's or bundle's price reaches the agent that way on protocol 1)
+ */
 export const showsFact = (result: unknown, slug: string, fact: string, value: unknown): boolean => {
   if (typeof result !== 'object' || result === null) return false
   const o = result as Record<string, unknown>
-  if (!Array.isArray(o) && o.slug === slug && fact in o && o[fact] === value) return true
+  if (!Array.isArray(o)) {
+    if (o.slug === slug && fact in o && o[fact] === value) return true
+    const target = o.target as { key?: unknown } | undefined
+    const summary = (o.requirements as { confirmation?: { summary?: unknown } } | undefined)
+      ?.confirmation?.summary
+    if (
+      fact === 'priceUsd' &&
+      target?.key === slug &&
+      typeof summary === 'string' &&
+      holdsPhrase(summary, `${value} USD`)
+    )
+      return true
+  }
   return Object.values(o).some((v) => showsFact(v, slug, fact, value))
 }
 

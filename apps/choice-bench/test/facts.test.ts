@@ -20,6 +20,40 @@ test('a structured result shows a fact when one object holds the slug and the va
   ).toBe(false)
 })
 
+// an add-on's offer, with its rendered summary
+const offer = (key: string, summary: string) => ({
+  id: `hosting.addOn.add@hosting.addOn:${key}`,
+  target: { type: 'hosting.addOn', key },
+  requirements: { confirmation: { summary } },
+})
+
+test('a price also shows in a targeting offer’s rendered summary, ffb00260’s rule, and only there', () => {
+  const view = {
+    offers: [
+      offer('daily-backups', 'Add Daily backups to j1, for 5 USD a month. Charges: 5 USD now'),
+    ],
+  }
+  expect(showsFact(view, 'daily-backups', 'priceUsd', 5)).toBe(true)
+  // the planner (16:53Z): only the offer that TARGETS the item counts. A different offer's summary naming the same
+  // price, here another add-on's at 5 USD, doesn't
+  const other = {
+    offers: [offer('extra-bandwidth', 'Add Extra bandwidth to j1, for 5 USD a month')],
+  }
+  expect(showsFact(other, 'daily-backups', 'priceUsd', 5)).toBe(false)
+  // another item's offer, or a price that's only part of a number, doesn't count
+  expect(showsFact(view, 'extra-bandwidth', 'priceUsd', 5)).toBe(false)
+  expect(
+    showsFact(
+      { offers: [offer('daily-backups', 'for 15 USD a month')] },
+      'daily-backups',
+      'priceUsd',
+      5,
+    ),
+  ).toBe(false)
+  // and a summary is never read for a fact that isn't a price
+  expect(showsFact(view, 'daily-backups', 'bandwidthGb', 5)).toBe(false)
+})
+
 // a plans page as Playwright 1.64's ariaSnapshot({ mode: 'ai' }) renders it
 const PAGE = `- main [ref=e2]:
   - heading "Plans" [level=1] [ref=e3]

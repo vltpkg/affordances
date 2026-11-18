@@ -68,6 +68,36 @@ const SERVERS = {
   mcp: path.resolve(import.meta.dirname, 'mcp-server.ts'),
   webmcp: path.resolve(import.meta.dirname, 'webmcp-server.ts'),
 }
+/** A surface's tool server, as a driver launches it: its script, beside its config file. */
+export const toolServerOf = (surface: Surface) => SERVERS[surface.kind]
+
+/** The config a surface's tool server takes, from what the runner (or the preflight) knows of the trial. */
+export const toolServerConfig = (
+  surface: Surface,
+  t: {
+    url: string
+    session: string
+    task: string
+    index: number
+    project: string
+    stateFile: string
+    out: string
+  },
+): SurfaceServerConfig | V0Config | BrowserConfig | McpConfig | WebMcpConfig =>
+  surface.kind === 'mcp'
+    ? { url: t.url, session: t.session, task: t.task, project: t.project, out: t.out }
+    : surface.kind === 'v0' || surface.kind === 'browser' || surface.kind === 'webmcp'
+      ? { url: t.url, session: t.session, out: t.out }
+      : {
+          surface: surface.id as 'full' | 'progressive',
+          task: t.task,
+          index: t.index,
+          url: t.url,
+          session: t.session,
+          project: t.project,
+          stateFile: t.stateFile,
+          out: t.out,
+        }
 const V0_TOOLS = new Set(['affordances_open', 'affordances_call'])
 const BROWSER_TOOLS = new Set(['open', 'snapshot', 'click', 'fill', 'submit'])
 
@@ -186,21 +216,15 @@ export const runSurfaceTrial = async (
   })
   const out = file('server.json')
   const configPath = file('config.json')
-  const config: SurfaceServerConfig | V0Config | BrowserConfig | McpConfig | WebMcpConfig =
-    surface.kind === 'mcp'
-      ? { url, session, task: spec.task, project, out }
-      : surface.kind === 'v0' || surface.kind === 'browser' || surface.kind === 'webmcp'
-        ? { url, session, out }
-        : {
-            surface: surface.id as 'full' | 'progressive',
-            task: spec.task,
-            index: spec.index,
-            url,
-            session,
-            project,
-            stateFile,
-            out,
-          }
+  const config = toolServerConfig(surface, {
+    url,
+    session,
+    task: spec.task,
+    index: spec.index,
+    project,
+    stateFile,
+    out,
+  })
   writeFileSync(configPath, JSON.stringify(config))
   const prompt = surfacePromptFor(surface, task)
   const startedAt = new Date().toISOString()

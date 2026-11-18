@@ -1,0 +1,18 @@
+{
+  "from": "main",
+  "commit": "e9645ab4bea0244d3d29f2e4bee7e7231337ef55",
+  "files": {
+    "packages/mcp/CHANGELOG.md": "d2b629771a0b2aa0284e23700b0b02decd10e2ff",
+    "packages/mcp/LICENSE": "fdbf2f0fa9c4517ae7e93a33270b9329a0ac236c",
+    "packages/mcp/README.md": "c1cca1b5e29a20c73acbe4e97d05306c610c4cdf",
+    "packages/mcp/package.json": "d41cb90467116be8895e4e7ea0b927a20484f008",
+    "packages/mcp/src/cli.ts": "6fed7bddfab230b8c7ddce287a33a43485028ffd",
+    "packages/mcp/src/client.ts": "81583614897e88bf7597692047abddf25357c4ca",
+    "packages/mcp/src/describe.ts": "f34a91829eb6684a905471102351f8f614ece286",
+    "packages/mcp/src/index.ts": "7d546a83cae28b66381b01cff982f870e9303030",
+    "packages/mcp/src/server.ts": "774a9f49eafe73a258a5f16616b81970f86c1fad",
+    "packages/mcp/test/mcp.test.ts": "a29eca62e8697302a30eef9dd67a177f92f4b18c",
+    "packages/mcp/tsconfig.json": "7680f9972d15be6325fe4f0c9bce6a30e5194967",
+    "packages/mcp/tsdown.config.ts": "7c8727df405efe6bff91a31e20b4cedd4c7e153f"
+  }
+}
