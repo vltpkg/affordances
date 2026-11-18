@@ -3,8 +3,9 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { expect, test } from 'vitest'
 import { generate, render, scan } from '../src/codegen.ts'
+import { fixtureCopy } from './support/fixture.ts'
 
-const fixture = path.join(import.meta.dirname, 'fixture')
+const fixture = fixtureCopy()
 
 test('scans actions and state, skipping route groups and private folders', () => {
   expect(scan(fixture)).toEqual([

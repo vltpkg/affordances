@@ -3,12 +3,13 @@ import { beforeAll, expect, test } from 'vitest'
 import { generate } from '../src/codegen.ts'
 import { createRouteHandler } from '../src/route.ts'
 import path from 'node:path'
+import { fixtureCopy } from './support/fixture.ts'
 
 let handler: (request: Request) => Promise<Response>
+const fixture = fixtureCopy()
 beforeAll(async () => {
-  generate(path.join(import.meta.dirname, 'fixture'), { name: 'Fixture' })
-  // @ts-ignore generated
-  const { manifest } = await import('./fixture/.affordances/manifest.ts')
+  generate(fixture, { name: 'Fixture' })
+  const { manifest } = await import(path.join(fixture, '.affordances', 'manifest.ts'))
   handler = createRouteHandler({ manifest })
 })
 

@@ -4,6 +4,9 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { expect, test, vi } from 'vitest'
 import { INDEX_ENV, noNamespace, rewrites, toSource, withAffordances } from '../src/config.ts'
+import { fixtureCopy } from './support/fixture.ts'
+
+const fixture = fixtureCopy()
 
 test('route patterns become header sources', () => {
   expect(toSource('/products/[slug]')).toBe('/products/:slug')
@@ -30,7 +33,7 @@ test('plugins wrap the config in order, after the graph', async () => {
       return { ...config, [name]: true }
     }
   const config = withAffordances({} as NextConfig, {
-    root: path.join(import.meta.dirname, 'fixture'),
+    root: fixture,
     plugins: [plugin('a'), plugin('b')],
   })
   expect(order).toEqual(['a', 'b'])
@@ -45,7 +48,7 @@ test('withAffordances prepends its rewrites and keeps the user config', async ()
       rewrites: async () => [{ source: '/old', destination: '/new' }],
       headers: async () => [{ source: '/x', headers: [{ key: 'a', value: 'b' }] }],
     },
-    { root: path.join(import.meta.dirname, 'fixture') },
+    { root: fixture },
   )
   expect(config.reactCompiler).toBe(true)
   const r = (await config.rewrites!()) as unknown as {
@@ -63,13 +66,13 @@ test('withAffordances prepends its rewrites and keeps the user config', async ()
 })
 
 test("the app's env says where its index is, for plugins that read it, and the user's env survives", () => {
-  const root = path.join(import.meta.dirname, 'fixture')
+  const root = fixture
   const config = withAffordances({ env: { A: '1' } }, { root })
   expect(config.env).toEqual({ A: '1', [INDEX_ENV]: '/.well-known/affordances.json' })
 })
 
 test('the route handler finds the manifest through an alias, and user aliases survive', () => {
-  const root = path.join(import.meta.dirname, 'fixture')
+  const root = fixture
   const config = withAffordances(
     {
       turbopack: { resolveAlias: { lodash: 'lodash-es' } },
