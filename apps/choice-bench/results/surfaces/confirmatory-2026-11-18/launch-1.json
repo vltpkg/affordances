@@ -1,0 +1,324 @@
+{
+  "launch": 1,
+  "plan": "confirmatory",
+  "startedAt": "2026-11-18T20:10:30.965Z",
+  "dry": false,
+  "pin": {
+    "commit": "d1b2821d54ed3603970aab29d115408a52ce3876",
+    "treeHash": "38b6e59a8b703e2099611a80cdf1087e58ff1ce27f7c7662cd4823c8166876d1",
+    "buildId": "ZYlgSH9uj4OVhAhTbTXCL",
+    "lockfileSha256": "97e6dbbadbce71f324723797fd860c8ac1ed707b5b8f116ae3c59482a7e524c9",
+    "hostingLabTreeHash": "967ac0b010b91b44ed7c0b0dae3c36e3d6b5bc628f6e11d7bbca12340f84d8e7",
+    "chromium": "156.0.8078.4",
+    "playwright": "1.64.1",
+    "node": "v26.13.1",
+    "vlt": "1.8.0",
+    "preflight": {
+      "ok": true,
+      "refusals": [],
+      "surfaces": [
+        {
+          "surface": "full",
+          "buildId": "ZYlgSH9uj4OVhAhTbTXCL",
+          "siteIndex": "931fcf457c348e58d60ac3ee38144880b6211d1472f1a8b34d95412181748f62",
+          "instructions": null,
+          "toolsHash": "f851c709e844a2dd80ccb346387cb0846ed926ae3ec11d3eca19bd404755c4a8",
+          "tools": [
+            "execute",
+            "expand",
+            "inspect",
+            "project"
+          ],
+          "firstView": "project",
+          "found": [
+            {
+              "fact": "plan hobby priceUsd",
+              "where": "project"
+            },
+            {
+              "fact": "plan hobby bandwidthGb",
+              "where": "project"
+            },
+            {
+              "fact": "plan pro priceUsd",
+              "where": "project"
+            },
+            {
+              "fact": "plan pro bandwidthGb",
+              "where": "project"
+            },
+            {
+              "fact": "plan business priceUsd",
+              "where": "project"
+            },
+            {
+              "fact": "plan business bandwidthGb",
+              "where": "project"
+            },
+            {
+              "fact": "addOn priority-support priceUsd",
+              "where": "project"
+            },
+            {
+              "fact": "addOn extra-bandwidth priceUsd",
+              "where": "project"
+            },
+            {
+              "fact": "addOn daily-backups priceUsd",
+              "where": "project"
+            },
+            {
+              "fact": "bundle pro-plus priceUsd",
+              "where": "project"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "surface": "progressive",
+          "buildId": "ZYlgSH9uj4OVhAhTbTXCL",
+          "siteIndex": "931fcf457c348e58d60ac3ee38144880b6211d1472f1a8b34d95412181748f62",
+          "instructions": null,
+          "toolsHash": "f851c709e844a2dd80ccb346387cb0846ed926ae3ec11d3eca19bd404755c4a8",
+          "tools": [
+            "execute",
+            "expand",
+            "inspect",
+            "project"
+          ],
+          "firstView": "project",
+          "found": [
+            {
+              "fact": "plan hobby priceUsd",
+              "where": "project"
+            },
+            {
+              "fact": "plan hobby bandwidthGb",
+              "where": "project"
+            },
+            {
+              "fact": "plan pro priceUsd",
+              "where": "project"
+            },
+            {
+              "fact": "plan pro bandwidthGb",
+              "where": "project"
+            },
+            {
+              "fact": "plan business priceUsd",
+              "where": "project"
+            },
+            {
+              "fact": "plan business bandwidthGb",
+              "where": "project"
+            },
+            {
+              "fact": "addOn priority-support priceUsd",
+              "where": "project"
+            },
+            {
+              "fact": "addOn extra-bandwidth priceUsd",
+              "where": "project"
+            },
+            {
+              "fact": "addOn daily-backups priceUsd",
+              "where": "project"
+            },
+            {
+              "fact": "bundle pro-plus priceUsd",
+              "where": "project"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "surface": "v0",
+          "buildId": "ZYlgSH9uj4OVhAhTbTXCL",
+          "siteIndex": "931fcf457c348e58d60ac3ee38144880b6211d1472f1a8b34d95412181748f62",
+          "instructions": null,
+          "toolsHash": "744a0de885ea3b1acc67d8104ed5d98c90d1811c28e11e64a7fb0010fe24224b",
+          "tools": [
+            "affordances_call",
+            "affordances_open"
+          ],
+          "firstView": "pages",
+          "found": [
+            {
+              "fact": "plan hobby priceUsd",
+              "where": "open /plans"
+            },
+            {
+              "fact": "plan hobby bandwidthGb",
+              "where": "open /plans"
+            },
+            {
+              "fact": "plan pro priceUsd",
+              "where": "open /plans"
+            },
+            {
+              "fact": "plan pro bandwidthGb",
+              "where": "open /plans"
+            },
+            {
+              "fact": "plan business priceUsd",
+              "where": "open /plans"
+            },
+            {
+              "fact": "plan business bandwidthGb",
+              "where": "open /plans"
+            },
+            {
+              "fact": "addOn priority-support priceUsd",
+              "where": "open /add-ons"
+            },
+            {
+              "fact": "addOn extra-bandwidth priceUsd",
+              "where": "open /add-ons"
+            },
+            {
+              "fact": "addOn daily-backups priceUsd",
+              "where": "open /add-ons"
+            },
+            {
+              "fact": "bundle pro-plus priceUsd",
+              "where": "open /plans"
+            }
+          ],
+          "missing": []
+        },
+        {
+          "surface": "browser",
+          "buildId": "ZYlgSH9uj4OVhAhTbTXCL",
+          "siteIndex": "931fcf457c348e58d60ac3ee38144880b6211d1472f1a8b34d95412181748f62",
+          "instructions": null,
+          "toolsHash": "dbbe14f3583f48165463cfef66f17bfb9ab2c5f3ed8b7af75c151589f7a02a07",
+          "tools": [
+            "click",
+            "fill",
+            "open",
+            "snapshot",
+            "submit"
+          ],
+          "firstView": "pages",
+          "found": [
+            {
+              "fact": "plan hobby priceUsd",
+              "where": "open /plans"
+            },
+            {
+              "fact": "plan hobby bandwidthGb",
+              "where": "open /plans"
+            },
+            {
+              "fact": "plan pro priceUsd",
+              "where": "open /plans"
+            },
+            {
+              "fact": "plan pro bandwidthGb",
+              "where": "open /plans"
+            },
+            {
+              "fact": "plan business priceUsd",
+              "where": "open /plans"
+            },
+            {
+              "fact": "plan business bandwidthGb",
+              "where": "open /plans"
+            },
+            {
+              "fact": "addOn priority-support priceUsd",
+              "where": "open /add-ons"
+            },
+            {
+              "fact": "addOn extra-bandwidth priceUsd",
+              "where": "open /add-ons"
+            },
+            {
+              "fact": "addOn daily-backups priceUsd",
+              "where": "open /add-ons"
+            },
+            {
+              "fact": "bundle pro-plus priceUsd",
+              "where": "open /plans"
+            }
+          ],
+          "missing": [],
+          "browser": {
+            "chromium": "156.0.8078.4",
+            "playwright": "1.64.1",
+            "launchArgs": []
+          }
+        }
+      ],
+      "manifestDigest": "sha256-J8kQTQYok-Xwx5Vz1kN5_iTy6WGVadh6ICo-gXZXG18",
+      "catalog": "e13cbf680a9cb09a15dc86a7f5bf839cf710dc7d8a6507dfcca256ec9174f4f3",
+      "mcpPin": {
+        "commit": "e9645ab4bea0244d3d29f2e4bee7e7231337ef55",
+        "files": 12,
+        "ok": true,
+        "differ": []
+      }
+    },
+    "builtAt": "2026-11-18T20:08:14.982Z",
+    "kept": "the one export of the confirmatory pin, kept on disk for the confirmatory run, the agreed exception to delete-after-use (the planner, 17:13Z); made read-only after this file is written"
+  },
+  "preflight": {
+    "ok": true,
+    "buildIds": [
+      "ZYlgSH9uj4OVhAhTbTXCL"
+    ]
+  },
+  "gate": {
+    "limit": 32,
+    "load": 6.64,
+    "waitedMs": 1
+  },
+  "loginsBefore": {
+    "at": "2026-11-18T20:10:22.217Z",
+    "claude": true,
+    "codex": true
+  },
+  "canaries": [
+    {
+      "model": "claude-sonnet-5-5",
+      "passed": true
+    },
+    {
+      "model": "claude-haiku-5-5",
+      "passed": true
+    }
+  ],
+  "stampsBefore": [
+    {
+      "file": "/home/jason/.config/claude/settings.json",
+      "mtime": "2026-11-11T21:23:33.369Z",
+      "sha256": "4ac48268f58a063ba4e5cd9c834907b782a1baf7289d00312b6c811352530ef2"
+    },
+    {
+      "file": "/home/jason/.config/claude/.credentials.json",
+      "mtime": "2026-11-18T16:28:23.039Z",
+      "sha256": "recorded outside git"
+    },
+    {
+      "file": "/home/jason/.codex/AGENTS.md",
+      "mtime": "2026-09-16T15:55:56.625Z",
+      "sha256": "eb40aa9fd1ab622ccdc78d0c5aaff2eb802355c10400778a7d6da1964c847cc8"
+    },
+    {
+      "file": "/home/jason/.codex/config.toml",
+      "mtime": "2026-11-10T18:55:19.138Z",
+      "sha256": "3cd86bb5402f6499754c3e7b3f0946f7e78408a4c0b415a81880c690b007849b"
+    },
+    {
+      "file": "/home/jason/.codex/auth.json",
+      "mtime": "2026-11-18T13:50:25.211Z",
+      "sha256": "recorded outside git"
+    }
+  ],
+  "specs": 400,
+  "maxAttempts": 2,
+  "ports": [
+    3931,
+    3932
+  ]
+}
