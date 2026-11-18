@@ -51,8 +51,7 @@ export type ToolsetOptions = {
   manifest?: CapabilityManifest
 }
 
-// THE BOUNDARY (the planner, after review of 3a02e2c8): everything a tool returns reaches the model only through
-// toModel. RFC 0004 §4 gives the person, never the model, the approval token: so every `approval` field, at any depth,
+// THE BOUNDARY: everything a tool returns reaches the model only through toModel. RFC 0004 §4 gives the person, never the model, the approval token: so every `approval` field, at any depth,
 // is removed, and any text shaped like a token (the runtime's expiresAt~nonce~mac) is replaced. One function, not one
 // check per path, so a new path can't forget it. RFC 8785's order, so a result's bytes are the same on every transport
 /** @experimental The runtime's approval token's shape: `${expiresAt}~${nonce}~${mac}`. */
@@ -79,7 +78,9 @@ export const toModel = (value: unknown, error?: true): AgentToolResult => ({
 })
 const failure = (message: string) => toModel(message, true)
 
-// a refusal as the model may see it: never the token, which only the person's answer may spend
+// a refusal as the model may see it: never the token, which only the person's answer may spend. A second layer, not the
+// boundary: toModel strips every approval anyway, and this keeps the execute path's own results token-free before they
+// reach it, since a token in a result that once leaked to the model is the failure this guards
 const withoutToken = (result: ExecutionResult) => {
   if (result.status !== 'refused' || !result.confirmation?.approval) return result
   const { approval: _, ...confirmation } = result.confirmation
@@ -179,7 +180,7 @@ export const createToolset = (options: ToolsetOptions) => {
     const answer = await confirm(summary).catch(() => 'timeout' as const)
     if (answer !== 'accept') return { ...withoutToken(result), answered: answer }
     // the run with the person's token. Whatever comes back is stripped too: a refusal here (the token spent, the
-    // offer's revision moved) can carry a fresh token, which the model must never see (review of 3a02e2c8)
+    // offer's revision moved) can carry a fresh token, which the model must never see
     return withoutToken(await adapter.execute({ offer, input, approval: token }))
   }
 

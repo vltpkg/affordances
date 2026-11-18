@@ -404,13 +404,9 @@ export const createProjectionRoute = <Session = unknown>(
           ifRevision: ifRevision as string | undefined,
         } as never)
         if (result.status === 'ok') return json(result)
-        // a refusal, with nothing of a token: check's confirmation is the summary alone
-        const { confirmation, ...refusal } = result
-        const shown = confirmation
-          ? { ...refusal, confirmation: { summary: confirmation.summary } }
-          : refusal
+        // a refusal, with nothing of a token: the runtime's check never issues one, so its confirmation is the summary
         const { status, headers } = statusOf(result as never, principal)
-        return json(shown, status, headers)
+        return json(result, status, headers)
       }
       return refuse(404, `No projection operation ${op}`)
     })
