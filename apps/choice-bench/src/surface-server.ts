@@ -23,6 +23,9 @@ export type SurfaceServerConfig = {
   index: number
   url: string
   session: string
+  // the trial's project key, as its session sees it, read by the runner before the agent's first call: a progressive
+  // first view without a start needn't show the project
+  project: string
   stateFile: string
   out: string
 }
@@ -36,15 +39,8 @@ if (!task) throw new Error(`no task ${config.task}`)
 const runtime = remoteRuntime({ base: `${config.url}/api/projection`, session: config.session })
 // the principal is the session's, on the server: what's passed here is never read
 const principal = {} as Principal
-// the trial's project, as its own session sees it
-const first = (
-  await runtime.project({ principal, policy: condition.policy.id })
-).view() as unknown as {
-  offers: { capability: string; target?: { key: string } }[]
-}
-const projectKey = first.offers.find((o) => o.capability === 'hosting.project.read')?.target?.key
-if (!projectKey) throw new Error('the trial’s session sees no project')
-const project = { type: 'hosting.project' as const, key: projectKey }
+// the trial's project, which the runner read through the session before the agent's first call
+const project = { type: 'hosting.project' as const, key: config.project }
 const endState = () => {
   const state = readEndState(config.stateFile, config.session)
   if (!state) throw new Error('the trial’s server wrote no end state for its session')

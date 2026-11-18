@@ -141,6 +141,12 @@ export const runSurfaceTrial = async (
     stderr: serverLog,
   })
   const url = `http://${HOST}:${options.port}`
+  // the trial's project key, as its session sees it, before the agent's first call: the four tools' server needs it
+  // (a progressive first view without a start doesn't show the project), and the replay's offer ids carry it
+  const project = await projectKeyOf(server.url, session).catch(async (e) => {
+    await server.stop()
+    throw e
+  })
   const out = file('server.json')
   const configPath = file('config.json')
   const config: SurfaceServerConfig | V0Config =
@@ -152,6 +158,7 @@ export const runSurfaceTrial = async (
           index: spec.index,
           url,
           session,
+          project,
           stateFile,
           out,
         }
@@ -175,10 +182,7 @@ export const runSurfaceTrial = async (
   // the outcome's two reads, before the server stops: the state file, and project.read through the session
   let fault: { kind: string; detail: string } | undefined
   let endState: lab.EndState | undefined
-  // the trial's project key, which the replay's offer ids and inputs carry, as the session sees it
-  let project = ''
   try {
-    project = await projectKeyOf(server.url, session)
     const state = readEndState(stateFile, session)
     await crossCheck(server.url, session, state)
     endState = state as lab.EndState
