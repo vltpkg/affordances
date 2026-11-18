@@ -291,9 +291,11 @@ export const writeIds = (root: string, options: { idPrefix?: string } = {}): Mis
       // the name's own line and indent, or inline when it shares a line
       const lineStart = source.lastIndexOf('\n', start - 1) + 1
       const indent = source.slice(lineStart, start)
+      // labelled a placeholder in the source it writes: an id is the developer's to choose (RFC 0005 §3; intake,
+      // 2026-11-18), and the suggestion only stands in until they do
       const text = /^\s*$/.test(indent)
-        ? `id: '${want.suggested}',\n${indent}`
-        : `id: '${want.suggested}', `
+        ? `id: '${want.suggested}', // placeholder: choose this action's id\n${indent}`
+        : `id: '${want.suggested}' /* placeholder */, `
       inserts.push([start, text])
     }
     for (const [at, text] of inserts.toSorted(([a], [b]) => b - a))

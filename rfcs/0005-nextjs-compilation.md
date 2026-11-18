@@ -172,7 +172,9 @@ These are never extracted, because code doesn't state them. Each one missing is 
   - An app import in a capability module is an error, not a warning.
 - **Zero configuration breaks nothing a v0 app has, and the first build names the one line, pre-filled where possible, that turns the manifest on** (`W_NO_NAMESPACE`, §1).
   - **With a namespace:** `.affordances/manifest.json` lists every action that has an `id`, plus `W_NO_ID` suggestions for the rest.
-  - **The codemod:** the existing codemod writes the suggestions in (`writeIds`, `codegen.ts:188-283`).
+  - **The codemod:** the existing codemod writes the suggestions in (`writeIds`, in `codegen.ts`).
+  - **Ids are the developer's to choose** (intake, 2026-11-18). A suggestion, and every id the codemod writes, is a **placeholder**, built from the route's folder and the action's name. The codemod marks each one `placeholder` in the source it writes, and its output and `W_NO_ID`'s fix say to replace it.
+    - **Why:** §7's measurement found that 0 of 13 suggestions matched the ids a developer chose. Suggestions name a folder and an action (`plans.listPlans`), while a capability id names a resource and a verb (`hosting.plan.list`).
 - **Diagnostics.** Every warning:
   - names the file, the line and the rule;
   - says what to declare, and where;

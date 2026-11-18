@@ -118,32 +118,35 @@ describe('writeIds, the codemod', () => {
     expect(writeIds(root).map((m) => m.suggested)).toEqual(['products.addToCart'])
     const after = readFileSync(path.join(root, 'app/products/[slug]/actions.ts'), 'utf8')
     expect(after).toBe(
-      before.replace("  name: 'addToCart',", "  id: 'products.addToCart',\n  name: 'addToCart',"),
+      before.replace(
+        "  name: 'addToCart',",
+        "  id: 'products.addToCart', // placeholder: choose this action's id\n  name: 'addToCart',",
+      ),
     )
     // and the result is read back as the id, so nothing is missing now
     expect(missingIds(scan(root))).toEqual([])
   })
   test('a one-line config', () => {
     expect(written(`export const a = defineAction({ name: 'a', run: () => {} })\n`)).toBe(
-      `export const a = defineAction({ id: 'a', name: 'a', run: () => {} })\n`,
+      `export const a = defineAction({ id: 'a' /* placeholder */, name: 'a', run: () => {} })\n`,
     )
   })
   test('a name with no trailing comma', () => {
     expect(written(`export const a = defineAction({\n  run: () => {},\n  name: 'a'\n})\n`)).toBe(
-      `export const a = defineAction({\n  run: () => {},\n  id: 'a',\n  name: 'a'\n})\n`,
+      `export const a = defineAction({\n  run: () => {},\n  id: 'a', // placeholder: choose this action's id\n  name: 'a'\n})\n`,
     )
   })
   // review's cases: a comment between the name and its comma
   test('a block comment before the comma', () => {
     expect(written(`export const a = defineAction({ name: 'a' /* c */, run: () => {} })\n`)).toBe(
-      `export const a = defineAction({ id: 'a', name: 'a' /* c */, run: () => {} })\n`,
+      `export const a = defineAction({ id: 'a' /* placeholder */, name: 'a' /* c */, run: () => {} })\n`,
     )
   })
   test('a line comment, with the comma on the next line', () => {
     expect(
       written(`export const a = defineAction({\n  name: 'a' // c\n  , run: () => {},\n})\n`),
     ).toBe(
-      `export const a = defineAction({\n  id: 'a',\n  name: 'a' // c\n  , run: () => {},\n})\n`,
+      `export const a = defineAction({\n  id: 'a', // placeholder: choose this action's id\n  name: 'a' // c\n  , run: () => {},\n})\n`,
     )
   })
   test('every layout re-parses, and reads back with the id', () => {
@@ -166,6 +169,14 @@ describe('writeIds, the codemod', () => {
         [{ local: 'a', name: 'a', id: 'a' }],
       ])
     }
+  })
+  // intake, 2026-11-18: ids are the developer's to choose, so what the codemod writes says it's a placeholder
+  test('every id it writes is labelled a placeholder, in the source', () => {
+    const out = written(`export const a = defineAction({\n  name: 'a',\n  run: () => {},\n})\n`)
+    expect(out).toContain("id: 'a', // placeholder: choose this action's id")
+    expect(written(`export const a = defineAction({ name: 'a', run: () => {} })\n`)).toContain(
+      "id: 'a' /* placeholder */",
+    )
   })
   test('running it twice changes nothing more', () => {
     const root = project({ 'app/x/actions.ts': `'use server'\n${action('go')}` })
@@ -203,7 +214,9 @@ describe('a capability-bound action', () => {
     expect(after.slice(0, after.indexOf('export const other'))).toBe(
       bound.slice(0, bound.indexOf('export const other')),
     )
-    expect(after).toContain("id: 'other',\n  name: 'other',")
+    expect(after).toContain(
+      "id: 'other', // placeholder: choose this action's id\n  name: 'other',",
+    )
   })
   test('on hosting-lab, every action is bound, so none is flagged', () => {
     const root = path.resolve(import.meta.dirname, '../../../apps/hosting-lab')

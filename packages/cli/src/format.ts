@@ -40,8 +40,8 @@ export const ids = ({ missing, written }: { missing: MissingId[]; written: boole
         ...pad(missing.map((m) => [m.code, m.route, `${m.name} → ${m.suggested}`])),
         '',
         written
-          ? `Wrote ${missing.length} ${missing.length === 1 ? 'id' : 'ids'}. Review them: an id is the action's identity across every transport, so rename any that read badly before you ship.`
-          : 'These are suggestions. Run with --write to add them as `id` in each defineAction, then review them.',
+          ? `Wrote ${missing.length} placeholder ${missing.length === 1 ? 'id' : 'ids'}, each marked "placeholder" in the source. Replace each with the id you choose before you ship: an id is the action's identity across every transport, and a suggestion only stands in for it.`
+          : 'These are placeholders, made from each route and name. Run with --write to add them as `id` in each defineAction, then replace each with the id you choose.',
       ].join('\n')
     : 'Every action has a capability id.'
 

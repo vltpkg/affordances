@@ -32,7 +32,7 @@ export const CATALOG = {
     severity: 'warning',
     strict: true,
     means: 'An action has no `id` literal and no `capability`, so it has no capability id',
-    fix: 'Write the suggested `id` on its defineAction, or run the id codemod to write every suggestion in',
+    fix: "Choose the action's id and write it on its defineAction. The suggested id, and every id the codemod writes, is a placeholder to replace: ids are yours to choose",
   },
   W_INPUT_OPAQUE: {
     severity: 'warning',
