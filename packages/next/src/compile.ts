@@ -6,7 +6,7 @@ import { byCodeUnit } from './codegen.ts'
 import { CATALOG, fails, type Diagnostic, type DiagnosticCode } from './diagnostics.ts'
 import { evaluateModules } from './evaluator.ts'
 import { extract, SOURCE, type ExtractedBinding } from './extract.ts'
-import { checkModule, findModules, resolveImport } from './modules.ts'
+import { findModules, resolveImport } from './modules.ts'
 
 // RFC 0005 §4's pipeline: the capability modules, checked statically and evaluated twice, then what extraction recovers
 // from the v0 actions, merged into one manifest, normalized and validated. A module's definition is the app's own, so
@@ -76,7 +76,7 @@ const REDEFINES: Record<string, string[]> = {
   summary: ['confirmation'],
 }
 
-const known = (code: string): code is DiagnosticCode => code in CATALOG
+const known = (code: string): code is DiagnosticCode => Object.hasOwn(CATALOG, code)
 
 /** @experimental Compile an app's capabilities: modules, extraction, merge, validate (RFC 0005 §4). */
 export const compile = async (
@@ -100,6 +100,8 @@ export const compile = async (
 
   // the modules, found and checked before anything runs
   const found = findModules(root)
+  // what the walk found is reported first, so a missing peer never hides a module's own error (review of 917a50b6)
+  diagnostics.push(...found.diagnostics)
   // an app with no capability modules and no namespace is a v0 app: nothing here loads, ir included (intake)
   if (found.modules.length === 0 && found.diagnostics.length === 0 && !options.namespace)
     return done({ bindings: [] })
@@ -115,11 +117,9 @@ export const compile = async (
     })
     return done({ bindings: [] })
   }
-  diagnostics.push(...found.diagnostics)
-  for (const m of found.modules) diagnostics.push(...checkModule(root, m))
   if (diagnostics.some((d) => d.code.startsWith('E_'))) return done({ bindings: [] })
 
-  // then evaluated, twice
+  // then checked and evaluated, twice: evaluateModules runs the static checks itself, so no caller can skip them
   const identity = {
     ...(options.namespace && { namespace: options.namespace }),
     ...(options.owner && { owner: options.owner }),

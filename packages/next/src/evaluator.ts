@@ -5,7 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { findAppDir } from './codegen.ts'
 import type { Diagnostic } from './diagnostics.ts'
-import { aliasesOf } from './modules.ts'
+import { aliasesOf, checkModule } from './modules.ts'
 
 // RFC 0005 §1's evaluation, the parent's side: the capability modules run in a child (evaluate.ts), never in the
 // build's own process, and twice, each time fresh, with an empty environment. If the two manifests differ by a byte,
@@ -66,8 +66,12 @@ const toDiagnostic = (d: {
   detail: d.message,
 })
 
-/** @experimental Evaluate the capability modules twice, each in a fresh child, and compare (RFC 0005 §1). */
-export const evaluateModules = (
+/**
+ * @internal The evaluation alone, twice in the sandbox, WITHOUT the static checks: only for tests of the layers behind
+ * those checks (the run-twice guard, the permission model), which a module has to get past the checks to reach. Every
+ * caller evaluates through evaluateModules, which runs the checks first. No package entry exports this
+ */
+export const evaluateUnchecked = (
   root: string,
   modules: string[],
   identity: { namespace?: string; owner?: { id?: string; name: string; href?: string } },
@@ -135,4 +139,17 @@ export const evaluateModules = (
     exported: output.exported ?? [],
     ...(output.reason && { reason: output.reason }),
   }
+}
+
+/** @experimental Evaluate the capability modules twice, each in a fresh child, and compare (RFC 0005 §1). The static
+ * checks run first, here, so no caller can evaluate a module that hasn't passed them (review of 917a50b6) */
+export const evaluateModules = (
+  root: string,
+  modules: string[],
+  identity: { namespace?: string; owner?: { id?: string; name: string; href?: string } },
+  options: { timeoutMs?: number } = {},
+): Evaluated => {
+  const checked = modules.flatMap((m) => checkModule(root, m))
+  if (checked.some((d) => d.code.startsWith('E_'))) return { diagnostics: checked, exported: [] }
+  return evaluateUnchecked(root, modules, identity, options)
 }

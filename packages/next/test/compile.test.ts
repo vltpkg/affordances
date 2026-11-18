@@ -181,3 +181,20 @@ test('capability modules, or a namespace, without a resolvable ir: one E_IR_MISS
     }
   }
 })
+
+// review of 917a50b6: the walk's own errors are reported even when the peer is missing
+test('a module’s syntax error isn’t hidden behind a missing peer', async () => {
+  const dir = outside({
+    'package.json': '{}',
+    'app/capabilities.ts': MODULE,
+    'app/cart/capabilities.tsx': 'export {}\n',
+  })
+  try {
+    expect((await compile(dir, options)).diagnostics.map((d) => d.code)).toEqual([
+      'E_CAPABILITY_SYNTAX',
+      'E_IR_MISSING',
+    ])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

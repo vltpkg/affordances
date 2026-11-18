@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { afterAll, beforeAll, expect, test } from 'vitest'
-import { evaluateModules } from '../src/evaluator.ts'
+import { evaluateModules, evaluateUnchecked } from '../src/evaluator.ts'
 
 // RFC 0005 §1's evaluation: the capability modules run in a fresh child, twice, with an empty environment, under Node's
 // permission model, and fromModules makes one manifest of their exports
@@ -79,12 +79,13 @@ test('a module that throws is E_CAPABILITY_EVALUATION, naming it, never a crash 
   ])
 }, 60_000)
 
+// behind the static checks: evaluateUnchecked, since the checks refuse these first
 test('a manifest that differs between the two evaluations is E_CAPABILITY_NONDETERMINISTIC, showing where', () => {
   // the static check refuses Math.random first in the pipeline; here it stands for what that check can miss
   const dir = app({
     'app/capabilities.ts': `${IR}export const plan = defineResource({ id: 'shop.plan', description: 'A plan ' + Math.random(), key: 'slug' })\n`,
   })
-  const r = evaluateModules(dir, [path.join(dir, 'app/capabilities.ts')], identity)
+  const r = evaluateUnchecked(dir, [path.join(dir, 'app/capabilities.ts')], identity)
   expect(r.manifest).toBeUndefined()
   expect(r.diagnostics.map((d) => d.code)).toEqual(['E_CAPABILITY_NONDETERMINISTIC'])
   expect(r.diagnostics[0]!.detail).toMatch(/first differ at byte \d+: …/)
@@ -99,7 +100,7 @@ test('the child can’t read the root’s .env, write a file, or fetch: each is 
   ]
   for (const text of cases) {
     const dir = app({ 'app/capabilities.ts': text })
-    const r = evaluateModules(dir, [path.join(dir, 'app/capabilities.ts')], identity)
+    const r = evaluateUnchecked(dir, [path.join(dir, 'app/capabilities.ts')], identity)
     expect({
       text,
       codes: r.diagnostics.map((d) => d.code),
@@ -110,3 +111,14 @@ test('the child can’t read the root’s .env, write a file, or fetch: each is 
     })
   }
 }, 120_000)
+
+// review of 917a50b6: the static checks are evaluateModules' own, so no caller can evaluate a module that fails them
+test('evaluateModules checks each module itself, and evaluates none that fails', () => {
+  const dir = app({
+    'app/lib.ts': "throw new Error('app code was evaluated')\n",
+    'app/capabilities.ts': "import '../app/lib'\nexport {}\n",
+  })
+  const r = evaluateModules(dir, [path.join(dir, 'app/capabilities.ts')], identity)
+  expect(r.diagnostics.map((d) => d.code)).toEqual(['E_CAPABILITY_IMPORT'])
+  expect(r.manifest).toBeUndefined()
+}, 60_000)
