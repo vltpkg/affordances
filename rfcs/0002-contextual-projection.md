@@ -429,7 +429,7 @@ type Omitted = {
    - **The expansion:** if any partner isn't in the view, one expansion `along: 'alternatives'` returns all of them. An alternative is never more than one call from an offer that was shown.
 4. **Exhaustive enumeration is always allowed.** A request with policy `exhaustive` is always honored, under any configured default. It's paginated by budget, but never refused for discovery reasons.
 5. **Unavailable is not omitted.** An unavailable offer that's in scope is in the view with its reason. A policy can't treat "unavailable" as a reason to leave something out, because "exists but not now" is what the agent may need to act on (§4.2).
-6. **A choice set carries its comparison.** This rule is proposed, not implemented (§6.6).
+6. **A choice set carries its comparison** (§6.6). It's accepted, and implemented in M7a.
 
 **What this permits.** A policy may:
 
@@ -513,9 +513,18 @@ type Expansion = {
 - **`projection.inspect(offer)`** returns the capability's definition, the conditions with their results, the effects, the claims, and the provenance of each part (RFC 0001 §8). It's how an agent reads consequences before it commits.
 - **Derived edges are marked.** A derived `enables` or prerequisite (RFC 0001 §5.5) is returned with basis `inferred` and what it was derived from.
 
-### 6.6 A choice set carries its comparison (proposed amendment)
+### 6.6 A choice set carries its comparison
 
-**Status:** proposed on 2026-11-18, from M5's audit, and not implemented. The runtime at dbc947e0 doesn't do this, and neither does any benchmark fixture.
+**Status:** accepted (intake, 2026-11-18), from M5's audit. It was proposed in 1beb7fd1, with backend's runtime check folded in (a6376c8d).
+
+- **What review verified:**
+  - the audit's figures, and the 21 cells at c81eeeb1;
+  - that a policy can't cut the table, through its scope, its default budget or an offers budget;
+  - that only a request's `facts` limit cuts it, by named column, never cited or read attributes;
+  - R3, since `facts` changes which columns show, never what's available;
+  - that the runtime notes are consistent with §2.1, §5 and §7.
+- **The check against every safety rule** is below.
+- **Not implemented yet:** M7a implements it, with the RFC 0001 §9 `cites` field. Until then, no runtime does this, and no benchmark fixture: M5's runs measured the runtime without it.
 
 **The finding.** M5's confirmatory run met the disclosure invariant (§6.3) and still failed its purpose.
 
@@ -566,13 +575,13 @@ type Comparison = {
 
 **Tested against the audit's case.** At c81eeeb1, Hobby, Pro and Business differ on all seven of their non-key attributes:
 
-| Rule                                                                                          | Pro's `bandwidthGb` on C's first view?                                                                                                  | Can a policy or publisher still hide a distinguishing fact?                                                                            | View size, this fixture; a wide set                                                                 |
-| --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Price, and each allowance the capability's input or effects depend on (the first framing)     | **No.** Only `priceUsd` is read, as the financial effect's amount, and every summary already stated it. Nothing reads `bandwidthGb`     | Yes: the publisher hides any fact by not referencing it, and "allowance" isn't a manifest concept                                      | 3 cells; one column per referenced attribute                                                        |
-| (a) Every declared attribute on which the members differ                                      | **Yes**                                                                                                                                 | Not through a policy. An attribute equal across all members is dropped, so "the same everywhere" reads as "not shown"                  | 21 cells; members × differing attributes                                                            |
-| (b) Every attribute a task requirement or a claim refers to                                   | **No.** The task's text ("150 GB of traffic") names no attribute, and the claim cites 1,000 GB in free text. Under A, no claim is shown | Yes: the publisher picks which facts surface by what its claims cite. That's this failure                                              | from 0 cells up                                                                                     |
-| (c) (a), plus the attributes a claim cites, for every member                                  | **Yes**                                                                                                                                 | Not through a policy. As (a) for shared values, except those a claim cites                                                             | 21 cells                                                                                            |
-| **Proposed:** (c), plus shared values once, unsupplied attributes named, cuts only by request | **Yes**                                                                                                                                 | Not through a policy or a policy's budget. Only by not declaring the attribute, which is outside the invariant, like visibility (§6.3) | 21 cells, plus shared ones once. Members × differing attributes, plus one cell per shared attribute |
+| Rule                                                                                           | Pro's `bandwidthGb` on C's first view?                                                                                                  | Can a policy or publisher still hide a distinguishing fact?                                                                            | View size, this fixture; a wide set                                                                 |
+| ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Price, and each allowance the capability's input or effects depend on (the first framing)      | **No.** Only `priceUsd` is read, as the financial effect's amount, and every summary already stated it. Nothing reads `bandwidthGb`     | Yes: the publisher hides any fact by not referencing it, and "allowance" isn't a manifest concept                                      | 3 cells; one column per referenced attribute                                                        |
+| (a) Every declared attribute on which the members differ                                       | **Yes**                                                                                                                                 | Not through a policy. An attribute equal across all members is dropped, so "the same everywhere" reads as "not shown"                  | 21 cells; members × differing attributes                                                            |
+| (b) Every attribute a task requirement or a claim refers to                                    | **No.** The task's text ("150 GB of traffic") names no attribute, and the claim cites 1,000 GB in free text. Under A, no claim is shown | Yes: the publisher picks which facts surface by what its claims cite. That's this failure                                              | from 0 cells up                                                                                     |
+| (c) (a), plus the attributes a claim cites, for every member                                   | **Yes**                                                                                                                                 | Not through a policy. As (a) for shared values, except those a claim cites                                                             | 21 cells                                                                                            |
+| **This rule:** (c), plus shared values once, unsupplied attributes named, cuts only by request | **Yes**                                                                                                                                 | Not through a policy or a policy's budget. Only by not declaring the attribute, which is outside the invariant, like visibility (§6.3) | 21 cells, plus shared ones once. Members × differing attributes, plus one cell per shared attribute |
 
 **What it costs.**
 
@@ -596,7 +605,7 @@ type Comparison = {
   - **No new reads:** every member's target is already loaded to evaluate its offer, so the table is built from attributes in hand, with no new resolver call.
   - **What the digests cover:** an instance enters both digests by its `version`, or by its attributes' digest when there's none. So they cover the table only because a `version` changes whenever the attributes do (§2.1).
 
-**Where it lives in code** (a later milestone, not this proposal):
+**Where it lives in code** (M7a, backend):
 
 - **The pieces:**
   - the projection builds each choice set's comparison from the targets it loaded;
