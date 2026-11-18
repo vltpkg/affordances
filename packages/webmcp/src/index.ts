@@ -108,9 +108,12 @@ export const registerWebMcp = (options: WebMcpOptions): string[] => {
       },
       { ...(options.signal && { signal: options.signal }) },
     )
-    // a browser that ignores the signal rejects a re-registration as a duplicate name, and keeps the first: that
-    // registration stays live, so the rejection is expected, and is caught rather than left unhandled
-    if (registered instanceof Promise) registered.catch(() => {})
+    // a browser that ignores the signal rejects a re-registration as a duplicate name (InvalidStateError), and keeps
+    // the first: that registration stays live, so only that rejection is expected and caught. Anything else surfaces
+    if (registered instanceof Promise)
+      registered.catch((error: unknown) => {
+        if ((error as { name?: unknown } | null)?.name !== 'InvalidStateError') throw error
+      })
   }
   return toolset.tools.map((t) => t.name)
 }

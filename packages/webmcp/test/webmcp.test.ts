@@ -235,9 +235,11 @@ test('the signal reaches every registerTool, where Chromium unregisters the tool
   expect(bare.every((o) => o.signal === undefined)).toBe(true)
 })
 
-test("a browser's rejected registerTool, as a duplicate name is where signal is ignored, is never an unhandled rejection", async () => {
+test("a browser's duplicate-name rejection is caught, and any other rejection still surfaces", async () => {
+  // the browser's own rejection: a DOMException named InvalidStateError, as registration.json records
   const context = {
-    registerTool: () => Promise.reject(new Error('InvalidStateError: Duplicate tool name')),
+    registerTool: () =>
+      Promise.reject(new DOMException('Duplicate tool name', 'InvalidStateError')),
   }
   const names = registerWebMcp({
     base: '/api/projection',
@@ -248,4 +250,24 @@ test("a browser's rejected registerTool, as a duplicate name is where signal is 
   expect(names).toEqual(['project', 'expand', 'inspect', 'execute'])
   // let the rejections settle: vitest fails the run on any left unhandled
   await new Promise((r) => setTimeout(r, 10))
+  // the handler each registration's promise gets: it rethrows anything that isn't InvalidStateError
+  const handlers: ((error: unknown) => unknown)[] = []
+  class Watched extends Promise<void> {
+    override catch(onRejected?: ((error: unknown) => unknown) | null) {
+      if (onRejected) handlers.push(onRejected)
+      return Promise.resolve() as never
+    }
+  }
+  registerWebMcp({
+    base: '/api/projection',
+    ask: yes,
+    context: { registerTool: () => new Watched((resolve) => resolve()) },
+    fetcher: server().fetcher,
+  })
+  expect(handlers).toHaveLength(4)
+  expect(() =>
+    handlers[0]!(new DOMException('Duplicate tool name', 'InvalidStateError')),
+  ).not.toThrow()
+  const other = new TypeError('not a tool')
+  expect(() => handlers[0]!(other)).toThrow(other)
 })
