@@ -278,6 +278,17 @@ These are never extracted, because code doesn't state them. Each one missing is 
 
 - **What can't be inferred:** effects, declarative preconditions, claims and relations, and an input schema built from application values.
 
+**The result** (`rfcs/research/0005-measurement/RESULTS.md`, run on 1a434b5e, with the rule and inputs fixed beforehand in ae54614f, ac15d7a9 and 3ca5a365): **assumption 8 partly holds.**
+
+- **As written,** neither app's actions has an `id`, so extraction skips them all (`W_NO_ID`).
+- **After the id codemod:** binding, kind, authorization and confirmation are recovered at 1.00 precision and recall in both apps, and input in hosting-lab's.
+- **The precisions below 1, each traced to a cause:**
+  - **ids:** the codemod's suggestions don't take the app's id prefix, a rule defect (`idPrefix` is computed but unread);
+  - **apps/example's inputs:** they differ from its hand-written reference only by an `additionalProperties: false` the reference asserts and zod doesn't imply;
+  - **targets and resource types:** E9 names them by the segment as written, decided after that reference.
+- **Zero by design,** as expected: effects, declarative preconditions, claims and relations.
+- **So it's enrichment, not a rewrite:** nothing extracted is wrong content to throw away.
+
 **The compiler's own tests,** alongside the measurement:
 
 - **Isolation:** a capability module importing app code, statically or through a dynamic `import()` or `require`, fails, with `E_CAPABILITY_IMPORT` or `E_CAPABILITY_AMBIENT`.

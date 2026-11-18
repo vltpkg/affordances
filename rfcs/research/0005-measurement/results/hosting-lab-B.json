@@ -1,0 +1,368 @@
+{
+  "codemod": 8,
+  "resources": [],
+  "capabilities": [
+    {
+      "id": "addOns.addAddOn",
+      "kind": "action",
+      "description": "Add an add-on to a project. Charges its price now, then every month until it's removed",
+      "binding": {
+        "route": "/add-ons",
+        "action": "addAddOn"
+      },
+      "target": null,
+      "input": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "addOn": {
+            "type": "string"
+          }
+        },
+        "required": ["projectId", "addOn"]
+      },
+      "authorization": {
+        "principal": "authenticated"
+      },
+      "confirmation": {
+        "summary": "Run addAddOn"
+      },
+      "preconditions": [
+        {
+          "id": "guard",
+          "description": "You own the project, and The project doesn't have it yet",
+          "declarative": false
+        }
+      ],
+      "effects": [],
+      "claims": [],
+      "relations": []
+    },
+    {
+      "id": "addOns.removeAddOn",
+      "kind": "action",
+      "description": "Remove an add-on at the end of the month. Nothing already charged is refunded",
+      "binding": {
+        "route": "/add-ons",
+        "action": "removeAddOn"
+      },
+      "target": null,
+      "input": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "addOn": {
+            "type": "string"
+          }
+        },
+        "required": ["projectId", "addOn"]
+      },
+      "authorization": {
+        "principal": "authenticated"
+      },
+      "confirmation": null,
+      "preconditions": [
+        {
+          "id": "guard",
+          "description": "You own the project, and The project has this add-on",
+          "declarative": false
+        }
+      ],
+      "effects": [],
+      "claims": [],
+      "relations": []
+    },
+    {
+      "id": "cancel",
+      "kind": "action",
+      "description": "Move the project back to Hobby at the end of the month. Stops the paid plan's renewal; nothing already charged is refunded",
+      "binding": {
+        "route": "/",
+        "action": "cancel"
+      },
+      "target": null,
+      "input": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string"
+          }
+        },
+        "required": ["projectId"]
+      },
+      "authorization": {
+        "principal": "authenticated"
+      },
+      "confirmation": null,
+      "preconditions": [
+        {
+          "id": "guard",
+          "description": "The project renews on a paid plan",
+          "declarative": false
+        }
+      ],
+      "effects": [],
+      "claims": [],
+      "relations": []
+    },
+    {
+      "id": "deployments.deploy",
+      "kind": "action",
+      "description": "Build the project from a git ref, and publish it at the project's address when the build succeeds. Uses build minutes",
+      "binding": {
+        "route": "/deployments",
+        "action": "deploy"
+      },
+      "target": null,
+      "input": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["projectId", "ref"]
+      },
+      "authorization": {
+        "principal": "authenticated"
+      },
+      "confirmation": null,
+      "preconditions": [
+        {
+          "id": "guard",
+          "description": "The plan's build minutes for this month aren't used up",
+          "declarative": false
+        }
+      ],
+      "effects": [],
+      "claims": [],
+      "relations": []
+    },
+    {
+      "id": "deployments.rollback",
+      "kind": "action",
+      "description": "Publish this earlier deployment again, in place of the current one. Needs a plan with rollback",
+      "binding": {
+        "route": "/deployments",
+        "action": "rollback"
+      },
+      "target": null,
+      "input": {
+        "type": "object",
+        "properties": {
+          "deployment": {
+            "type": "string"
+          }
+        },
+        "required": ["deployment"]
+      },
+      "authorization": {
+        "principal": "authenticated"
+      },
+      "confirmation": null,
+      "preconditions": [
+        {
+          "id": "guard",
+          "description": "The deployment built successfully, and It isn't the published deployment already, and The project's plan includes rollback, and You own the project",
+          "declarative": false
+        }
+      ],
+      "effects": [],
+      "claims": [],
+      "relations": []
+    },
+    {
+      "id": "plans.listPlans",
+      "kind": "query",
+      "description": "List every plan, with its price, limits, rollback and support",
+      "binding": {
+        "route": "/plans",
+        "action": "listPlans"
+      },
+      "target": null,
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "authorization": {
+        "principal": "any"
+      },
+      "confirmation": null,
+      "preconditions": [],
+      "effects": [],
+      "claims": [],
+      "relations": []
+    },
+    {
+      "id": "plans.subscribe",
+      "kind": "action",
+      "description": "Move a project to this plan. Charges the plan's price now, then every month until cancelled",
+      "binding": {
+        "route": "/plans",
+        "action": "subscribe"
+      },
+      "target": null,
+      "input": {
+        "type": "object",
+        "properties": {
+          "plan": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "string"
+          }
+        },
+        "required": ["plan", "projectId"]
+      },
+      "authorization": {
+        "principal": "authenticated"
+      },
+      "confirmation": {
+        "summary": "Run subscribe"
+      },
+      "preconditions": [
+        {
+          "id": "guard",
+          "description": "You own the project, and The project isn't already on this plan",
+          "declarative": false
+        }
+      ],
+      "effects": [],
+      "claims": [],
+      "relations": []
+    },
+    {
+      "id": "plans.subscribeBundle",
+      "kind": "action",
+      "description": "Move a project to the bundle's plan with its add-ons, for the bundle's one monthly price. Charges it now, then every month until cancelled",
+      "binding": {
+        "route": "/plans",
+        "action": "subscribeBundle"
+      },
+      "target": null,
+      "input": {
+        "type": "object",
+        "properties": {
+          "bundle": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "string"
+          }
+        },
+        "required": ["bundle", "projectId"]
+      },
+      "authorization": {
+        "principal": "authenticated"
+      },
+      "confirmation": {
+        "summary": "Run subscribeBundle"
+      },
+      "preconditions": [
+        {
+          "id": "guard",
+          "description": "You own the project",
+          "declarative": false
+        }
+      ],
+      "effects": [],
+      "claims": [],
+      "relations": []
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "W_OPAQUE",
+      "file": "src/app/actions.ts",
+      "subject": "cancel's guard"
+    },
+    {
+      "code": "W_EFFECTS_UNKNOWN",
+      "file": "src/app/actions.ts",
+      "subject": "cancel"
+    },
+    {
+      "code": "W_SUMMARY_GENERIC",
+      "file": "src/app/add-ons/actions.ts",
+      "subject": "addAddOn"
+    },
+    {
+      "code": "W_OPAQUE",
+      "file": "src/app/add-ons/actions.ts",
+      "subject": "addAddOn's guard"
+    },
+    {
+      "code": "W_EFFECTS_UNKNOWN",
+      "file": "src/app/add-ons/actions.ts",
+      "subject": "addAddOn"
+    },
+    {
+      "code": "W_OPAQUE",
+      "file": "src/app/add-ons/actions.ts",
+      "subject": "removeAddOn's guard"
+    },
+    {
+      "code": "W_EFFECTS_UNKNOWN",
+      "file": "src/app/add-ons/actions.ts",
+      "subject": "removeAddOn"
+    },
+    {
+      "code": "W_OPAQUE",
+      "file": "src/app/deployments/actions.ts",
+      "subject": "deploy's guard"
+    },
+    {
+      "code": "W_EFFECTS_UNKNOWN",
+      "file": "src/app/deployments/actions.ts",
+      "subject": "deploy"
+    },
+    {
+      "code": "W_OPAQUE",
+      "file": "src/app/deployments/actions.ts",
+      "subject": "rollback's guard"
+    },
+    {
+      "code": "W_EFFECTS_UNKNOWN",
+      "file": "src/app/deployments/actions.ts",
+      "subject": "rollback"
+    },
+    {
+      "code": "W_SUMMARY_GENERIC",
+      "file": "src/app/plans/actions.ts",
+      "subject": "subscribe"
+    },
+    {
+      "code": "W_OPAQUE",
+      "file": "src/app/plans/actions.ts",
+      "subject": "subscribe's guard"
+    },
+    {
+      "code": "W_EFFECTS_UNKNOWN",
+      "file": "src/app/plans/actions.ts",
+      "subject": "subscribe"
+    },
+    {
+      "code": "W_SUMMARY_GENERIC",
+      "file": "src/app/plans/actions.ts",
+      "subject": "subscribeBundle"
+    },
+    {
+      "code": "W_OPAQUE",
+      "file": "src/app/plans/actions.ts",
+      "subject": "subscribeBundle's guard"
+    },
+    {
+      "code": "W_EFFECTS_UNKNOWN",
+      "file": "src/app/plans/actions.ts",
+      "subject": "subscribeBundle"
+    }
+  ]
+}
