@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -99,31 +99,36 @@ export const footprintOf = (
     .map((f) => path.join('sessions', f)),
 })
 
-// a status command's output, or why it failed
-const statusOf = (command: string, args: string[]) => {
+// a status command's exit code and both streams: codex prints its status to stderr (the calibration canary's first
+// preflight refused on a stdout-only read, 2026-11-18)
+type Status = { code: number | null; stdout: string; stderr: string }
+const statusOf = (command: string, args: string[]): Status => {
+  const r = spawnSync(command, args, { encoding: 'utf8' })
+  return { code: r.status, stdout: r.stdout ?? '', stderr: r.stderr ?? '' }
+}
+
+// whether each status says logged in. Claude's is JSON with loggedIn; codex's is a line on either stream that starts
+// 'Logged in', where 'Not logged in' must not count
+export const readLogins = (claude: Status, codex: Status) => {
+  let claudeLoggedIn = false
   try {
-    return { ok: true, out: execFileSync(command, args, { encoding: 'utf8', stdio: 'pipe' }) }
-  } catch (e) {
-    return { ok: false, out: e instanceof Error ? e.message : String(e) }
+    claudeLoggedIn =
+      claude.code === 0 && (JSON.parse(claude.stdout) as { loggedIn?: boolean }).loggedIn === true
+  } catch {
+    // not JSON: not logged in, as far as the record goes
+  }
+  const codexLines = `${codex.stdout}\n${codex.stderr}`.split('\n').map((l) => l.trim())
+  return {
+    claude: claudeLoggedIn,
+    codex: codex.code === 0 && codexLines.some((l) => /^logged in\b/i.test(l)),
   }
 }
 
 // the logins, read-only, before and after a run: each CLI's own status command, never login, logout or refresh
-export const loginStatus = () => {
-  const claude = statusOf('claude', ['auth', 'status'])
-  const codex = statusOf('codex', ['login', 'status'])
-  let claudeLoggedIn = false
-  try {
-    claudeLoggedIn = (JSON.parse(claude.out) as { loggedIn?: boolean }).loggedIn === true
-  } catch {
-    // not JSON: not logged in, as far as the record goes
-  }
-  return {
-    at: new Date().toISOString(),
-    claude: claudeLoggedIn,
-    codex: codex.ok && /logged in/i.test(codex.out),
-  }
-}
+export const loginStatus = () => ({
+  at: new Date().toISOString(),
+  ...readLogins(statusOf('claude', ['auth', 'status']), statusOf('codex', ['login', 'status'])),
+})
 
 // the secret strings in the real credentials, read only to scan results: every string value long enough to be a token
 export const credentialSecrets = (roots = configRoots()): string[] => {

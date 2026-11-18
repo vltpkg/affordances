@@ -202,3 +202,24 @@ test('an archive redacts the user’s email, marked, and reports only counts; th
   // the originals, outside git, are left as they were
   expect(readFileSync(path.join(results, 'a.jsonl'), 'utf8')).toContain(fakeEmail)
 })
+
+test('login status reads both streams, and Not logged in never counts', async () => {
+  const { readLogins } = await import('../src/drivers/isolation.ts')
+  const ok = { code: 0, stdout: JSON.stringify({ loggedIn: true }), stderr: '' }
+  // codex prints its status to stderr
+  expect(readLogins(ok, { code: 0, stdout: '', stderr: 'Logged in using ChatGPT\n' })).toEqual({
+    claude: true,
+    codex: true,
+  })
+  expect(
+    readLogins(ok, { code: 0, stdout: 'Logged in using an API key\n', stderr: '' }).codex,
+  ).toBe(true)
+  expect(readLogins(ok, { code: 0, stdout: '', stderr: 'Not logged in\n' }).codex).toBe(false)
+  expect(readLogins(ok, { code: 1, stdout: '', stderr: 'Logged in using ChatGPT\n' }).codex).toBe(
+    false,
+  )
+  expect(
+    readLogins({ code: 0, stdout: JSON.stringify({ loggedIn: false }), stderr: '' }, ok).claude,
+  ).toBe(false)
+  expect(readLogins({ code: 0, stdout: 'not json', stderr: '' }, ok).claude).toBe(false)
+})
