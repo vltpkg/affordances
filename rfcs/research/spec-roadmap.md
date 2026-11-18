@@ -87,6 +87,10 @@ bindings, kinds, authorization and confirmation exactly, but not ids, which the 
 - **Reference-sourced parameters** (RFC 0005 §4): not built. Compilation doesn't yet derive an input parameter from a resource reference.
 - **Strict JSON Schema validators** reject unknown fields in the published v0 schemas, against the v0 spec's rule that clients ignore them. The fix, opening the received documents' schemas, is prepared and not released. No release may emit the discovery field before it.
 
+- **Two open optimizations,** recorded rather than changed (M8's simplification pass):
+  - the stateless HTTP `inspect` and `expand` re-project on every call; offer-scoped inspection would avoid it;
+  - a checked v0 call projects twice.
+
 ### 3.3 For the benchmark
 
 - **A task that separates the surfaces:** M7f hit a ceiling. A harder pre-registered task, with a pilot headroom gate blind to the contrast, is M8e.
