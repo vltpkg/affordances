@@ -429,7 +429,7 @@ type Omitted = {
    - **The expansion:** if any partner isn't in the view, one expansion `along: 'alternatives'` returns all of them. An alternative is never more than one call from an offer that was shown.
 4. **Exhaustive enumeration is always allowed.** A request with policy `exhaustive` is always honored, under any configured default. It's paginated by budget, but never refused for discovery reasons.
 5. **Unavailable is not omitted.** An unavailable offer that's in scope is in the view with its reason. A policy can't treat "unavailable" as a reason to leave something out, because "exists but not now" is what the agent may need to act on (§4.2).
-6. **A choice set carries its comparison** (§6.6). It's accepted, and implemented in M7a.
+6. **A choice set carries its comparison** (§6.6). It's implemented in c2ee930c (M7a).
 
 **What this permits.** A policy may:
 
@@ -524,7 +524,7 @@ type Expansion = {
   - R3, since `facts` changes which columns show, never what's available;
   - that the runtime notes are consistent with §2.1, §5 and §7.
 - **Against every safety rule** (review, rule by rule, 2026-11-18): R1, R2, R3, R5 and R7 are confirmed, and R4 is strengthened. R7's revision half rests on §2.1's version rule. R6 is confirmed with one caveat, under Open. The check itself is below.
-- **Not implemented yet:** M7a implements it, with the RFC 0001 §9 `cites` field. Until then, no runtime does this, and no benchmark fixture: M5's runs measured the runtime without it.
+- **Implemented** in c2ee930c (M7a), with RFC 0001 §9's `cites` in 900f4db4. M5's runs measured the runtime without it.
 
 **The finding.** M5's confirmatory run met the disclosure invariant (§6.3) and still failed its purpose.
 
@@ -557,7 +557,7 @@ type Comparison = {
   - **in `shared`:** an attribute every member supplied with the same value, stated once. Leaving it out would save little, and the agent couldn't tell "the same for every plan" from "not shown", though a requirement such as "instant rollback" can turn on exactly that;
   - **in `unsupplied`:** an attribute a resolver didn't supply for a member. It's named, and counted as differing, so an asymmetry between members shows instead of being silent.
 - **It sits on the choice set,** a table, not repeated on each offer. The offers stay as §4.1 defines them.
-- **A summarized choice set carries it too, whole.** When an offers budget summarizes a set to its member ids (§5), the comparison stays. A summary of offers isn't a summary of facts, and only `facts` cuts the table.
+- **A summarized choice set carries it too, whole.** When an offers budget summarizes a set to its member ids (§5), the set is counted in `omitted`, out of `choiceSets` (§6.3), and its comparison rides on the set's `members` expansion entry. A summary of offers isn't a summary of facts, and only `facts` cuts the table.
 - **No policy can remove it.** A policy decides whether a choice set is in the first view. If the set is in, its comparison is too. `claims: 'omitted'` doesn't touch it, because attributes are the application's state, not claims (§4.5).
 - **Only the request can cut it.** `Budget` gains `facts?: number`, a limit in cells.
   - **What gets cut:** columns, never rows, so no member carries less than another. Each cut column is named in `omitted.attributes`, and `expand({ from: choiceSetId, along: 'comparison' })` returns the whole table.
