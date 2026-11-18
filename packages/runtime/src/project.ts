@@ -1,4 +1,5 @@
 import {
+  decodePointer,
   all,
   byCanonical,
   canonicalJson,
@@ -100,8 +101,8 @@ const canonically = (a: CapabilityOffer, b: CapabilityOffer) => {
 // what the runtime fills in itself is never the caller's to give: the target's key at targetAt, and each bound
 // reference's key at its at (§8.1 step 4; code review 8). Only a top-level property can be left out this way
 const topLevel = (pointer: string) => {
-  const keys = pointer.split('/').slice(1)
-  return keys.length === 1 ? keys[0]!.replaceAll('~1', '/').replaceAll('~0', '~') : undefined
+  const keys = decodePointer(pointer)
+  return keys.length === 1 ? keys[0] : undefined
 }
 const takes = (c: CapabilityDefinition, bound: Record<string, string> = {}) => {
   const input = c.input as { type?: unknown; properties?: Obj } | boolean | undefined

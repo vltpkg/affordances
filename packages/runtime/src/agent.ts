@@ -1,4 +1,4 @@
-import { canonicalJson, renderConfirmation, type CapabilityManifest } from '@affordances/ir'
+import { canonicalJson, chargesOf, type CapabilityManifest } from '@affordances/ir'
 import { ALONG } from './along.ts'
 import { encodeStart } from './start.ts'
 import type { ExecutionResult, OfferDetails, ProjectionRequest, View } from './types.ts'
@@ -142,7 +142,7 @@ type Capability = CapabilityManifest['capabilities'][number]
 
 /** @experimental RFC 0004 §4's per-capability tool: its id, its description with its charges, its input, four hints. */
 export const capabilityTool = (c: Capability): AgentTool => {
-  const charges = /Charges: (.*)$/.exec(renderConfirmation('', c.effects, {}))?.[1]
+  const charges = chargesOf(c.effects, {}).join('; ')
   const effects = c.effects ?? []
   return {
     name: c.id,

@@ -24,7 +24,7 @@ export const treeHash = (root: string) => {
     }
     if (stat.isDirectory()) {
       hash.update(`d ${rel}\0`)
-      const names = readdirSync(at).toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+      const names = readdirSync(at).toSorted()
       for (const name of names)
         if (!(rel === '' && name === PIN_FILE)) visit(rel ? `${rel}/${name}` : name)
       return

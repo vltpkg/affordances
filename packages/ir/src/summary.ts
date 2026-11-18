@@ -48,14 +48,18 @@ const chargeOf = (e: FinancialEffect, context: Context): string | undefined => {
   return `${amount === 'amount unknown' ? amount : amount + when}${terms}${applies === true ? '' : ' (may apply)'}`
 }
 
+/** Every charge the financial effects make, each with its amount, in declaration order: what a summary lists. */
+export const chargesOf = (effects: readonly Effect[] | undefined, context: Context): string[] =>
+  (effects ?? [])
+    .filter((e): e is FinancialEffect => e.category === 'financial')
+    .flatMap((e) => chargeOf(e, context) ?? [])
+
 export const renderConfirmation = (
   template: string,
   effects: readonly Effect[] | undefined,
   context: Context,
 ): string => {
   const summary = renderSummary(template, context)
-  const charges = (effects ?? [])
-    .filter((e): e is FinancialEffect => e.category === 'financial')
-    .flatMap((e) => chargeOf(e, context) ?? [])
+  const charges = chargesOf(effects, context)
   return charges.length ? `${summary.replace(/\.$/, '')}. Charges: ${charges.join('; ')}` : summary
 }

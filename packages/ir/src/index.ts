@@ -17,7 +17,7 @@ export {
 } from './evaluate.ts'
 export { decodePointer, encodePointer, getPointer, putPointer } from './pointer.ts'
 export { localId } from './ref.ts'
-export { renderConfirmation, renderSummary, summaryPaths } from './summary.ts'
+export { chargesOf, renderConfirmation, renderSummary, summaryPaths } from './summary.ts'
 export {
   conformanceCases,
   falsifying,
