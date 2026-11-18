@@ -37,6 +37,32 @@ const problems = async (c: Case): Promise<string[]> => {
       const shown = s.members.filter((m) => ids(v).includes(m)).length
       if (shown !== 0 && shown !== s.members.length) found.push(`${where}: ${s.id} shown in part`)
     }
+    // rule 6 (§6.6): every choice set the view carries, shown or summarized, comes with its comparison, every
+    // declared attribute but the key, one row per member; the generated requests set no facts, so nothing is cut
+    const carried = [
+      ...v.choiceSets.map((s) => ({ id: s.id, comparison: s.comparison, count: s.members.length })),
+      ...v.omitted.expand
+        .filter((e) => e.along === 'members')
+        .map((e) => ({ id: e.from as string, comparison: e.comparison, count: e.count })),
+    ]
+    for (const { id, comparison, count } of carried) {
+      if (!comparison) {
+        found.push(`${where}: ${id} carries no comparison`)
+        continue
+      }
+      const set = p.choiceSets.find((s) => s.id === id)!
+      const resource = c.spec.manifest.resources.find((r) => local(r.id) === local(set.over))
+      const declared = Object.keys(
+        (resource?.attributes as { properties?: object } | undefined)?.properties ?? {},
+      )
+        .filter((a) => a !== resource?.key)
+        .toSorted()
+      const columns = [...comparison.differ, ...Object.keys(comparison.shared)].toSorted()
+      if (JSON.stringify(columns) !== JSON.stringify(declared))
+        found.push(`${where}: ${id}'s comparison has ${columns}, not ${declared}`)
+      if (comparison.rows.length !== count) found.push(`${where}: ${id}'s comparison lacks rows`)
+      if (comparison.omitted.attributes.length) found.push(`${where}: ${id}'s comparison is cut`)
+    }
     if (v.omitted.offers !== all.size - v.offers.length)
       found.push(`${where}: omitted.offers inexact`)
     if (v.omitted.choiceSets !== p.choiceSets.length - v.choiceSets.length)

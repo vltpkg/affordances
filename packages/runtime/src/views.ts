@@ -1,4 +1,5 @@
 import { base64url, canonicalJson, type CapabilityManifest, type Id } from '@affordances/ir'
+import { columnsOf, comparisonOf, targetReads } from './comparison.ts'
 import { words, type Facts } from './facts.ts'
 import type {
   Budget,
@@ -14,6 +15,7 @@ import type {
   RelevanceBasis,
   ResourceRef,
   View,
+  ViewChoiceSet,
 } from './types.ts'
 
 // RFC 0002 §6.1's four policies. claims: what each shows, the example's progressive view leaving them out (§12)
@@ -117,6 +119,8 @@ export const views = (args: {
   revision: string
   offers: CapabilityOffer[] // every offer the principal may see, in canonical order
   choiceSets: ChoiceSet[]
+  // each choice set member's target attributes, as its resolver returned them; undefined when it couldn't load
+  memberAttributes: ReadonlyMap<OfferId, Record<string, unknown> | undefined>
 }): Views => {
   const { manifest, facts, request, policy, revision, choiceSets } = args
   const byId = new Map(args.offers.map((o) => [o.id, o]))
@@ -219,6 +223,29 @@ export const views = (args: {
   }
   const firstScope = scope()
 
+  // §6.6, rule 6: a choice set's comparison, under whichever policy, cut only by the request's own facts limit.
+  // Its columns: the declared top-level attributes but the key, which the offer id carries, in the runtime's order
+  const tableOf = (s: ChoiceSet, cells: number | undefined) => {
+    const resource = args.facts.resource(s.over)
+    const properties = (
+      resource?.attributes as { properties?: Record<string, unknown> } | undefined
+    )?.properties
+    const declared = Object.keys(properties ?? {}).filter((a) => a !== resource?.key)
+    // what a claim shown on the members cites: none when the policy omits claims
+    const cited = new Set(
+      policy.claims === 'omitted'
+        ? []
+        : s.members.flatMap((m) => byId.get(m)!.claims.flatMap((k) => k.cites ?? [])),
+    )
+    const c = args.facts.capability(s.capability)
+    const read = targetReads([c?.preconditions, c?.authorization?.conditions, c?.effects])
+    return comparisonOf(
+      s.members.map((id) => ({ id, attributes: args.memberAttributes.get(id) })),
+      columnsOf(declared, cited, read),
+      cells,
+    )
+  }
+
   // one page's split of a sequence: what fits the budget, choice sets whole; a set bigger than the budget is
   // summarized; the rest is cut, for the next page (§6.3)
   const split = (sequence: OfferId[], limit: number) => {
@@ -245,12 +272,19 @@ export const views = (args: {
     budget: Budget | undefined,
     chain: { o: Origin; b: (number | null)[] },
     extra: Expansion[] = [],
+    // the request's own facts limit, in cells: never a policy's (§6.6)
+    cells?: number,
   ): View => {
     const { shown, cut, skippedSets } = split(sequence, budget?.offers ?? Infinity)
     const shownSet = new Set(shown)
     const expand: Expansion[] = [...extra]
     for (const set of skippedSets)
-      expand.push({ from: set, along: 'members', count: sets.get(set)!.members.length })
+      expand.push({
+        from: set,
+        along: 'members',
+        count: sets.get(set)!.members.length,
+        comparison: tableOf(sets.get(set)!, cells),
+      })
     if (cut.length)
       expand.push({
         from: encode({ r: revision, o: chain.o, b: [...chain.b, budget?.offers ?? null] }),
@@ -276,7 +310,11 @@ export const views = (args: {
       revision,
       policy: policy.id,
       offers,
-      choiceSets: shownSets.map((s) => ({ ...s, members: [...s.members] })),
+      choiceSets: shownSets.map((s): ViewChoiceSet => ({
+        ...s,
+        members: [...s.members],
+        comparison: tableOf(s, cells),
+      })),
       order,
       omitted: {
         offers: args.offers.length - shown.length,
@@ -309,6 +347,7 @@ export const views = (args: {
       firstBudget,
       { o: { view: true }, b: [] },
       restFrom === undefined ? [] : [{ from: restFrom, along: 'relations', count: rest.length }],
+      request.budget?.facts,
     )
 
   // the sequence an origin pages through, or undefined when there's nothing to expand there
@@ -327,7 +366,9 @@ export const views = (args: {
     switch (along) {
       case 'alternatives':
         return offer && { ids: ordered(whole(alternatives(offer.id))) }
-      case 'members': {
+      case 'members':
+      // the whole table: the set's members, with no facts limit (§6.6)
+      case 'comparison': {
         const set = typeof from === 'string' ? sets.get(from) : undefined
         // a choice set is never shown in part, so expanding one returns all of it, whatever the budget
         return set && { ids: ordered(set.members), whole: true }
@@ -375,7 +416,13 @@ export const views = (args: {
     if (along !== 'more') {
       const origin: Origin = { from, along }
       const found = sequenceOf(origin) ?? fail()
-      return page(found.ids, found.whole ? undefined : budget, { o: origin, b: [] })
+      return page(
+        found.ids,
+        found.whole ? undefined : budget,
+        { o: origin, b: [] },
+        [],
+        along === 'comparison' ? undefined : budget?.facts,
+      )
     }
     // 'more': rebuild the origin's sequence and replay each cut, under this projection's revision
     const cursor = decode(from) ?? fail()
@@ -385,7 +432,7 @@ export const views = (args: {
     if (cursor.b.length > ids.length) fail()
     for (const offers of cursor.b) ids = split(ids, offers ?? Infinity).cut
     if (!ids.length) fail()
-    return page(ids, budget, { o: cursor.o, b: cursor.b })
+    return page(ids, budget, { o: cursor.o, b: cursor.b }, [], budget?.facts)
   }
 
   const inspect = (id: OfferId): OfferDetails | undefined => {

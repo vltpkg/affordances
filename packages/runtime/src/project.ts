@@ -30,14 +30,15 @@ import type {
   ChoiceSet,
   ClaimView,
   ConditionResult,
+  DiscoveryPolicy,
+  Handler,
+  OfferId,
+  PolicyId,
+  Principal,
   Projection,
   ProjectionRequest,
   Requirements,
   ResourceRef,
-  DiscoveryPolicy,
-  Handler,
-  PolicyId,
-  Principal,
   ResourceResolver,
   Runtime,
   TokenStore,
@@ -400,6 +401,7 @@ export const createRuntime = ({
             basis: k.provenance.basis,
           }
           if (k.quantity) view.quantity = k.quantity
+          if (k.cites) view.cites = [...k.cites]
           return view
         })
 
@@ -490,7 +492,7 @@ export const createRuntime = ({
   // a projection, in its own session or one an execution shares with it (simplify D3)
   const project = async (request: ProjectionRequest, shared?: Session): Promise<Projection> => {
     const { principal } = request
-    const { base, readsFor, guardLog, offerOn } = shared ?? (await session(principal))
+    const { base, readsFor, guardLog, offerOn, load } = shared ?? (await session(principal))
     // the guards this projection runs, from where the log stands now
     const guardsFrom = guardLog.length
     const start = typeof request.start === 'object' ? request.start : undefined
@@ -544,6 +546,15 @@ export const createRuntime = ({
       sets.set(o.choiceSet, set)
     }
     const choiceSets = [...sets.values()].toSorted((a, b) => compare(a.id, b.id))
+    // §6.6: each member's target attributes, from the loads its offer already made, for its set's comparison
+    const memberAttributes = new Map<OfferId, Record<string, unknown> | undefined>()
+    const byOfferId = new Map(offers.map((o) => [o.id, o]))
+    for (const set of choiceSets)
+      for (const id of set.members) {
+        const { target } = byOfferId.get(id)!
+        const loaded = await load(target!.type, target!.key)
+        memberAttributes.set(id, loaded.state === 'found' ? loaded.attributes : undefined)
+      }
 
     // §7: every instance this projection read, sorted by type and key
     const everyRead = readsFor(offers)
@@ -564,7 +575,16 @@ export const createRuntime = ({
     const policyId = request.policy ?? defaultPolicy
     const policy = policies.get(policyId)
     if (!policy) throw new Error(`no discovery policy ${policyId}`)
-    const shown = views({ manifest, facts, request, policy, revision, offers, choiceSets })
+    const shown = views({
+      manifest,
+      facts,
+      request,
+      policy,
+      revision,
+      offers,
+      choiceSets,
+      memberAttributes,
+    })
     return {
       revision,
       offers,

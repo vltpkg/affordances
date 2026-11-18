@@ -23,7 +23,8 @@ export type ProjectionRequest = {
 }
 export type ResourceRef = { type: Id; key: string }
 export type Task = { statement: string }
-export type Budget = { offers?: number; depth?: number }
+// facts: a limit in comparison cells (§6.6), and only a request's own: a policy's default budget never cuts the table
+export type Budget = { offers?: number; depth?: number; facts?: number }
 
 // §3
 export type Principal = {
@@ -119,6 +120,7 @@ export type ClaimView = {
   quantity?: { value: number; unit: string }
   source: { id: string; name: string; role: 'owner' | 'tool' | 'third-party' }
   basis: Basis
+  cites?: string[] // the target attributes its statement relies on (RFC 0001 §9), in every comparison it's shown with
 }
 
 // §5
@@ -129,6 +131,17 @@ export type ChoiceSet = {
   members: OfferId[]
   order: OrderBasis
 }
+
+// §6.6, rule 6: what tells a choice set's members apart, every declared attribute of each, as its resolver returned it
+export type Comparison = {
+  differ: string[] // the declared attributes on which the members differ, in the runtime's column order
+  rows: Record<string, unknown>[] // one per member, in `members` order: each attribute in `differ` it supplied
+  shared: Record<string, unknown> // attributes every member supplied with an equal value: stated once
+  unsupplied: { member: OfferId; attributes: string[] }[] // declared attributes a member's resolver left out
+  omitted: { attributes: string[] } // columns cut by the request's own facts budget, named
+}
+// a choice set as a view carries it: never without its comparison (§6.6)
+export type ViewChoiceSet = ChoiceSet & { comparison: Comparison }
 
 // §6
 export type DiscoveryPolicy = {
@@ -147,7 +160,7 @@ export type View = {
   policy: PolicyId
   stale?: true
   offers: CapabilityOffer[]
-  choiceSets: ChoiceSet[]
+  choiceSets: ViewChoiceSet[]
   order: OrderBasis
   omitted: Omitted
 }
@@ -171,8 +184,10 @@ export type OrderBasis =
   | { by: 'claim'; kind: 'recommendation'; source: string }
 export type Expansion = {
   from: OfferId | ChoiceSetId | ResourceRef
-  along: 'alternatives' | 'members' | 'relations' | 'contains' | 'enables' | 'more'
+  along: 'alternatives' | 'members' | 'relations' | 'contains' | 'enables' | 'more' | 'comparison'
   count: number
+  // a choice set summarized to its member count keeps its comparison, whole but for the request's facts (§6.6)
+  comparison?: Comparison
 }
 
 // §11

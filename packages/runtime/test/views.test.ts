@@ -203,11 +203,12 @@ describe('budgets', () => {
     })
     const v = p.view()
     expect(v.offers).toEqual([])
-    expect(v.omitted.expand).toContainEqual({
-      from: 'hosting.plan.subscribe@hosting.plan',
-      along: 'members',
-      count: 3,
-    })
+    // summarized to its count, and still carrying its comparison, whole: a summary of offers isn't one of facts (§6.6)
+    const summarized = v.omitted.expand.find(
+      (e) => e.from === 'hosting.plan.subscribe@hosting.plan' && e.along === 'members',
+    )
+    expect(summarized).toMatchObject({ count: 3, comparison: { omitted: { attributes: [] } } })
+    expect(summarized!.comparison!.rows).toHaveLength(3)
     const members = await p.expand(
       { from: 'hosting.plan.subscribe@hosting.plan', along: 'members' },
       { budget: { offers: 1 } },
