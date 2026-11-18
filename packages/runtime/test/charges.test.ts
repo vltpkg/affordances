@@ -82,7 +82,8 @@ const setup = async (m = manifest()) =>
 
 const summaryOf = async (rt: Awaited<ReturnType<typeof setup>>, input: unknown) => {
   const r = await rt.execute({ principal: member, offer: pro, input })
-  if (r.status !== 'refused' || r.code !== 'confirmation_required') throw new Error(JSON.stringify(r))
+  if (r.status !== 'refused' || r.code !== 'confirmation_required')
+    throw new Error(JSON.stringify(r))
   return r.confirmation!
 }
 

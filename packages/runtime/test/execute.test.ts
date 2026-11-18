@@ -533,7 +533,9 @@ describe('check, for v0’s agent path (C3.1)', () => {
     expect(without).toEqual({
       status: 'refused',
       code: 'confirmation_required',
-      confirmation: { summary: 'Subscribe to pro for 20 USD a month. Charges: 20 USD a month, until undone' },
+      confirmation: {
+        summary: 'Subscribe to pro for 20 USD a month. Charges: 20 USD a month, until undone',
+      },
       revision: (without as { revision: string }).revision,
     })
     expect(

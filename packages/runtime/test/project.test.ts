@@ -122,7 +122,9 @@ describe('a projection', () => {
     })
     expect(o.requirements).toEqual({
       authorization: 'met',
-      confirmation: { summary: 'Subscribe to pro for 20 USD a month. Charges: 20 USD a month, until undone' },
+      confirmation: {
+        summary: 'Subscribe to pro for 20 USD a month. Charges: 20 USD a month, until undone',
+      },
     })
   })
 
