@@ -1,6 +1,7 @@
 import * as lab from '@affordances/hosting-lab/trial'
 import { canonicalJson, digest } from '@affordances/ir'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { loadavg } from 'node:os'
 import path from 'node:path'
 import type { Driver, DriverResult } from './drivers/types.ts'
@@ -193,6 +194,77 @@ export const MAX_ATTEMPTS = 2
 export const attemptsOf = (dir: string, id: string) =>
   faultsOf(dir).filter((f) => f.spec.id === id).length + priorFailures(dir, id)
 
+// the Playwright the harness runs, for a record whose browser never launched
+const playwrightVersion = () =>
+  (createRequire(import.meta.url)('playwright/package.json') as { version: string }).version
+
+// the record each surface's server writes before its first call (src/*-server.ts), for a trial whose server never
+// started: no calls, and nothing launched
+const emptyRecord = async (
+  surface: Surface,
+  t: {
+    url: string
+    spec: TrialSpec
+    plans: readonly string[]
+    project: string
+    endState: lab.EndState
+  },
+): Promise<SurfaceServerRecord | V0Record | BrowserRecord | McpRecord | WebMcpRecord> => {
+  const lists = { toolLists: [], calls: [] }
+  if (surface.kind === 'v0') return { surface: 'v0', url: t.url, ...lists }
+  if (surface.kind === 'mcp')
+    return {
+      surface: 'mcp',
+      url: t.url,
+      clientCapabilities: null,
+      clientInfo: null,
+      ...lists,
+      elicitations: [],
+    }
+  if (surface.kind === 'browser')
+    return {
+      surface: 'browser',
+      url: t.url,
+      chromium: 'not launched',
+      playwright: playwrightVersion(),
+      launchArgs: [],
+      ...lists,
+      loads: [],
+      confirms: [],
+      aborted: [],
+      stalls: [],
+      errors: [],
+    }
+  if (surface.kind === 'webmcp')
+    return {
+      surface: 'webmcp',
+      url: t.url,
+      chromium: 'not launched',
+      playwright: playwrightVersion(),
+      launchArgs: [],
+      ...lists,
+      completions: [],
+      aborted: [],
+      errors: [],
+    }
+  const taskEdit = lab.TASK_EDITS[t.spec.task]
+  return {
+    surface: surface.id as SurfaceServerRecord['surface'],
+    condition: surface.condition!.id as SurfaceServerRecord['condition'],
+    task: t.spec.task,
+    index: t.spec.index,
+    plans: t.plans,
+    project: t.project,
+    manifestDigest: await digest(taskEdit ? taskEdit.apply(lab.manifest) : lab.manifest),
+    baseDigest: await digest(lab.manifest),
+    calls: [],
+    exposures: [],
+    approvals: [],
+    capped: false,
+    endState: t.endState,
+  }
+}
+
 export const runSurfaceTrial = async (
   spec: TrialSpec,
   driver: Driver,
@@ -276,7 +348,7 @@ export const runSurfaceTrial = async (
   // PLAN's (§5): the app answered a 5xx, counted exactly in the state file, or the outcome's two reads disagreed. It's
   // set aside, rerun and counted, never scored, and it's checked before the CLI's rule, since a trial the app failed
   // is the harness's whatever the CLI did. The server's stderr is kept as evidence, and never classed by
-  const sendFailure = () => {
+  const writeFailure = () =>
     writeFileSync(
       file('failure.json'),
       JSON.stringify({
@@ -285,6 +357,8 @@ export const runSurfaceTrial = async (
         exitCode: result?.exitCode ?? null,
       }),
     )
+  const sendFailure = () => {
+    writeFailure()
     setAside(dir, spec.id)
     throw new DriverFailure(spec.id, failed!.kind, failed!.detail)
   }
@@ -339,14 +413,21 @@ export const runSurfaceTrial = async (
   // (intake's 12:05Z rule, ITT), and on an earlier one it's set aside for its retry (the planner, 17:40Z)
   const attempts = attemptsOf(dir, spec.id) + 1
   if (failed && attempts < (options.maxAttempts ?? MAX_ATTEMPTS)) sendFailure()
-  if (!existsSync(out))
+  // a CLI that failed on the final attempt before its tool server wrote a record (code review of M8, #4): scored
+  // 'failed' under the crash rule like any other final-attempt failure, from the record a server writes before its
+  // first call, with its failure.json beside it, and the run goes on. Without a failure, a missing record is the
+  // harness's to explain
+  if (!existsSync(out) && !failed)
     throw new Error(`trial ${spec.id}: the tool server never started (${thrown ?? 'no error'})`)
-  const record = JSON.parse(readFileSync(out, 'utf8')) as
-    | SurfaceServerRecord
-    | V0Record
-    | BrowserRecord
-    | McpRecord
-    | WebMcpRecord
+  if (!existsSync(out)) writeFailure()
+  const record = existsSync(out)
+    ? (JSON.parse(readFileSync(out, 'utf8')) as
+        | SurfaceServerRecord
+        | V0Record
+        | BrowserRecord
+        | McpRecord
+        | WebMcpRecord)
+    : await emptyRecord(surface, { url, spec, plans, project, endState: endState! })
   // the replay's record: the surface's, with what a fresh store needs
   const replayFile = file('replay.json')
   writeFileSync(

@@ -569,6 +569,52 @@ test.skipIf(!build)(
   600_000,
 )
 
+// code review of M8 (#4): a CLI that fails before its tool server writes a record, on the final attempt, is scored
+// 'failed' under the crash rule, with its failure.json, and the run goes on. The budget holds across a resume: the
+// first attempt in one run, the second in its resume, and a third run starts nothing
+test.skipIf(!build)(
+  'a CLI failure with no tool-server record, on the final attempt, is scored failed, and a resume never runs a third',
+  async () => {
+    const at = path.join(dir, 'no-record')
+    let runs = 0
+    const dead: Driver = {
+      id: 'dead',
+      run: async () => {
+        runs++
+        throw new Error('the CLI crashed before it started')
+      },
+    }
+    for (const surface of ['full', 'browser'] as SurfaceId[]) {
+      const s = spec(surface, `no-record-${surface}`)
+      runs = 0
+      const options = { labBuild: build!, port: PORT, ports: [PORT], pilot: true, maxAttempts: 2 }
+      // the first attempt, as one run's last act: set aside for its retry
+      await expect(runSurfaceTrial(s, dead, at, options)).rejects.toThrow(DriverFailure)
+      // the resume: the final attempt, scored
+      expect(await runSurfaceSpecs([s], () => dead, at, options)).toEqual({
+        missing: [],
+        faults: 0,
+        trialsRun: 1,
+      })
+      const lines = readFileSync(path.join(at, `${s.id}.jsonl`), 'utf8')
+        .trim()
+        .split('\n')
+        .map((l) => JSON.parse(l))
+      expect(lines.find((l) => l.kind === 'end')).toMatchObject({
+        end: 'failed',
+        attempts: 2,
+        driverFailure: { kind: 'crash' },
+      })
+      expect(lines.filter((l) => l.kind === 'call')).toEqual([])
+      expect(existsSync(path.join(at, `${s.id}.failure.json`))).toBe(true)
+      // a third run: nothing left to try
+      await runSurfaceSpecs([s], () => dead, at, options)
+      expect(runs).toBe(2)
+    }
+  },
+  600_000,
+)
+
 // the planner (17:40Z): the final attempt's class decides. A crash and then a harness fault leaves the spec missing;
 // a harness fault and then a crash is scored failed, under intake's rule for a CLI failure on the final attempt
 const inTurn = (drivers: Driver[]): Driver => {
