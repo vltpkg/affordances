@@ -157,9 +157,17 @@ export type Omitted = {
   claims: number
   expand: Expansion[]
 }
-export type OrderBasis =
+// a basis that names no claim, recommendation or source: what a structural rendering may state (§6.4)
+export type ClaimFreeOrderBasis =
   | { by: 'canonical' }
   | { by: 'relevance'; method: RelevanceMethodId }
+  // groups by a manifest-derived attribute, in an order the variant fixes, each group in its within order (intake,
+  // 2026-11-18, for RFC 0003's S). The key is a closed set, never free text, so it can't carry framing
+  | { by: 'group'; key: GroupKey; within: ClaimFreeOrderBasis }
+// targetType: the offer's target's resource type; untargeted offers first, then the manifest's resource order
+export type GroupKey = 'targetType'
+export type OrderBasis =
+  | ClaimFreeOrderBasis
   | { by: 'claim'; kind: 'recommendation'; source: string }
 export type Expansion = {
   from: OfferId | ChoiceSetId | ResourceRef
