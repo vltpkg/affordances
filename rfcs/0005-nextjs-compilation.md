@@ -231,10 +231,17 @@ These are never extracted, because code doesn't state them. Each one missing is 
 
 **The minimum M6 needs:** a route that serves RFC 0002's views from the compiled manifest.
 
-- **`createProjectionRoute({ resources, principal })`**, from `@affordances/next/projection` (new, `@experimental`):
-  - it builds `createRuntime` (RFC 0002 §11) from `manifest.json`, the app's resolvers, and handlers taken from `bindings.ts`;
-  - `principal` maps the request to a principal, as `apps/hosting-lab/src/lib/principal.ts` does;
-  - it serves views and inspections, never a projection.
+- **`createProjectionRoute({ manifest, bindings, resources, principal, session?, approvalKey?, seenTokens? })`**, from `@affordances/next/projection` (new, `@experimental`). It returns the route's `{ GET, POST }`.
+  - **Explicit inputs:** the app imports `manifest` and `bindings` itself, `import manifest from '../.affordances/manifest.json'` and `import { bindings } from '../.affordances/bindings'`. They're plain imports the app can see and type, with no module aliased behind them. An app without a namespace has no `manifest.json`, and so no route.
+  - **The runtime:** it builds `createRuntime` (RFC 0002 §11) from the manifest, the app's resolvers, and handlers taken from the bindings.
+  - **`principal`** maps the request to a principal, as `apps/hosting-lab/src/lib/principal.ts` does.
+  - **`session`** gives v0's session to a bound action's `run` and guards, which take v0's context.
+  - **`approvalKey` and `seenTokens`:** the key the approval tokens are signed with, and the single-use store of their nonces, `TokenStore = { claim(nonce, expiresAt): Promise<boolean> }` (RFC 0002 §8.2).
+    - **Outside production,** each defaults to a per-process one.
+    - **In production, both are required,** and the route throws when it's made, naming what's missing and the fix: a key from the environment, and a store every instance shares (a database, or a key-value store with a time to live of at least the approval's expiry).
+    - **Why:** RFC 0002's R2 says an approval token used twice runs once. With several instances, a per-process store would let one token run once on each, and a per-process key would refuse a token on any instance but the one that signed it.
+    - **When it fails:** `next build` runs with `NODE_ENV=production` and evaluates route modules, so an app missing either fails at build time, by design, not at its first request.
+  - **What it serves:** views and inspections, never a projection.
 - **What it fixes:** only where the parts come from, and the rules RFC 0002 already sets. Those are views only, an Origin check for cookie calls, and per-caller caching.
 - **What it defers:** the URLs, the request and response shapes, and paging are RFC 0004's. Until then, the route's surface is hosting-lab's (`apps/hosting-lab/src/lib/serve.ts`), marked `@experimental`, so RFC 0004 can replace it. The route is versioned with RFC 0004: it declares the wire-format version it serves, and moves only when RFC 0004 does, so the two can't drift.
 
