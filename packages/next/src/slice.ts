@@ -221,6 +221,12 @@ const BANNED_MEMBERS = new Set([
   'setPrototypeOf',
   'defineProperty',
   'defineProperties',
+  // their legacy aliases on every object (code review of M8): __lookupGetter__('__proto__') is getPrototypeOf, and
+  // __defineGetter__ and __defineSetter__ are defineProperty
+  '__lookupGetter__',
+  '__lookupSetter__',
+  '__defineGetter__',
+  '__defineSetter__',
 ])
 const TYPE_KEYS = new Set([
   'typeAnnotation',

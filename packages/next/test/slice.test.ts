@@ -536,3 +536,14 @@ test('a method is lossy only for a library the slice imports: an Array’s filte
     }),
   ).toEqual(['refine'])
 })
+
+// code review of M8 (#3's follow-up, 22:34Z): the legacy accessors are getPrototypeOf and defineProperty by other
+// names, which are banned, so they are too
+test.each([
+  ['__lookupGetter__', "z.string().default(String(({}).__lookupGetter__('__proto__')))"],
+  ['__lookupSetter__', "z.string().default(String(({}).__lookupSetter__('__proto__')))"],
+  ['__defineGetter__', "z.string().default(String(({}).__defineGetter__('a', () => 1)))"],
+  ['__defineSetter__', "z.string().default(String(({}).__defineSetter__('a', () => {})))"],
+])('the legacy accessor %s is out of reach', (member, input) => {
+  expect(summary(slice(Z, input))).toMatchObject(opaque(new RegExp(`the ${member} property`)))
+})
