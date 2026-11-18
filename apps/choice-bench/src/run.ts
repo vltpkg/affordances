@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { loadavg } from 'node:os'
 import path from 'node:path'
 import { conditions, type ConditionId } from './conditions.ts'
+import { offerSetCheck } from './offerset.ts'
 import { claudeCli } from './drivers/claude-cli.ts'
 import { codexCli } from './drivers/codex-cli.ts'
 import { fakeDriver } from './drivers/fake.ts'
@@ -195,6 +196,18 @@ if (mode === 'plan') {
     if (leaks.length) {
       console.error(`the results root isn't isolated: ${leaks.join('; ')}`)
       process.exit(3)
+    }
+    // each condition's first view offers what A's does, unless it declares a scope or start change (intake's ruling
+    // 3, 2026-11-18): a factor riding in undeclared refuses the run before any canary or trial
+    for (const task of new Set(specs.map((s) => s.task))) {
+      const used = [...new Set(specs.filter((s) => s.task === task).map((s) => s.condition))]
+      const problems = await offerSetCheck(used, task)
+      if (problems.length) {
+        console.error(
+          `a condition's first view differs from A's on ${task}: ${JSON.stringify(problems)}`,
+        )
+        process.exit(3)
+      }
     }
     // one canary per driver and model the run uses, in the trial configuration
     for (const key of new Set(specs.map((s) => `${s.driver} ${s.model}`))) {

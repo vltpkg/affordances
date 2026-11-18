@@ -6,12 +6,18 @@ import { builtInPolicies, type DiscoveryPolicy, type Handler } from '@affordance
 // rendering. Only the policy and the fixture vary: the tools, the prompt, the principal and the tasks are the same in
 // every condition (§5.1, §5.3)
 
-export type ConditionId = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'S'
+export type ConditionId = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'S' | 'C-claims' | 'A-scope'
+
+// what a condition varies against A (RFC 0003's lesson for condition construction, intake 2026-11-18): the preflight
+// refuses a condition whose first view's offer set differs from A's unless it declares scope or start, so a factor
+// can't ride in undeclared, as the advocated policy's scope did in C
+export type Factor = 'claims' | 'order' | 'relevance' | 'scope' | 'start' | 'nesting' | 'edit'
 
 export type Condition = {
   id: ConditionId
   name: string
   policy: DiscoveryPolicy
+  manipulates: Factor[]
   // one named edit of the base manifest (F, G), so the difference is exactly that edit (§3.1)
   edit?: { name: string; apply: (m: CapabilityManifest) => CapabilityManifest }
   // a wrapper over the app's handlers, for an edit whose input the app's own handler reads (G's default)
@@ -53,9 +59,21 @@ const neutral: DiscoveryPolicy = {
 }
 
 export const conditions: Record<ConditionId, Condition> = {
-  A: { id: 'A', name: 'neutral', policy: neutral },
-  B: { id: 'B', name: 'progressive', policy: builtIn('progressive') },
-  C: { id: 'C', name: 'transparent advocacy', policy: advocated },
+  A: { id: 'A', name: 'neutral', policy: neutral, manipulates: [] },
+  B: {
+    id: 'B',
+    name: 'progressive',
+    policy: builtIn('progressive'),
+    manipulates: ['scope', 'order', 'relevance'],
+  },
+  // C as RFC 0003 meant it: the claims and their order. Its advocated policy also narrows the scope, which the
+  // confirmatory audit found leaves hosting.plan.list out of the first view, so the preflight refuses C as built
+  C: {
+    id: 'C',
+    name: 'transparent advocacy',
+    policy: advocated,
+    manipulates: ['claims', 'order', 'relevance'],
+  },
   // C without the claims' text: the same scope and order, and the view still states its basis (§3.1), so C and D
   // differ in the claims alone
   D: {
@@ -68,6 +86,8 @@ export const conditions: Record<ConditionId, Condition> = {
         'As advocated, with the claims omitted: the order still says it is by recommendation',
       claims: 'omitted',
     },
+    // as RFC 0003 meant it; it inherits the advocated scope too, so the preflight refuses it as built, as it does C
+    manipulates: ['order', 'relevance'],
   },
   // the subscribe offers on every plan, with the user's project bound; the bundle, subscribe's alternativeTo, is one
   // counted expansion away (RFC 0003 §3.1, RFC 0002 §2's bind)
@@ -83,11 +103,13 @@ export const conditions: Record<ConditionId, Condition> = {
       order: 'canonical',
       claims: 'omitted',
     },
+    manipulates: ['start', 'scope'],
   },
   F: {
     id: 'F',
     name: 'misleading dependency',
     policy: neutral,
+    manipulates: ['edit'],
     edit: {
       name: 'subscribe-says-the-add-on-is-required',
       apply: (m) => {
@@ -102,6 +124,7 @@ export const conditions: Record<ConditionId, Condition> = {
     id: 'G',
     name: 'bundled default',
     policy: neutral,
+    manipulates: ['edit'],
     edit: {
       name: 'subscribe-defaults-to-priority-support',
       apply: (m) => {
@@ -143,7 +166,35 @@ export const conditions: Record<ConditionId, Condition> = {
     // no handler wrapper: the runtime applies addOns' default to the effective input, which the summary renders, the
     // approval binds and the handler runs (RFC 0002 §8.1)
   },
-  S: { id: 'S', name: 'structure only', policy: neutral, nested: true },
+  S: { id: 'S', name: 'structure only', policy: neutral, nested: true, manipulates: ['nesting'] },
+  // the exploratory cells that separate H2's two factors (intake, 2026-11-18 07:40Z)
+  // C's claims, order and relevance over A's exhaustive scope: C with only its scope changed
+  'C-claims': {
+    id: 'C-claims',
+    name: 'advocacy, exhaustive scope',
+    policy: {
+      ...advocated,
+      id: 'advocated-exhaustive',
+      description: 'As advocated, over the exhaustive scope',
+      scope: 'exhaustive',
+      depth: undefined,
+    },
+    manipulates: ['claims', 'order', 'relevance'],
+  },
+  // the advocated policy's scope, with A's order and no claims: A with only its scope changed
+  'A-scope': {
+    id: 'A-scope',
+    name: 'neutral, advocated scope',
+    policy: {
+      ...neutral,
+      id: 'neighborhood-claims-omitted',
+      description:
+        "A's policy over the advocated policy's scope, the start's neighborhood at depth 1",
+      scope: 'neighborhood',
+      depth: 1,
+    },
+    manipulates: ['scope'],
+  },
 }
 
 // the confirmatory fixture's claim edit (RFC 0003 §3.1, design 2026-11-18): on T6 and T7 the owner's recommendation is
