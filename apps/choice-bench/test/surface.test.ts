@@ -346,6 +346,34 @@ test.skipIf(!build)(
   600_000,
 )
 
+// the WebMCP pilot (design, 14:10Z; the planner, 15:11Z): the page's own tools in Chromium with WebMCP on, relayed
+// unchanged. The page's execute is refused for confirmation, since no browser can ask the person; the simulated
+// person completes it on the review page, in the same session, and the store shows the purchase
+test.skipIf(!build)(
+  'the WebMCP pilot: the page’s tools, a refused purchase completed by the person on the review page',
+  async () => {
+    const at = path.join(dir, 'webmcp')
+    const s = spec('webmcp', 'webmcp-fake')
+    const r = await runSurfaceTrial(s, fakeDriver(1, path.join(at, `${s.id}.raw.json`)), at, {
+      labBuild: build!,
+      port: PORT,
+    })
+    expect(r).not.toHaveProperty('fault')
+    const lines = readFileSync(path.join(at, `${s.id}.jsonl`), 'utf8')
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l))
+    const trial = lines[0]
+    const metrics = lines.at(-1)
+    expect(trial.webmcp.launchArgs).toEqual(['--enable-features=WebMCP'])
+    expect(trial.webmcp.aborted).toEqual([])
+    expect(trial.webmcp.completions).toMatchObject([{ confirmed: true }])
+    expect(metrics).toMatchObject({ surface: 'webmcp', completed: true, choseNone: false })
+    expect(metrics.endChoice).toBe(metrics.choice)
+  },
+  600_000,
+)
+
 // the planner (14:22Z, condition 3): the same purchase through each surface ends in the same endState. The fake agent
 // with seed 0 buys Pro on v0 and in the browser; lab-server.test's protocol-1 purchase of Pro ends in this same state
 test.skipIf(!build)(

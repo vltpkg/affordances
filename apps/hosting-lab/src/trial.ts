@@ -10,6 +10,8 @@ export { handlers, memoryTokens } from './lib/handlers.ts'
 export { account, reset, setPlanIds } from './lib/store.ts'
 export { TASK_EDITS, type TaskEdit } from './lib/task-edits.ts'
 export { v0Bindings } from './v0-bindings.ts'
+// the review-and-confirm URL for a refused call: M7f's WebMCP bridge, as the simulated person, completes there
+export { reviewUrl } from './lib/review.ts'
 export { withPlanIds } from './catalog.ts'
 export {
   tasks,

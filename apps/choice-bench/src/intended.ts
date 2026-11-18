@@ -138,7 +138,8 @@ const replay = async (
   // 'none' is an agent that never executed anything: on v0, never called an action; on the browser, never loaded the
   // review step with a selection. One that did, though nothing applied, replays to the starting state
   const surface = 'surface' in record ? record.surface : undefined
-  if (surface === 'mcp') {
+  // WebMCP's generic tools are the same four, refused for confirmation or run, so its requests read as MCP's
+  if (surface === 'mcp' || surface === 'webmcp') {
     const mcp = record as McpTrial
     if (!mcp.calls.some((c) => c.tool === 'execute'))
       return { state: undefined, replayed: [], skipped: [], alternatives: [] }

@@ -38,6 +38,7 @@ import { consequential, type V0Trial } from './v0.ts'
 import type { BrowserConfig, BrowserRecord } from './browser-server.ts'
 import { browsingLoad, firstRequestAt, type BrowserTrial } from './browser.ts'
 import type { McpConfig, McpRecord } from './mcp-server.ts'
+import type { WebMcpConfig, WebMcpRecord } from './webmcp-server.ts'
 import { declaresElicitation, mcpRequestEvent, mcpUnauthorized, type McpTrial } from './mcp.ts'
 
 // one M7f surface trial (surfaces/PLAN.md §3, §5; the planner, 14:50Z): the trial's own fresh server, the surface's
@@ -65,6 +66,7 @@ const SERVERS = {
   v0: path.resolve(import.meta.dirname, 'v0-server.ts'),
   browser: path.resolve(import.meta.dirname, 'browser-server.ts'),
   mcp: path.resolve(import.meta.dirname, 'mcp-server.ts'),
+  webmcp: path.resolve(import.meta.dirname, 'webmcp-server.ts'),
 }
 const V0_TOOLS = new Set(['affordances_open', 'affordances_call'])
 const BROWSER_TOOLS = new Set(['open', 'snapshot', 'click', 'fill', 'submit'])
@@ -73,12 +75,12 @@ const BROWSER_TOOLS = new Set(['open', 'snapshot', 'click', 'fill', 'submit'])
 const factsOf = async (
   surface: Surface,
   task: string,
-  record: SurfaceServerRecord | V0Record | BrowserRecord | McpRecord,
+  record: SurfaceServerRecord | V0Record | BrowserRecord | McpRecord | WebMcpRecord,
   endState: lab.EndState,
 ): Promise<Omit<SurfaceFacts, 'completed'>> => {
   const gb = (await planAttributes('pro')).bandwidthGb
-  if (surface.kind === 'mcp') {
-    const m = record as McpRecord
+  if (surface.kind === 'mcp' || surface.kind === 'webmcp') {
+    const m = record as McpRecord | WebMcpRecord
     const first = m.calls.findIndex(mcpRequestEvent)
     const firstRequest = first < 0 ? undefined : first
     return {
@@ -157,8 +159,6 @@ export const runSurfaceTrial = async (
 ) => {
   if (!spec.surface) throw new Error(`trial ${spec.id} names no surface`)
   const surface = surfaces[spec.surface]
-  if (surface.kind === 'webmcp')
-    throw new Error(`the ${surface.id} surface's driver isn't built yet`)
   const task = lab.tasks.find((t) => t.id === spec.task)
   if (!task) throw new Error(`no task ${spec.task}`)
   mkdirSync(dir, { recursive: true })
@@ -186,10 +186,10 @@ export const runSurfaceTrial = async (
   })
   const out = file('server.json')
   const configPath = file('config.json')
-  const config: SurfaceServerConfig | V0Config | BrowserConfig | McpConfig =
+  const config: SurfaceServerConfig | V0Config | BrowserConfig | McpConfig | WebMcpConfig =
     surface.kind === 'mcp'
       ? { url, session, task: spec.task, out }
-      : surface.kind === 'v0' || surface.kind === 'browser'
+      : surface.kind === 'v0' || surface.kind === 'browser' || surface.kind === 'webmcp'
         ? { url, session, out }
         : {
             surface: surface.id as 'full' | 'progressive',
@@ -266,6 +266,16 @@ export const runSurfaceTrial = async (
     surface.kind === 'browser' && existsSync(out)
       ? (JSON.parse(readFileSync(out, 'utf8')) as BrowserRecord)
       : undefined
+  const webmcpRecord =
+    surface.kind === 'webmcp' && existsSync(out)
+      ? (JSON.parse(readFileSync(out, 'utf8')) as WebMcpRecord)
+      : undefined
+  fault ??= webmcpRecord?.errors.length
+    ? {
+        kind: 'stall',
+        detail: `the page's tools failed: ${webmcpRecord.errors.map((e) => e.detail).join('; ')}`,
+      }
+    : undefined
   fault ??= browserRecord?.errors.length
     ? {
         kind: 'stall',
@@ -298,6 +308,7 @@ export const runSurfaceTrial = async (
     | V0Record
     | BrowserRecord
     | McpRecord
+    | WebMcpRecord
   // the replay's record: the surface's, with what a fresh store needs
   const replayFile = file('replay.json')
   writeFileSync(
@@ -311,14 +322,14 @@ export const runSurfaceTrial = async (
             task: spec.task,
             project,
           } satisfies V0Trial)
-        : surface.kind === 'mcp'
+        : surface.kind === 'mcp' || surface.kind === 'webmcp'
           ? ({
-              ...(record as McpRecord),
+              ...(record as McpRecord | WebMcpRecord),
               condition: 'A',
               index: spec.index,
               task: spec.task,
               project,
-            } satisfies McpTrial)
+            } as McpTrial)
           : surface.kind === 'browser'
             ? ({
                 ...(record as BrowserRecord),
@@ -415,6 +426,16 @@ export const runSurfaceTrial = async (
       instruction: surface.instruction,
       // the browser's, the same across trials (the preflight checks it): Chromium's and Playwright's versions, and its
       // flags, none beyond Playwright's, so no WebMCP; and any request to another origin, aborted
+      // the WebMCP bridge's browser, the same across trials, and the simulated person's completions on the review page
+      ...(surface.kind === 'webmcp' && {
+        webmcp: {
+          chromium: (record as WebMcpRecord).chromium,
+          playwright: (record as WebMcpRecord).playwright,
+          launchArgs: (record as WebMcpRecord).launchArgs,
+          completions: (record as WebMcpRecord).completions,
+          aborted: (record as WebMcpRecord).aborted,
+        },
+      }),
       // the MCP pilot's finding (the planner, 15:55Z): whether the client declared elicitation, and what it was asked
       ...(surface.kind === 'mcp' && {
         mcp: {

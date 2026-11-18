@@ -7,7 +7,9 @@ import type { McpCall, McpRecord } from './mcp-server.ts'
 // elicitation, never a token the model holds
 
 /** An MCP trial's record, with what the replay needs. */
-export type McpTrial = McpRecord & {
+// WebMCP's record is read the same way: its calls are the same four generic tools
+export type McpTrial = Omit<McpRecord, 'surface'> & {
+  surface: 'mcp' | 'webmcp'
   condition: ConditionId
   index: number
   task: string
