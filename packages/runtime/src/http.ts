@@ -30,7 +30,7 @@ export const statusOf = (
     return {
       status: 429,
       headers:
-        result.retryAfterSeconds !== undefined
+        result.retryAfterSeconds !== undefined && Number.isFinite(result.retryAfterSeconds)
           ? { 'retry-after': String(Math.max(0, Math.ceil(result.retryAfterSeconds))) }
           : {},
     }

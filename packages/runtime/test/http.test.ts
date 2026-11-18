@@ -47,4 +47,7 @@ test('rate_limited carries Retry-After when the refusal says when, in whole seco
     headers: { 'retry-after': '3' },
   })
   expect(statusOf(refused('rate_limited'), signedIn)).toEqual({ status: 429, headers: {} })
+  // a time that isn't one is no header, never Retry-After: NaN
+  for (const retryAfterSeconds of [Number.NaN, Number.POSITIVE_INFINITY])
+    expect(statusOf(refused('rate_limited', { retryAfterSeconds }), signedIn).headers).toEqual({})
 })
