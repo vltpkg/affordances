@@ -5,13 +5,17 @@ import type { NextConfig } from 'next'
 import { MEDIA_TYPE, WELL_KNOWN_PATH } from '@affordances/protocol'
 import { findAppDir, generate, ID, segment } from './codegen.ts'
 import { compileSync, writeCompiled } from './compile.ts'
-import { API_PATH } from './constants.ts'
+import { API_PATH, MANIFEST_PATH, PROJECTION_BASE } from './constants.ts'
 import { fails, format, type Diagnostic } from './diagnostics.ts'
 
 export { API_PATH }
 
 // set to the index's path on an app withAffordances wraps
 export const INDEX_ENV = 'AFFORDANCES_INDEX'
+// whether the capability manifest is listed and served (RFC 0005 §1, M7b2), and where the projection route is mounted:
+// set from withAffordances' options, and read by next's routes. Next inlines env at build, so each is fixed per build
+export const MANIFEST_ENV = 'AFFORDANCES_MANIFEST'
+export const PROJECTION_ENV = 'AFFORDANCES_PROJECTION_BASE'
 
 export type Rewrite = {
   source: string
@@ -34,6 +38,8 @@ const conditions: NonNullable<Rewrite['has']>[] = [
 
 export const rewrites: Rewrite[] = [
   { source: WELL_KNOWN_PATH, destination: `${API_PATH}${WELL_KNOWN_PATH}` },
+  // the capability manifest, served by the same catch-all route as the index
+  { source: MANIFEST_PATH, destination: `${API_PATH}${MANIFEST_PATH}` },
   ...conditions.flatMap((has) => [
     { source: '/', has, destination: API_PATH },
     { source: page, has, destination: `${API_PATH}/:path` },
@@ -81,6 +87,17 @@ export type AffordancesConfig = {
   owner?: { id: string; name: string }
   /** @experimental Strict mode (RFC 0005 §3): `W_NO_ID`, `W_INPUT_OPAQUE` and `W_INPUT_LOSSY` become errors. */
   strict?: boolean
+  /**
+   * @experimental Whether the capability manifest is public (RFC 0005 §1): listed in the index and served at
+   * `/.well-known/affordances/manifest.json`. `'private'` lists and serves neither, while views and execution keep
+   * working. `'public'` by default; fixed per build.
+   */
+  manifest?: 'public' | 'private'
+  /**
+   * @experimental Where the app mounts its projection route (`createProjectionRoute`), so the index can name it as the
+   * base of RFC 0004 §2's endpoints. A path from the site's root; `/api/projection` by default.
+   */
+  projection?: string
 }
 
 // RFC 0001's namespace: an absolute URI with no fragment (§2, and §7.3's schema table)
@@ -195,6 +212,26 @@ const compile = (root: string, identity: Identity, once = true) => {
   return result
 }
 
+// the manifest option, checked as the config loads
+const manifestOption = (options: AffordancesConfig) => {
+  const value = options.manifest ?? 'public'
+  if (value !== 'public' && value !== 'private')
+    throw new TypeError(
+      `withAffordances: manifest is 'public' or 'private', not '${String(value)}'`,
+    )
+  return value
+}
+
+// the projection route's path, checked as the config loads: from the site's root, with no query or fragment
+const projectionOption = (options: AffordancesConfig) => {
+  const value = options.projection ?? PROJECTION_BASE
+  if (!/^\/[^?#\s]*$/.test(value) || value.endsWith('/'))
+    throw new TypeError(
+      `withAffordances: projection is a path from the site's root, such as '/api/projection', not '${value}'`,
+    )
+  return value
+}
+
 // the slice of NextConfig withAffordances touches; generic so it accepts whichever copy of next the app has
 // webpack is typed loosely: its context drags in all of NextConfig, which two copies of next don't agree on
 export type Config = Pick<NextConfig, 'rewrites' | 'headers' | 'turbopack' | 'env'> & {
@@ -209,6 +246,8 @@ export const withAffordances = <C extends Config>(
   const root = options.root ?? process.cwd()
   // a bad namespace or owner fails here, as the config loads, not later in the capability compiler
   const identity = resolveIdentity(options)
+  const visibility = manifestOption(options)
+  const projection = projectionOption(options)
   const entries = generate(root, options)
   const dev = process.env.NODE_ENV === 'development'
   // once per root: next loads its config more than once in one build, and each compile runs the evaluator twice
@@ -244,23 +283,33 @@ export const withAffordances = <C extends Config>(
     }
   }
 
-  // the route handler imports @affordances/next/manifest; point it at this app's generated one
+  // the route handler imports @affordances/next/manifest; point it at this app's generated one. Its capability manifest
+  // goes the same way, @affordances/next/compiled to the .affordances/capabilities.ts the compiler always writes, so
+  // the route reads it from the bundle, never from disk at request time
   const manifest = path.join(root, '.affordances', 'manifest.ts')
+  const compiledModule = path.join(root, '.affordances', 'capabilities.ts')
   const afforded: C = {
     ...nextConfig,
     // where the app's Affordances index is, for plugins that read it when a request comes in (md's llms handlers):
     // in env, so it's there whichever wrapper runs first
-    env: { ...nextConfig.env, [INDEX_ENV]: WELL_KNOWN_PATH },
+    env: {
+      ...nextConfig.env,
+      [INDEX_ENV]: WELL_KNOWN_PATH,
+      [MANIFEST_ENV]: visibility,
+      [PROJECTION_ENV]: projection,
+    },
     turbopack: {
       ...nextConfig.turbopack,
       // turbopack takes a path relative to the project, not an absolute one
       resolveAlias: {
         ...nextConfig.turbopack?.resolveAlias,
         '@affordances/next/manifest': `./${path.relative(process.cwd(), manifest)}`,
+        '@affordances/next/compiled': `./${path.relative(process.cwd(), compiledModule)}`,
       },
     },
     webpack: (config, context) => {
       config.resolve.alias['@affordances/next/manifest'] = manifest
+      config.resolve.alias['@affordances/next/compiled'] = compiledModule
       return nextConfig.webpack ? nextConfig.webpack(config, context) : config
     },
     rewrites: async () => {

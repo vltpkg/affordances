@@ -3,7 +3,15 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { expect, test, vi } from 'vitest'
-import { INDEX_ENV, noNamespace, rewrites, toSource, withAffordances } from '../src/config.ts'
+import {
+  INDEX_ENV,
+  MANIFEST_ENV,
+  PROJECTION_ENV,
+  noNamespace,
+  rewrites,
+  toSource,
+  withAffordances,
+} from '../src/config.ts'
 import { fixtureCopy } from './support/fixture.ts'
 
 const fixture = fixtureCopy()
@@ -68,7 +76,12 @@ test('withAffordances prepends its rewrites and keeps the user config', async ()
 test("the app's env says where its index is, for plugins that read it, and the user's env survives", () => {
   const root = fixture
   const config = withAffordances({ env: { A: '1' } }, { root })
-  expect(config.env).toEqual({ A: '1', [INDEX_ENV]: '/.well-known/affordances.json' })
+  expect(config.env).toEqual({
+    A: '1',
+    [INDEX_ENV]: '/.well-known/affordances.json',
+    [MANIFEST_ENV]: 'public',
+    [PROJECTION_ENV]: '/api/projection',
+  })
 })
 
 test('the route handler finds the manifest through an alias, and user aliases survive', () => {
@@ -84,6 +97,7 @@ test('the route handler finds the manifest through an alias, and user aliases su
   expect(config.turbopack!.resolveAlias).toEqual({
     lodash: 'lodash-es',
     '@affordances/next/manifest': `./${path.relative(process.cwd(), path.join(root, '.affordances/manifest.ts'))}`,
+    '@affordances/next/compiled': `./${path.relative(process.cwd(), path.join(root, '.affordances/capabilities.ts'))}`,
   })
   const webpack = config.webpack!({ resolve: { alias: {} } }, {}) as {
     seen: boolean
@@ -342,3 +356,50 @@ test('a process spawned by one that already compiled (a harness running next bui
     rmSync(root, { recursive: true, force: true })
   }
 }, 60_000)
+
+// M7b2 (intake, 2026-11-18): whether the capability manifest is public, and where the projection route is, for next's
+// routes to read. Both are fixed per build, as env, and checked as the config loads
+test("the manifest's visibility and the projection route's path reach next's routes as env, with their defaults", () => {
+  const root = path.join(import.meta.dirname, 'fixture')
+  const defaults = withAffordances({} as NextConfig, { root })
+  expect(defaults.env).toMatchObject({
+    [MANIFEST_ENV]: 'public',
+    [PROJECTION_ENV]: '/api/projection',
+  })
+  const set = withAffordances({} as NextConfig, {
+    root,
+    manifest: 'private',
+    projection: '/api/agents',
+  })
+  expect(set.env).toMatchObject({ [MANIFEST_ENV]: 'private', [PROJECTION_ENV]: '/api/agents' })
+})
+
+test('a bad manifest visibility or projection path fails as the config loads', () => {
+  const root = path.join(import.meta.dirname, 'fixture')
+  expect(() => withAffordances({} as NextConfig, { root, manifest: 'hidden' as never })).toThrow(
+    /manifest is 'public' or 'private'/,
+  )
+  for (const projection of ['api/projection', '/api/projection/', 'https://x.example/p', '/p?x=1'])
+    expect(() => withAffordances({} as NextConfig, { root, projection })).toThrow(
+      /projection is a path from the site's root/,
+    )
+})
+
+test('the capability manifest is served at its fixed path, through the catch-all route, from the compiled module', async () => {
+  const root = path.join(import.meta.dirname, 'fixture')
+  const config = withAffordances({} as NextConfig, { root })
+  const { beforeFiles } = (await config.rewrites!()) as {
+    beforeFiles: { source: string; destination: string }[]
+  }
+  expect(beforeFiles).toContainEqual({
+    source: '/.well-known/affordances/manifest.json',
+    destination: '/api/affordances/graph/.well-known/affordances/manifest.json',
+  })
+  const alias = (config.turbopack?.resolveAlias ?? {}) as Record<string, string>
+  expect(alias['@affordances/next/compiled']).toMatch(/\.affordances\/capabilities\.ts$/)
+  const webpack = { resolve: { alias: {} as Record<string, string> } }
+  config.webpack!(webpack, {} as never)
+  expect(webpack.resolve.alias['@affordances/next/compiled']).toBe(
+    path.join(root, '.affordances', 'capabilities.ts'),
+  )
+})
