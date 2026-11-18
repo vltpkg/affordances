@@ -463,3 +463,68 @@ test('an expansion’s budget is offers and facts, each a positive whole number,
   for (const budget of [{}, { offers: 1 }, { facts: 3 }, { offers: 2, facts: 1 }])
     expect((await post('expand', { from, along: 'alternatives', budget })).status).toBe(200)
 })
+
+// code review of M8 (simplify #3, skipped for a drift test): the generic tools' hand-written input schemas and the
+// route's hand validation are held together. The same keys, the same required fields and the same directions; a call
+// built from each schema is accepted (never a 400), and one missing each required field is refused with a 400
+// a response's status
+const status = async (r: Promise<Response>) => (await r).status
+test('the generic tools’ input schemas and the route accept the same calls', async () => {
+  const { GENERIC_TOOLS } = await import('@affordances/runtime/agent')
+  const { ALONG } = await import('@affordances/runtime')
+  const schema = (name: string) =>
+    GENERIC_TOOLS.find((t) => t.name === name)!.inputSchema as {
+      properties: Record<string, { enum?: string[] }>
+      required?: string[]
+    }
+  expect(
+    Object.fromEntries(
+      GENERIC_TOOLS.map((t) => [
+        t.name,
+        [Object.keys(schema(t.name).properties), schema(t.name).required ?? []],
+      ]),
+    ),
+  ).toEqual({
+    project: [['start'], []],
+    expand: [
+      ['from', 'along'],
+      ['from', 'along'],
+    ],
+    inspect: [['offer'], ['offer']],
+    execute: [['offer', 'input'], ['offer']],
+  })
+  expect(schema('expand').properties.along!.enum).toEqual([...ALONG])
+  const offer = await offerOf()
+  // a call from each schema: accepted, whatever it then answers
+  expect(await status(get('?start=shop.product:tee'))).not.toBe(400)
+  expect(await status(get(`/inspect?offer=${encodeURIComponent(offer)}`))).not.toBe(400)
+  expect(await status(post('execute', { offer, input: { slug: 'tee', quantity: 1 } }))).not.toBe(
+    400,
+  )
+  // a direction that doesn't apply to an offer is the runtime's to answer; the route never calls it unknown
+  const refusedAs = await Promise.all(
+    ALONG.map(async (along) => {
+      const r = await post('expand', { from: offer, along })
+      return r.status === 400 ? (await r.json()).detail : 'accepted'
+    }),
+  )
+  expect(refusedAs.filter((d: string) => /along is one of/.test(d))).toEqual([])
+  // a direction the tools don't list is refused, named against the same list
+  const unknown = await post('expand', { from: offer, along: 'sideways' })
+  expect([unknown.status, (await unknown.json()).detail]).toEqual([
+    400,
+    `along is one of ${ALONG.join(', ')}`,
+  ])
+  // each required field missing: refused with a 400
+  for (const [op, body] of [
+    ['expand', { along: 'alternatives' }],
+    ['expand', { from: offer }],
+    ['execute', { input: {} }],
+  ] as const)
+    expect([op, Object.keys(body), await status(post(op, body))]).toEqual([
+      op,
+      Object.keys(body),
+      400,
+    ])
+  expect(await status(get('/inspect'))).toBe(400)
+})
