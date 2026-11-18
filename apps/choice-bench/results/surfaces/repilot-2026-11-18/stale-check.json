@@ -1,0 +1,316 @@
+[
+  {
+    "trial": "pilot-browser-T6-claude-haiku-5-5-0",
+    "navigatingActions": [],
+    "stale": [],
+    "firstPurchaseSubmitCall": null,
+    "staleBeforeFirstSubmit": false
+  },
+  {
+    "trial": "pilot-browser-T6-claude-haiku-5-5-1",
+    "navigatingActions": [],
+    "stale": [],
+    "firstPurchaseSubmitCall": null,
+    "staleBeforeFirstSubmit": false
+  },
+  {
+    "trial": "pilot-browser-T6-claude-haiku-5-5-2",
+    "navigatingActions": [],
+    "stale": [],
+    "firstPurchaseSubmitCall": null,
+    "staleBeforeFirstSubmit": false
+  },
+  {
+    "trial": "pilot-browser-T6-claude-haiku-5-5-3",
+    "navigatingActions": [],
+    "stale": [],
+    "firstPurchaseSubmitCall": null,
+    "staleBeforeFirstSubmit": false
+  },
+  {
+    "trial": "pilot-browser-T6-claude-haiku-5-5-4",
+    "navigatingActions": [],
+    "stale": [],
+    "firstPurchaseSubmitCall": null,
+    "staleBeforeFirstSubmit": false
+  },
+  {
+    "trial": "pilot-browser-T6-claude-sonnet-5-5-0",
+    "navigatingActions": [],
+    "stale": [],
+    "firstPurchaseSubmitCall": null,
+    "staleBeforeFirstSubmit": false
+  },
+  {
+    "trial": "pilot-browser-T6-claude-sonnet-5-5-1",
+    "navigatingActions": [
+      {
+        "call": 5,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/review",
+        "stale": false,
+        "nextUsedStaleRef": false
+      }
+    ],
+    "stale": [],
+    "firstPurchaseSubmitCall": 5,
+    "staleBeforeFirstSubmit": false
+  },
+  {
+    "trial": "pilot-browser-T6-claude-sonnet-5-5-2",
+    "navigatingActions": [],
+    "stale": [],
+    "firstPurchaseSubmitCall": null,
+    "staleBeforeFirstSubmit": false
+  },
+  {
+    "trial": "pilot-browser-T6-claude-sonnet-5-5-3",
+    "navigatingActions": [],
+    "stale": [],
+    "firstPurchaseSubmitCall": null,
+    "staleBeforeFirstSubmit": false
+  },
+  {
+    "trial": "pilot-browser-T6-claude-sonnet-5-5-4",
+    "navigatingActions": [],
+    "stale": [],
+    "firstPurchaseSubmitCall": null,
+    "staleBeforeFirstSubmit": false
+  },
+  {
+    "trial": "repilot-browser-T6-claude-haiku-5-5-0",
+    "navigatingActions": [
+      {
+        "call": 6,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/review",
+        "stale": false,
+        "nextUsedStaleRef": false
+      },
+      {
+        "call": 7,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/plans",
+        "stale": true,
+        "nextUsedStaleRef": false
+      },
+      {
+        "call": 10,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/review",
+        "stale": false,
+        "nextUsedStaleRef": false
+      },
+      {
+        "call": 11,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/add-ons",
+        "stale": true,
+        "nextUsedStaleRef": false
+      }
+    ],
+    "stale": [
+      {
+        "call": 7,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/plans",
+        "stale": true,
+        "nextUsedStaleRef": false
+      },
+      {
+        "call": 11,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/add-ons",
+        "stale": true,
+        "nextUsedStaleRef": false
+      }
+    ],
+    "firstPurchaseSubmitCall": 6,
+    "staleBeforeFirstSubmit": false
+  },
+  {
+    "trial": "repilot-browser-T6-claude-haiku-5-5-1",
+    "navigatingActions": [
+      {
+        "call": 8,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/review",
+        "stale": false,
+        "nextUsedStaleRef": false
+      },
+      {
+        "call": 14,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/review",
+        "stale": false,
+        "nextUsedStaleRef": false
+      },
+      {
+        "call": 15,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/add-ons",
+        "stale": true,
+        "nextUsedStaleRef": false
+      }
+    ],
+    "stale": [
+      {
+        "call": 15,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/add-ons",
+        "stale": true,
+        "nextUsedStaleRef": false
+      }
+    ],
+    "firstPurchaseSubmitCall": 8,
+    "staleBeforeFirstSubmit": false
+  },
+  {
+    "trial": "repilot-browser-T6-claude-sonnet-5-5-0",
+    "navigatingActions": [
+      {
+        "call": 5,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/review",
+        "stale": false,
+        "nextUsedStaleRef": false
+      },
+      {
+        "call": 6,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/plans",
+        "stale": true,
+        "nextUsedStaleRef": false
+      },
+      {
+        "call": 9,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/review",
+        "stale": false,
+        "nextUsedStaleRef": false
+      },
+      {
+        "call": 10,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/add-ons",
+        "stale": true,
+        "nextUsedStaleRef": false
+      }
+    ],
+    "stale": [
+      {
+        "call": 6,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/plans",
+        "stale": true,
+        "nextUsedStaleRef": false
+      },
+      {
+        "call": 10,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/add-ons",
+        "stale": true,
+        "nextUsedStaleRef": false
+      }
+    ],
+    "firstPurchaseSubmitCall": 5,
+    "staleBeforeFirstSubmit": false
+  },
+  {
+    "trial": "repilot-browser-T6-claude-sonnet-5-5-1",
+    "navigatingActions": [
+      {
+        "call": 4,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/review",
+        "stale": false,
+        "nextUsedStaleRef": false
+      },
+      {
+        "call": 5,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/plans",
+        "stale": true,
+        "nextUsedStaleRef": false
+      },
+      {
+        "call": 8,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/review",
+        "stale": false,
+        "nextUsedStaleRef": false
+      },
+      {
+        "call": 9,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/add-ons",
+        "stale": true,
+        "nextUsedStaleRef": false
+      }
+    ],
+    "stale": [
+      {
+        "call": 5,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/plans",
+        "stale": true,
+        "nextUsedStaleRef": false
+      },
+      {
+        "call": 9,
+        "action": "click",
+        "navigated": true,
+        "returned": "/review",
+        "settled": "/add-ons",
+        "stale": true,
+        "nextUsedStaleRef": false
+      }
+    ],
+    "firstPurchaseSubmitCall": 4,
+    "staleBeforeFirstSubmit": false
+  }
+]
