@@ -6,7 +6,7 @@ import { builtInPolicies, type DiscoveryPolicy, type Handler } from '@affordance
 // rendering. Only the policy and the fixture vary: the tools, the prompt, the principal and the tasks are the same in
 // every condition (§5.1, §5.3)
 
-export type ConditionId = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'S' | 'C-claims' | 'A-scope'
+export type ConditionId = 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'S' | 'C-full-scope' | 'A-scope'
 
 // what a condition varies against A (RFC 0003's lesson for condition construction, intake 2026-11-18): the preflight
 // refuses a condition whose first view's offer set differs from A's unless it declares scope or start, so a factor
@@ -167,10 +167,12 @@ export const conditions: Record<ConditionId, Condition> = {
     // approval binds and the handler runs (RFC 0002 §8.1)
   },
   S: { id: 'S', name: 'structure only', policy: neutral, nested: true, manipulates: ['nesting'] },
-  // the exploratory cells that separate H2's two factors (intake, 2026-11-18 07:40Z)
-  // C's claims, order and relevance over A's exhaustive scope: C with only its scope changed
-  'C-claims': {
-    id: 'C-claims',
+  // the exploratory cells that decompose C into H2's two confounded factors (intake's rulings, queue row
+  // qitem-20261118073546-90250bb8, created 07:35:46Z)
+  // C minus its scope: C's claims, recommendation order and relevance basis over A's exhaustive scope. Not 'claims
+  // only': A plus the claims' text alone is D's question, deferred
+  'C-full-scope': {
+    id: 'C-full-scope',
     name: 'advocacy, exhaustive scope',
     policy: {
       ...advocated,

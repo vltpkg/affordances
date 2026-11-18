@@ -1,14 +1,18 @@
 import { expect, test } from 'vitest'
-import { conditions } from '../src/conditions.ts'
-import { firstViewOffers, offerSetCheck } from '../src/offerset.ts'
+import { conditions, type Condition } from '../src/conditions.ts'
+import { controlFor, firstViewOffers, offerSetCheck } from '../src/offerset.ts'
 
-// the offer-set preflight (intake, 2026-11-18, ruling 3): a condition's first view offers what A's offers, unless it
-// declares that it varies the scope or the start
+// the offer-set preflight (intake, 2026-11-18, ruling 3): a condition's first view offers what its control's does. The
+// control is A, or A with only the scope and start change the condition declares
 
 test('C as built refuses: its advocated scope leaves hosting.plan.list out of the first view, undeclared', async () => {
-  const problems = await offerSetCheck(['C'], 'T6')
-  expect(problems).toEqual([
-    { condition: 'C', onlyInA: ['hosting.plan.list'], onlyInCondition: [] },
+  expect(await offerSetCheck(['C'], 'T6')).toEqual([
+    {
+      condition: 'C',
+      control: 'exhaustive-claims-omitted',
+      onlyInControl: ['hosting.plan.list'],
+      onlyInCondition: [],
+    },
   ])
 })
 
@@ -16,22 +20,47 @@ test('D refuses for the same reason: it inherits the advocated scope', async () 
   expect((await offerSetCheck(['D'], 'T6')).map((p) => p.condition)).toEqual(['D'])
 })
 
-test('C-claims, S, F and G show A’s offer set, so they pass', async () => {
-  expect(await offerSetCheck(['C-claims', 'S', 'F', 'G'], 'T6')).toEqual([])
+test('every other condition matches its control, on every task it runs', async () => {
+  for (const task of ['T3', 'T6', 'T7'])
+    expect(await offerSetCheck(['A', 'B', 'E', 'S', 'C-full-scope', 'A-scope'], task)).toEqual([])
+  expect(await offerSetCheck(['F', 'G'], 'T1')).toEqual([])
 })
 
-test('A-scope declares its scope, so it is exempt, and its first view does lack the plan list', async () => {
-  expect(conditions['A-scope'].manipulates).toEqual(['scope'])
-  expect(await offerSetCheck(['A-scope'], 'T6')).toEqual([])
-  const a = await firstViewOffers(conditions.A, 'T6')
-  const scoped = await firstViewOffers(conditions['A-scope'], 'T6')
-  expect(a).toContain('hosting.plan.list')
-  expect(scoped).not.toContain('hosting.plan.list')
+// intake's two equalities (2026-11-18): the exploratory cells decompose C into its two factors
+test('C-full-scope’s first view offers exactly what A’s does, and A-scope’s exactly what C’s does', async () => {
+  for (const task of ['T3', 'T6', 'T7']) {
+    const a = await firstViewOffers(conditions.A, task)
+    const c = await firstViewOffers(conditions.C, task)
+    expect(await firstViewOffers(conditions['C-full-scope'], task)).toEqual(a)
+    expect(await firstViewOffers(conditions['A-scope'], task)).toEqual(c)
+    expect(a).toContain('hosting.plan.list')
+    expect(c).not.toContain('hosting.plan.list')
+  }
 })
 
-test('C-claims differs from C in its scope alone, and A-scope from A in its scope alone', () => {
+test('declaring scope excuses only that scope: an undeclared budget that cuts offers still refuses', async () => {
+  const declared = conditions['A-scope']
+  const budgeted: Condition = {
+    ...declared,
+    policy: { ...declared.policy, id: 'neighborhood-budgeted', budget: { offers: 3 } },
+  }
+  const control = controlFor(budgeted)
+  expect(control.policy).toMatchObject({ scope: 'neighborhood', depth: 1 })
+  expect(control.policy).not.toHaveProperty('budget')
+  const expected = await firstViewOffers(control, 'T6')
+  const offers = await firstViewOffers(budgeted, 'T6')
+  expect(offers.length).toBeLessThan(expected.length)
+})
+
+test('C-full-scope differs from C in its scope alone, and A-scope from A in its scope alone', () => {
   const { id: _c, description: _cd, scope: cs, depth: cdepth, ...c } = conditions.C.policy
-  const { id: _k, description: _kd, scope: ks, depth: kdepth, ...k } = conditions['C-claims'].policy
+  const {
+    id: _k,
+    description: _kd,
+    scope: ks,
+    depth: kdepth,
+    ...k
+  } = conditions['C-full-scope'].policy
   expect(k).toEqual(c)
   expect([cs, cdepth, ks, kdepth]).toEqual(['neighborhood', 1, 'exhaustive', undefined])
   const { id: _a, description: _ad, scope: as, depth: adepth, ...a } = conditions.A.policy

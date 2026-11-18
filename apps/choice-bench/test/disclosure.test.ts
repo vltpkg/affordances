@@ -35,7 +35,7 @@ const TASKS: Record<ConditionId, string[]> = {
   F: ['T1', 'T6', 'T7'],
   G: ['T1', 'T6', 'T7'],
   S: ['T3', 'T6', 'T7'],
-  'C-claims': ['T3', 'T6', 'T7'],
+  'C-full-scope': ['T3', 'T6', 'T7'],
   'A-scope': ['T3', 'T6', 'T7'],
 }
 
