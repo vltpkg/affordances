@@ -1,6 +1,6 @@
 import * as lab from '@affordances/hosting-lab/trial'
 import { canonicalJson } from '@affordances/ir'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { loadavg } from 'node:os'
 import path from 'node:path'
 import { conditions, type ConditionId } from './conditions.ts'
@@ -31,6 +31,18 @@ export type TrialSpec = {
 
 const SERVER = path.resolve(import.meta.dirname, 'server.ts')
 
+// a trial's files, as a run leaves them
+const TRIAL_FILES = ['.server.json', '.server.json.tmp', '.config.json', '.raw.json', '.jsonl']
+// what an earlier, unfinished attempt left of a trial: moved into interrupted/, never deleted (intake), so a rerun is
+// scored only from its own record (review of 4893655c: a stale server record would have passed the started check)
+export const setAside = (dir: string, id: string) => {
+  const stale = TRIAL_FILES.filter((e) => existsSync(path.join(dir, `${id}${e}`)))
+  if (!stale.length) return
+  const to = path.join(dir, 'interrupted', `${id}-${new Date().toISOString().replaceAll(':', '')}`)
+  mkdirSync(to, { recursive: true })
+  for (const e of stale) renameSync(path.join(dir, `${id}${e}`), path.join(to, `${id}${e}`))
+}
+
 // codex's default: the first listed model in its cache, as codex exec with no -m takes it
 const codexDefault = () => {
   try {
@@ -49,6 +61,7 @@ const codexDefault = () => {
 
 export const runTrial = async (spec: TrialSpec, driver: Driver, dir: string) => {
   mkdirSync(dir, { recursive: true })
+  setAside(dir, spec.id)
   const task = lab.tasks.find((t) => t.id === spec.task)
   if (!task) throw new Error(`no task ${spec.task}`)
   const out = path.join(dir, `${spec.id}.server.json`)

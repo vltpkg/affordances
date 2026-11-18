@@ -182,3 +182,56 @@ test('every metric RFC 0003 §6 names, in brackets, is a field of a trial’s me
   const m = computeMetrics(record({}), usage, 'final', intended())
   expect(names.filter((n) => !(n in m))).toEqual([])
 })
+
+test('a trial’s stale files are moved into interrupted/, never deleted, before it runs (review of 4893655c)', async () => {
+  const { setAside } = await import('../src/harness.ts')
+  const { existsSync, mkdirSync: mk, readdirSync, writeFileSync: write } = await import('node:fs')
+  const d = path.join(dir, 'set-aside')
+  mk(d, { recursive: true })
+  write(path.join(d, 'X.server.json'), '{"stale":true}')
+  write(path.join(d, 'X.config.json'), '{}')
+  write(path.join(d, 'Y.server.json'), '{}')
+  setAside(d, 'X')
+  expect(existsSync(path.join(d, 'X.server.json'))).toBe(false)
+  const [moved] = readdirSync(path.join(d, 'interrupted'))
+  expect(readdirSync(path.join(d, 'interrupted', moved!)).toSorted()).toEqual([
+    'X.config.json',
+    'X.server.json',
+  ])
+  // another trial's files are untouched
+  expect(existsSync(path.join(d, 'Y.server.json'))).toBe(true)
+})
+
+test(
+  'a resumed run re-runs a trial with a cut-off trace, and never scores a stale server record',
+  { timeout: 300_000 },
+  async () => {
+    const { execFileSync } = await import('node:child_process')
+    const {
+      readdirSync,
+      readFileSync: read,
+      writeFileSync: write,
+      mkdirSync: mk,
+    } = await import('node:fs')
+    const d = path.join(dir, 'resume')
+    mk(d, { recursive: true })
+    // a trace cut off mid-write, and a stale server record from a killed attempt
+    write(path.join(d, 'dry-A.jsonl'), '{"kind":"trial"')
+    write(path.join(d, 'dry-B.server.json'), JSON.stringify({ stale: true }))
+    execFileSync(process.execPath, [path.resolve(import.meta.dirname, '../src/run.ts'), 'dry', d], {
+      stdio: 'pipe',
+    })
+    const set = readdirSync(path.join(d, 'interrupted'))
+    expect(set.some((s) => s.startsWith('dry-A-'))).toBe(true)
+    expect(set.some((s) => s.startsWith('dry-B-'))).toBe(true)
+    // both ran in full: their traces are complete, and B's server record is its own
+    for (const id of ['dry-A', 'dry-B']) {
+      const kinds = read(path.join(d, `${id}.jsonl`), 'utf8')
+        .trim()
+        .split('\n')
+        .map((l) => JSON.parse(l).kind)
+      expect(kinds.at(-1)).toBe('metrics')
+    }
+    expect(JSON.parse(read(path.join(d, 'dry-B.server.json'), 'utf8')).stale).toBeUndefined()
+  },
+)

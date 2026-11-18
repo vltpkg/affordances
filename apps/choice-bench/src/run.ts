@@ -88,10 +88,16 @@ if (mode === 'plan') {
   const done = (s: TrialSpec): Result | undefined => {
     const file = path.join(out, `${s.id}.jsonl`)
     if (!existsSync(file)) return
-    const lines = readFileSync(file, 'utf8')
-      .trim()
-      .split('\n')
-      .map((l) => JSON.parse(l))
+    let lines: Record<string, any>[]
+    try {
+      lines = readFileSync(file, 'utf8')
+        .trim()
+        .split('\n')
+        .map((l) => JSON.parse(l) as Record<string, any>)
+    } catch {
+      // a trace cut off mid-write is incomplete: the trial runs, and runTrial sets the partial aside (review)
+      return
+    }
     const of = (kind: string) => lines.find((l) => l.kind === kind)
     const [trial, endLine, metrics] = [of('trial'), of('end'), of('metrics')]
     if (!trial || !endLine || !metrics) return
@@ -102,7 +108,7 @@ if (mode === 'plan') {
       capHits: endLine.capHits,
       traceMismatch: endLine.traceMismatch,
       spawned: endLine.spawned,
-      metrics: m,
+      metrics: m as Result['metrics'],
       turns: endLine.turns,
       load: endLine.load.start[0],
       cli: trial.cli,
