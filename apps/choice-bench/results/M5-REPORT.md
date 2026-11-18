@@ -1,6 +1,6 @@
 # M5: the agent-choice benchmark, report
 
-**Status:** draft (design, co-author; backend leads). §4's results are drafted from the run records' READMEs and `analysis.json`, never from raw traces, with intake's descriptive reading of the exploratory run (2026-11-18 09:03Z). The one placeholder left, marked `⟨…⟩`, is §3.3's second attestations.
+**Status:** draft (design, co-author; backend leads). §4's results are drafted from the run records' READMEs and `analysis.json`, never from raw traces, with intake's descriptive reading of the exploratory run (2026-11-18 09:03Z). No placeholder is left.
 
 ## 1. The method as run
 
@@ -75,7 +75,16 @@ The run itself was clean: 110 scored, 0 failed, 0 caps, 0 trace mismatches. It f
   - **through the reflog, after the rewrite.** No ref contains 732c40d4, but a reflog entry does, and its blobs stayed readable with `git show` until the seal was lifted (381ffd74, 07:29:35Z), which put the same bytes in the tree, hash-checked. Nothing has been pruned;
   - **in the sealed export,** 03:36:41Z until the lift. It's owned by the same unix user, so any seat could read it, and backend left it unopened.
 - **Who could have read them:** every seat, since all of them share one working tree and `.git` as one unix user. The files can't establish who did.
-- **The second attestations,** for 03:36Z to 07:29:35Z, are being collected now. The window covers the schedule amendment (04:43Z) and the analysis fix (06:53Z): ⟨the planner: each seat's line and time⟩.
+- **The second attestations,** for the reflog span, 03:37:22Z to 07:29:35Z (intake's ruling, 09:16Z). Each is backed by a grep of that seat's transcript for any command reading 732c40d4's trees or blobs, the sealed files or the full report. All five say the seat did not read any calibration C or S outcome value:
+  - **Design** (09:17Z): its first tool call touching the full report or the sealed files was at 09:05:36Z, after the lift, to draft §4.3. Its transcript has 0 such calls in the window.
+  - **Intake** (09:17Z): its transcript has 0 commands reading 732c40d4; its 32 mentions are message text. **The caveat:** intake's context was compacted at about 06:21Z, so 03:36Z to 06:21Z rests on its session summary and the transcript grep.
+  - **Backend** (09:17Z): its one contact was copying the two sealed files into the tree and hashing them with sha256 at 07:29:25Z, for the lift commit, without opening their content.
+  - **The planner** (09:18Z): 12 tool calls mention 732c40d4. The only commands touching it were `git show --stat` at 03:27:42Z, before the window, which gives names and line counts only, and `git log --format=%h %ci %s 732c40d4^..` at 03:36:19Z, which gives commit metadata only. The rest are message text, so 0 commands read its trees or blobs in the window.
+  - **Review** (09:17Z): its transcript was searched for 732c40d4, `report.full.json` and the calibration traces. The only hit in the window, at 03:38:58Z, printed the cell and condition names and the C and S counts of the post-rewrite, A-only commits (74d8d4b9 to the tip), with no values. Its next sealed-file access was at 07:31:49Z, after the lift.
+- **What the window could have touched** (intake's point 4):
+  - the plan was committed at 03:34:30Z, before the window's later span;
+  - the window spans the schedule amendment (04:43Z);
+  - the only later analysis decisions, the corrected CMH and Sato's variance (06:52Z), don't depend on the data.
 
 ### 3.4 Isolation and the context canary
 
