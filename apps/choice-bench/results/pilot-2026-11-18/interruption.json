@@ -1,0 +1,36 @@
+{
+  "time": "2026-11-18T00:49:10Z to about 00:50:30Z",
+  "cause": "The pilot's first launch ran as a background command of a tool that kills such commands after 10 minutes. It was stopped by hand, by PID, at about 00:50:30Z, then relaunched detached at 00:51:09Z, with a resume from complete traces (4893655c).",
+  "completedBeforeTheStop": [
+    "A-T3-claude-sonnet-5-5-0",
+    "A-T3-claude-sonnet-5-5-1",
+    "A-T3-claude-sonnet-5-5-2",
+    "A-T3-claude-sonnet-5-5-3"
+  ],
+  "interrupted": [
+    "A-T3-claude-sonnet-5-5-4",
+    "C-T3-claude-sonnet-5-5-0"
+  ],
+  "interruptedHandling": "Neither trial completed. Their partial files (the config, the server record and the raw CLI output) were deleted before the relaunch, and both trials ran in full after it. The completed four were read back from their traces, not re-run.",
+  "interruptedTokens": "Unknown. The partial raw output was deleted before the tokens were asked for, and claude -p reports usage only in its final result event, which a stopped run never writes. Each attempt ran for at most about 80 seconds; the completed trials around them took 12 to 28 seconds each.",
+  "rerunSpecs": "Both re-ran at 00:51:09Z with exactly their pre-assigned spec from pilotPlan(): A-T3-claude-sonnet-5-5-4 at index 4 (plan ids p3, p1, p2) and C-T3-claude-sonnet-5-5-0 at index 0 (p1, p2, p3). The index fixes the plan-id order and is the only seed a real driver takes.",
+  "recovery": "Nothing is recoverable. The partial files were deleted with rm, and claude -p ran with --no-session-persistence, so no copy or transcript remains. There is nothing to put in interrupted/.",
+  "policyFromNowOn": "Partial traces are never deleted; they move to an interrupted/ folder beside the results (intake, 2026-11-18).",
+  "resumeHole": {
+    "found": "review of 4893655c, 00:53Z: runTrial didn't clear a stale <id>.server.json, so a rerun whose CLI died before its tool server started would be scored from the interrupted attempt's record",
+    "thisRun": "not affected: the stale .server.json and .config.json of both interrupted trials were deleted before the relaunch",
+    "check": "read-only, 00:53Z: A-T3-claude-sonnet-5-5-4 (started 00:51:09.851Z, server record 00:51:18.32Z) and C-T3-claude-sonnet-5-5-0 (00:51:09.874Z, 00:51:18.51Z) each have traceMismatch false and a server record written after the rerun started. Both are valid",
+    "fix": "held until the pilot ends (intake, 00:53Z), then to review before the confirmatory run"
+  },
+  "memoryWriteMidRun": {
+    "at": "2026-11-18T00:52:35Z",
+    "files": [
+      "MEMORY.md (one line appended)",
+      "never-delete-partial-traces.md (new)"
+    ],
+    "by": "build-backend-engineer, recording intake's never-delete rule",
+    "claudeTrialsStartedBefore": 17,
+    "claudeTrialsStartedAfter": 78,
+    "note": "trials started before the write saw the index without that line, and later ones saw it with it. The Claude cells are void anyway"
+  }
+}
