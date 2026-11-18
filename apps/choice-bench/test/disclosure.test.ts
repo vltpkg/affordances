@@ -93,15 +93,9 @@ const cases = Object.entries(TASKS).flatMap(([c, tasks]) =>
   tasks.map((t) => [c, t] as [ConditionId, string]),
 )
 const NAME = 'every financial offer shows its amount to the agent, and none renders unknown'
-for (const c of cases.filter(([id]) => id !== 'G'))
+// every condition, G included: G's summary renders its default and lists the default add-on's charges, now that the
+// runtime applies input defaults and lists every charge (intake, 2026-11-18)
+for (const c of cases)
   test(`${c[0]} on ${c[1]}: ${NAME}`, async () => {
-    await expect(check(c)).resolves.toBeUndefined()
-  })
-// G FAILS, a known defect (backend, 2026-11-18): G's edit adds ', with add-ons {input.addOns}' to subscribe's summary,
-// which renders 'unknown' until the agent passes addOns. And when an agent omits it, it approves 'with add-ons unknown'
-// while G's handler adds Priority support by default (the pilot's G-T1-claude-haiku-5-5-2). Calibration doesn't run G.
-// The fix is for the planner and design, and this turns red when it lands
-for (const c of cases.filter(([id]) => id === 'G'))
-  test.fails(`${c[0]} on ${c[1]}: ${NAME} (a known defect)`, async () => {
     await expect(check(c)).resolves.toBeUndefined()
   })

@@ -1,4 +1,5 @@
-import type { CapabilityManifest } from '@affordances/ir'
+import type { CapabilityManifest, Expr } from '@affordances/ir'
+import { addOns } from '@affordances/hosting-lab/catalog'
 import { builtInPolicies, type DiscoveryPolicy, type Handler } from '@affordances/runtime'
 
 // RFC 0003 §3: each condition is a projection policy over the M4a manifest, or one named edit to the fixture, or a
@@ -36,6 +37,11 @@ const builtIn = (id: string) => {
   return p
 }
 const advocated = builtIn('advocated')
+
+// G's charge for an add-on applies only while the effective input keeps that add-on
+const kept = (slug: string): Expr => ({
+  some: { of: 'input.addOns', where: { eq: [{ path: 'item' }, { value: slug }] } },
+})
 
 const neutral: DiscoveryPolicy = {
   id: 'exhaustive-claims-omitted',
@@ -109,38 +115,33 @@ export const conditions: Record<ConditionId, Condition> = {
           description: 'Add-ons to add with the plan',
         }
         c.confirmation = { summary: `${c.confirmation!.summary}, with add-ons {input.addOns}` }
+        // each add-on's charges, with its price, made only when the effective input keeps it: the default's charge is
+        // listed in what the agent approves, and drops out if it removes the add-on (intake, 2026-11-18)
         c.effects = [
           ...(c.effects ?? []),
-          {
-            category: 'financial',
-            description: "Charges each add-on's first month now. It isn't refunded",
-            reversibility: 'irreversible',
-          },
-          {
-            category: 'financial',
-            description: 'Renews each add-on every month',
-            reversibility: 'compensable',
-            compensatedBy: 'hosting.addOn.remove',
-          },
+          ...addOns.flatMap((a) => [
+            {
+              category: 'financial' as const,
+              description: `Charges ${a.name}'s first month now. It isn't refunded`,
+              reversibility: 'irreversible' as const,
+              amount: { value: a.priceUsd, currency: 'USD' as const },
+              applies: kept(a.slug),
+            },
+            {
+              category: 'financial' as const,
+              description: `Renews ${a.name} every month`,
+              reversibility: 'compensable' as const,
+              compensatedBy: 'hosting.addOn.remove',
+              amount: { value: a.priceUsd, currency: 'USD' as const, per: 'month' as const },
+              applies: kept(a.slug),
+            },
+          ]),
         ]
         return out
       },
     },
-    // the runtime doesn't apply a schema's defaults, so an omitted addOns is the default here, before the app's
-    // handler runs
-    handlers: (base) => ({
-      ...base,
-      [SUBSCRIBE]: {
-        ...base[SUBSCRIBE],
-        run: (input, ctx) => {
-          const given = (input ?? {}) as { addOns?: string[] }
-          return base[SUBSCRIBE]!.run!(
-            given.addOns === undefined ? { ...given, addOns: ['priority-support'] } : given,
-            ctx,
-          )
-        },
-      },
-    }),
+    // no handler wrapper: the runtime applies addOns' default to the effective input, which the summary renders, the
+    // approval binds and the handler runs (RFC 0002 §8.1)
   },
   S: { id: 'S', name: 'structure only', policy: neutral, nested: true },
 }
