@@ -17,7 +17,7 @@ export type ActionExport = { local: string; name: string; id?: string; bound?: t
 type ParsedAction = ActionExport & { nameAt: number }
 
 // RFC 0001 §6.1's identifier
-const ID = /^[a-z][A-Za-z0-9]*(\.[a-z][A-Za-z0-9]*)*$/
+export const ID = /^[a-z][A-Za-z0-9]*(\.[a-z][A-Za-z0-9]*)*$/
 
 // RFC 0001 §7.2's canonical order: by UTF-16 code unit, as ir's canonical.ts sorts, never by locale, so the same
 // sources give the same bytes on every machine
@@ -201,7 +201,8 @@ export type MissingId = {
 }
 
 // one identifier segment from free text: camelCase, starting with a lowercase letter
-const segment = (text: string) => {
+// a word of an id: camelCase, starting with a letter. Route segments and the site's name use the same rule
+export const segment = (text: string) => {
   const words = text.split(/[^A-Za-z0-9]+/).filter(Boolean)
   const joined = words.map((w, i) => (i ? w[0]!.toUpperCase() + w.slice(1) : w)).join('')
   const lower = joined.charAt(0).toLowerCase() + joined.slice(1)

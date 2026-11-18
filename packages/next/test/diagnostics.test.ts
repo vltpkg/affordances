@@ -53,7 +53,11 @@ test('the identity: a namespace URI as written, never inferred, an id prefix fro
     strict: true,
   })
   expect(resolveIdentity({})).toEqual({ strict: false })
-  expect(resolveIdentity({ name: '42' })).toEqual({ strict: false })
+  // the prefix follows codegen's rule for id words (M5 boundary review, #16): a leading digit gets an 'r', and accents
+  // are dropped first
+  expect(resolveIdentity({ name: '42' }).idPrefix).toBe('r42')
+  expect(resolveIdentity({ name: 'Café Shop' }).idPrefix).toBe('cafeShop')
+  expect(resolveIdentity({ name: '  ' })).toEqual({ strict: false })
   // RFC 0001's namespace: an absolute URI with no fragment; an identifier isn't one
   expect(resolveIdentity({ namespace: 'urn:example:acme' }).namespace).toBe('urn:example:acme')
   for (const namespace of [

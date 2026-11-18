@@ -2,7 +2,7 @@ import { existsSync, readFileSync, watch } from 'node:fs'
 import path from 'node:path'
 import type { NextConfig } from 'next'
 import { MEDIA_TYPE, WELL_KNOWN_PATH } from '@affordances/protocol'
-import { findAppDir, generate } from './codegen.ts'
+import { findAppDir, generate, ID, segment } from './codegen.ts'
 import { API_PATH } from './constants.ts'
 import { format, type Diagnostic } from './diagnostics.ts'
 
@@ -81,8 +81,6 @@ export type AffordancesConfig = {
   strict?: boolean
 }
 
-// RFC 0001 §6.1's identifier
-const ID = /^[a-z][A-Za-z0-9]*(\.[a-z][A-Za-z0-9]*)*$/
 // RFC 0001's namespace: an absolute URI with no fragment (§2, and §7.3's schema table)
 const URI = /^[A-Za-z][A-Za-z0-9+.-]*:[^#\s]*$/
 
@@ -96,18 +94,9 @@ export type Identity = {
   strict: boolean
 }
 
-// a site name as an identifier: 'Acme Store' is 'acmeStore'
-const fromName = (name: string) => {
-  const words = name
-    .normalize('NFKD')
-    .replaceAll(/[^A-Za-z0-9]+/g, ' ')
-    .trim()
-    .split(' ')
-  const id = words
-    .map((w, i) => (i === 0 ? w.toLowerCase() : w[0]!.toUpperCase() + w.slice(1).toLowerCase()))
-    .join('')
-  return /^[a-z]/.test(id) ? id : undefined
-}
+// a site name as an id prefix, by codegen's rule for id words: 'Acme Store' is 'acmeStore'. Accents are dropped first, so
+// 'Café' is 'cafe', not 'caf'
+const fromName = (name: string) => segment(name.normalize('NFKD').replaceAll(/\p{M}/gu, ''))
 
 /**
  * @experimental The capability manifest's identity, from withAffordances' options, checked: a namespace must be an
@@ -123,7 +112,7 @@ export const resolveIdentity = (options: AffordancesConfig = {}): Identity => {
       throw new TypeError(`withAffordances: owner.id '${options.owner.id}' isn't an identifier`)
     if (!options.owner.name.trim()) throw new TypeError('withAffordances: owner.name is empty')
   }
-  const idPrefix = options.name ? fromName(options.name) : undefined
+  const idPrefix = options.name?.trim() ? fromName(options.name) : undefined
   return {
     ...(options.namespace !== undefined && { namespace: options.namespace }),
     ...(idPrefix !== undefined && { idPrefix }),
