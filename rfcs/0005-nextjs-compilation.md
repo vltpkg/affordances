@@ -233,7 +233,7 @@ These are never extracted, because code doesn't state them. Each one missing is 
 
 ## 9. Open questions
 
-1. **Resource ids from segments (E9).** `products` is the segment as written. Should the inferred id be singular (`product`)? Singularizing is a heuristic, so this RFC takes the segment as written and leaves renaming to the developer's `defineResource`.
+1. **Resource ids from segments (E9): decided.** The inferred id is the segment as written (`products`), never singularized, since singularizing is a heuristic. Renaming is the developer's, with a `defineResource` (intake, on acceptance, 2026-11-18).
 2. **Mixed apps.** An app with both bound and v0 actions gets one manifest from both. Should a namespace be able to hold capabilities from two sources at once? This RFC allows it, with provenance telling them apart.
 3. **The wire format** (§5) is RFC 0004's.
 
