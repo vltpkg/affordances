@@ -10,6 +10,10 @@ export type Context = {
   input?: Obj
   principal?: Obj
   references?: Record<string, Obj | undefined>
+  // the input is known only in part: before the agent gives any, a projection knows the schema's declared defaults
+  // and nothing else. A top-level key it doesn't hold is then missing, not absent, so nothing conditioned on the input
+  // is decided from what the agent simply hasn't said yet (review's boundary #1, 2026-11-18)
+  partialInput?: true
 }
 
 // a path is missing (not supplied: unknown), absent (supplied, and none), or a value (§3.1). An absent path whose key
@@ -26,8 +30,8 @@ type Scope = { context: Context; item?: unknown }
 
 const resolve = (path: Path, scope: Scope): Resolved => {
   const [root, ...rest] = path.split('.')
-  // input and an array's elements are supplied whole: a key they don't have is absent
-  const whole = root === 'input' || root === 'item'
+  // input and an array's elements are supplied whole: a key they don't have is absent. A partial input isn't
+  const whole = (root === 'input' && !scope.context.partialInput) || root === 'item'
   let value: unknown =
     root === 'item'
       ? scope.item

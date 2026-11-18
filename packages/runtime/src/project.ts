@@ -354,11 +354,13 @@ export const createRuntime = ({
       }
       if (c.confirmation)
         // the effective input as far as it's known before the agent supplies any: the schema's defaults, so a default's
-        // charge shows before it's approved (intake, 2026-11-18)
+        // charge shows before it's approved (intake, 2026-11-18). Known only in part: a key the agent hasn't given is
+        // missing, so a charge conditioned on it shows as may apply, never dropped (review's boundary #1)
         requirements.confirmation = {
           summary: render(c.confirmation.summary, c.effects, {
             ...context,
             input: applyDefaults(c.input, undefined) as Record<string, unknown>,
+            partialInput: true,
           }),
         }
       const availability = ((): Availability => {

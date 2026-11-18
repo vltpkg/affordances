@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, test } from 'vitest'
-import { evaluate, type Context, type Truth } from '../src/evaluate.ts'
+import { evaluate, type Context, type Truth, resolvePath } from '../src/evaluate.ts'
 import { conformanceCases, falsifying, fitContext } from '../src/falsify.ts'
 import type { CapabilityManifest, Expr } from '../src/schema.ts'
 
@@ -392,4 +392,23 @@ test('fitContext fills an object placeholder’s required properties, and takes 
   ).toEqual({
     references: { project: { zones: [{ code: '', tier: 'gold' }], kinds: ['a'], fixed: [7] } },
   })
+})
+
+// review's boundary #1 (2026-11-18): an input known only in part, as a projection knows it before the agent gives
+// any. A top-level key it doesn't hold is missing, so exists and its negation are unknown; a key inside a supplied
+// value is still absent, since that value is supplied whole
+test('a partial input: an ungiven top-level key is missing, a key inside a supplied value is absent', () => {
+  const partial = {
+    input: { addOns: ['support'], plan: { tier: 'pro' } },
+    partialInput: true as const,
+  }
+  expect(resolvePath('input.coupon', partial)).toEqual({ kind: 'missing' })
+  expect(resolvePath('input.plan.seats', partial)).toEqual({ kind: 'absent' })
+  expect(resolvePath('input.addOns', partial)).toEqual({ kind: 'value', value: ['support'] })
+  expect(evaluate({ exists: 'input.coupon' }, partial)).toBe('unknown')
+  expect(evaluate({ not: { exists: 'input.coupon' } }, partial)).toBe('unknown')
+  // a whole input, as execution has it: the same key is absent
+  const whole = { input: { addOns: ['support'] } }
+  expect(resolvePath('input.coupon', whole)).toEqual({ kind: 'absent' })
+  expect(evaluate({ exists: 'input.coupon' }, whole)).toBe(false)
 })

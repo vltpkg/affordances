@@ -1,7 +1,8 @@
 import { beforeEach, expect, test } from 'vitest'
-import type { CapabilityManifest } from '@affordances/ir'
+import type { CapabilityManifest, Expr } from '@affordances/ir'
 import plansJson from '../../ir/fixtures/valid/plans.json' with { type: 'json' }
 import type { Principal, ResourceResolver, TokenStore } from '../src/index.ts'
+import { builtInPolicies } from '../src/index.ts'
 import { testRuntime } from './support/runtime.ts'
 
 // what's approved, summarized and run is one value (intake, 2026-11-18): the effective input, with the input schema's
@@ -168,4 +169,71 @@ test('an approval for one effective input can’t run another', async () => {
   })
   expect(same.status).toBe('succeeded')
   expect(ran).toEqual([['support']])
+})
+
+// review's boundary #1 (2026-11-18): before any input, the projected summary knows only the schema's defaults. An input
+// key the agent hasn't given is missing there, not absent, so a charge conditioned on it is never dropped from the view
+const coupon = (applies: Expr) => {
+  const m = manifest()
+  const c = m.capabilities[1]!
+  ;(c.input as { properties: Record<string, unknown> }).properties.coupon = { type: 'string' }
+  c.effects = [
+    ...(c.effects ?? []),
+    {
+      category: 'financial',
+      description: 'A coupon fee',
+      reversibility: 'irreversible',
+      amount: { value: 5, currency: 'USD' },
+      applies,
+    },
+  ]
+  return m
+}
+const viewSummary = async (rt: Awaited<ReturnType<typeof setup>>, policy?: string) => {
+  const projection = await rt.project({
+    principal: member,
+    start: { type: 'hosting.project', key: 'p1' },
+    ...(policy && { policy }),
+  })
+  return projection.offers.find((o) => o.id.startsWith(pro))?.requirements.confirmation?.summary
+}
+
+test('before any input, a charge conditioned on an ungiven key shows as may apply, never dropped', async () => {
+  const given = await setup(coupon({ exists: 'input.coupon' }))
+  expect(await viewSummary(given)).toContain('5 USD now, not refunded (may apply)')
+  const notGiven = await setup(coupon({ not: { exists: 'input.coupon' } }))
+  expect(await viewSummary(notGiven)).toContain('5 USD now, not refunded (may apply)')
+})
+
+// intake (09:35Z): no built-in policy's view drops a charge an approval would show, whatever the agent then gives
+const charges = (summary: string | undefined) =>
+  (summary?.split('Charges: ')[1] ?? '')
+    .split('; ')
+    .map((s) => s.replace(/ \(may apply\)$/, ''))
+    .filter(Boolean)
+
+test('no built-in policy’s view drops a charge that an approval would list', async () => {
+  const rt = await setup(coupon({ exists: 'input.coupon' }))
+  const approvals = new Set<string>()
+  for (const input of [
+    { projectId: 'p1' },
+    { projectId: 'p1', coupon: 'x' },
+    { projectId: 'p1', addOns: [] },
+  ])
+    for (const c of charges((await summaryOf(rt, input)).summary)) approvals.add(c)
+  expect(approvals.has('5 USD now, not refunded')).toBe(true)
+  const shown: string[] = []
+  for (const policy of builtInPolicies) {
+    const summary = await viewSummary(rt, policy.id)
+    if (summary === undefined) continue
+    shown.push(policy.id)
+    expect({
+      policy: policy.id,
+      missing: [...approvals].filter((c) => !charges(summary).includes(c)),
+    }).toEqual({
+      policy: policy.id,
+      missing: [],
+    })
+  }
+  expect(shown.length).toBeGreaterThanOrEqual(2)
 })
