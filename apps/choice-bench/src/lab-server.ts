@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, openSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
 // one surface trial's hosting-lab server (surfaces/PLAN.md §3; the planner, 2026-11-18 14:10Z): a fresh `next start`
@@ -29,6 +29,9 @@ export type LabServerOptions = {
   // where the server writes every session's end state (hosting-lab's HOSTING_LAB_TRIAL_STATE_FILE): under the trial's
   // own directory, outside the app's
   stateFile: string
+  // where the server's stderr goes, for the harness's 5xx rule (Next logs a route's unhandled error there); else
+  // it's discarded
+  stderr?: string
   // how long it may take to be ready
   readyMs?: number
 }
@@ -56,7 +59,7 @@ export const startLabServer = async (options: LabServerOptions): Promise<LabServ
   const child = spawn(next, ['start', '-p', String(options.port)], {
     cwd: options.dir,
     detached: true,
-    stdio: 'ignore',
+    stdio: ['ignore', 'ignore', options.stderr ? openSync(options.stderr, 'a') : 'ignore'],
     // only what running needs, and the trial's configuration: no seat's environment reaches the app
     env: {
       PATH: process.env.PATH ?? '',
@@ -112,6 +115,12 @@ export const readEndState = (stateFile: string, session: string): EndState | und
   return sessions[session]
 }
 
+/** Each 5xx the trial's server answered, as it wrote them to the state file (the planner, 15:03Z). */
+export const readServerErrors = (stateFile: string): { status: number; route: string }[] =>
+  existsSync(stateFile)
+    ? ((JSON.parse(readFileSync(stateFile, 'utf8')) as { serverErrors?: [] }).serverErrors ?? [])
+    : []
+
 // raised when the harness, not the agent, is at fault: excluded from scoring, rerun, and counted per cell
 // (intake, 2026-11-18 14:24Z)
 export class HarnessFault extends Error {
@@ -122,6 +131,19 @@ export class HarnessFault extends Error {
     this.kind = kind
     this.detail = detail
   }
+}
+
+/** The trial's project key, as its session sees it: project.read's target. */
+export const projectKeyOf = async (url: string, session: string) => {
+  const view = (await (
+    await fetch(`${url}/api/projection/view?policy=exhaustive`, {
+      headers: { authorization: `Bearer ${session}` },
+    })
+  ).json()) as { offers: { capability: string; target?: { key: string } }[] }
+  const key = view.offers.find((o) => o.capability === 'hosting.project.read')?.target?.key
+  if (!key)
+    throw new HarnessFault('cross-check', 'project.read isn’t offered to the trial’s session')
+  return key
 }
 
 /**

@@ -6,6 +6,8 @@ import { canonicalJson } from '@affordances/ir'
 import { conditions } from './conditions.ts'
 import { askedToConfirm } from './response.ts'
 import type { ServerRecord } from './server.ts'
+import type { SurfaceServerRecord } from './surface-server.ts'
+import { surfaces, type SurfaceId } from './surfaces.ts'
 import { setupTrial } from './trial.ts'
 import { v0RequestsOf, type CapabilityRequest, type V0Trial } from './v0.ts'
 
@@ -76,12 +78,14 @@ export const decisionsOf = (
 type Request = { offer: string; input?: unknown }
 // what a replay needs of a trial: its condition, plan order and task, for a fresh copy of its starting store, and the
 // project key its requests carry
-type Base = Pick<ServerRecord, 'condition' | 'index' | 'task' | 'project'>
+type Base = Pick<ServerRecord, 'condition' | 'index' | 'task' | 'project'> & { surface?: SurfaceId }
 const keyOf = (r: Request) => canonicalJson({ offer: r.offer, input: r.input ?? null })
 
 // one replay of requests on a fresh store: within a decision, the first that applies wins and a later one is skipped
 const replayOnce = async (record: Base, given: (Request | CapabilityRequest)[]) => {
-  const condition = conditions[record.condition]
+  // a surface trial replays under its surface's own condition (full's and progressive's policies); the others, A's
+  const condition =
+    (record.surface && surfaces[record.surface].condition) || conditions[record.condition]
   const trial = await setupTrial(condition, record.index, record.task)
   // the fresh account's project key stands in for the trial's in every offer id and input
   const rekey = <T>(v: T): T =>
@@ -126,13 +130,16 @@ const replayOnce = async (record: Base, given: (Request | CapabilityRequest)[]) 
   return { state: lab.endState(trial.sid), replayed, skipped, decisions, requests }
 }
 
-const replay = async (record: ServerRecord | V0Trial): Promise<Intended> => {
+const replay = async (record: ServerRecord | SurfaceServerRecord | V0Trial): Promise<Intended> => {
   // 'none' is an agent that never executed anything: on v0, never called an action. One that did, though nothing
   // applied, replays to the starting state
-  const v0 = 'surface' in record
+  const v0 = 'surface' in record && record.surface === 'v0'
   const executed = record.calls.some((c) => c.tool === (v0 ? 'affordances_call' : 'execute'))
   if (!executed) return { state: undefined, replayed: [], skipped: [], alternatives: [] }
-  return replayAll(record, v0 ? v0RequestsOf(record) : requestsOf(record))
+  return replayAll(
+    record,
+    v0 ? v0RequestsOf(record as V0Trial) : requestsOf(record as ServerRecord),
+  )
 }
 
 // identical requests (same offer and input) count once: an approved choice is two, and add-on offers share an id

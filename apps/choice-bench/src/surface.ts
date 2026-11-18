@@ -1,0 +1,318 @@
+import * as lab from '@affordances/hosting-lab/trial'
+import { canonicalJson, digest } from '@affordances/ir'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { loadavg } from 'node:os'
+import path from 'node:path'
+import type { Driver, DriverResult } from './drivers/types.ts'
+import { planAttributes, showsFact, structured } from './facts.ts'
+import {
+  CAPS,
+  DriverFailure,
+  failureOf,
+  INSTRUCTIONS,
+  priorFailures,
+  recordFault,
+  setAside,
+  type TrialSpec,
+} from './harness.ts'
+import { intendedEndState } from './intended.ts'
+import {
+  crossCheck,
+  HarnessFault,
+  projectKeyOf,
+  readEndState,
+  readServerErrors,
+  startLabServer,
+} from './lab-server.ts'
+import type { EndReason } from './metrics.ts'
+import { askedToConfirm, responseOf } from './response.ts'
+import type { SurfaceServerConfig, SurfaceServerRecord } from './surface-server.ts'
+import { surfaceMetrics, type SurfaceFacts } from './surface-metrics.ts'
+import { surfaces, type Surface } from './surfaces.ts'
+import { TOOLS } from './tools.ts'
+import { permutationFor } from './trial.ts'
+import type { V0Config, V0Record } from './v0-server.ts'
+import { consequential, type V0Trial } from './v0.ts'
+
+// one M7f surface trial (surfaces/PLAN.md §3, §5; the planner, 14:50Z): the trial's own fresh server, the surface's
+// tools, the driver, and the outcome read the same way on every surface. The intended end state is replayed from the
+// surface's own request events, the session's end state is the server's state file, and the two reads of that state
+// are cross-checked. A disagreement or a harness stall is a harness fault: set aside, rerun, counted. M5's runTrial is
+// left as it ran, so M5's records still reproduce at their commits
+
+// the host name every trial's server is reached by, recorded in the trace (the planner, 14:40Z)
+export const HOST = '127.0.0.1'
+
+/** The surface's prompt: M5's paragraph, the instruction line naming its tools, the only text that differs, then T6. */
+export const surfacePromptFor = (surface: Surface, task: lab.Task) =>
+  `${INSTRUCTIONS}\n${surface.instruction}\n\nThe user: ${task.text}`
+
+export type SurfaceOptions = {
+  // the pinned export's built apps/hosting-lab, which every trial's server runs
+  labBuild: string
+  // the worker's port
+  port: number
+}
+
+const SERVERS = {
+  tools: path.resolve(import.meta.dirname, 'surface-server.ts'),
+  v0: path.resolve(import.meta.dirname, 'v0-server.ts'),
+}
+const V0_TOOLS = new Set(['affordances_open', 'affordances_call'])
+
+// what the runner reads from each surface's record, the same facts on every surface
+const factsOf = async (
+  surface: Surface,
+  task: string,
+  record: SurfaceServerRecord | V0Record,
+  endState: lab.EndState,
+): Promise<SurfaceFacts> => {
+  const gb = (await planAttributes('pro')).bandwidthGb
+  if (surface.kind === 'v0') {
+    const calls = (record as V0Record).calls
+    const first = calls.findIndex(consequential)
+    const firstRequest = first < 0 ? undefined : first
+    const before = calls.slice(0, firstRequest)
+    const delta = (c: (typeof calls)[number]) =>
+      c.output as { ok?: boolean; error?: { code?: string } }
+    return {
+      surface: surface.id,
+      task,
+      calls: calls.length,
+      firstRequest,
+      proAllowanceSeen: before.some((c) => showsFact(c.output, 'pro', 'bandwidthGb', gb)),
+      completed: calls.some(
+        (c) =>
+          c.tool === 'affordances_call' &&
+          (c.input as { confirm?: boolean }).confirm === true &&
+          delta(c)?.ok === true,
+      ),
+      unauthorized: calls.some((c) => delta(c)?.error?.code === 'unauthorized'),
+      endState,
+    }
+  }
+  const calls = (record as SurfaceServerRecord).calls
+  const first = calls.findIndex((c) => c.tool === 'execute' && (askedToConfirm(c) || !!c.state))
+  const firstRequest = first < 0 ? undefined : first
+  return {
+    surface: surface.id,
+    task,
+    calls: calls.length,
+    firstRequest,
+    proAllowanceSeen: calls
+      .slice(0, firstRequest)
+      .some((c) => showsFact(structured(c.response), 'pro', 'bandwidthGb', gb)),
+    completed: calls.some(
+      (c) => c.tool === 'execute' && !!c.state && !!(c.input as { approval?: string }).approval,
+    ),
+    unauthorized: calls.some((c) => c.tool === 'execute' && responseOf(c)?.code === 'unauthorized'),
+    endState,
+  }
+}
+
+export const runSurfaceTrial = async (
+  spec: TrialSpec,
+  driver: Driver,
+  dir: string,
+  options: SurfaceOptions,
+) => {
+  if (!spec.surface) throw new Error(`trial ${spec.id} names no surface`)
+  const surface = surfaces[spec.surface]
+  if (surface.kind !== 'tools' && surface.kind !== 'v0')
+    throw new Error(`the ${surface.id} surface's driver isn't built yet`)
+  const task = lab.tasks.find((t) => t.id === spec.task)
+  if (!task) throw new Error(`no task ${spec.task}`)
+  mkdirSync(dir, { recursive: true })
+  setAside(dir, spec.id)
+  const file = (suffix: string) => path.join(dir, `${spec.id}.${suffix}`)
+  const session = `s_${spec.id}`.replaceAll(/[^\w-]/g, '_').slice(0, 64)
+  const plans = permutationFor(spec.index)
+  const stateFile = file('state.json')
+  const serverLog = file('server.log')
+  const server = await startLabServer({
+    dir: options.labBuild,
+    port: options.port,
+    plans,
+    session,
+    task: spec.task,
+    stateFile,
+    stderr: serverLog,
+  })
+  const url = `http://${HOST}:${options.port}`
+  const out = file('server.json')
+  const configPath = file('config.json')
+  const config: SurfaceServerConfig | V0Config =
+    surface.kind === 'v0'
+      ? { url, session, out }
+      : {
+          surface: surface.id as 'full' | 'progressive',
+          task: spec.task,
+          index: spec.index,
+          url,
+          session,
+          stateFile,
+          out,
+        }
+  writeFileSync(configPath, JSON.stringify(config))
+  const prompt = surfacePromptFor(surface, task)
+  const startedAt = new Date().toISOString()
+  const loadAtStart = loadavg()
+  let result: DriverResult | undefined
+  let thrown: string | undefined
+  try {
+    result = await driver.run({
+      model: spec.model,
+      prompt,
+      mcp: { command: process.execPath, args: [SERVERS[surface.kind], configPath] },
+      timeoutMs: CAPS.ms,
+      maxTurns: CAPS.turns,
+    })
+  } catch (e) {
+    thrown = e instanceof Error ? e.message : String(e)
+  }
+  // the outcome's two reads, before the server stops: the state file, and project.read through the session
+  let fault: { kind: string; detail: string } | undefined
+  let endState: lab.EndState | undefined
+  // the trial's project key, which the replay's offer ids and inputs carry, as the session sees it
+  let project = ''
+  try {
+    project = await projectKeyOf(server.url, session)
+    const state = readEndState(stateFile, session)
+    await crossCheck(server.url, session, state)
+    endState = state as lab.EndState
+  } catch (e) {
+    if (!(e instanceof HarnessFault)) throw e
+    fault = { kind: e.kind, detail: e.detail }
+  } finally {
+    await server.stop()
+  }
+  const failed = failureOf(
+    result,
+    thrown ?? (existsSync(out) ? undefined : 'the tool server never started'),
+  )
+  // two classes, kept apart (the planner, 15:03Z). A CLI driver's failure is intake's 12:05Z rule, as in M5: auth stops
+  // the run; a crash or a 529 is set aside and rerun once, and a second is scored 'failed'. A harness fault is the
+  // PLAN's (§5): the app answered a 5xx, counted exactly in the state file, or the outcome's two reads disagreed. It's
+  // set aside, rerun and counted, never scored, and it's checked before the CLI's rule, since a trial the app failed
+  // is the harness's whatever the CLI did. The server's stderr is kept as evidence, and never classed by
+  const sendFailure = () => {
+    writeFileSync(
+      file('failure.json'),
+      JSON.stringify({
+        ...failed,
+        at: new Date().toISOString(),
+        exitCode: result?.exitCode ?? null,
+      }),
+    )
+    setAside(dir, spec.id)
+    throw new DriverFailure(spec.id, failed!.kind, failed!.detail)
+  }
+  if (failed?.kind === 'auth') sendFailure()
+  const answered5xx = readServerErrors(stateFile)
+  fault ??= answered5xx.length
+    ? {
+        kind: 'stall',
+        detail: `the app answered ${answered5xx.map((e) => `${e.status} on ${e.route}`).join(', ')}`,
+      }
+    : undefined
+  if (fault) {
+    recordFault(dir, spec, fault)
+    return { spec, fault }
+  }
+  const attempts = priorFailures(dir, spec.id) + 1
+  if (failed && attempts === 1) sendFailure()
+  if (!existsSync(out))
+    throw new Error(`trial ${spec.id}: the tool server never started (${thrown ?? 'no error'})`)
+  const record = JSON.parse(readFileSync(out, 'utf8')) as SurfaceServerRecord | V0Record
+  // the replay's record: the surface's, with what a fresh store needs
+  const replayFile = file('replay.json')
+  writeFileSync(
+    replayFile,
+    JSON.stringify(
+      surface.kind === 'v0'
+        ? ({
+            ...(record as V0Record),
+            condition: 'A',
+            index: spec.index,
+            task: spec.task,
+            project,
+          } satisfies V0Trial)
+        : record,
+    ),
+  )
+  const intended = await intendedEndState(replayFile)
+  const usage = result?.usage ?? { inputTokens: 0, outputTokens: 0 }
+  // M5's count: input plus output, with cache writes as input and cache reads excluded
+  const tokens = usage.inputTokens + usage.outputTokens + (usage.cacheWriteTokens ?? 0)
+  const capped = surface.kind === 'tools' && (record as SurfaceServerRecord).capped
+  const capHits = [
+    capped && 'calls',
+    tokens > CAPS.tokens && 'tokens',
+    (result?.durationMs ?? 0) >= CAPS.ms && 'time',
+    result?.stopped === 'turns' && 'turns',
+  ].filter((x): x is string => typeof x === 'string')
+  const end: EndReason = failed ? 'failed' : capHits.length ? 'capped' : 'final'
+  const facts = await factsOf(surface, spec.task, record, endState!)
+  const metrics = surfaceMetrics(
+    facts,
+    intended,
+    { tokens, durationMs: result?.durationMs ?? 0 },
+    end,
+  )
+  // the driver's record of its calls against the server's: a mismatch marks the trial, as in M5
+  const known = surface.kind === 'v0' ? V0_TOOLS : new Set(Object.keys(TOOLS))
+  const names = (result?.trace ?? []).map((t) => t.name.replace(/^mcp__bench__/, ''))
+  const driverCalls = names.filter((n) => known.has(n))
+  const otherTools = names.filter((n) => !known.has(n))
+  const traceMismatch =
+    canonicalJson(driverCalls) !== canonicalJson(record.calls.map((c) => c.tool))
+  const taskEdit = lab.TASK_EDITS[spec.task]
+  const lines = [
+    {
+      kind: 'trial',
+      ...spec,
+      surface: surface.id,
+      cli: result?.cli ?? null,
+      model: { requested: spec.model, resolved: result?.resolvedModel ?? null },
+      caps: { ...CAPS, tokensCount: 'input + output + cache writes; cache reads excluded' },
+      plans,
+      startedAt,
+      server: {
+        url,
+        buildId: server.buildId,
+        startMs: server.startMs,
+        env: server.env,
+      },
+      fixture: {
+        manifestDigest: await digest(taskEdit ? taskEdit.apply(lab.manifest) : lab.manifest),
+        baseDigest: await digest(lab.manifest),
+      },
+      prompt,
+      instruction: surface.instruction,
+    },
+    ...record.calls.map((c) => ({ kind: 'call', ...c })),
+    {
+      kind: 'end',
+      end,
+      capHits,
+      ...(failed && { driverFailure: failed, attempts }),
+      traceMismatch,
+      otherTools,
+      spawned: otherTools.some((n) => /spawn/i.test(n)),
+      finalText: result?.finalText ?? '',
+      usage,
+      totalTokens: tokens,
+      durationMs: result?.durationMs ?? 0,
+      turns: result?.turns ?? null,
+      footprint: result?.footprint ?? null,
+      load: { start: loadAtStart, end: loadavg() },
+      // the server's stderr, kept as evidence and never classed by
+      serverLog: existsSync(serverLog) ? readFileSync(serverLog, 'utf8') : '',
+      endState,
+      raw: result?.raw ?? null,
+    },
+    { kind: 'metrics', ...metrics },
+  ]
+  writeFileSync(file('jsonl'), `${lines.map((l) => JSON.stringify(l)).join('\n')}\n`)
+  return { spec, end, capHits, metrics }
+}

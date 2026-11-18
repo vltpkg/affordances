@@ -18,7 +18,7 @@ export type V0Trial = V0Record & {
 export type CapabilityRequest = { capability: string; input: Record<string, unknown> }
 
 type Delta = { ok?: boolean; error?: { code?: string } }
-const consequential = (c: V0Call) => {
+export const consequential = (c: V0Call) => {
   if (c.tool !== 'affordances_call' || c.isError || typeof c.output !== 'object' || !c.output)
     return false
   const delta = c.output as Delta

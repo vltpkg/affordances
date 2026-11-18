@@ -46,7 +46,13 @@ export const fakeDriver = (seed: number, raw: string): Driver => ({
       return { text, error: r.isError === true }
     }
     let finalText = 'I looked and found nothing to subscribe to.'
+    // the v0 surface's two tools (M7f): its own script, below; the four tools' is M5's, unchanged
+    const v0 = (await client.listTools()).tools.some((t) => t.name === 'affordances_open')
     try {
+      if (v0) {
+        finalText = await v0Script(seed, call)
+        return finish()
+      }
       const first = parse((await call('project')).text) as View
       const offers = offersOf(first)
       for (const e of first.omitted.expand.slice(0, 5)) {
@@ -74,16 +80,48 @@ export const fakeDriver = (seed: number, raw: string): Driver => ({
     } finally {
       await client.close()
     }
-    writeFileSync(raw, JSON.stringify({ trace, finalText }))
-    return {
-      trace,
-      finalText,
-      // nominal: a token per four response bytes, so the token metrics have a value to carry
-      usage: { inputTokens: Math.ceil(bytes / 4), outputTokens: 20 * trace.length },
-      durationMs: performance.now() - t0,
-      exitCode: 0,
-      cli: { name: 'fake', version: '0.0.0' },
-      raw,
+    return finish()
+    function finish(): DriverResult {
+      writeFileSync(raw, JSON.stringify({ trace, finalText }))
+      return {
+        trace,
+        finalText,
+        // nominal: a token per four response bytes, so the token metrics have a value to carry
+        usage: { inputTokens: Math.ceil(bytes / 4), outputTokens: 20 * trace.length },
+        durationMs: performance.now() - t0,
+        exitCode: 0,
+        cli: { name: 'fake', version: '0.0.0' },
+        raw,
+      }
     }
   },
 })
+
+// v0's scripted agent: it opens the home page, then the plans page, and subscribes the project to one plan it isn't
+// on, chosen by the seed, resending with confirm: true as the user approves
+const v0Script = async (
+  seed: number,
+  call: (
+    name: string,
+    input?: Record<string, unknown>,
+  ) => Promise<{ text: string; error: boolean }>,
+) => {
+  await call('affordances_open', { path: '/' })
+  const page = await call('affordances_open', { path: '/plans' })
+  if (page.error) return 'I couldn’t open the plans page.'
+  const graph = parse(page.text)
+  const plans = (graph.entities.plans as { id: string; slug: string; current: boolean }[]).filter(
+    (p) => !p.current,
+  )
+  const pick = plans[seed % Math.max(plans.length, 1)]
+  if (!pick) return 'I looked and found nothing to subscribe to.'
+  const subscribe = {
+    path: '/plans',
+    action: 'subscribe',
+    input: { plan: pick.id, projectId: graph.entities.project.id },
+  }
+  const first = parse((await call('affordances_call', subscribe)).text)
+  if (first.error?.code === 'confirm_required')
+    await call('affordances_call', { ...subscribe, confirm: true })
+  return `I subscribed the project to ${pick.slug}.`
+}

@@ -330,20 +330,36 @@ export const endStateOf = (sid: string) => {
 // a trial's server writes every session's end state after each store change, atomically (temp, then rename), only
 // when its state file was set at boot (src/lib/trial-env.ts). Every function that changes the store is wrapped here,
 // once, so a new caller can't skip it
+// each 5xx the app answered, with its status and route, for the harness's stall rule (surfaces/PLAN.md §5; the
+// planner, 15:03Z): kept beside the store on globalThis, since route bundles and instrumentation each load this module
+export type ServerError = { status: number; route: string; at: string }
+const errorsShared = globalThis as { hostingLabServerErrors?: ServerError[] }
+const serverErrors = (errorsShared.hostingLabServerErrors ??= [])
+
+const writeTrialState = () => {
+  if (!trialEnv?.stateFile) return
+  const sessions = Object.fromEntries(
+    [...state.sessions.keys()].flatMap((sid) => {
+      const s = endStateOf(sid)
+      return s ? [[sid, s]] : []
+    }),
+  )
+  const temporary = `${trialEnv.stateFile}.${process.pid}.tmp`
+  writeFileSync(temporary, `${JSON.stringify({ sessions, serverErrors })}\n`)
+  renameSync(temporary, trialEnv.stateFile)
+}
+
+/** A 5xx the app answered: recorded in the trial's state file, and only when its trial env set one. */
+export const recordServerError = (status: number, route: string) => {
+  if (!trialEnv?.stateFile) return
+  serverErrors.push({ status, route, at: new Date().toISOString() })
+  writeTrialState()
+}
+
 const written = <F extends (...args: never[]) => unknown>(f: F): F =>
   ((...args: Parameters<F>) => {
     const result = f(...args)
-    if (trialEnv?.stateFile) {
-      const sessions = Object.fromEntries(
-        [...state.sessions.keys()].flatMap((sid) => {
-          const s = endStateOf(sid)
-          return s ? [[sid, s]] : []
-        }),
-      )
-      const temporary = `${trialEnv.stateFile}.${process.pid}.tmp`
-      writeFileSync(temporary, `${JSON.stringify({ sessions })}\n`)
-      renameSync(temporary, trialEnv.stateFile)
-    }
+    writeTrialState()
     return result
   }) as F
 export const account = written(accountUnwritten)

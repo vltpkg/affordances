@@ -100,7 +100,7 @@ test('with a state file, each store change writes every session’s end state, a
     expect({ status: r.status, stderr: r.stderr }).toMatchObject({ status: 0 })
     const inProcess = JSON.parse(r.stdout.trim().split('\n').at(-1)!)
     const written = JSON.parse(readFileSync(file, 'utf8'))
-    expect(written).toEqual({ sessions: { s_state: inProcess } })
+    expect(written).toEqual({ sessions: { s_state: inProcess }, serverErrors: [] })
     expect(inProcess).toMatchObject({ plan: 'pro', bundle: null })
     // written by renaming a temporary file, so no temporary file is left behind
     expect(readdirSync(dir)).toEqual(['state.json'])
@@ -115,4 +115,54 @@ test('without one, nothing is written; and a state file inside the app’s direc
   const inside = purchase({ HOSTING_LAB_TRIAL_STATE_FILE: path.join(root, 'public', 'state.json') })
   expect(inside.status).not.toBe(0)
   expect(inside.stderr).toMatch(/an absolute path outside the app’s directory/)
+})
+
+// the planner (15:03Z): each 5xx the app answers is counted in the state file, for the harness's exact stall rule,
+// and only when the trial env set one: a route's returned 5xx (src/lib/server-errors.ts) and an error Next caught
+// (src/instrumentation.ts)
+const errors = (env: Record<string, string>) =>
+  spawnSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      [
+        "const { countingErrors } = await import('./src/lib/server-errors.ts')",
+        "const { onRequestError } = await import('./src/instrumentation.ts')",
+        "await countingErrors('/api/x', () => new Response('', { status: 503 }))(new Request('http://h/api/x'))",
+        "await countingErrors('/api/x', () => new Response('{}', { status: 200 }))(new Request('http://h/api/x'))",
+        "await onRequestError(new Error('boom'), { path: '/plans' }, { routePath: '/plans' })",
+        'console.log(JSON.stringify(globalThis.hostingLabServerErrors))',
+      ].join('\n'),
+    ],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      env: {
+        PATH: process.env.PATH ?? '',
+        NEXT_RUNTIME: 'nodejs',
+        ...env,
+      } as unknown as NodeJS.ProcessEnv,
+    },
+  )
+
+test('with a state file, each 5xx is counted with its status and route; a 2xx isn’t; unset, nothing is', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'hosting-lab-5xx-'))
+  try {
+    const file = path.join(dir, 'state.json')
+    const r = errors({ HOSTING_LAB_TRIAL_STATE_FILE: file })
+    expect({ status: r.status, stderr: r.stderr }).toMatchObject({ status: 0 })
+    const { serverErrors } = JSON.parse(readFileSync(file, 'utf8'))
+    expect(serverErrors.map((e: { status: number; route: string }) => [e.status, e.route])).toEqual(
+      [
+        [503, '/api/x'],
+        [500, '/plans'],
+      ],
+    )
+    const unset = errors({})
+    expect({ status: unset.status, stderr: unset.stderr }).toMatchObject({ status: 0 })
+    expect(JSON.parse(unset.stdout.trim().split('\n').at(-1)!)).toEqual([])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
