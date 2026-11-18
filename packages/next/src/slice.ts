@@ -211,7 +211,8 @@ const WRAPPERS = new Set([
   'TSInstantiationExpression',
 ])
 
-const freeIdentifiers = (root: Node) => {
+/** The free identifiers a node reads, with nested scopes respected; `outer` names what's already bound around it. */
+export const freeIdentifiers = (root: Node, outer: Set<string>[] = []) => {
   const free: { name: string; node: Node }[] = []
   const banned: string[] = []
   const calls: Node[] = []
@@ -341,7 +342,7 @@ const freeIdentifiers = (root: Node) => {
       visit(value, scope)
     }
   }
-  visit(root, [])
+  visit(root, outer)
   return { free, banned, calls }
 }
 
