@@ -17,6 +17,12 @@ describe('valid fixtures', () => {
     // cancel has no preconditions and declared effects; nothing in plans is all-guards
     expect(codes(validate(fixture('plans.json')).issues)).toEqual([])
   })
+
+  test('a claim citing declared attributes of its target type is valid (§9)', () => {
+    const m = plans()
+    m.claims[0].cites = ['priceUsd', 'slug']
+    expect(codes(validate(m).issues)).toEqual([])
+  })
   test("the RFC's example warns where it should", () => {
     // addItem's only precondition is a guard; checkout's and refund's charges declare no amount, since the example's
     // cart and order declare no total (RFC 0001 §4, intake 2026-11-18)
@@ -136,6 +142,28 @@ const cases: [string, ValidationIssue['code'], string, (m: M) => void][] = [
     'E_KIND',
     '/capabilities/0/effects',
     (m) => (m.capabilities[0].effects = sub(m).effects),
+  ],
+  [
+    'a claim citing an undeclared attribute (§9)',
+    'E_PATH',
+    '/claims/0/cites/1',
+    (m) => (m.claims[0].cites = ['priceUsd', 'bandwidth']),
+  ],
+  [
+    'a claim citing one attribute twice',
+    'E_PATH',
+    '/claims/0/cites/1',
+    (m) => (m.claims[0].cites = ['priceUsd', 'priceUsd']),
+  ],
+  [
+    'a claim citing, whose subject has no target type',
+    'E_PATH',
+    '/claims/0/cites',
+    (m) => {
+      m.claims[0].subject = 'hosting.plan.list'
+      delete m.claims[0].applies
+      m.claims[0].cites = ['priceUsd']
+    },
   ],
   [
     'a path to an undeclared attribute',

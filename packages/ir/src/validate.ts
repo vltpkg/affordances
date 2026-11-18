@@ -483,6 +483,24 @@ export const validate = (input: unknown): Validation => {
         `${at}/applies`,
       )
     }
+    // cites names declared attributes of the claim's target type, each once (§9, RFC 0002 §6.6)
+    if (c.cites && local(c.subject) !== undefined) {
+      const id = local(c.subject)
+      const subject = id === undefined ? undefined : definitions.get(id)
+      const target = subject === 'resource' ? id : m.capabilities.find((x) => x.id === id)?.target
+      const declared = (
+        attributesOf(target) as { properties?: Record<string, unknown> } | undefined
+      )?.properties
+      if (!target)
+        report('E_PATH', `${at}/cites`, "the claim's subject has no target type, so it can't cite")
+      else
+        c.cites.forEach((name, j) => {
+          if (!declared || !Object.hasOwn(declared, name))
+            report('E_PATH', `${at}/cites/${j}`, `${name} isn't a declared attribute of ${target}`)
+          else if (c.cites!.indexOf(name) !== j)
+            report('E_PATH', `${at}/cites/${j}`, `${name} is cited twice`)
+        })
+    }
   })
 
   // provenance (E_SOURCE, E_BASIS): every record names a declared source whose role fits its basis (rule 3)

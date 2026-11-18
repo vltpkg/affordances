@@ -1019,6 +1019,12 @@
         "applies": {
           "$ref": "#/$defs/Expr"
         },
+        "cites": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "provenance": {
           "$ref": "#/$defs/Provenance"
         },

@@ -313,6 +313,8 @@ export const Claim = z
     statement: z.string(),
     quantity: z.strictObject({ value: z.number(), unit: z.string() }).optional(),
     applies: Expr.optional(),
+    // the target attributes its statement relies on (§9; RFC 0002 §6.6): always in a shown choice set's comparison
+    cites: z.array(z.string()).optional(),
     provenance: Provenance,
     extensions: Extensions.optional(),
   })
