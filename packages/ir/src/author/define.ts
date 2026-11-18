@@ -155,7 +155,15 @@ type EffectSpec<Paths extends string> = {
       // what holds after success
       readonly establishes?: When<Paths>
     }
-  | { readonly category: 'external' | 'financial' | 'access' }
+  | { readonly category: 'external' | 'access' }
+  | {
+      readonly category: 'financial'
+      // what it charges, rendered in every confirmation summary from the effective input (RFC 0001 §4): a path,
+      // typed against the target, or a number
+      readonly amount?: { value: Paths | number; currency: 'USD'; per?: 'month' }
+      // the charge is made only when this holds
+      readonly applies?: When<Paths>
+    }
 )
 
 const conditions = (spec: Record<string, Declared | Guard>): Condition[] =>
@@ -177,7 +185,9 @@ const effect = (spec: EffectSpec<string>): Effect =>
           resource: idOf(spec.resource),
           establishes: spec.establishes?.expr as Expr | undefined,
         }
-      : {}),
+      : spec.category === 'financial'
+        ? { amount: spec.amount, applies: spec.applies?.expr as Expr | undefined }
+        : {}),
   }) as Effect
 
 // an input property name, as the JSON Pointer a Reference stores (RFC 0001 §12.1)
