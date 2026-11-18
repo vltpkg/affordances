@@ -316,24 +316,6 @@ export const rollback = (accountId: string, id: string) => {
   return { current: id }
 }
 
-// run what the capabilities do against a clone of the store, and leave the real one untouched: the benchmark's dry
-// run of an agent's requests (RFC 0003 §5.2). It awaits the runtime, so it's for scoring, once a trial's own calls
-// are done: while it runs, the store is the clone. One at a time; the real store is restored whatever happens
-let dryRunning = false
-export const dryRun = async <T>(fn: () => Promise<T>): Promise<T> => {
-  if (dryRunning) throw new Error('a dry run is already running')
-  dryRunning = true
-  const real = { accounts: state.accounts, nextDeployment: state.nextDeployment }
-  state.accounts = structuredClone(state.accounts)
-  try {
-    return await fn()
-  } finally {
-    state.accounts = real.accounts
-    state.nextDeployment = real.nextDeployment
-    dryRunning = false
-  }
-}
-
 // for tests: forget every account
 export const reset = () => {
   state.accounts.clear()
