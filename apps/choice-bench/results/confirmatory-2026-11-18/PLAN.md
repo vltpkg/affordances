@@ -33,8 +33,12 @@ This plan is committed before any confirmatory trial. Its commit's timestamp pre
 - **H1:** S against A, structure including position (RFC 0003 §7.1).
 - **H2:** C against A, advocacy shown up front against advocacy available on request (§7.1).
 - **The outcome:** the share of trials whose choice is optimal, where the choice is the intended end state (§5.2). It's **intent to treat**: a capped trial isn't optimal. The capped-excluded share is the sensitivity analysis.
-- **The test:** each contrast is a difference in optimal share, in percentage points, against A. Both are two-sided, at α = 0.05, with **Holm's** correction across the two.
-- **Pooling:** models are reported separately and pooled.
+- **The primary test** (intake, 2026-11-18 03:54Z), for each of H1 (S vs A) and H2 (C vs A): a **Cochran–Mantel–Haenszel test** of the optimal rate, **stratified by model** (claude-sonnet-5-5, claude-haiku-5-5), two-sided, with **Holm's** correction across H1 and H2 at a family-wise α of 0.05, intent to treat (a capped trial isn't optimal).
+- **The headline effect** is the **Mantel–Haenszel risk difference** with its 95% confidence interval, not the p-value alone.
+- **Secondary, not confirmatory:**
+  - each model's Fisher exact test, and its risk difference with a Newcombe interval;
+  - a Breslow–Day test of homogeneity across the two models;
+  - the capped-excluded sensitivity analysis.
 - **Calibration's C and S results stay sealed** until this run's results are in. They're reported afterwards as calibration-only (n=5 per model), and are never pooled into this run.
 
 ## What runs
@@ -54,11 +58,20 @@ This plan is committed before any confirmatory trial. Its commit's timestamp pre
   - a pinned, git-free export, outside the repo and /tmp, with its `.export-sha` asserted;
   - the context canary must pass against the existing v2 baseline (Claude Code 2.1.311, allow-list sha256 `5e7d57bd6dfa362858f0eb61ab24c8417fe2706437922bf6a1c9a8925e044446`), with no re-baseline.
 
-## Stopping and re-runs
+## Which runs count
 
-- **The run stops at exactly 684 trials.**
-- **A re-run happens only after an infrastructure interruption** (the harness, the host or the CLI process, never the agent's own outcome). It uses the same pre-assigned spec (condition, task, model, index, and so the plan-id order). The partial traces move to `interrupted/` and are never deleted. Every re-run is listed in the report.
-- **A trial that fails** for any other reason is reported as failed, and isn't re-run without intake's OK.
+- **A run counts only if its `preflight.json` records `runner` as `557df5c4d863064d93b516e081d809272ecdc33142a1f3d56397c88fbd659c04`**, this plan's runner (review of bdc11f9c). A file can't hold its own hash, so the runner's self-check holds only when the operator passes the pre-registered sha256. An edited runner given its own sha256 would run, and would record a different one. Such a run doesn't count.
+
+## Stopping and re-runs (intake, 2026-11-18 03:54Z)
+
+- **684 scored trials, one per spec.**
+- **A driver failure is retried once,** with the same spec (condition, task, model, index, and so the plan-id order).
+  - **Both attempts are kept,** and the retry is an extra attempt against the exploratory budget.
+  - **If both fail,** the spec is scored "failed": not optimal under intent to treat, and reported.
+  - **Capped trials are never retried.**
+- **If more than 5% of specs (35) need a retry,** the run pauses and intake is told before it continues, since that indicates a systematic infrastructure problem rather than chance.
+- **The operating rules** (the planner, 03:55Z; the runner is unchanged, sha256 `557df5c4d863064d93b516e081d809272ecdc33142a1f3d56397c88fbd659c04`): Retry = a second invocation of the same command (resume): it reruns only specs with no complete trace, with the same pre-assigned specs, and partials are kept in interrupted/. The command runs at most twice, each run with its own recorded preflight. After the first run, if more than 35 specs (5%) are failed, the second run does NOT start; intake is told first.
+- **A capped trial has a complete trace,** so no invocation ever re-runs it.
 
 ## After the run
 
