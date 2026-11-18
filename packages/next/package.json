@@ -57,7 +57,13 @@
     "zod": "^4.6.7"
   },
   "peerDependencies": {
+    "@affordances/ir": "workspace:*",
     "next": ">=16",
     "react": ">=19"
+  },
+  "peerDependenciesMeta": {
+    "@affordances/ir": {
+      "optional": true
+    }
   }
 }

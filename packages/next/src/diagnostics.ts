@@ -96,6 +96,12 @@ export const CATALOG = {
       'Two routes infer one resource type from their segments with different keys, so neither key is used and none of their actions gets that target',
     fix: 'Use one parameter name for the segment in every route, or declare the resource with defineResource',
   },
+  E_IR_MISSING: {
+    severity: 'error',
+    means:
+      "The app has capability modules, or a namespace configured, but @affordances/ir, @affordances/next's optional peer, doesn't resolve from the app's root",
+    fix: 'Install @affordances/ir in the app; an app without capabilities needs neither it nor this',
+  },
   E_CAPABILITY_IMPORT: {
     severity: 'error',
     means: 'A capability module imports application code',

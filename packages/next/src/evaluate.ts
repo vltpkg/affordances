@@ -1,7 +1,6 @@
 import { registerHooks } from 'node:module'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { canonicalJson, fromModules } from '@affordances/ir'
 
 // RFC 0005 §1's evaluation, the child's side: run in a fresh process with an empty environment, by evaluator.ts, twice.
 // It imports each capability module, hands every module's exports to fromModules, and prints the manifest's canonical
@@ -22,6 +21,13 @@ const input = JSON.parse(process.argv[2] ?? '{}') as Input
 const TS = ['.ts', '/index.ts']
 registerHooks({
   resolve(specifier, context, next) {
+    // @affordances/ir, next's optional peer, resolves from the app's root, where the app installed it, never from
+    // next's own location (intake, 2026-11-18)
+    if (specifier === '@affordances/ir' || specifier.startsWith('@affordances/ir/'))
+      return next(specifier, {
+        ...context,
+        parentURL: pathToFileURL(path.join(input.root, 'package.json')).href,
+      })
     try {
       return next(specifier, context)
     } catch (error) {
@@ -46,6 +52,17 @@ registerHooks({
 
 const out = (value: unknown) => process.stdout.write(JSON.stringify(value))
 
+// loaded only now, after the hook, so it resolves from the app. The evaluator checked it resolves before starting this
+type Ir = {
+  brandOf: (value: unknown) => string | undefined
+  canonicalJson: (value: unknown) => string
+  fromModules: (
+    modules: { file: string; exports: Record<string, unknown> }[],
+    identity: unknown,
+  ) => { manifest?: unknown; diagnostics: unknown[]; reason?: 'no-namespace' }
+}
+const { brandOf, canonicalJson, fromModules } = (await import('@affordances/ir')) as Ir
+
 const modules = []
 for (const file of input.modules)
   try {
@@ -69,4 +86,19 @@ for (const file of input.modules)
   }
 
 const { manifest, diagnostics, reason } = fromModules(modules, input.identity as never)
-out({ manifest: manifest && canonicalJson(manifest), diagnostics, ...(reason && { reason }) })
+// each branded definition's id, by its module and export, so a bound action's import names a capability (RFC 0005 §2.1)
+const exported = modules.flatMap(({ file, exports }) =>
+  Object.entries(exports).flatMap(([name, value]) => {
+    const brand = brandOf(value)
+    const id = (value as { definition?: { id?: unknown } } | undefined)?.definition?.id
+    return (brand === 'capability' || brand === 'resource') && typeof id === 'string'
+      ? [{ file, name, brand, id }]
+      : []
+  }),
+)
+out({
+  manifest: manifest && canonicalJson(manifest),
+  diagnostics,
+  exported,
+  ...(reason && { reason }),
+})

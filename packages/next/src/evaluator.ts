@@ -16,10 +16,13 @@ import { aliasesOf } from './modules.ts'
 export type Evaluated = {
   manifest?: string
   diagnostics: Diagnostic[]
+  // each branded capability and resource, by module (relative to the root) and export name
+  exported: { file: string; name: string; brand: 'capability' | 'resource'; id: string }[]
   reason?: 'no-namespace'
 }
 
 type ChildOutput = {
+  exported?: Evaluated['exported']
   manifest?: string
   diagnostics?: { code: string; file?: string; subject?: string; message: string }[]
   reason?: 'no-namespace'
@@ -31,7 +34,7 @@ const childProgram = () =>
   ['evaluate.js', 'evaluate.ts'].map((f) => path.join(here, f)).find((f) => existsSync(f))!
 
 // what the child may read: the app dir, every node_modules from the root up (with the store their links point into),
-// its own code, and @affordances/ir wherever it resolves from, when it isn't inlined
+// its own code, and @affordances/ir where the app resolves it
 const readable = (root: string, appDir: string) => {
   const dirs = [appDir, here]
   for (let d = path.resolve(root); ; d = path.dirname(d)) {
@@ -39,16 +42,14 @@ const readable = (root: string, appDir: string) => {
     if (existsSync(nm)) dirs.push(nm, realpathSync(nm))
     if (path.dirname(d) === d) break
   }
+  // @affordances/ir, where the app resolves it: its package dir, through any link into a store
   try {
-    dirs.push(path.dirname(realpathSync(createRequire(import.meta.url).resolve('@affordances/ir'))))
-    dirs.push(
-      path.resolve(
-        path.dirname(realpathSync(createRequire(import.meta.url).resolve('@affordances/ir'))),
-        '..',
-      ),
+    const entry = realpathSync(
+      createRequire(path.join(root, 'package.json')).resolve('@affordances/ir'),
     )
+    dirs.push(path.dirname(entry), path.resolve(path.dirname(entry), '..'))
   } catch {
-    // inlined in the built evaluator: nothing to read
+    // not installed: the pipeline reports E_IR_MISSING before the evaluator runs
   }
   return [...new Set(dirs)]
 }
@@ -95,6 +96,7 @@ export const evaluateModules = (
     diagnostics: [
       { code: 'E_CAPABILITY_EVALUATION', file: path.relative(root, appDir), detail: why },
     ],
+    exported: [],
   })
   const first = run()
   if (first.error || first.status !== 0)
@@ -113,6 +115,7 @@ export const evaluateModules = (
           detail: `the two evaluations first differ at byte ${at}: …${first.stdout.slice(Math.max(0, at - 40), at + 40)}…`,
         },
       ],
+      exported: [],
     }
   }
   let output: ChildOutput
@@ -124,6 +127,7 @@ export const evaluateModules = (
   return {
     ...(output.manifest && { manifest: output.manifest }),
     diagnostics: (output.diagnostics ?? []).map(toDiagnostic),
+    exported: output.exported ?? [],
     ...(output.reason && { reason: output.reason }),
   }
 }

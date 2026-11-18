@@ -175,6 +175,7 @@ These are never extracted, because code doesn't state them. Each one missing is 
 | `W_INPUT_LOSSY`                 | E3's slice converts, but drops a refinement or transform; each is named                                                                           |
 | `W_NOT_LITERAL`                 | a field an extraction rule reads (`name`, `expose`, `description`, `readOnly`, `requires`) isn't a literal; a non-literal `name` skips the action |
 | `W_SEGMENT_CONFLICT`            | two routes infer one resource type from their segments with different keys (`/products/[slug]`, `/products/[id]`); neither is used                |
+| `E_IR_MISSING`                  | the app has capability modules or a namespace, but `@affordances/ir`, `@affordances/next`'s optional peer, doesn't resolve from the app's root    |
 | `E_CAPABILITY_IMPORT`           | a capability module imports application code                                                                                                      |
 | `E_CAPABILITY_SYNTAX`           | a capability module or slice uses syntax Node can't erase (an `enum`, a `namespace`)                                                              |
 | `E_CAPABILITY_AMBIENT`          | a capability module uses a dynamic `import()`, `require`, `process`, `Date`, `Math.random`, `crypto`, `fetch` or a timer                          |

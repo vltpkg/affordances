@@ -1,0 +1,66 @@
+import { execFileSync } from 'node:child_process'
+import { readdirSync, readFileSync } from 'node:fs'
+import path from 'node:path'
+import { beforeAll, expect, test } from 'vitest'
+
+// intake's ruling (2026-11-18): @affordances/ir is next's optional peer and zod is only ir's, so next's published dist
+// bundles neither, and the evaluator reaches ir by a bare import the app resolves. This builds next for real (its dist
+// is build output, git-ignored) and reads what came out
+
+const pkg = path.join(import.meta.dirname, '..')
+const dist = path.join(pkg, 'dist')
+const read = (f: string) => readFileSync(path.join(dist, f), 'utf8')
+let js: string[] = []
+let dts: string[] = []
+
+beforeAll(() => {
+  // the workspace's own tsdown, as `vlt run build` runs it
+  execFileSync(path.join(pkg, '..', '..', 'node_modules', '.bin', 'tsdown'), [], {
+    cwd: pkg,
+    stdio: 'ignore',
+  })
+  js = readdirSync(dist).filter((f) => f.endsWith('.js'))
+  dts = readdirSync(dist).filter((f) => f.endsWith('.d.ts'))
+}, 120_000)
+
+// strings that only ir's or zod's own code holds: ir's brand key, a validate message, a code, fromModules' definition;
+// zod's base type and error class
+const IR_CODE = [
+  /affordances\.defined/,
+  /needs evidence/,
+  /E_DUPLICATE_ID/,
+  /(const|function) fromModules\b/,
+]
+const ZOD_CODE = [/\$ZodType/, /class ZodError/, /ZodError\b.*extends/]
+
+test('no file in next’s dist holds ir’s code or zod’s', () => {
+  expect(js.length).toBeGreaterThan(5)
+  const found = js.flatMap((f) =>
+    [...IR_CODE, ...ZOD_CODE].filter((re) => re.test(read(f))).map((re) => `${f}: ${re.source}`),
+  )
+  expect(found).toEqual([])
+})
+
+test('the evaluator reaches ir by a bare import, which the app resolves, and nothing imports zod', () => {
+  expect(read('evaluate.js')).toMatch(/import\(["']@affordances\/ir["']\)/)
+  const zodImports = js.filter((f) => /from ["']zod["']|import\(["']zod["']\)/.test(read(f)))
+  expect(zodImports).toEqual([])
+})
+
+test('no declaration next emits refers to ir: no import of it, nor a type from it', () => {
+  // an import or import type, or an inline import() type; prose naming the package (a diagnostic's text) isn't one
+  const refers = /from ["']@affordances\/ir["'/]|import\(["']@affordances\/ir["'/]/
+  expect(dts.filter((f) => refers.test(read(f)))).toEqual([])
+})
+
+test('package.json: ir is an optional peer and no dependency; zod is in no dependency, peer or optional field', () => {
+  const p = JSON.parse(readFileSync(path.join(pkg, 'package.json'), 'utf8')) as Record<
+    string,
+    Record<string, unknown> | undefined
+  >
+  expect(p.peerDependencies?.['@affordances/ir']).toBeDefined()
+  expect(p.peerDependenciesMeta?.['@affordances/ir']).toEqual({ optional: true })
+  expect(p.dependencies?.['@affordances/ir']).toBeUndefined()
+  for (const field of ['dependencies', 'peerDependencies', 'optionalDependencies'])
+    expect({ field, zod: p[field]?.zod }).toEqual({ field, zod: undefined })
+})
