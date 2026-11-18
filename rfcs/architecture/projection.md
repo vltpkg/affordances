@@ -106,7 +106,7 @@ them, side by side. It was added after M5's run met rules 1 to 5 and still hid t
   one cell, compared whole by RFC 8785 bytes.
 - **`differ`, `shared` and `unsupplied`:** attributes on which members differ, with a row per member; attributes every
   member has with the same value, stated once; and attributes a member's resolver left out, named.
-- **The column order, and what's never cut** (`comparison.ts`, `columnsOf`): first what a shown claim on the set cites,
+- **The column order, and what's never cut** (`comparison.ts`, `keptColumns` and `columnsOf`): first what a shown claim on the set cites,
   then what the capability reads (its conditions, its effects, and the `{target.x}` paths of its confirmation summary),
   then the rest in declared order. A request's own `facts` budget cuts from the end, past those kept columns, and names
   each cut. A policy's budget never cuts a comparison.
@@ -122,9 +122,11 @@ them, side by side. It was added after M5's run met rules 1 to 5 and still hid t
 
 ## Where the RFC and the code differ
 
-- **The inspector's kept-column marks** (`apps/hosting-lab/src/lib/inspect.ts`, `marksOf`) re-implement the rule above,
-  and differ from it: they count the capability's input and every cited claim, whatever the policy shows. The runtime
-  counts neither. Code review item #9 makes the inspector call the runtime's rule ([inspector.md](./inspector.md)).
+- **The kept group's "input":** RFC 0002 §6.6 said the kept columns included what the capability's input reads. An IR
+  input is a plain JSON Schema and can't read a target attribute, so the runtime never counted it, and 2ae07b3f
+  corrected the RFC to match `keptColumns` (dd3a28ea).
+- **The inspector's marks** re-implemented the kept-column rule and drifted from it, until code review item #9
+  (78b2651f) made them call `keptColumns` ([inspector.md](./inspector.md)).
 
 ## Related
 
