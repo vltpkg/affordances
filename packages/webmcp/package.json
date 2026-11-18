@@ -1,0 +1,31 @@
+{
+  "name": "@affordances/webmcp",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Experimental: version 1's capabilities over WebMCP, in the page, through the person's own session (RFC 0004 §5)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vltpkg/affordances.git",
+    "directory": "packages/webmcp"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@affordances/runtime": "workspace:*"
+  }
+}

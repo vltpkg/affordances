@@ -1198,6 +1198,7 @@
     "workspace~packages+ui shiki": "prod ^4.5.0 ~npm~shiki@4.5.0",
     "workspace~packages+ui sonner": "prod ^2.0.8 ~npm~sonner@2.0.8~peer.d70b5d34425f63a6",
     "workspace~packages+ui tw-animate-css": "prod ^1.4.0 ~npm~tw-animate-css@1.4.0",
+    "workspace~packages+webmcp @affordances/runtime": "prod workspace:* workspace~packages+runtime",
     "~npm~@anthropic-ai+sdk@1.3.0~peer.913d8e090591ec0b zod": "peerOptional ^3.25.0 || ^4.0.0 MISSING",
     "~npm~@anthropic-ai+sdk@1.3.0~peer.913d8e090591ec0b @opentelemetry/api": "prod ^1.4.1 ~npm~@opentelemetry+api@1.10.0",
     "~npm~@anthropic-ai+sdk@1.3.0~peer.913d8e090591ec0b json-schema-to-ts": "prod ^3.1.1 ~npm~json-schema-to-ts@3.1.1",
