@@ -205,3 +205,32 @@ test("the page's start is the first view's when the agent names none, and the ag
   await bare.tools.find((t) => t.name === 'project')!.execute({})
   expect(s2.calls[0]!.url).toBe('/api/projection/view')
 })
+
+test('the signal reaches every registerTool, where Chromium unregisters the tool when it aborts', () => {
+  const given: { name: string; signal?: AbortSignal }[] = []
+  const context = {
+    registerTool: (t: { name: string }, options?: { signal?: AbortSignal }) =>
+      void given.push({ name: t.name, ...(options?.signal && { signal: options.signal }) }),
+  }
+  const registration = new AbortController()
+  const names = registerWebMcp({
+    base: '/api/projection',
+    ask: yes,
+    context,
+    fetcher: server().fetcher,
+    signal: registration.signal,
+  })
+  expect(given.map((g) => g.name)).toEqual(names)
+  expect(given.every((g) => g.signal === registration.signal)).toBe(true)
+  // without one, nothing is passed that a browser could read as a signal
+  const bare: { signal?: AbortSignal }[] = []
+  registerWebMcp({
+    base: '/api/projection',
+    ask: yes,
+    context: {
+      registerTool: (_t: unknown, o?: { signal?: AbortSignal }) => void bare.push(o ?? {}),
+    },
+    fetcher: server().fetcher,
+  })
+  expect(bare.every((o) => o.signal === undefined)).toBe(true)
+})

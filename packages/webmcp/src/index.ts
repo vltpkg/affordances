@@ -41,14 +41,16 @@ export const confirmFor = (client: unknown, ask: AskPerson): Confirm | undefined
 // WebMCP's page API, as Chromium has it (rfcs/research/0004-webmcp/SPIKE.md): document.modelContext, then the older
 // navigator.modelContext
 type ModelContext = {
-  registerTool(tool: {
-    name: string
-    description: string
-    inputSchema: Record<string, unknown>
-    annotations?: Record<string, unknown>
-    execute: (args: Record<string, unknown>, client?: unknown) => Promise<AgentToolResult>
-  }): unknown
-  unregisterTool?: (name: string) => unknown
+  registerTool(
+    tool: {
+      name: string
+      description: string
+      inputSchema: Record<string, unknown>
+      annotations?: Record<string, unknown>
+      execute: (args: Record<string, unknown>, client?: unknown) => Promise<AgentToolResult>
+    },
+    options?: { signal?: AbortSignal },
+  ): unknown
 }
 
 /** @experimental The page's WebMCP context, or undefined where the browser has none. */
@@ -76,6 +78,9 @@ export type WebMcpOptions = {
   start?: ViewRequest['start']
   context?: ModelContext
   fetcher?: typeof fetch
+  // aborting it unregisters the tools, as Chromium's registerTool takes it, so the page can register them again under
+  // the same names, from a new start (intake's code review, #7)
+  signal?: AbortSignal
 }
 
 /**
@@ -93,12 +98,15 @@ export const registerWebMcp = (options: WebMcpOptions): string[] => {
     ...(options.manifest && { manifest: options.manifest }),
   })
   for (const tool of toolset.tools)
-    context.registerTool({
-      name: tool.name,
-      description: tool.description,
-      inputSchema: tool.inputSchema,
-      ...(tool.annotations && { annotations: tool.annotations }),
-      execute: (args, client) => toolset.call(tool.name, args, confirmFor(client, options.ask)),
-    })
+    context.registerTool(
+      {
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        ...(tool.annotations && { annotations: tool.annotations }),
+        execute: (args, client) => toolset.call(tool.name, args, confirmFor(client, options.ask)),
+      },
+      { ...(options.signal && { signal: options.signal }) },
+    )
   return toolset.tools.map((t) => t.name)
 }
