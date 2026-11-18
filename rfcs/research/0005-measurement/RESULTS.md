@@ -47,9 +47,13 @@
 
 **Each precision below 1 on an extracted field is a defect (RFC 0005 §7), named here:**
 
-1. **id (0.00 in both apps):** a rule defect.
-   - **What happened:** stage B's ids are the codemod's suggestions (`cart.updateQuantity`, `plans.subscribe`), with no namespace prefix. RFC 0005 §1 says suggested ids take the prefix inferred from the app's name (`idPrefix`), but `writeIds` doesn't read it. That's the boundary review's #11, "computed but unread".
-   - **Even with a prefix,** route-derived suggestions wouldn't reproduce hand-chosen ids (`acme.cart.setQuantity` for `updateQuantity`, `hosting.plan.list` for `listPlans`). With the prefixes the apps' names give (`acmeStore`, `hostingLab`), 0 of 13 would match, and with a prefix equal to each reference's namespace (`acme`, `hosting`), 2 of 13 (review, 12:15Z, recomputed here from `scores.json`). Ids stay a developer's to write, as §7 expected.
+1. **id (0.00 in both apps, 0 of 13):** mostly a real extraction gap, the naming scheme, with a smaller rule defect inside it.
+   - **The rule defect:** RFC 0005 §1 says suggested ids take the prefix inferred from the app's name (`idPrefix`), but `writeIds` doesn't read it (the boundary review's #11, "computed but unread"). It accounts for at most 2 of the 13: with a prefix equal to each reference's namespace (`acme`, `hosting`), `acme.cart.removeItem` and `acme.checkout.placeOrder` would match. With the prefixes the apps' names actually give (`acmeStore`, `hostingLab`), none would (review, 12:15Z; recomputed here from `scores.json`).
+   - **The gap, the other 11, is the naming scheme:**
+     - **suggestions** are the route's folder and the action's name (`plans.listPlans`, `cart.updateQuantity`, `deployments.deploy`);
+     - **hand-chosen ids** name the resource and a domain verb (`hosting.plan.list`, `acme.cart.setQuantity`, `hosting.deployment.create`, `hosting.subscription.cancel`);
+     - **why they differ:** the route folder isn't the resource (`plans` against `plan`, `add-ons` against `addOn`, `/` against `subscription`), and the action's name isn't the verb (`listPlans` against `list`, `deploy` against `create`, `updateQuantity` against `setQuantity`).
+   - **So ids can't be extracted** from code that never names its resources and verbs. They stay a developer's to write, as §7 expected, and the codemod's suggestions are placeholders they replace.
 2. **input (0.00 on apps/example; 1.00 on hosting-lab):** a reference defect, not an extractor one.
    - **The check (post hoc, and not a change to the scored numbers):** all 5 mismatches differ only by `additionalProperties: false`, which the hand-written example reference asserts, and which zod's `z.object` doesn't imply. It strips unknown keys rather than refusing them. Without that one key, all 5 match.
    - **hosting-lab's reference** was generated from its IR, and matches 1.00 / 1.00.

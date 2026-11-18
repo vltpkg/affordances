@@ -283,7 +283,7 @@ These are never extracted, because code doesn't state them. Each one missing is 
 - **As written,** neither app's actions has an `id`, so extraction skips them all (`W_NO_ID`).
 - **After the id codemod:** binding, kind, authorization and confirmation are recovered at 1.00 precision and recall in both apps, and input in hosting-lab's.
 - **The precisions below 1, each traced to a cause:**
-  - **ids:** the codemod's suggestions don't take the app's id prefix, a rule defect (`idPrefix` is computed but unread);
+  - **ids, 0 of 13:** mostly the naming scheme, a real gap. Suggestions are route folder plus action name (`plans.listPlans`), and hand-chosen ids are resource plus domain verb (`hosting.plan.list`). The unread `idPrefix`, a rule defect, accounts for at most 2 of the 13;
   - **apps/example's inputs:** they differ from its hand-written reference only by an `additionalProperties: false` the reference asserts and zod doesn't imply;
   - **targets and resource types:** E9 names them by the segment as written, decided after that reference.
 - **Zero by design,** as expected: effects, declarative preconditions, claims and relations.
