@@ -4,6 +4,7 @@ import { runtimeFor } from '../src/lib/runtime.ts'
 import { manifest } from '../src/app/capabilities.ts'
 import { principalFor, resolvers } from '../src/lib/resolvers.ts'
 import * as store from '../src/lib/store.ts'
+import { TASK_EDITS } from '../src/lib/task-edits.ts'
 
 // the inspector's data, over the real manifest, store and runtime (M3f)
 
@@ -106,4 +107,48 @@ test('a facts limit cuts columns by name, never the ones the capability reads, a
   expect(set.comparison!.omitted.attributes.length).toBeGreaterThan(0)
   for (const cut of set.comparison!.omitted.attributes)
     expect(set.comparison!.differ).not.toContain(cut)
+})
+
+// #9 (code review): the inspector marks exactly the columns the runtime keeps. Under a facts limit of 0 a view shows
+// only those, so for every set a view shows, under every policy, the marks equal the columns its comparison still
+// shows. A set the view leaves out is expanded whole, with no facts limit (RFC 0002 §6.6), so it isn't compared here
+test("the inspector's marks are the runtime's kept columns, on every set a view shows, under every policy", async () => {
+  store.account('inspect-kept')
+  let compared = 0
+  const principal = principalFor('inspect-kept')
+  // the base manifest, and T6's claim edit, whose recommendation cites two attributes
+  for (const [name, m] of [
+    ['base', manifest],
+    ['T6', TASK_EDITS.T6!.apply(manifest)],
+  ] as const)
+    for (const policy of POLICIES) {
+      const inspection = await inspect(principal, { policy, facts: 0, m })
+      for (const set of inspection.choiceSets.filter((s) => s.inView)) {
+        compared++
+        const c = set.comparison!
+        const shown = [
+          ...c.differ,
+          ...Object.keys(c.shared),
+          ...c.unsupplied.flatMap((u) => u.attributes),
+        ]
+        expect({
+          name,
+          policy,
+          set: set.id,
+          marks: [...new Set([...set.marks.cited, ...set.marks.read])].toSorted(),
+        }).toEqual({
+          name,
+          policy,
+          set: set.id,
+          marks: [...new Set(shown)].toSorted(),
+        })
+      }
+    }
+  // the inspector projects with no start, so the plan set is in view under exhaustive, for both manifests
+  expect(compared).toBe(2)
+  // and a policy that omits claims cites none, whatever claims the capability has
+  for (const policy of POLICIES.filter((p) => p === 'progressive'))
+    for (const set of (await inspect(principal, { policy, m: TASK_EDITS.T6!.apply(manifest) }))
+      .choiceSets)
+      expect(set.marks.cited).toEqual([])
 })
