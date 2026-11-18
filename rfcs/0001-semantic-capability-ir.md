@@ -792,6 +792,7 @@ type Claim = {
   statement: string // 'Includes automatic rollback'
   quantity?: { value: number; unit: string } // for estimates and measurable assessments
   applies?: Expr // when it holds; target.* paths only
+  cites?: string[] // proposed with RFC 0002 §6.6: the target attributes its statement relies on
   provenance: Provenance // required: a claim is nothing without its source
   extensions?: Extensions
 }
@@ -809,6 +810,17 @@ type Claim = {
 **A recommendation is structurally separate from everything else.** It is always a claim, never a field of the definition. It always carries its source, and its kind says it is a preference. A reader can therefore show "the store recommends this" next to "an independent monitor measured that", and an agent can weigh them differently. Whether agents do is something the choice benchmark measures (prior art §6.7, assumption 4).
 
 **`applies` reads only the target.** Its paths use the `target` root: the subject resource, or the subject capability's target (`E_PATH` otherwise). A claim describes a definition to whoever reads it, so it can't depend on one caller's attributes or one call's input. A recommendation for one plan is a claim on the `subscribe` capability that applies to that plan.
+
+**`cites` names the facts a claim relies on** (proposed on 2026-11-18, with RFC 0002 §6.6, and not implemented).
+
+- **What it holds:** declared attributes of the claim's target type, the same type `applies` reads as `target`. "1,000 GB of bandwidth and priority support included" cites `bandwidthGb` and `support`.
+- **What it does:** RFC 0002 §6.6 puts every cited attribute in a shown choice set's comparison, for every member, and never cuts it. So the fact the claim leans on is comparable across the choices, not only stated for the one it favors.
+- **What `validate` checks:**
+  - each name is a top-level property of the target type's declared `attributes` schema (`E_PATH` otherwise);
+  - a claim whose subject has no target type, such as a global capability, can't cite (`E_PATH`);
+  - no name repeats.
+- **What it can't check:** whether the statement's free text relies on a fact it doesn't cite. That's why §6.6 shows every declared attribute, and `cites` decides only what survives a cut.
+- **What it never does:** grant, require or enforce anything. It's part of the claim, so it carries the claim's provenance.
 
 **Claims never merge into definitions,** and claims from different sources about the same subject all stay. Disagreement is data.
 
