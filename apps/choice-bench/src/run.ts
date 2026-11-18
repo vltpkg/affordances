@@ -9,7 +9,14 @@ import { codexCli } from './drivers/codex-cli.ts'
 import { fakeDriver } from './drivers/fake.ts'
 import type { Driver } from './drivers/types.ts'
 import { calibrationPlan, pilotPlan, runTrial, type TrialSpec } from './harness.ts'
-import { type CanaryRecord, runCanary } from './canary.ts'
+import {
+  type Baseline,
+  baselineDiffers,
+  baselineOf,
+  type CanaryRecord,
+  readCanary,
+  runCanary,
+} from './canary.ts'
 import {
   configRoots,
   contextLeaks,
@@ -246,6 +253,19 @@ if (mode === 'plan') {
       resolvedModel: trial.model.resolved,
     }
   }
+  // against an earlier run's baseline, when one is given (CANARY_BASELINE): a difference refuses, flagged first
+  const baseline = baselineOf(canaries)
+  if (real) writeFileSync(path.join(out, 'canary-baseline.json'), JSON.stringify(baseline, null, 2))
+  if (real && process.env.CANARY_BASELINE) {
+    const then = JSON.parse(readFileSync(process.env.CANARY_BASELINE, 'utf8')) as Baseline
+    const differs = baselineDiffers(baseline, then)
+    if (differs.length) {
+      console.error(
+        `the canary differs from its baseline; flag it to the planner and intake: ${differs.join('; ')}`,
+      )
+      process.exit(3)
+    }
+  }
   // canary mode is the preflight alone: the logins, the leaks and every canary, recorded, then no trial (the planner)
   if (mode === 'canary') {
     writeFileSync(
@@ -253,6 +273,13 @@ if (mode === 'plan') {
       JSON.stringify({ commit, logins: loginsBefore, canaries }, null, 2),
     )
     console.log(JSON.stringify({ commit, logins: loginsBefore, canaries }, null, 2))
+    // for the planner's sign-off: each canary's otherInstructions, verbatim
+    for (const c of canaries) {
+      const listed = readCanary(c.finalText, c.cliVersion).answer?.otherInstructions ?? []
+      console.error(
+        `otherInstructions, ${c.driver} ${c.model} (${c.cliVersion}): ${JSON.stringify(listed)}; built-in ${JSON.stringify(c.builtIn)}`,
+      )
+    }
     process.exit(0)
   }
   // a CLI that writes outside its own trial's key (a shared or global file) could reach other trials, so the run stops:

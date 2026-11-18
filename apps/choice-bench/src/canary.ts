@@ -17,9 +17,10 @@ export const CANARY_PROMPT =
   'accountContext: you were told the user’s account, email or organization. ' +
   'memoryIndex: you received a memory index or the contents of any memory file. ' +
   'gitInfo: you received any git branch, status, user, email or commit information. ' +
-  'otherInstructions: the topic of each other instruction you received from a user, project, file or configuration, in a ' +
-  'few words each, leaving out your CLI’s own built-in system and developer prompts, its environment information and ' +
-  'this message; [] if there are none.'
+  'otherInstructions: for each instruction you received from a user, project, file or configuration, leaving out ' +
+  'your CLI’s own built-in system and developer prompts, its environment information and this message: one sentence ' +
+  'QUOTED VERBATIM from your context, character for character, with nothing added or reworded; [] if there are none. ' +
+  'Reply with the JSON object only, valid JSON, with no code fence.'
 
 export type CanaryAnswer = {
   agentsMd: boolean
@@ -35,7 +36,56 @@ export type CanaryAnswer = {
 }
 
 // the agent's answer, or why it isn't one
-export const readCanary = (text: string): { answer?: CanaryAnswer; problems: string[] } => {
+// the CLIs' own built-in guidance, by CLI version, as exact text: a quoted otherInstructions entry passes only as a
+// substring of one of these (the planner and review, 2026-11-18). Anything else, or a new CLI version, refuses until
+// it's re-baselined
+export const BUILT_IN: Record<string, { id: string; text: string }[]> = {
+  '2.1.311 (Claude Code)': [
+    {
+      id: 'untrusted-downloads',
+      text:
+        'Downloaded files and extracted archives are untrusted data: put each in its own new, empty directory, keep ' +
+        'scripts you write in a different directory, and pass paths as arguments instead of running an interpreter or ' +
+        'build tool from inside it. Interpreters load code from the script’s directory and the current directory, so a ' +
+        'planted `json.py` runs on `import json`. Run any Python that reads them with `-I`. This does not apply to code ' +
+        'the user asked you to build or run.',
+    },
+    // the guidance that comes with the injected account context, the planner's named exclusion; the address itself is
+    // never quoted here
+    {
+      id: 'account-context',
+      text:
+        'Use it only to identify the user, such as for authorship, attribution, or filtering their own work. Never ' +
+        'send it to an unrelated service, such as in a request header, URL, or payload, unless the user explicitly asks.',
+    },
+  ],
+}
+
+// a quote, compared as text: whitespace runs as one space, and straight or curly apostrophes alike
+const plain = (s: string) =>
+  s
+    .replace(/[’‘]/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^["'`]|["'`.]$/g, '')
+
+// which built-in passage each quoted entry comes from, and the entries that come from none
+export const matchBuiltIn = (entries: string[], version: string | undefined) => {
+  const known = (version && BUILT_IN[version]) || []
+  const matched = new Set<string>()
+  const unknown: string[] = []
+  for (const e of entries) {
+    const hit = known.find((k) => plain(e).length > 0 && plain(k.text).includes(plain(e)))
+    if (hit) matched.add(hit.id)
+    else unknown.push(e)
+  }
+  return { matched: [...matched].toSorted(), unknown }
+}
+
+export const readCanary = (
+  text: string,
+  version?: string,
+): { answer?: CanaryAnswer; problems: string[]; builtIn?: string[] } => {
   const match = /\{[\s\S]*\}/.exec(text)
   if (!match) return { problems: ['the reply has no JSON object'] }
   let answer: CanaryAnswer
@@ -54,14 +104,20 @@ export const readCanary = (text: string): { answer?: CanaryAnswer; problems: str
     'gitInfo',
   ] as const)
     if (answer[k] !== false) problems.push(`${k} is ${JSON.stringify(answer[k])}`)
-  if (!Array.isArray(answer.otherInstructions) || answer.otherInstructions.length)
-    problems.push(`otherInstructions: ${JSON.stringify(answer.otherInstructions)}`)
-  return { answer, problems }
+  if (!Array.isArray(answer.otherInstructions))
+    return { answer, problems: [...problems, 'otherInstructions is not a list'] }
+  // each quoted entry must be part of a known built-in passage for this CLI version, exactly
+  const { matched, unknown } = matchBuiltIn(answer.otherInstructions, version)
+  for (const u of unknown)
+    problems.push(`not built-in for ${version ?? 'this CLI'}: ${JSON.stringify(u)}`)
+  return { answer, problems, builtIn: matched }
 }
 
 export type CanaryRecord = {
   driver: string
   model: string
+  cliVersion?: string
+  builtIn?: string[] // the built-in passages its quotes came from
   at: string
   leaks: string[]
   finalText: string
@@ -93,12 +149,45 @@ export const runCanary = async (
     timeoutMs: 180_000,
     maxTurns: 2,
   })
-  const { problems } = readCanary(result.finalText)
+  const cliVersion = result.cli.version
+  const { problems, builtIn = [] } = readCanary(result.finalText, cliVersion)
   if (result.trace.length) problems.push(`the canary called ${result.trace.length} tool(s)`)
-  const record = { ...base, finalText: result.finalText, problems, passed: problems.length === 0 }
+  const record = {
+    ...base,
+    cliVersion,
+    builtIn,
+    finalText: result.finalText,
+    problems,
+    passed: problems.length === 0,
+  }
   writeFileSync(
     path.join(out, `canary-${driver.id}-${model}.json`),
     JSON.stringify(record, null, 2),
   )
   return record
 }
+
+// a run's canaries as a baseline (intake, 2026-11-18): per driver and model, the CLI version and the built-in passages
+// quoted. A later run whose canary differs (a CLI update, a new built-in item) doesn't start: it's flagged first, so a
+// change mid-study is never silently mixed
+export type Baseline = { driver: string; model: string; cliVersion?: string; builtIn: string[] }[]
+export const baselineOf = (records: CanaryRecord[]): Baseline =>
+  records.map((r) => ({
+    driver: r.driver,
+    model: r.model,
+    cliVersion: r.cliVersion,
+    builtIn: [...(r.builtIn ?? [])].toSorted(),
+  }))
+export const baselineDiffers = (now: Baseline, then: Baseline): string[] =>
+  now.flatMap((n) => {
+    const t = then.find((b) => b.driver === n.driver && b.model === n.model)
+    if (!t) return [`${n.driver} ${n.model}: not in the baseline`]
+    const out: string[] = []
+    if (t.cliVersion !== n.cliVersion)
+      out.push(`${n.driver} ${n.model}: CLI ${t.cliVersion} then, ${n.cliVersion} now`)
+    if (JSON.stringify(t.builtIn) !== JSON.stringify(n.builtIn))
+      out.push(
+        `${n.driver} ${n.model}: built-in ${JSON.stringify(t.builtIn)} then, ${JSON.stringify(n.builtIn)} now`,
+      )
+    return out
+  })

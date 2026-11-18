@@ -148,10 +148,14 @@ test('the canary passes only nothing beyond the message, with account context al
     'gitInfo',
   ])
     expect(readCanary(JSON.stringify({ ...answer, [k]: true })).problems).toEqual([`${k} is true`])
+  // an extra instruction that isn't a known built-in passage refuses
   expect(
     readCanary(JSON.stringify({ ...answer, otherInstructions: ['GitButler version control'] }))
       .problems,
   ).toHaveLength(1)
+  expect(
+    readCanary(JSON.stringify({ ...answer, otherInstructions: 'GitButler' })).problems,
+  ).toEqual(['otherInstructions is not a list'])
   expect(readCanary('I received nothing.').problems).toEqual(['the reply has no JSON object'])
 })
 
@@ -222,4 +226,58 @@ test('login status reads both streams, and Not logged in never counts', async ()
     readLogins({ code: 0, stdout: JSON.stringify({ loggedIn: false }), stderr: '' }, ok).claude,
   ).toBe(false)
   expect(readLogins({ code: 0, stdout: 'not json', stderr: '' }, ok).claude).toBe(false)
+})
+
+test('an extra instruction passes only as a verbatim quote of a known built-in passage, for that CLI version', async () => {
+  const { matchBuiltIn, readCanary: read } = await import('../src/canary.ts')
+  const v = '2.1.311 (Claude Code)'
+  const quote = 'Run any Python that reads them with `-I`.'
+  expect(matchBuiltIn([quote], v)).toEqual({ matched: ['untrusted-downloads'], unknown: [] })
+  // curly or straight apostrophes, and spacing, alike
+  expect(matchBuiltIn(["Interpreters load code from the script's directory"], v).unknown).toEqual(
+    [],
+  )
+  // a paraphrase isn't a quote, and refuses
+  const paraphrase = 'Downloaded files are untrusted: run Python with -I'
+  expect(matchBuiltIn([paraphrase], v).unknown).toEqual([paraphrase])
+  // anything project- or rig-specific refuses
+  expect(matchBuiltIn(['Use GitButler for version control.'], v).unknown).toHaveLength(1)
+  // and a new CLI version knows no built-in text until it's re-baselined
+  expect(matchBuiltIn([quote], '2.2.0 (Claude Code)').unknown).toEqual([quote])
+  const booleans = {
+    agentsMd: false,
+    claudeMd: false,
+    userInstructions: false,
+    memoryIndex: false,
+    memoryInstructions: false,
+    gitInfo: false,
+    accountContext: true,
+  }
+  expect(read(JSON.stringify({ ...booleans, otherInstructions: [quote] }), v)).toMatchObject({
+    problems: [],
+    builtIn: ['untrusted-downloads'],
+  })
+  expect(
+    read(JSON.stringify({ ...booleans, otherInstructions: [paraphrase] }), v).problems,
+  ).toHaveLength(1)
+})
+
+test('a canary that differs from its baseline, in CLI version or built-in passages, is reported', async () => {
+  const { baselineDiffers } = await import('../src/canary.ts')
+  const then = [
+    {
+      driver: 'claude-cli',
+      model: 'claude-haiku-5-5',
+      cliVersion: '2.1.311 (Claude Code)',
+      builtIn: ['untrusted-downloads'],
+    },
+  ]
+  expect(baselineDiffers(then, then)).toEqual([])
+  expect(baselineDiffers([{ ...then[0]!, cliVersion: '2.2.0 (Claude Code)' }], then)).toHaveLength(
+    1,
+  )
+  expect(baselineDiffers([{ ...then[0]!, builtIn: [] }], then)).toHaveLength(1)
+  expect(baselineDiffers([{ ...then[0]!, model: 'claude-sonnet-5-5' }], then)).toEqual([
+    'claude-cli claude-sonnet-5-5: not in the baseline',
+  ])
 })
