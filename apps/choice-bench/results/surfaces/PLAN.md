@@ -1,6 +1,6 @@
 # M7f: the six-surface comparison, the plan
 
-**Status:** DRAFT, final form pending the export's commit (design, 2026-11-18). It's updated to intake's rulings (09:20Z, 09:26Z and 14:24Z) and the planner's (14:10Z and 14:22Z). Nothing here has run. This plan, the analysis code and the preflight are committed before any trial. Its method is RFC 0003, as amended, with §12's surfaces and §16's lesson for condition construction.
+**Status:** FINAL (design, 2026-11-18), fixed before any trial. It takes intake's rulings (09:20Z, 09:26Z, 14:24Z, 16:28Z and 16:33Z), the planner's (14:10Z to 17:13Z) and the agreements with backend through 16:53Z. Nothing here has run. Its method is RFC 0003, as amended, with §12's surfaces and §16's lesson for condition construction. The export it runs on is pinned at a commit containing this text, and a later commit names it.
 
 ## 1. The question
 
@@ -21,6 +21,8 @@ Everything else is byte-identical across the six, and the preflight refuses a ru
 | models, CLI, caps and isolation | RFC 0003 §5 and §8's pins, and the context canary, as in M5                                                                                                                                                                                                                                                           |
 | the simulated user              | approves on every surface, as §12 says: the four tools' approval token, v0's `confirm: true` resend, the browser's confirm click (§3's approval note)                                                                                                                                                                 |
 | the outcome                     | one rule per surface, from the trace and the session's `lab.endState`, cross-checked against `project.read` (§5), labelled by `tasks.ts`'s labeller                                                                                                                                                                   |
+
+**The same start, on every surface** (intake, 16:28Z): every cell's agent starts from the user's project. On `full` and `progressive`, it's the in-process connection's start. On MCP and WebMCP, the host gives the connection its start: the trial's project on MCP, and the page's own project on WebMCP (RFC 0004 §4, §5). `v0` and `browser` have no projection, so there's no start to set: every page they open shows the session's own account, and the preflight records them as `pages`, without a start check. A start is a view parameter only: it grants nothing, and every call is still authorized as the caller's. The preflight checks each surface's first view is from that start, beside the offer-set check, and refuses a surface whose first view is site-wide.
 
 **Information parity, per surface.** Surfaces are expected to differ in what they show first, so that's measured, not refused. The deciding facts must still be _reachable_ on every surface: every plan's price and `bandwidthGb`, the add-ons' prices, and the bundle's price.
 
@@ -179,7 +181,7 @@ Everything else is byte-identical across the six, and the preflight refuses a ru
 0. **The gate on backend's fixes** (intake, 2026-11-18): backend's M5 boundary-review fixes are fixed, review-accepted, and accepted by intake (12:44Z): #7 in 3df5840c, #8 in 006e2902 with 26ec61c5 (the structured-error classing), #9 in 02889a28, and #15 in 49f7bf8f. That holds before any trial, the pilot included.
 
 1. **Committed first:** this plan in final form, the analysis code (`analyze.py`, beside this plan, with its selftest), and the preflight. The pilot's analysis fixes the fallback and browsing rules, and the confirmatory analysis refuses to run without them. The preflight proves the conditions differ ONLY in the surface (§2): byte-identity outside each surface's tool layer, plus the parity walk.
-2. **Agreed with backend (09:21Z, and 14:10Z for WebMCP):** the browser driver, the v0 tools, the parity oracle, the preflight's checks, and the WebMCP driver (§3). Backend builds the harness on row 47742e6d, in 8 reviewed steps, and the export.
+2. **Agreed with backend (09:21Z; 14:10Z for WebMCP; 15:03Z and 15:18Z for the browser's matcher; 16:53Z for the oracle's prices):** the browser driver, the v0 tools, the parity oracle, the preflight's checks, and the WebMCP driver (§3). Backend builds the harness on row 47742e6d, in 8 reviewed steps, and the export.
 3. **The new export,** with §6.6 built (M7a), named by its commit. Backend pins it at the harness's step 8, after every harness step is accepted.
 4. **The review-and-confirm page** (§3), built and tested (accepted), on the export the run uses.
 5. **Every results README,** the pilot's and the confirmatory run's, states the approval simulation in this one sentence, which the analysis code's README writer includes, with a test: "In the benchmark, token-passing stands in for the person's approval, as v0's confirm resend and the browser's click do; the product toolset never gives a model a token (RFC 0004 §4, §5)."
