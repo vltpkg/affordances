@@ -16,3 +16,10 @@ coverage
 .env
 .env.*
 !.env.example
+
+# test scratch copies, removed after each run; a killed run can leave one
+**/test/.fixture-*/
+**/test/.slice-*/
+**/test/.extract-*/
+**/test/.modules-*/
+**/test/.probe-*/
