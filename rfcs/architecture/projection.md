@@ -33,7 +33,8 @@ An offer is one capability on one resource instance, with its references bound w
 - **Requirements:** `authorization` (`met`, `unmet`, `unknown` or `none-declared`) and `confirmation`, the summary template
   with what's known filled in. Confirmation doesn't change availability.
 - **`consequential` is derived, never declared:** as built (`project.ts`), an action is consequential when its effects
-  are unknown, or any of them isn't a reversible state change. A query is never consequential.
+  are unknown, or any effect is `financial`, `external` or `access`, or is an irreversible state change. A compensable
+  or unspecified state change isn't, and a query never is.
 - **Relevance has a level and its basis, never a number.** The one method built is `basic`: the start resource, relations,
   and words of the task. Without a task it's `undetermined`. It never reads claims.
 - **Claims arrive with their source and basis,** listed on the offers they apply to. A claim never becomes a field of the
