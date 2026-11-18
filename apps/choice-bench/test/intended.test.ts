@@ -37,14 +37,15 @@ const STEPS: Record<string, Step> = {
       [
         `+${a}`,
         {
-          offer: (_: unknown, p: string) => `hosting.addOn.add@hosting.project:${p}`,
+          // an add-on's offer targets the add-on, with the project bound (3333ce84)
+          offer: (_: unknown, p: string) => `hosting.addOn.add@hosting.addOn:${a}?project=${p}`,
           input: { addOn: a },
         },
       ],
       [
         `-${a}`,
         {
-          offer: (_: unknown, p: string) => `hosting.addOn.remove@hosting.project:${p}`,
+          offer: (_: unknown, p: string) => `hosting.addOn.remove@hosting.addOn:${a}?project=${p}`,
           input: { addOn: a },
         },
       ],
@@ -118,6 +119,12 @@ test(
     )
     expect(differ).toEqual([])
     expect(replays.every((r) => r.skipped.length === 0)).toBe(true)
+    // and the paths do something: each add-on, added alone, is on the project after it. A step that names a stale
+    // offer id is refused on both sides alike, which would leave the equality vacuous
+    for (const a of ['priority-support', 'extra-bandwidth', 'daily-backups']) {
+      const run = runs.find((r) => r.path.length === 1 && r.path[0] === `+${a}`)!
+      expect(run.real.addOns).toContain(a)
+    }
   },
 )
 
