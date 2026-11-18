@@ -1,7 +1,8 @@
 import { createAffordances, createHandler } from '@affordances/core'
 import { NextRequest } from 'next/server'
 import { beforeEach, expect, test } from 'vitest'
-import { credentialOf } from '../src/lib/principal.ts'
+import { credentialOf } from '@affordances/next/projection'
+import { SESSION_COOKIE } from '../src/lib/cookie.ts'
 import { serveExecute, serveExpand, serveInspect, serveView } from '../src/lib/serve.ts'
 import * as store from '../src/lib/store.ts'
 import { accountFor } from '../src/lib/view.ts'
@@ -107,17 +108,19 @@ test("finding 1: a credential that looks like someone's account id is just an un
 
 // the credential a request with these headers carries
 const at = (headers: Record<string, string>) =>
-  credentialOf(new Request('https://hosting.test/', { headers }))
+  credentialOf(new Request('https://hosting.test/', { headers }), SESSION_COOKIE)
 
 test('finding 2: one parser says which credential authenticates a call', () => {
   expect(at({ authorization: 'Bearer s_1', cookie: 'sid=s_2' })).toEqual({
-    session: 's_1',
+    token: 's_1',
     via: 'bearer',
   })
   // a bearer header that names no token authenticates nothing; the cookie does
   for (const authorization of ['Bearer ', 'Bearer a b', 'Basic s_1'])
-    expect(at({ authorization, cookie: 'sid=s_2' })).toEqual({ session: 's_2', via: 'cookie' })
-  expect(at({})).toEqual({ session: null, via: null })
+    expect(at({ authorization, cookie: 'sid=s_2' })).toEqual({ token: 's_2', via: 'cookie' })
+  expect(at({})).toEqual({ token: null, via: null })
+  // another cookie of the same prefix isn't the session
+  expect(at({ cookie: 'sidx=s_3; other=1' })).toEqual({ token: null, via: null })
 })
 
 test('finding 3: the proxy never gives an agent-facing request a session; pages still get one', async () => {

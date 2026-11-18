@@ -168,13 +168,37 @@ const ownOrigin = (request: Request) => {
   }
 }
 
+// the token a bearer header names, when it names exactly one: `Bearer `, `Bearer a b` and other schemes name none
+const bearerOf = (request: Request) =>
+  request.headers.get('authorization')?.match(/^Bearer (\S+)$/)?.[1]
+
+/**
+ * @experimental RFC 0004 §2.3's one credential parser, for an app's `principal`: the token a bearer header names, else
+ * the value of the app's session cookie. A bearer header that names no single token authenticates nothing, so the
+ * cookie does, and the cookie's rules (the Origin check) apply.
+ */
+export const credentialOf = (
+  request: Request,
+  cookie: string,
+): { token: string; via: 'bearer' | 'cookie' } | { token: null; via: null } => {
+  const bearer = bearerOf(request)
+  if (bearer) return { token: bearer, via: 'bearer' }
+  const value = request.headers
+    .get('cookie')
+    ?.split(';')
+    .map((c) => c.trim())
+    .find((c) => c.startsWith(`${cookie}=`))
+    ?.slice(cookie.length + 1)
+  return value ? { token: value, via: 'cookie' } : { token: null, via: null }
+}
+
 // RFC 0004 §2.3's one credential parser: a bearer header naming one token, else the cookie. A POST the cookie
 // authenticates must carry the site's Origin, compared exactly, or one the app allows; a bearer call is exempt. A
 // missing Origin, or 'null', is refused. A cross-site page can forge neither Origin nor Host, so this is the standard
 // CSRF check. A DNS-rebound name matches itself, but the browser sends it no cookie scoped to the real host, so cookie
 // authentication isn't exposed; and a browser never sends a bearer on its own
 const crossSite = (request: Request, allowed: ReadonlySet<string>): Response | undefined => {
-  if (/^Bearer \S+$/.test(request.headers.get('authorization') ?? '')) return
+  if (bearerOf(request)) return
   if (!request.headers.get('cookie')) return
   const origin = request.headers.get('origin')
   if (origin && origin !== 'null' && (origin === ownOrigin(request) || allowed.has(origin))) return
