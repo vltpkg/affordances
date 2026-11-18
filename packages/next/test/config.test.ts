@@ -1,5 +1,5 @@
 import type { NextConfig } from 'next'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { expect, test, vi } from 'vitest'
@@ -163,3 +163,119 @@ test('a build with no namespace breaks nothing, writes no manifest, and prints t
     warn.mockRestore()
   }
 })
+
+// RFC 0005 §4, wired: withAffordances compiles the app's capabilities once per root, writes .affordances/, prints each
+// diagnostic once, and fails next build on a failed compile. A fresh module each time, since the once-per-root record
+// is the module's own
+const fresh = async () => {
+  vi.resetModules()
+  return (await import('../src/config.ts')).withAffordances
+}
+const quiet = () => ({
+  warn: vi.spyOn(console, 'warn').mockImplementation(() => {}),
+  error: vi.spyOn(console, 'error').mockImplementation(() => {}),
+})
+const CAPABILITIES = `import { defineCapability } from '@affordances/ir'
+export const ping = defineCapability({ id: 'acme.ping', kind: 'query', description: 'Ping', authorization: { principal: 'any' } })
+`
+
+test('a v0 app, with no capabilities and no namespace, compiles nothing and writes no manifest', async () => {
+  const configure = await fresh()
+  const root = app({ 'app/actions.ts': "'use server'\nexport {}\n" })
+  const spies = quiet()
+  try {
+    expect(() => configure({} as NextConfig, { root })).not.toThrow()
+    expect(existsSync(path.join(root, '.affordances', 'manifest.json'))).toBe(false)
+    expect(spies.error).not.toHaveBeenCalled()
+  } finally {
+    vi.restoreAllMocks()
+  }
+})
+
+test("outside dev, a compile that fails fails next build, after printing what's wrong", async () => {
+  const configure = await fresh()
+  // outside the repo, so @affordances/ir, next's optional peer, doesn't resolve: E_IR_MISSING
+  const root = app({ 'app/capabilities.ts': CAPABILITIES })
+  const spies = quiet()
+  try {
+    expect(() =>
+      configure({} as NextConfig, { root, namespace: 'https://acme.example/capabilities' }),
+    ).toThrow(/didn't compile/)
+    expect(spies.error.mock.calls.map((c) => String(c[0])).join('\n')).toContain('E_IR_MISSING')
+  } finally {
+    vi.restoreAllMocks()
+  }
+})
+
+test('in dev, the same failure is logged, not thrown', async () => {
+  const configure = await fresh()
+  const root = app({ 'app/capabilities.ts': CAPABILITIES })
+  const spies = quiet()
+  vi.stubEnv('NODE_ENV', 'development')
+  try {
+    expect(() =>
+      configure({} as NextConfig, { root, namespace: 'https://acme.example/capabilities' }),
+    ).not.toThrow()
+    expect(spies.error.mock.calls.map((c) => String(c[0])).join('\n')).toContain('E_IR_MISSING')
+  } finally {
+    vi.unstubAllEnvs()
+    vi.restoreAllMocks()
+  }
+})
+
+test('an app with capabilities and a namespace gets its manifest.json, compiled once per process', async () => {
+  const configure = await fresh()
+  // inside the repo, where @affordances/ir resolves, as it would from an app that installed it
+  const root = mkdtempSync(path.join(import.meta.dirname, '.wire-'))
+  try {
+    mkdirSync(path.join(root, 'app'), { recursive: true })
+    writeFileSync(path.join(root, 'app', 'capabilities.ts'), CAPABILITIES)
+    const spies = quiet()
+    const options = {
+      root,
+      namespace: 'https://acme.example/capabilities',
+      owner: { id: 'acme', name: 'Acme' },
+    }
+    configure({} as NextConfig, options)
+    const manifest = JSON.parse(
+      readFileSync(path.join(root, '.affordances', 'manifest.json'), 'utf8'),
+    ) as { namespace: string; capabilities: { id: string }[] }
+    expect(manifest.namespace).toBe('https://acme.example/capabilities')
+    expect(manifest.capabilities.map((c) => c.id)).toContain('acme.ping')
+    expect(spies.error).not.toHaveBeenCalled()
+    // next loads its config again in the same build: no second compile, so nothing is rewritten
+    rmSync(path.join(root, '.affordances', 'manifest.json'))
+    configure({} as NextConfig, options)
+    expect(existsSync(path.join(root, '.affordances', 'manifest.json'))).toBe(false)
+  } finally {
+    vi.restoreAllMocks()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 60_000)
+
+test("a namespace from the module's own defineManifest is a namespace: no W_NO_NAMESPACE, and the manifest is written", async () => {
+  const configure = await fresh()
+  // as hosting-lab does: no namespace in withAffordances' options, one in its capabilities.ts's defineManifest
+  const root = mkdtempSync(path.join(import.meta.dirname, '.wire-'))
+  try {
+    mkdirSync(path.join(root, 'app'), { recursive: true })
+    writeFileSync(
+      path.join(root, 'app', 'capabilities.ts'),
+      `import { defineCapability, defineManifest } from '@affordances/ir'
+export const ping = defineCapability({ id: 'acme.ping', kind: 'query', description: 'Ping', authorization: { principal: 'any' } })
+export const manifest = defineManifest({ namespace: 'https://acme.example/capabilities', owner: { id: 'acme', name: 'Acme' }, resources: [], capabilities: [ping] })
+`,
+    )
+    const spies = quiet()
+    configure({} as NextConfig, { root })
+    const printed = [...spies.warn.mock.calls, ...spies.error.mock.calls].map((c) => String(c[0]))
+    expect(printed.filter((line) => line.includes('W_NO_NAMESPACE'))).toEqual([])
+    const manifest = JSON.parse(
+      readFileSync(path.join(root, '.affordances', 'manifest.json'), 'utf8'),
+    ) as { namespace: string }
+    expect(manifest.namespace).toBe('https://acme.example/capabilities')
+  } finally {
+    vi.restoreAllMocks()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 60_000)

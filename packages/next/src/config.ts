@@ -3,8 +3,9 @@ import path from 'node:path'
 import type { NextConfig } from 'next'
 import { MEDIA_TYPE, WELL_KNOWN_PATH } from '@affordances/protocol'
 import { findAppDir, generate, ID, segment } from './codegen.ts'
+import { compileSync, writeCompiled } from './compile.ts'
 import { API_PATH } from './constants.ts'
-import { format, type Diagnostic } from './diagnostics.ts'
+import { fails, format, type Diagnostic } from './diagnostics.ts'
 
 export { API_PATH }
 
@@ -164,8 +165,21 @@ export const noNamespace = (root: string): Diagnostic => {
   }
 }
 
-// once per process: next loads its config more than once in one build
-let reported = false
+// once per process and root: next loads its config more than once in one build
+const compiled = new Set<string>()
+
+// RFC 0005 §4: compile the app's capabilities, write .affordances/, and print each diagnostic once. compileSync never
+// reports W_NO_NAMESPACE, which withAffordances prints itself, with the line to paste
+const compile = (root: string, identity: Identity) => {
+  const result = compileSync(root, identity)
+  writeCompiled(root, result)
+  for (const d of result.diagnostics) {
+    const line = `[affordances] ${format(d, identity.strict)}`
+    if (fails(d.code, identity.strict)) console.error(line)
+    else console.warn(line)
+  }
+  return result
+}
 
 // the slice of NextConfig withAffordances touches; generic so it accepts whichever copy of next the app has
 // webpack is typed loosely: its context drags in all of NextConfig, which two copies of next don't agree on
@@ -181,26 +195,39 @@ export const withAffordances = <C extends Config>(
   const root = options.root ?? process.cwd()
   // a bad namespace or owner fails here, as the config loads, not later in the capability compiler
   const identity = resolveIdentity(options)
-  if (identity.namespace === undefined && !reported) {
-    reported = true
-    console.warn(`[affordances] ${format(noNamespace(root))}`)
-  }
   const entries = generate(root, options)
+  const dev = process.env.NODE_ENV === 'development'
+  // once per root: next loads its config more than once in one build, and each compile runs the evaluator twice
+  if (!compiled.has(root)) {
+    compiled.add(root)
+    const result = compile(root, identity)
+    // no manifest, and nothing failed: no namespace anywhere, in the config or a defineManifest export, which carries
+    // its own (RFC 0005 §1). Then the build names the one line that turns it on
+    if (result.canonical === undefined && !result.failed)
+      console.warn(`[affordances] ${format(noNamespace(root))}`)
+    // a failed compile fails next build; in dev it's logged, and the watcher recompiles on the next change
+    if (result.failed && !dev)
+      throw new Error(
+        "[affordances] the capability manifest didn't compile; the diagnostics above say where",
+      )
 
-  // dev: regenerate when an actions or state file changes; turbopack picks up the new manifest
-  if (process.env.NODE_ENV === 'development') {
-    let timer: ReturnType<typeof setTimeout> | undefined
-    watch(findAppDir(root), { recursive: true }, (_, file) => {
-      if (!file || !/(^|\/)(actions|state)\.[jt]sx?$/.test(file)) return
-      clearTimeout(timer)
-      timer = setTimeout(() => {
-        try {
-          generate(root, options)
-        } catch (error) {
-          console.error(`[affordances] ${(error as Error).message}`)
-        }
-      }, 50)
-    }).unref()
+    // dev: regenerate and recompile when an actions, state or capabilities file changes; turbopack picks up the new
+    // output
+    if (dev) {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      watch(findAppDir(root), { recursive: true }, (_, file) => {
+        if (!file || !/(^|\/)(actions|state|capabilities)\.[jt]sx?$/.test(file)) return
+        clearTimeout(timer)
+        timer = setTimeout(() => {
+          try {
+            generate(root, options)
+            compile(root, identity)
+          } catch (error) {
+            console.error(`[affordances] ${(error as Error).message}`)
+          }
+        }, 50)
+      }).unref()
+    }
   }
 
   // the route handler imports @affordances/next/manifest; point it at this app's generated one
