@@ -41,7 +41,8 @@ specification is [RFC 0004 §5](../0004-protocol-evolution.md#5-webmcp), as amen
   `registerTool` call. Aborting it unregisters the tools.
 - **Why a signal:** Chromium 156's `modelContext` has no `unregisterTool`. A second `registerTool` under a live name
   rejects with `InvalidStateError: Duplicate tool name` and leaves the first. Aborting the signal a tool was registered
-  with removes it, and the name can be registered again straight away. Each of these was measured in flagged Chromium.
+  with removes it, and the name can be registered again straight away. `rfcs/research/0004-webmcp/registration.mjs`
+  measures each in Chromium 156.0.8078.4, and `registration.json` records its output.
 - **In hosting-lab:** the `WebMcp` component (`apps/hosting-lab/src/components/webmcp.tsx`) registers in an effect and
   aborts in its cleanup, with the start's type and key as the effect's dependencies. That covers React's doubled effect
   in development, and a start that changes while the layout stays mounted.
@@ -60,7 +61,7 @@ agent.
   Confirm (`apps/hosting-lab/src/lib/review.ts`).
 - **In-tool consent, only where the browser offers it:** `confirmFor` feature-detects `requestUserInteraction` on the
   tool's client. With it, the tool asks the person, through the page's `ask`, to approve the summary, and resends with
-  the token only on an explicit accept. The token never leaves the toolset. No current browser build offers it, so this
+  the token only on an explicit accept. The token never leaves the toolset. Chromium 156.0.8078.4 doesn't offer it (`rfcs/research/0004-webmcp/SPIKE.md`), so this
   path is tested against a fake client only (`packages/webmcp/test/webmcp.test.ts`).
 - **The guarantee, exactly:** no tool channel ever yields an approval. Tests sweep every tool result for the runtime's
   token pattern, `TOKEN`.

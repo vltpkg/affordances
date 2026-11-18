@@ -38,7 +38,7 @@ exactly the columns a view keeps, and adds nothing to the wire.
 
 - **A test holds it there:** under a facts limit of 0, for every set a view shows, on the base manifest and on T6's
   claim edit, the marks equal the columns the comparison keeps. Under `progressive`, the marks cite nothing.
-- **Until code review item #9,** the inspector re-implemented the rule, and drifted from it. It counted `target.x` text
+- **Before it called the runtime,** the inspector re-implemented the rule, and drifted from it. It counted `target.x` text
   inside the input schema, which the runtime never reads, and every claim on the capability, whatever the policy shows.
 
 ## Who can reach it

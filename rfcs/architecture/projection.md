@@ -32,8 +32,8 @@ An offer is one capability on one resource instance, with its references bound w
   authorization is `unknown` because of `authorization`, and execution refuses it.
 - **Requirements:** `authorization` (`met`, `unmet`, `unknown` or `none-declared`) and `confirmation`, the summary template
   with what's known filled in. Confirmation doesn't change availability.
-- **`consequential` is derived, never declared:** true when any effect is `financial`, `external`, `access` or
-  `irreversible`, or when the effects are unknown.
+- **`consequential` is derived, never declared:** as built (`project.ts`), an action is consequential when its effects
+  are unknown, or any of them isn't a reversible state change. A query is never consequential.
 - **Relevance has a level and its basis, never a number.** The one method built is `basic`: the start resource, relations,
   and words of the task. Without a task it's `undetermined`. It never reads claims.
 - **Claims arrive with their source and basis,** listed on the offers they apply to. A claim never becomes a field of the
@@ -63,8 +63,8 @@ The built-in policies (`views.ts`, `BUILT_IN`):
 
 - **A neighbourhood is reached through capabilities:** the capabilities of the offers on the start, then, for each step,
   their neighbours by the manifest's relations and the derived edges. Every offer of a reached capability is in scope.
-- **A view says what it left out:** `omitted` counts every offer, choice set and claim not shown, and lists the
-  expansions that would show them.
+- **A view says what it left out:** `omitted` counts every offer and choice set not shown, and the claims a
+  claims-omitting policy stripped from the offers it does show. It lists the expansions that would show the rest.
 
 ## The disclosure invariant (§6.3)
 
@@ -89,7 +89,8 @@ For every view, under every policy, the runtime guarantees:
 
 ## Expansion and inspection (§6.5)
 
-- **Expansions,** each from an offer or a set: `alternatives`, `members`, `relations` (the offers of the offer's
+- **Expansions,** from an offer, a set, or a resource (`contains`, and the first view's own `relations` entry, which
+  can come from the start): `alternatives`, `members`, `relations` (the offers of the offer's
   capability's neighbours), `contains`, `enables`, `comparison` (a summarized set's members, whole) and `more` (the next
   page of a cut sequence).
 - **A `more` cursor describes itself:** its origin and every cut since, under a projection revision, as base64url of its
@@ -125,8 +126,8 @@ them, side by side. It was added after M5's run met rules 1 to 5 and still hid t
 - **The kept group's "input":** RFC 0002 §6.6 said the kept columns included what the capability's input reads. An IR
   input is a plain JSON Schema and can't read a target attribute, so the runtime never counted it, and 2ae07b3f
   corrected the RFC to match `keptColumns` (dd3a28ea).
-- **The inspector's marks** re-implemented the kept-column rule and drifted from it, until code review item #9
-  (78b2651f) made them call `keptColumns` ([inspector.md](./inspector.md)).
+- **The inspector's marks** re-implemented the kept-column rule and drifted from it. They now call `keptColumns`, so
+  they can't drift again (78b2651f, [inspector.md](./inspector.md)).
 
 ## Related
 

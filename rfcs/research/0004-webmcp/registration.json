@@ -1,0 +1,21 @@
+{
+  "modelContext": true,
+  "methods": [
+    "executeTool",
+    "getTools",
+    "ontoolactivated",
+    "ontoolcancel",
+    "ontoolchange",
+    "registerTool"
+  ],
+  "unregisterTool": "undefined",
+  "first": "resolved",
+  "duplicate": "rejected: InvalidStateError: Duplicate tool name",
+  "afterDuplicate": ["first"],
+  "withSignal": "resolved",
+  "beforeAbort": ["registered"],
+  "afterAbort": [],
+  "reregisteredAfterAbort": "resolved",
+  "afterReregister": ["two"],
+  "chromium": "156.0.8078.4"
+}
