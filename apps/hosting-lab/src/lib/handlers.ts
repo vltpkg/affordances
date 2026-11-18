@@ -1,4 +1,4 @@
-import type { Handler, Principal, TokenStore } from '@affordances/runtime'
+import { HandlerRefusal, type Handler, type Principal, type TokenStore } from '@affordances/runtime'
 import { ownsDeployment, planHasRollback } from './guards.ts'
 import { accountOf, projectOf } from './resolvers.ts'
 import { messages } from './messages.ts'
@@ -18,7 +18,7 @@ const caller = (principal: Principal) => {
 type Input = Record<string, string>
 const fields = (i: unknown) => i as Input
 
-export const handlers: Record<string, Handler> = {
+const defined: Record<string, Handler> = {
   'hosting.plan.list': { run: () => store.planRows() },
   'hosting.project.read': {
     run: (_, { principal }) => {
@@ -67,6 +67,24 @@ export const handlers: Record<string, Handler> = {
     message: messages.rolledBack,
   },
 }
+
+// a call the store refuses after every check passed, such as approving the bundle the project already has, is the
+// caller's to correct: the runtime's refusal, never a failure a trial counts as a server error (code review of M8, #2).
+// The store throws before it changes anything
+const refusing =
+  (run: NonNullable<Handler['run']>): Handler['run'] =>
+  async (input, ctx) => {
+    try {
+      return await run(input, ctx)
+    } catch (error) {
+      if (error instanceof store.Refused) throw new HandlerRefusal(error.message)
+      throw error
+    }
+  }
+
+export const handlers: Record<string, Handler> = Object.fromEntries(
+  Object.entries(defined).map(([id, h]) => [id, h.run ? { ...h, run: refusing(h.run) } : h]),
+)
 
 // each approval token's nonce, so a token runs once (RFC 0002 §8.2). In memory, as the store is: one per process
 export const memoryTokens = (): TokenStore => {

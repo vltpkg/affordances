@@ -10,6 +10,7 @@ import type {
   RuntimeOptions,
   TokenStore,
 } from '../src/index.ts'
+import { HandlerRefusal } from '../src/index.ts'
 import { testRuntime } from './support/runtime.ts'
 
 const fresh = () => structuredClone(plansJson) as unknown as CapabilityManifest
@@ -97,6 +98,21 @@ const refusal = (r: ExecutionResult) => {
   if (r.status !== 'refused') throw new Error(`expected a refusal, got ${JSON.stringify(r)}`)
   return r
 }
+
+// a runtime whose cancel handler refuses with text (code review of M8, #2)
+const refusingWith = (text: string) =>
+  testRuntime({
+    manifest: fresh(),
+    resources: { 'hosting.plan': table(() => plans), 'hosting.project': table(() => projects) },
+    handlers: {
+      'hosting.plan.subscribe': { guards: { billing: () => true } },
+      'hosting.plan.cancel': {
+        run: () => {
+          throw new HandlerRefusal(text)
+        },
+      },
+    },
+  }).execute({ principal: member, offer: 'hosting.plan.cancel@hosting.plan:pro' })
 
 describe('execution runs every check, in order (§8.1)', () => {
   test('an approved call runs the handler once, with the principal, the target and the references', async () => {
@@ -296,6 +312,19 @@ describe('execution runs every check, in order (§8.1)', () => {
       status: 'failed',
       message: 'The action failed.',
     })
+  })
+
+  // code review of M8 (#2): the application's own state can still refuse a call every declared check passed
+  test("a handler's HandlerRefusal is a precondition refusal with its reason, cut at 280 characters", async () => {
+    expect(await refusingWith('Pro is already cancelled')).toMatchObject({
+      status: 'refused',
+      code: 'precondition',
+      detail: 'Pro is already cancelled',
+      revision: expect.stringMatching(/^sha256-/),
+    })
+    const long = await refusingWith('x'.repeat(300))
+    expect(long).toMatchObject({ status: 'refused', detailTruncated: true })
+    expect(long.status === 'refused' && long.detail).toHaveLength(280)
   })
 })
 

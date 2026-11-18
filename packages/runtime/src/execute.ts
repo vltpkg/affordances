@@ -56,6 +56,14 @@ export type ExecutionDeps = {
   }
 }
 
+/**
+ * @experimental What a handler throws to refuse a call the application's own state no longer allows, though every
+ * declared check passed: approving the bundle a project already has, say. It's the caller's to correct, so the result
+ * is a `precondition` refusal with this message as its detail, never a failure. Thrown before the handler changes
+ * anything: a refusal observes nothing (code review of M8, #2)
+ */
+export class HandlerRefusal extends Error {}
+
 // §8.3: a detail is at most 280 characters, and says when it was cut
 const DETAIL = 280
 const withDetail = (detail: string | undefined) =>
@@ -462,7 +470,14 @@ export const executor = (deps: ExecutionDeps) => {
       })
       if (r.c.output !== undefined && inputIssues(r.c.output, output).length)
         failure = "The action's result wasn't what it declares."
-    } catch {
+    } catch (error) {
+      if (error instanceof HandlerRefusal)
+        return {
+          status: 'refused',
+          code: 'precondition',
+          ...withDetail(error.message),
+          revision: r.revision,
+        }
       failure = 'The action failed.'
     }
     // 10. observe: what changed, against what was declared, and the view after, a partial effect included

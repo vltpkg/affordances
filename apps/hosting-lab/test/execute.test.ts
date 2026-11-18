@@ -330,3 +330,23 @@ test('input that fails the schema is 422, and a body that isn’t a call is 400'
   expect(notJson.status).toBe(400)
   expect((await execute({ input: {} }, 's_input')).status).toBe(400)
 })
+
+// code review of M8 (#2): a call the store refuses after every check passed, such as approving the bundle the
+// project already has, is the agent's to correct, so it's a refusal, never a 5xx a trial counts as a server error
+test('a call the store refuses is a 409 refusal with its reason, not a failure', async () => {
+  const { id } = store.account('s_refused').project
+  store.subscribeBundle(store.account('s_refused').id, id, 'pro-plus')
+  const call = {
+    offer: `hosting.bundle.subscribe@hosting.bundle:pro-plus?project=${id}`,
+    input: { bundle: 'pro-plus', projectId: id },
+  }
+  const first = await (await execute(call, 's_refused')).json()
+  expect(first).toMatchObject({ status: 'refused', code: 'confirmation_required' })
+  const approved = await execute({ ...call, approval: first.confirmation.approval }, 's_refused')
+  expect(approved.status).toBe(409)
+  expect(await approved.json()).toMatchObject({
+    status: 'refused',
+    code: 'precondition',
+    detail: 'Pro Plus is already the plan',
+  })
+})
