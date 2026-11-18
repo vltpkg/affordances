@@ -2,7 +2,14 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import path from 'node:path'
 import { afterAll, beforeAll, expect, test } from 'vitest'
 import { spawnSync } from 'node:child_process'
-import { childArgs, findInputs, MAX_DEPTH, sliceInput, type SliceResult } from '../src/slice.ts'
+import {
+  childArgs,
+  findInputs,
+  MAX_DEPTH,
+  planSlice,
+  sliceInput,
+  type SliceResult,
+} from '../src/slice.ts'
 
 // RFC 0005 §2.1's E3 slice, under intake's binding notes (2026-11-18): every schema file either converts or is opaque
 // with its reason, none crashes, and no app code is ever evaluated. A sentinel module records any import of it, and
@@ -336,4 +343,76 @@ test('a generated corpus of 120 schema files: each converts or is opaque exactly
 
 test('the sentinel was never imported, by any test above', () => {
   expect(existsSync(path.join(root, 'lib', 'SENTINEL-HIT'))).toBe(false)
+})
+
+// boundary review #4: a literal computed member is the method it names, and each library's own lossy methods count,
+// checked against the libraries the slice imports
+test('a computed literal member is read as its method: z.string()[‘refine’](…) is lossy, and opaque in strict mode', () => {
+  expect(summary(slice(Z, "z.string()['refine']((s) => s.length > 1)"))).toMatchObject({
+    status: 'converted',
+    lossy: ['refine'],
+  })
+  expect(
+    summary(slice(Z, "z.object({ a: z.string()['refine']((s) => s.length > 1) })", {}, true)),
+  ).toMatchObject(opaque(/strict mode: the schema uses refine/))
+})
+
+// what the plan finds lossy, before anything is evaluated: the libraries here aren't installed, and needn't be
+const plannedLossy = (preamble: string, input: string, helpers: Record<string, string> = {}) => {
+  const dir = path.join(root, 'app', `case${n++}`)
+  mkdirSync(dir)
+  for (const [name, text] of Object.entries(helpers)) writeFileSync(path.join(dir, name), text)
+  const file = path.join(dir, 'actions.ts')
+  const source = `'use server'\nimport { defineAction } from '@affordances/next'\n${preamble}\nexport const act = defineAction({ name: 'act', input: ${input}, run: async () => {} })\n`
+  writeFileSync(file, source)
+  const [found] = findInputs(file, source)
+  const plan = planSlice(file, source, found!.input as never)
+  return plan.status === 'slice' ? plan.lossy : plan
+}
+
+test.each([
+  [
+    'valibot',
+    "import * as v from 'valibot'",
+    'v.pipe(v.string(), v.rawCheck(() => {}), v.rawTransform(() => 1))',
+    ['rawCheck', 'rawTransform'],
+  ],
+  [
+    'valibot, by name',
+    "import { check, pipe, string } from 'valibot'",
+    'pipe(string(), check((s) => s.length > 1))',
+    ['check'],
+  ],
+  [
+    'arktype',
+    "import { type } from 'arktype'",
+    "type('string').narrow((s) => s.length > 1).morph((s) => s.length)",
+    ['morph', 'narrow'],
+  ],
+  [
+    'effect',
+    "import { Schema } from 'effect'",
+    'Schema.String.pipe(Schema.filter((s) => s.length > 1))',
+    ['filter'],
+  ],
+  [
+    'typebox',
+    "import { Type } from '@sinclair/typebox'",
+    'Type.Transform(Type.String()).Decode((s) => s).Encode((s) => s)',
+    ['Decode', 'Encode', 'Transform'],
+  ],
+])('%s: its lossy methods are named', (_, preamble, input, lossy) => {
+  expect(plannedLossy(preamble, input)).toEqual(lossy)
+})
+
+test('a method is lossy only for a library the slice imports: an Array’s filter beside zod isn’t Effect’s', () => {
+  expect(
+    plannedLossy(Z, "z.enum(['a', 'b', ''].filter((x) => x.length > 0) as ['a', 'b'])"),
+  ).toEqual([])
+  // and a schema refined in a module that never imports the library still counts, since the slice does
+  expect(
+    plannedLossy("import { base } from './schemas'", "base['refine']((s) => s.length > 1)", {
+      'schemas.ts': `${Z}\nexport const base = z.string()\n`,
+    }),
+  ).toEqual(['refine'])
 })

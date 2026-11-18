@@ -22,16 +22,29 @@ export const SCHEMA_LIBRARIES = [
   'effect',
   '@effect/schema',
 ]
-// what survives evaluation but not JSON Schema, so the IR's schema would accept what the app's rejects
-export const LOSSY = [
-  'refine',
-  'superRefine',
-  'transform',
-  'preprocess',
-  'custom',
-  'check',
-  'overwrite',
-]
+// what survives evaluation but not JSON Schema, so the IR's schema would accept what the app's rejects: each schema
+// library's own methods (boundary review #4), checked against the libraries the slice imports, so an Array's filter
+// isn't Effect's
+export const LOSSY: Record<string, readonly string[]> = {
+  zod: ['refine', 'superRefine', 'transform', 'preprocess', 'custom', 'check', 'overwrite'],
+  valibot: [
+    'check',
+    'checkItems',
+    'partialCheck',
+    'rawCheck',
+    'rawTransform',
+    'transform',
+    'custom',
+  ],
+  arktype: ['narrow', 'morph', 'filter'],
+  '@sinclair/typebox': ['Transform', 'Decode', 'Encode'],
+  typebox: ['Transform', 'Decode', 'Encode'],
+  effect: ['filter', 'transform', 'transformOrFail', 'declare'],
+  '@effect/schema': ['filter', 'transform', 'transformOrFail', 'declare'],
+}
+// the library an import names, by its package, so a subpath (zod/v4, effect/Schema) counts as its library
+const libraryOf = (source: string) =>
+  SCHEMA_LIBRARIES.find((lib) => source === lib || source.startsWith(`${lib}/`))
 export const MAX_DEPTH = 4
 // globals a schema may read: values, never ambient state (process, Date, Math, crypto are not here)
 const GLOBALS = new Set([
@@ -360,6 +373,10 @@ type Needed = { module: Module; locals: Set<string> }
 export const planSlice = (file: string, source: string, input: Node) => {
   const modules = new Map<string, Needed>()
   const lossy = new Set<string>()
+  // every method the slice calls, and every library it imports, so what's lossy is known once the walk is done: a
+  // schema built in one module can be refined in another that never imports the library
+  const called = new Set<string>()
+  const libraries = new Set<string>()
   const parsed = new Map<string, Module>()
   const moduleOf = (f: string, text?: string) => {
     let m = parsed.get(f)
@@ -387,14 +404,19 @@ export const planSlice = (file: string, source: string, input: Node) => {
       const name =
         callee.type === 'MemberExpression' && !callee.computed
           ? ((callee.property as Node).name as string)
-          : callee.type === 'Identifier'
-            ? (() => {
-                const b = m.bindings.get(callee.name as string)
-                return b?.kind === 'library' ? b.imported : undefined
-              })()
-            : undefined
+          : // a literal computed member is the method it names: z.string()['refine'](…)
+            callee.type === 'MemberExpression' &&
+              (callee.property as Node).type === 'Literal' &&
+              typeof (callee.property as Node).value === 'string'
+            ? ((callee.property as Node).value as string)
+            : callee.type === 'Identifier'
+              ? (() => {
+                  const b = m.bindings.get(callee.name as string)
+                  return b?.kind === 'library' ? b.imported : undefined
+                })()
+              : undefined
       if (!name) continue
-      if (LOSSY.includes(name)) lossy.add(name)
+      called.add(name)
       if (
         name === 'pipe' &&
         (call.arguments as Node[]).some(
@@ -465,6 +487,14 @@ export const planSlice = (file: string, source: string, input: Node) => {
     const entry = moduleOf(file, source)
     needed(entry)
     expression(entry, input, 0)
+    for (const m of parsed.values())
+      for (const b of m.bindings.values())
+        if (b.kind === 'library') {
+          const lib = libraryOf(b.source)
+          if (lib) libraries.add(lib)
+        }
+    for (const lib of libraries)
+      for (const name of LOSSY[lib] ?? []) if (called.has(name)) lossy.add(name)
     return { status: 'slice' as const, entry: file, input, modules, lossy: [...lossy].toSorted() }
   } catch (error) {
     if (error instanceof Opaque) return { status: 'opaque' as const, reason: error.message }
