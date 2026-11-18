@@ -369,10 +369,9 @@ test.skipIf(!build)(
     const trial = lines[0]
     const metrics = lines.at(-1)
     expect(trial.webmcp.launchArgs).toEqual(['--enable-features=WebMCP'])
-    // the page's first view has no start until intake's (b) lands, so the fake agent re-projects, and says so
-    expect(lines.find((l) => l.kind === 'end').driverNotes).toEqual([
-      expect.stringMatching(/^re-projected from hosting.project:/),
-    ])
+    // the page gives the connection its start, the user's project (intake's (b), design's c1262c57), so the first view
+    // already shows what's available, and the fake agent never re-projects
+    expect(lines.find((l) => l.kind === 'end').driverNotes).toBeUndefined()
     expect(trial.webmcp.aborted).toEqual([])
     expect(trial.webmcp.completions).toMatchObject([{ confirmed: true }])
     expect(metrics).toMatchObject({ surface: 'webmcp', completed: true, choseNone: false })
