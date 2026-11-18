@@ -1,7 +1,7 @@
 import { createAffordances, createHandler } from '@affordances/core'
 import { offerId, parseOfferId } from '@affordances/runtime'
 import { beforeEach, expect, test } from 'vitest'
-import { serveExecute, serveExpand, serveView, statusOf } from '../src/lib/serve.ts'
+import { serveExecute, serveExpand, serveView } from '../src/lib/serve.ts'
 import { checkedBy } from '../src/lib/runtime.ts'
 import * as store from '../src/lib/store.ts'
 import { cancel, subscribe } from '../src/app/capabilities.ts'
@@ -295,8 +295,9 @@ test('a generated key reaches the runtime as written: its own offer id parses ba
   }
 })
 
-// RFC 0004 §2.3's statuses, in HTTP's own meanings: who isn't signed in gets 401 and a challenge, who is but may not
-// gets 403; input that fails the schema is 422, and a body that isn't a call is 400
+// RFC 0004 §2.3's statuses, in HTTP's own meanings, through the route: runtime's statusOf (packages/runtime/test/
+// http.test.ts holds its own, including the signed-in 403, which no route reaches here). Who isn't signed in gets
+// 401 and a challenge; input that fails the schema is 422, and a body that isn't a call is 400
 test('a caller who isn’t signed in is refused with 401 and a Bearer challenge', async () => {
   const { id } = store.account('s_owner').project
   const response = await execute({
@@ -306,15 +307,6 @@ test('a caller who isn’t signed in is refused with 401 and a Bearer challenge'
   expect(response.status).toBe(401)
   expect(response.headers.get('www-authenticate')).toBe('Bearer')
   expect(await response.json()).toMatchObject({ status: 'refused', code: 'unauthorized' })
-})
-
-test('a signed-in caller refused authorization gets 403, with no challenge', () => {
-  const refused = { status: 'refused', code: 'unauthorized' }
-  expect(statusOf(refused, { authenticated: true })).toEqual({ status: 403, headers: {} })
-  expect(statusOf(refused, { authenticated: false })).toEqual({
-    status: 401,
-    headers: { 'www-authenticate': 'Bearer' },
-  })
 })
 
 test('input that fails the schema is 422, and a body that isn’t a call is 400', async () => {

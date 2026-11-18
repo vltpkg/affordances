@@ -1,5 +1,6 @@
 import {
   builtInPolicies,
+  statusOf,
   type Budget,
   type Expansion,
   type ProjectionRequest,
@@ -149,32 +150,6 @@ export const serveInspect = async (request: Request): Promise<Response> => {
     // an offer the principal may not see answers as one that doesn't exist
     return refuse(404, `No offer ${offer}`)
   }
-}
-
-// a refusal's HTTP status, so a client that reads only the status still gets it right (RFC 0004 §2.3). HTTP's own
-// meanings: unauthorized is 401 for a caller who isn't signed in, with a challenge, and 403 for one who is; input that
-// fails the schema is 422, while a body that isn't a call at all is the routes' own 400, before the runtime. v0's
-// responses keep v0's statuses (packages/protocol/spec.md)
-const STATUS: Record<string, number> = {
-  not_found: 404,
-  rate_limited: 429,
-  invalid_input: 422,
-  precondition: 409,
-  stale: 409,
-  confirmation_required: 409,
-}
-
-export const statusOf = (
-  result: { status: string; code?: string },
-  principal: { authenticated: boolean },
-): { status: number; headers: Record<string, string> } => {
-  if (result.status === 'succeeded') return { status: 200, headers: {} }
-  if (result.status === 'failed') return { status: 500, headers: {} }
-  if (result.code === 'unauthorized')
-    return principal.authenticated
-      ? { status: 403, headers: {} }
-      : { status: 401, headers: { 'www-authenticate': 'Bearer' } }
-  return { status: STATUS[result.code ?? ''] ?? 400, headers: {} }
 }
 
 // POST /api/projection/execute { offer, input?, approval?, ifRevision?, start?, policy?, task?, offers?, seen? }:

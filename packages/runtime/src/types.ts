@@ -238,6 +238,8 @@ export type Refusal = {
   detailTruncated?: true
   issues?: InputIssue[]
   confirmation?: { summary: string; approval?: ApprovalToken; expiresAt?: string }
+  // for rate_limited: when to try again, which a host sends as Retry-After (RFC 0004 §2.3)
+  retryAfterSeconds?: number
   revision: OfferRevision
 }
 // §8.4: what the runtime saw change, through the resolvers, before and after the run
