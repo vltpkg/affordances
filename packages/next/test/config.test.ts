@@ -279,3 +279,30 @@ export const manifest = defineManifest({ namespace: 'https://acme.example/capabi
     rmSync(root, { recursive: true, force: true })
   }
 }, 60_000)
+
+test("next's worker processes inherit the build's environment, so a later config load doesn't compile or print again", async () => {
+  // the first load, in the build's own process
+  const first = await fresh()
+  const root = app({ 'app/actions.ts': "'use server'\nexport {}\n" })
+  const spies = quiet()
+  try {
+    first({} as NextConfig, { root })
+    expect(
+      spies.warn.mock.calls.filter((c) => String(c[0]).includes('W_NO_NAMESPACE')),
+    ).toHaveLength(1)
+    // a worker's load: a fresh module, as a new process has, with the same environment, which a worker inherits
+    const worker = await fresh()
+    worker({} as NextConfig, { root })
+    expect(
+      spies.warn.mock.calls.filter((c) => String(c[0]).includes('W_NO_NAMESPACE')),
+    ).toHaveLength(1)
+    // a different app in the same build still gets its own compile
+    const other = app({ 'app/actions.ts': "'use server'\nexport {}\n" })
+    worker({} as NextConfig, { root: other })
+    expect(
+      spies.warn.mock.calls.filter((c) => String(c[0]).includes('W_NO_NAMESPACE')),
+    ).toHaveLength(2)
+  } finally {
+    vi.restoreAllMocks()
+  }
+})

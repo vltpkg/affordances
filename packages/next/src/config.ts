@@ -165,8 +165,14 @@ export const noNamespace = (root: string): Diagnostic => {
   }
 }
 
-// once per process and root: next loads its config more than once in one build
-const compiled = new Set<string>()
+// once per build and root. next loads its config more than once in one build, in the same process and in the worker
+// processes it spawns, which inherit its environment: so the roots compiled so far are kept in the environment too
+export const COMPILED_ENV = 'AFFORDANCES_COMPILED'
+const compiledRoots = () =>
+  new Set((process.env[COMPILED_ENV] ?? '').split(path.delimiter).filter(Boolean))
+const markCompiled = (root: string) => {
+  process.env[COMPILED_ENV] = [...compiledRoots().add(root)].join(path.delimiter)
+}
 
 // RFC 0005 §4: compile the app's capabilities, write .affordances/, and print each diagnostic once. compileSync never
 // reports W_NO_NAMESPACE, which withAffordances prints itself, with the line to paste
@@ -198,8 +204,8 @@ export const withAffordances = <C extends Config>(
   const entries = generate(root, options)
   const dev = process.env.NODE_ENV === 'development'
   // once per root: next loads its config more than once in one build, and each compile runs the evaluator twice
-  if (!compiled.has(root)) {
-    compiled.add(root)
+  if (!compiledRoots().has(root)) {
+    markCompiled(root)
     const result = compile(root, identity)
     // no manifest, and nothing failed: no namespace anywhere, in the config or a defineManifest export, which carries
     // its own (RFC 0005 §1). Then the build names the one line that turns it on
