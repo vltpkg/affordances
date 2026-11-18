@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { parseSync } from 'oxc-parser'
-import { scan, suggestId } from './codegen.ts'
+import { byCodeUnit, scan, suggestId } from './codegen.ts'
 import type { Diagnostic } from './diagnostics.ts'
 import { sliceInput } from './slice.ts'
 
@@ -148,17 +148,40 @@ export const segmentResource = (route: string): { id: string; key: string } | un
   return undefined
 }
 
-const byId = <T extends { id: string }>(xs: T[]) => xs.toSorted((a, b) => a.id.localeCompare(b.id))
+const byId = <T extends { id: string }>(xs: T[]) => xs.toSorted((a, b) => byCodeUnit(a.id, b.id))
 
-/** @experimental RFC 0005 §2.1's rules E1 to E9 over a v0 app, for M6c's pipeline. Never throws on author input. */
+/**
+ * @experimental RFC 0005 §2.1's rules E1 to E9 over a v0 app, for M6c's pipeline. Throws only codegen's own errors
+ * from its scan, which v0's build already fails on; everything it reads itself is a result or a diagnostic.
+ */
 export const extract = (root: string, options: { strict?: boolean } = {}): Extracted => {
   const capabilities: ExtractedCapability[] = []
   const bindings: ExtractedBinding[] = []
   const resources = new Map<string, ExtractedResource>()
   const bound: BoundAction[] = []
   const diagnostics: Diagnostic[] = []
+  const entries = scan(root)
 
-  for (const entry of scan(root)) {
+  // E9's conflicts first: a resource type two routes infer with different keys is used by neither (review of
+  // 8d2b22e1), so /products/[slug] and /products/[id] never bind one key to the other's
+  const keys = new Map<string, Set<string>>()
+  for (const { route, actions } of entries) {
+    const s = actions && segmentResource(route)
+    if (s) keys.set(s.id, (keys.get(s.id) ?? new Set()).add(s.key))
+  }
+  const conflicted = new Set([...keys].filter(([, k]) => k.size > 1).map(([id]) => id))
+  for (const id of conflicted)
+    diagnostics.push({
+      code: 'W_SEGMENT_CONFLICT',
+      file: 'app',
+      subject: id,
+      detail: entries
+        .filter((e) => e.actions && segmentResource(e.route)?.id === id)
+        .map((e) => e.route)
+        .join(', '),
+    })
+
+  for (const entry of entries) {
     if (!entry.actions) continue
     const rel = entry.actions.file
     const file = ['.ts', '.tsx', '.js', '.jsx']
@@ -168,12 +191,27 @@ export const extract = (root: string, options: { strict?: boolean } = {}): Extra
     const source = readFileSync(file, 'utf8')
     const { found, imports } = actionsIn(file, source)
     for (const { local, props, at } of found) {
-      const name = literal(props.get('name')) as string
       const line = lineOf(source, at)
+      const nameValue = literal(props.get('name'))
+      if (typeof nameValue !== 'string') {
+        diagnostics.push({
+          code: 'W_NOT_LITERAL',
+          file: relFile,
+          line,
+          subject: local,
+          detail: 'name',
+        })
+        continue
+      }
+      const name = nameValue
       const evidence = [{ description: `defineAction ${local} in ${relFile}:${line}` }]
       const imported: Provenance = { source: SOURCE.id, basis: 'imported', evidence }
       const inferred: Provenance = { source: SOURCE.id, basis: 'inferred' }
       const where = { file: relFile, line, subject: local }
+      // a field a rule reads that's present but isn't a literal: read as absent, and said so
+      for (const field of ['expose', 'description', 'readOnly', 'requires'])
+        if (props.has(field) && literal(props.get(field)) === undefined)
+          diagnostics.push({ code: 'W_NOT_LITERAL', ...where, detail: field })
 
       // a bound action: its binding, and nothing from v0 (RFC 0005 §2.1)
       const cap = props.get('capability')
@@ -258,7 +296,9 @@ export const extract = (root: string, options: { strict?: boolean } = {}): Extra
       }
 
       // E9: the target, from the route's segments
-      const segment = segmentResource(entry.route)
+      const inferredSegment = segmentResource(entry.route)
+      const segment =
+        inferredSegment && !conflicted.has(inferredSegment.id) ? inferredSegment : undefined
       let targetAt: string | undefined
       if (segment) {
         if (!resources.has(segment.id)) {
@@ -310,11 +350,9 @@ export const extract = (root: string, options: { strict?: boolean } = {}): Extra
   return {
     source: SOURCE,
     capabilities: byId(capabilities),
-    bindings: bindings.toSorted((a, b) => a.capability.localeCompare(b.capability)),
+    bindings: bindings.toSorted((a, b) => byCodeUnit(a.capability, b.capability)),
     resources: byId([...resources.values()]),
-    bound: bound.toSorted((a, b) =>
-      `${a.route} ${a.action}`.localeCompare(`${b.route} ${b.action}`),
-    ),
+    bound: bound.toSorted((a, b) => byCodeUnit(`${a.route} ${a.action}`, `${b.route} ${b.action}`)),
     diagnostics,
   }
 }

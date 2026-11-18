@@ -81,6 +81,18 @@ export const CATALOG = {
     means: 'No owner is configured, so no field can be `declared`',
     fix: 'Pass `owner: { id, name }` to withAffordances',
   },
+  W_NOT_LITERAL: {
+    severity: 'warning',
+    means:
+      "A field an extraction rule reads isn't a literal, so it's read as absent, never guessed; a non-literal `name` skips the action",
+    fix: 'Write the field as a string or boolean literal, or bind the action to a capability',
+  },
+  W_SEGMENT_CONFLICT: {
+    severity: 'warning',
+    means:
+      'Two routes infer one resource type from their segments with different keys, so neither key is used and none of their actions gets that target',
+    fix: 'Use one parameter name for the segment in every route, or declare the resource with defineResource',
+  },
   E_CAPABILITY_IMPORT: {
     severity: 'error',
     means: 'A capability module imports application code',

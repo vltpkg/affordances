@@ -173,6 +173,8 @@ These are never extracted, because code doesn't state them. Each one missing is 
 | `W_NO_NAMESPACE`                | no namespace configured, so no `manifest.json`; it names the line to paste, with a suggested value where one is readable |
 | `W_NO_OWNER`                    | no owner configured                                                                                                      |
 | `W_INPUT_LOSSY`                 | E3's slice converts, but drops a refinement or transform; each is named                                                  |
+| `W_NOT_LITERAL`                 | a field an extraction rule reads (`name`, `expose`, `description`, `readOnly`, `requires`) isn't a literal; a non-literal `name` skips the action |
+| `W_SEGMENT_CONFLICT`            | two routes infer one resource type from their segments with different keys (`/products/[slug]`, `/products/[id]`); neither is used                |
 | `E_CAPABILITY_IMPORT`           | a capability module imports application code                                                                             |
 | `E_CAPABILITY_SYNTAX`           | a capability module or slice uses syntax Node can't erase (an `enum`, a `namespace`)                                     |
 | `E_CAPABILITY_AMBIENT`          | a capability module uses a dynamic `import()`, `require`, `process`, `Date`, `Math.random`, `crypto`, `fetch` or a timer |

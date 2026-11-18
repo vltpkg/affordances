@@ -73,6 +73,17 @@ function makeDefault() { return {} }
 export const sub = defineAction({ capability: subscribe, name: 'sub', input: z.object({}), run: async () => {} })
 `,
   )
+  // two routes inferring one resource type with different keys (review of 8d2b22e1)
+  write(
+    'app/widgets/[slug]/actions.ts',
+    `${HEAD}export const view = defineAction({ name: 'view', id: 'shop.ab', description: 'View it', input: z.object({ slug: z.string() }), run: async () => {} })
+`,
+  )
+  write(
+    'app/widgets/[id]/edit/actions.ts',
+    `${HEAD}export const edit = defineAction({ name: 'edit', id: 'shop.aB', description: 'Edit it', input: z.object({}), run: async () => {} })
+`,
+  )
   write(
     'app/my-items/[id]/actions.ts',
     `${HEAD}export const touch = defineAction({ name: 'touch', id: 'shop.items.touch', description: 'Touch it', input: z.object({}), run: async () => {} })
@@ -145,12 +156,18 @@ test('a query, a public action, and a lossy input', () => {
 test('what isn’t a literal is read as absent, never guessed: no id, a computed expose, an opaque input', () => {
   const r = extract(root)
   // no id: a suggestion, and no capability
-  expect(r.diagnostics.find((d) => d.subject === 'rename')).toMatchObject({
+  expect(r.diagnostics.find((d) => d.subject === 'rename' && d.code === 'W_NO_ID')).toMatchObject({
     code: 'W_NO_ID',
     detail: "id: 'account.rename'",
   })
   expect(r.capabilities.some((c) => c.id.endsWith('rename'))).toBe(false)
-  // a computed expose: no authorization, so the capability isn't exposed (RFC 0002 §4.3)
+  // a computed expose: no authorization, so the capability isn't exposed (RFC 0002 §4.3), and said so
+  expect(
+    r.diagnostics.filter((d) => d.code === 'W_NOT_LITERAL').map((d) => [d.subject, d.detail]),
+  ).toEqual([
+    ['rename', 'expose'],
+    ['close', 'expose'],
+  ])
   const close = r.capabilities.find((c) => c.id === 'shop.account.close')!
   expect(close).not.toHaveProperty('authorization')
   expect(close).not.toHaveProperty('input')
@@ -226,3 +243,25 @@ test('over a copy of apps/example with its suggested ids written, every input co
     rmSync(copy, { recursive: true, force: true })
   }
 }, 120_000)
+
+test('a resource type two routes infer with different keys is used by neither, and the conflict is reported', () => {
+  const r = extract(root)
+  expect(r.diagnostics.filter((d) => d.code === 'W_SEGMENT_CONFLICT')).toEqual([
+    {
+      code: 'W_SEGMENT_CONFLICT',
+      file: 'app',
+      subject: 'widgets',
+      detail: '/widgets/[id]/edit, /widgets/[slug]',
+    },
+  ])
+  expect(r.resources.map((x) => x.id)).not.toContain('widgets')
+  for (const id of ['shop.ab', 'shop.aB'])
+    expect(r.capabilities.find((c) => c.id === id)).not.toHaveProperty('target')
+})
+
+test('everything is ordered by UTF-16 code unit, as the IR’s canonical order is, never by locale', () => {
+  const ids = extract(root).capabilities.map((c) => c.id)
+  // 'B' (0x42) sorts before 'b' (0x62); a locale order would put shop.ab first
+  expect(ids.indexOf('shop.aB')).toBeLessThan(ids.indexOf('shop.ab'))
+  expect(ids).toEqual([...ids].toSorted())
+})

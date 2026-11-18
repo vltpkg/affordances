@@ -19,6 +19,10 @@ type ParsedAction = ActionExport & { nameAt: number }
 // RFC 0001 §6.1's identifier
 const ID = /^[a-z][A-Za-z0-9]*(\.[a-z][A-Za-z0-9]*)*$/
 
+// RFC 0001 §7.2's canonical order: by UTF-16 code unit, as ir's canonical.ts sorts, never by locale, so the same
+// sources give the same bytes on every machine
+export const byCodeUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+
 export class CodegenError extends Error {
   override name = 'AffordancesCodegenError'
 }
@@ -146,7 +150,7 @@ export const scan = (root: string): RouteEntry[] => {
       if (seen) throw new CodegenError(`${id} is the id of both ${seen} and ${name} on ${route}`)
       ids.set(id, `${name} on ${route}`)
     }
-  return entries.toSorted((a, b) => a.route.localeCompare(b.route))
+  return entries.toSorted((a, b) => byCodeUnit(a.route, b.route))
 }
 
 export const render = (entries: RouteEntry[], options: { name?: string } = {}) => {
