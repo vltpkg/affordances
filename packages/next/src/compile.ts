@@ -1,6 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
+// codegen's writer: only on change, and atomically (a temp file renamed into place), since each of next's workers
+// compiles and writes .affordances/ for itself (47a6d7ef)
+import { writeIfChanged } from './codegen.ts'
 import { CATALOG, fails, type Diagnostic, type DiagnosticCode } from './diagnostics.ts'
 import { evaluateModules } from './evaluator.ts'
 import { extract } from './extract.ts'
@@ -126,13 +128,6 @@ export const compileSync = (
     ...(evaluated.digest && { digest: evaluated.digest }),
     bindings: evaluated.bindings ?? [],
   })
-}
-
-// writes a file only when its content changes, so a build that changes nothing touches nothing (codegen.ts does too)
-const writeIfChanged = (file: string, text: string) => {
-  if (existsSync(file) && readFileSync(file, 'utf8') === text) return
-  mkdirSync(path.dirname(file), { recursive: true })
-  writeFileSync(file, text)
 }
 
 // an action file's import specifier from .affordances/, without its extension, as codegen's manifest.ts imports
