@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { inspectorEnabled } from '@/lib/gate'
 import { getSessionId } from '@/lib/session'
+import { ChoiceSetComparison } from '@/components/comparison'
 import { POLICIES, inspect, type InspectedOffer } from '@/lib/inspect'
 import { principalFor } from '@/lib/resolvers'
 
@@ -27,10 +28,17 @@ const Status = ({ offer }: { offer: InspectedOffer }) => {
 const Page = async ({ searchParams }: PageProps<'/inspect'>) => {
   // the proxy refuses it first; this is the page's own check, in case a deployment runs without the proxy
   if (!inspectorEnabled()) notFound()
-  const requested = (await searchParams).policy
+  const params = await searchParams
+  const requested = params.policy
   const policy =
     typeof requested === 'string' && POLICIES.includes(requested) ? requested : 'exhaustive'
-  const i = await inspect(principalFor(await getSessionId()), { policy })
+  // a request's facts limit, in cells (RFC 0002 §6.6): only a request's own can cut a comparison, so the inspector
+  // takes one to show the cut
+  const facts =
+    typeof params.facts === 'string' && /^\d+$/.test(params.facts)
+      ? Number(params.facts)
+      : undefined
+  const i = await inspect(principalFor(await getSessionId()), { policy, facts })
   const omitted = i.offers.filter((o) => !o.inView)
   return (
     <div className="flex flex-col gap-10 text-sm">
@@ -41,11 +49,11 @@ const Page = async ({ searchParams }: PageProps<'/inspect'>) => {
           <code>{i.revision.slice(0, 19)}…</code>. It shows every offer you may see. Offers the{' '}
           {i.policy} policy&apos;s view leaves out are marked.
         </p>
-        <nav aria-label="Policy" className="flex gap-3">
+        <nav aria-label="Policy" className="flex flex-wrap gap-3">
           {POLICIES.map((p) => (
             <Link
               key={p}
-              href={`/inspect?policy=${p}`}
+              href={`/inspect?policy=${p}${facts === undefined ? '' : `&facts=${facts}`}`}
               aria-current={p === i.policy ? 'page' : undefined}
               className={p === i.policy ? 'font-medium underline' : 'text-muted-foreground'}
             >
@@ -53,6 +61,22 @@ const Page = async ({ searchParams }: PageProps<'/inspect'>) => {
             </Link>
           ))}
         </nav>
+        <form method="get" action="/inspect" className="flex flex-wrap items-center gap-2">
+          <input type="hidden" name="policy" value={i.policy} />
+          <label htmlFor="facts">Facts limit, in cells</label>
+          <input
+            id="facts"
+            name="facts"
+            type="number"
+            min={0}
+            defaultValue={facts}
+            placeholder="none"
+            className="w-24 rounded border px-2 py-1"
+          />
+          <button type="submit" className="rounded border px-2 py-1">
+            Apply
+          </button>
+        </form>
         <p>
           View order: <code>{json(i.order)}</code>. In view: {i.offers.length - omitted.length} of{' '}
           {i.offers.length} offers. Omitted, as the view counts them: {json(i.omitted)}.
@@ -120,16 +144,12 @@ const Page = async ({ searchParams }: PageProps<'/inspect'>) => {
         </div>
       </section>
 
-      <section aria-labelledby="choices" className="flex flex-col gap-2">
+      <section aria-labelledby="choices" className="flex flex-col gap-4">
         <h2 id="choices" className="text-lg font-medium">
           Choice sets
         </h2>
         {i.choiceSets.map((c) => (
-          <p key={c.id}>
-            <code>{c.id}</code> over {c.over}, ordered <code>{json(c.order)}</code>:{' '}
-            {c.members.join(', ')}
-            {!c.inView && ` · omitted by ${i.policy}`}
-          </p>
+          <ChoiceSetComparison key={c.id} set={c} offers={i.offers} policy={i.policy} />
         ))}
       </section>
 
