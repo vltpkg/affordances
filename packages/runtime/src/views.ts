@@ -1,5 +1,5 @@
 import { base64url, canonicalJson, type CapabilityManifest, type Id } from '@affordances/ir'
-import { columnsOf, comparisonOf, targetReads } from './comparison.ts'
+import { columnsOf, comparisonOf, summaryReads, targetReads } from './comparison.ts'
 import { words, type Facts } from './facts.ts'
 import type {
   Budget,
@@ -238,7 +238,11 @@ export const views = (args: {
         : s.members.flatMap((m) => byId.get(m)!.claims.flatMap((k) => k.cites ?? [])),
     )
     const c = args.facts.capability(s.capability)
-    const read = targetReads([c?.preconditions, c?.authorization?.conditions, c?.effects])
+    // what the capability's conditions and effects read, and what its confirmation summary renders: never cut
+    const read = new Set([
+      ...targetReads([c?.preconditions, c?.authorization?.conditions, c?.effects]),
+      ...summaryReads(c?.confirmation?.summary),
+    ])
     return comparisonOf(
       s.members.map((id) => ({ id, attributes: args.memberAttributes.get(id) })),
       columnsOf(declared, cited, read),

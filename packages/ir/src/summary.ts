@@ -15,6 +15,13 @@ export const renderSummary = (template: string, context: Context): string =>
     return resolved.kind === 'absent' && resolved.null ? 'null' : 'unknown'
   })
 
+// the paths a summary's template renders, as renderSummary reads them: {path}, never a {{ }} literal (RFC 0002 §6.6
+// keeps every target attribute a summary renders in a choice set's comparison)
+export const summaryPaths = (template: string): string[] =>
+  [...template.matchAll(/\{\{|\}\}|\{([^{}]*)\}/g)].flatMap((m) =>
+    m[1] === undefined ? [] : [m[1]],
+  )
+
 // RFC 0001 §3.2 and §4 (intake, 2026-11-18): a summary ends by listing every charge its financial effects make, each
 // with its amount, in declaration order and never totalled. A charge whose applies is false isn't made, so it isn't
 // listed; one whose applies is unknown is listed as one that may apply, since a charge is never hidden. An amount that

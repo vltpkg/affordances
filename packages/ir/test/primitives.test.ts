@@ -12,6 +12,7 @@ import {
   putPointer,
   renderSummary,
   resolvePath,
+  summaryPaths,
   type CapabilityManifest,
 } from '../src/index.ts'
 
@@ -65,4 +66,16 @@ test('renderSummary: strings as written, others as RFC 8785, unresolved as unkno
       context,
     ),
   ).toBe('pro at 20 ["a"] null unknown 2 {x}')
+})
+
+test('summaryPaths: every path a template renders, as renderSummary reads it, and never a {{ }} literal', () => {
+  expect(summaryPaths('Subscribe to {target.slug} for {target.priceUsd} USD {{a month}}')).toEqual([
+    'target.slug',
+    'target.priceUsd',
+  ])
+  expect(summaryPaths('{input.count} seats, {target.regions.0.code}')).toEqual([
+    'input.count',
+    'target.regions.0.code',
+  ])
+  expect(summaryPaths('no paths at all')).toEqual([])
 })

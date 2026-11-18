@@ -1,4 +1,4 @@
-import { canonicalJson } from '@affordances/ir'
+import { canonicalJson, summaryPaths } from '@affordances/ir'
 import type { Comparison, OfferId } from './types.ts'
 
 // RFC 0002 §6.6, rule 6 of the disclosure invariant: a choice set carries its comparison, every declared attribute of
@@ -78,6 +78,16 @@ export const comparisonOf = (
     omitted: { attributes: omitted },
   }
 }
+
+// the target attributes a capability's confirmation summary renders, by each {target.x} path's first segment: what a
+// person approves names them, so they're never cut (intake, 2026-11-18 12:06Z)
+export const summaryReads = (template: string | undefined): Set<string> =>
+  new Set(
+    summaryPaths(template ?? '').flatMap((p) => {
+      const m = /^target\.([^.[\]]+)/.exec(p)
+      return m ? [m[1]!] : []
+    }),
+  )
 
 // the target attributes a capability's conditions and effects read: every `target.x` path, by its first segment
 export const targetReads = (definition: unknown): Set<string> => {

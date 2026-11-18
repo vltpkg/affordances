@@ -1,4 +1,5 @@
 import { canonicalJson, type CapabilityManifest } from '@affordances/ir'
+import * as fc from 'fast-check'
 import { describe, expect, test } from 'vitest'
 import plansJson from '../../ir/fixtures/valid/plans.json' with { type: 'json' }
 import {
@@ -75,9 +76,9 @@ const table = (rows: Record<string, Record<string, unknown>>): ResourceResolver 
   list: async () => Object.keys(rows),
 })
 const projects = { p1: { id: 'p1', orgId: 'o1', domains: ['a.example'] } }
-const runtime = (policies: DiscoveryPolicy[] = []) =>
+const runtime = (policies: DiscoveryPolicy[] = [], manifest = manifestOf()) =>
   testRuntime({
-    manifest: manifestOf(),
+    manifest,
     resources: { 'hosting.plan': table(plans), 'hosting.project': table(projects) },
     handlers: { 'hosting.plan.subscribe': { guards: { billing: () => true } } },
     policies,
@@ -208,5 +209,63 @@ describe('rule 6: a choice set carries its comparison', () => {
     ).flat()
     expect(all.length).toBeGreaterThan(1)
     expect(new Set(all).size).toBe(1)
+  })
+})
+
+// intake (2026-11-18 12:06Z): what a confirmation summary renders joins the never-cut group, since the person approves
+// its words. A generated sweep: summaries over any of the plans' attributes on both capabilities, every built-in
+// policy, and every facts budget from 0 up
+// a template rendering the chosen attributes, among words and a {{ }} literal, which renders no path
+const template = (attrs: string[]) =>
+  `Start {{now}}: ${attrs.map((a) => `{target.${a}}`).join(', ')} for {target.slug}`
+describe('a confirmation summary’s attributes survive any cut', () => {
+  test('for every summarized capability, every policy and every facts budget, its rendered attributes stay', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.subarray(DECLARED),
+        fc.subarray(DECLARED),
+        fc.constantFrom(...builtInPolicies.map((p) => p.id)),
+        fc.integer({ min: 0, max: 20 }),
+        fc.constantFrom<Omit<ProjectionRequest, 'principal' | 'policy' | 'budget'>>(
+          {},
+          { start: fromPro },
+          { start: fromProject },
+        ),
+        async (trialAttrs, subscribeAttrs, policy, facts, request) => {
+          const m = manifestOf()
+          const capability = (id: string) => m.capabilities.find((c) => c.id === id)!
+          capability('hosting.plan.trial').confirmation = { summary: template(trialAttrs) }
+          capability('hosting.plan.subscribe').confirmation = { summary: template(subscribeAttrs) }
+          const rendered: Record<string, string[]> = {
+            [TRIAL]: trialAttrs,
+            [SUBSCRIBE]: subscribeAttrs,
+          }
+          const v = (
+            await runtime([], m).project({
+              principal: member,
+              policy,
+              budget: { facts },
+              ...request,
+            })
+          ).view()
+          for (const t of tables(v)) {
+            const kept = [...t.comparison.differ, ...Object.keys(t.comparison.shared)]
+            for (const a of rendered[t.id] ?? []) {
+              expect(t.comparison.omitted.attributes).not.toContain(a)
+              expect(kept).toContain(a)
+            }
+          }
+        },
+      ),
+      { numRuns: 300, seed: 6612 },
+    )
+  })
+
+  test('the fixture’s own summary: subscribe renders priceUsd, which no facts limit cuts', async () => {
+    const v = (
+      await runtime().project({ principal: member, policy: 'exhaustive', budget: { facts: 0 } })
+    ).view()
+    const subscribe = v.choiceSets.find((s) => s.id === SUBSCRIBE)!.comparison
+    expect(subscribe.omitted.attributes).not.toContain('priceUsd')
   })
 })
