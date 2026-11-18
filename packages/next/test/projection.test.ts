@@ -184,18 +184,27 @@ test('concurrent first requests share one runtime, so a token one signs runs thr
   }
 })
 
-// design (2026-11-18), for RFC 0002 R2: per-process approval defaults are a replay on a multi-instance deploy, so
-// production requires both
-test('in production, a missing approvalKey or seenTokens throws when the route is made, naming what’s missing', () => {
-  vi.stubEnv('NODE_ENV', 'production')
+// design (2026-11-18), for RFC 0002 R2: per-process approval defaults are a replay on a multi-instance deploy, so a
+// deployed route requires both. The gate fails closed (review of b96dee48): only development and test get defaults
+test('outside development and test, a missing approvalKey or seenTokens throws when the route is made', () => {
+  const store = { claim: async () => true }
   try {
-    expect(() => createProjectionRoute(routeOptions)).toThrow(
-      /needs approvalKey and seenTokens in production/,
-    )
-    const store = { claim: async () => true }
-    expect(() => createProjectionRoute({ ...routeOptions, seenTokens: store })).toThrow(
-      /needs approvalKey in/,
-    )
+    for (const env of ['production', '', 'staging']) {
+      vi.stubEnv('NODE_ENV', env)
+      expect(() => createProjectionRoute(routeOptions)).toThrow(
+        /needs approvalKey and seenTokens unless NODE_ENV is development or test/,
+      )
+      expect(() => createProjectionRoute({ ...routeOptions, seenTokens: store })).toThrow(
+        /needs approvalKey unless/,
+      )
+    }
+    // and unset, as a plain node server has it
+    vi.stubEnv('NODE_ENV', undefined)
+    expect(() => createProjectionRoute(routeOptions)).toThrow(/needs approvalKey and seenTokens/)
+    for (const env of ['development', 'test']) {
+      vi.stubEnv('NODE_ENV', env)
+      expect(() => createProjectionRoute(routeOptions)).not.toThrow()
+    }
   } finally {
     vi.unstubAllEnvs()
   }

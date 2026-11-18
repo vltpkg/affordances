@@ -90,8 +90,9 @@ test('the app really has no @affordances/ir and no @affordances/runtime: neither
 })
 
 // the second optional peer (intake, 2026-11-18): an app that uses /projection without runtime gets one error naming it
-test('without runtime, /projection loads, and its first request fails with one error naming the peer', () => {
-  const run = spawnSync(
+// /projection's first request, in the app, as node runs it in development, so the approval defaults apply
+const firstRequest = () =>
+  spawnSync(
     process.execPath,
     [
       '--input-type=module',
@@ -102,12 +103,35 @@ test('without runtime, /projection loads, and its first request fails with one e
         "await route.GET(new Request('https://app.test/api/projection')).catch((e) => { console.log(e.message); process.exit(3) })",
       ].join('\n'),
     ],
-    { cwd: app, encoding: 'utf8' },
+    { cwd: app, encoding: 'utf8', env: { ...process.env, NODE_ENV: 'development' } },
   )
+
+test('without runtime, /projection loads, and its first request fails with one error naming the peer', () => {
+  const run = firstRequest()
   expect({ status: run.status, out: run.stdout.trim() }).toEqual({
     status: 3,
     out: "@affordances/next/projection needs @affordances/runtime, next's optional peer: install it beside @affordances/next",
   })
+}, 60_000)
+
+// review of b96dee48: a runtime that's installed but misses one of its own imports names runtime's path in its error;
+// that's rethrown as it is, never relabelled as a missing peer
+test('an installed runtime missing its own dependency is reported as that, not as a missing peer', () => {
+  const runtime = path.join(app, 'node_modules', '@affordances', 'runtime')
+  mkdirSync(runtime, { recursive: true })
+  writeFileSync(
+    path.join(runtime, 'package.json'),
+    JSON.stringify({ name: '@affordances/runtime', type: 'module', exports: './index.js' }),
+  )
+  writeFileSync(path.join(runtime, 'index.js'), "export * from 'a-missing-dependency'\n")
+  try {
+    const run = firstRequest()
+    expect(run.status).toBe(3)
+    expect(run.stdout).toMatch(/Cannot find package 'a-missing-dependency'/)
+    expect(run.stdout).not.toMatch(/optional peer/)
+  } finally {
+    rmSync(runtime, { recursive: true, force: true })
+  }
 }, 60_000)
 
 test('an app without ir typechecks against next’s main entry with skipLibCheck: false, and builds', () => {

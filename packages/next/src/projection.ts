@@ -35,7 +35,7 @@ export type ProjectionRouteOptions<Session = unknown> = {
   // v0's session, for the actions' own run and guard, which take v0's context
   session?: (request: Request) => Session | null | Promise<Session | null>
   // approval tokens (RFC 0002 §8.2): an HMAC key and a single-use store of the nonces spent, shared by every instance.
-  // Required in production; elsewhere they default to a key per process and an in-memory store
+  // Required unless NODE_ENV is development or test, where they default to a key per process and an in-memory store
   approvalKey?: CryptoKey
   seenTokens?: TokenStore
 }
@@ -48,8 +48,10 @@ const loadRuntime = () =>
   (loaded ??= import('@affordances/runtime').catch((error: unknown) => {
     loaded = undefined
     if (
+      // only when runtime itself is what's missing: an installed runtime's own missing import names runtime's path
+      // too, and is rethrown as it is (review of b96dee48)
       (error as { code?: string }).code === 'ERR_MODULE_NOT_FOUND' &&
-      String(error).includes('@affordances/runtime')
+      /Cannot find (package|module) '@affordances\/runtime'/.test((error as Error).message)
     )
       throw new Error(
         "@affordances/next/projection needs @affordances/runtime, next's optional peer: install it beside @affordances/next",
@@ -161,16 +163,20 @@ const startOf = (value: unknown): ProjectionRequest['start'] => {
 export const createProjectionRoute = <Session = unknown>(
   options: ProjectionRouteOptions<Session>,
 ) => {
-  // in production, per-process defaults are a replay: each instance would run a token once (RFC 0002 R2), and a token
-  // signed by one would fail on another. So both are required there, checked when the route is made (design, 2026-11-18)
-  if (process.env.NODE_ENV === 'production') {
+  // deployed, per-process defaults are a replay: each instance would run a token once (RFC 0002 R2), and a token signed
+  // by one would fail on another. So both are required, checked when the route is made (design, 2026-11-18), and the
+  // gate fails closed (review of b96dee48): only development and test, named, get the defaults; an unset NODE_ENV,
+  // as a plain node server has, doesn't
+  const env = process.env.NODE_ENV
+  if (env !== 'development' && env !== 'test') {
     const missing = [
       !options.approvalKey && 'approvalKey',
       !options.seenTokens && 'seenTokens',
     ].filter(Boolean)
     if (missing.length)
       throw new Error(
-        `createProjectionRoute needs ${missing.join(' and ')} in production: an HMAC approvalKey from the environment, ` +
+        `createProjectionRoute needs ${missing.join(' and ')} unless NODE_ENV is development or test: an HMAC ` +
+          'approvalKey from the environment, ' +
           'shared by every instance, and a seenTokens store every instance shares, whose claim(nonce, expiresAt) is ' +
           'single-use, such as a database or KV with a TTL of at least the approval expiry',
       )
