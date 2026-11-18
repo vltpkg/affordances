@@ -306,6 +306,9 @@ export const defineClaims = (
       statement: string
       quantity?: { value: number; unit: string }
       applies?: When<`target.${string}`>
+      // the subject's target attributes the statement relies on (RFC 0001 §9), so every comparison it's shown with
+      // keeps them for every member (RFC 0002 §6.6); validate checks each is declared
+      cites?: readonly string[]
     }
   >,
 ): DefinedClaims =>
@@ -321,6 +324,7 @@ export const defineClaims = (
             statement: c.statement,
             quantity: c.quantity,
             applies: c.applies?.expr,
+            cites: c.cites && [...c.cites],
           }) as Omit<Claim, 'provenance'>,
       ),
     },

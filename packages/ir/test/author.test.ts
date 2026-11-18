@@ -403,3 +403,41 @@ test('defineManifest refuses a manifest validate rejects, saying where', () => {
     }),
   ).toThrow(/E_UNRESOLVED at \/resources\/0\/contains\/0/)
 })
+
+test("a claim's cites reach the IR, and an undeclared attribute is refused", () => {
+  const plan = defineResource({
+    id: 'hosting.plan',
+    description: 'A hosting plan',
+    key: 'slug',
+    attributes: z.object({ slug: z.string(), rollback: z.boolean() }),
+    alternatives: true,
+  })
+  const subscribe = defineCapability({
+    id: 'hosting.plan.subscribe',
+    kind: 'action',
+    description: 'Subscribe the project to this plan',
+    target: plan,
+    authorization: { principal: 'authenticated' },
+  })
+  const manifest = (cites: string[]) =>
+    defineManifest({
+      namespace: 'https://host.example/capabilities',
+      owner: { id: 'host', name: 'Example Host' },
+      resources: [plan],
+      capabilities: [subscribe],
+      claims: [
+        defineClaims({
+          rollbackBenefit: {
+            subject: subscribe,
+            kind: 'benefit',
+            statement: 'Includes instant rollback',
+            applies: when.eq('target.rollback', true),
+            cites,
+          },
+        }),
+      ],
+    })
+  expect(manifest(['rollback']).claims?.[0]?.cites).toEqual(['rollback'])
+  // RFC 0002 §6.6 keeps a cited attribute in every comparison, so it must be one the target declares
+  expect(() => manifest(['bandwidthGb'])).toThrow(/E_PATH.*cites/)
+})
