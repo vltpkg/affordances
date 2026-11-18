@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { loadavg } from 'node:os'
 import path from 'node:path'
 import { conditions, type ConditionId } from './conditions.ts'
@@ -84,7 +84,37 @@ if (mode === 'plan') {
   }
   // concurrency at most 2 (row 80a8328d). A trial that throws is reported as failed, and never re-run (intake)
   const failed: Failed[] = []
+  // a trial whose trace is complete is read back, not run again: a resumed run never re-runs a trial (intake)
+  const done = (s: TrialSpec): Result | undefined => {
+    const file = path.join(out, `${s.id}.jsonl`)
+    if (!existsSync(file)) return
+    const lines = readFileSync(file, 'utf8')
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l))
+    const of = (kind: string) => lines.find((l) => l.kind === kind)
+    const [trial, endLine, metrics] = [of('trial'), of('end'), of('metrics')]
+    if (!trial || !endLine || !metrics) return
+    const { kind: _k, ...m } = metrics
+    return {
+      spec: s,
+      end: endLine.end,
+      capHits: endLine.capHits,
+      traceMismatch: endLine.traceMismatch,
+      spawned: endLine.spawned,
+      metrics: m,
+      turns: endLine.turns,
+      load: endLine.load.start[0],
+      cli: trial.cli,
+      resolvedModel: trial.model.resolved,
+    }
+  }
   const settled = await pool(specs, 2, async (s) => {
+    const resumed = done(s)
+    if (resumed) {
+      console.error(`${new Date().toISOString()} ${s.id}: resumed from its trace`)
+      return resumed
+    }
     try {
       const r = await runTrial(s, driverFor(s), out)
       console.error(`${new Date().toISOString()} ${s.id}: ${r.end} ${r.metrics.choice}`)
