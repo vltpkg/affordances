@@ -2,7 +2,7 @@
 // and reach the runtime over protocol 1's HTTP endpoints, with the person's own session: the runtime, its resolvers
 // and its approval key stay on the server. Every result passes the runtime's one boundary (toModel), so no tool
 // channel ever yields an approval. Confirmation fails closed: in-tool consent only where the browser offers
-// requestUserInteraction, and otherwise the refusal, for the person to confirm in the app itself (intake, 2026-11-18)
+// requestUserInteraction, and otherwise the refusal, for the person to confirm in the app itself
 import {
   createToolset,
   httpAdapter,
@@ -73,13 +73,13 @@ export type WebMcpOptions = {
   ask: AskPerson
   // the view request every call carries: the policy (the route's default without one)
   view?: ViewRequest
-  // the resource the page is about, as the projection's start when the agent's project names none (intake,
-  // 2026-11-18): a view parameter only, which grants nothing. Without it, the first view is site-wide
+  // the resource the page is about, as the projection's start when the agent's project names none: a view parameter
+  // only, which grants nothing. Without it, the first view is site-wide
   start?: ViewRequest['start']
   context?: ModelContext
   fetcher?: typeof fetch
   // aborting it unregisters the tools, as Chromium's registerTool takes it, so the page can register them again under
-  // the same names, from a new start (intake's code review, #7)
+  // the same names, from a new start
   signal?: AbortSignal
 }
 
