@@ -37,14 +37,16 @@ Each is the treated arm minus the control, in risk-difference points. The primar
 
 | contrast            | primary   | Sonnet: Newcombe 95%     | Haiku: Newcombe 95%      | pooled MH (Sato 95%) | heterogeneity (bootstrap 95%) |
 | ------------------- | --------- | ------------------------ | ------------------------ | -------------------- | ----------------------------- |
-| full vs v0          | intended  | 50/50 vs 50/50: 0 (±7.1) | 50/50 vs 50/50: 0 (±7.1) | 0 (0, 0)             | 0 (0, 0)                      |
-| full vs browser     | completed | 50/50 vs 50/50: 0 (±7.1) | 50/50 vs 50/50: 0 (±7.1) | 0 (0, 0)             | 0 (0, 0)                      |
-| progressive vs full | intended  | 50/50 vs 50/50: 0 (±7.1) | 50/50 vs 50/50: 0 (±7.1) | 0 (0, 0)             | 0 (0, 0)                      |
+| full vs v0          | intended  | 50/50 vs 50/50: 0 (±7.1) | 50/50 vs 50/50: 0 (±7.1) | 0 (0, 0), degenerate | 0 (0, 0), degenerate          |
+| full vs browser     | completed | 50/50 vs 50/50: 0 (±7.1) | 50/50 vs 50/50: 0 (±7.1) | 0 (0, 0), degenerate | 0 (0, 0), degenerate          |
+| progressive vs full | intended  | 50/50 vs 50/50: 0 (±7.1) | 50/50 vs 50/50: 0 (±7.1) | 0 (0, 0), degenerate | 0 (0, 0), degenerate          |
 
 - **Every one of the 400 trials was optimal,** both intended and completed, on every surface and both models. So every difference is 0.
-- **This is a ceiling.** The zeros reflect T6 not separating the surfaces under stated approval (§8.1). They don't show that the surfaces are equivalent. Review is checking the ceiling for an artifact, and until it confirms, nothing more is read from it.
+- **The reading:** a CEILING. With approval stated, T6 doesn't separate full, progressive, v0 and browser for Sonnet 5.5 or Haiku 5.5. All three registered contrasts are 0, each model's Newcombe interval is about ±7.1 points, and the pooled interval is degenerate. That's not evidence the surfaces are equal in general. The pilot-to-confirmatory change is attributed to the approval sentence, the one agent-side change, which review checked.
+- **Review found no instrument artifact** (21:47Z). In each of the 400 trials, re-scored by the pinned replay, labeller and `purchaseMade`, the intended and the stored purchase are both Pro with extra bandwidth, T6's only optimum, with 0 mismatches, under all 6 registered plan orders. The pilot's 60, re-scored with the same code, show 0 disagreements, and its non-optimal trials stay non-optimal. The labeller, store and replay are byte-identical between the pilot's pin and this one. The negative controls, constructed from real records, score a no-op, plain Pro and the favored Business as not optimal.
+- **The pilot's no-request failures, for reference:** before the sentence (§8.1), no request was made in 9 of 10 browser trials and 2 of 10 v0 trials. After it, there were none in the re-pilot's 16 trials, and every trial here made the optimal purchase. The sentence names no option or price.
 - **The per-model intervals carry the precision:** Newcombe's −7.1 to +7.1 points per model. That's narrower than the plan's ±19.6-point target, because rates far from 0.5 give narrower intervals (§5).
-- **The pooled interval of (0, 0) isn't certainty.** Sato's variance is zero when every arm is at 100%, so the interval collapses. It says nothing beyond the per-model intervals. Likewise, the bootstrap's heterogeneity is (0, 0) because every resample is all optimal.
+- **The pooled interval is degenerate.** Sato's variance is zero when every arm is at 100%, so the interval collapses to (0, 0). It isn't certainty, and it adds nothing beyond the per-model intervals. The bootstrap's heterogeneity is degenerate for the same reason: every resample is all optimal.
 - **`full` against `browser` on intended, hand-read from the cells, not script output:** under the fallback, the pinned script emits no intended result for this contrast. Its cell table has both arms at 50 of 50 in each model on intended, which gives the same 0 with the same ±7.1. Nothing was computed beyond reading those counts.
 - **The sensitivity** (missing counted as not optimal) is identical to the primary in every contrast, with `sensitivityDisagrees` false, since no spec is missing.
 
@@ -77,7 +79,7 @@ After `open`, `click`, `fill` and `submit`, the browser's tool server snapshots 
 
 ## Security: where token-shaped strings appear
 
-The method is the pilot's: a scan of every trace and every CLI stream log (`claude-*/stdout.jsonl`, mapped to its trial by its `mcp.json`) for token-shaped strings, using the runtime's own `TOKEN` pattern from `@affordances/runtime/agent`.
+The method is the pilot's: a scan of every trace and every CLI stream log (`claude-*/stdout.jsonl`, mapped to its trial by its `mcp.json`) in the committed `traces.tar.gz` (backend's e2dd6130, sha256 2f765ba21f7d4c19f1d0010c967ebe00ddc82eb772e10c2afdbf083649a282e2, 3,321 files), for token-shaped strings, using the runtime's own `TOKEN` pattern from `@affordances/runtime/agent`. The settle counts above come from the same archive. The pinned analysis, rerun on it, reproduces `analysis.json` byte for byte.
 
 | surface     | in the traces | in the stream logs | trials with any |
 | ----------- | ------------- | ------------------ | --------------- |
@@ -108,4 +110,9 @@ The method is the pilot's: a scan of every trace and every CLI stream log (`clau
 - **the lockfile:** sha256 97e6dbbadbce71f324723797fd860c8ac1ed707b5b8f116ae3c59482a7e524c9
 - **the tools:** Chromium 156.0.8078.4, Playwright 1.64.1, Node v26.13.1 and vlt 1.8.0.
 
-`launch-1.json`, `preflight-1.json`, `end-1.json` and `pin.json` are the run's own records, committed by backend.
+`launch-1.json`, `preflight-1.json`, `end-1.json`, `pin.json` and `traces.tar.gz` (sha256 2f765ba21f7d4c19f1d0010c967ebe00ddc82eb772e10c2afdbf083649a282e2) are the run's own records, committed by backend in e2dd6130. `traces.tar.gz` holds the 400 traces and their CLI stream logs, as `harness.ts` writes them, archived by the pinned export's `archive.ts`, with the email scan as in M5.
+
+## What follows
+
+- **No follow-up run in M7f,** and no harder variant is labelled confirmatory.
+- **An M8 candidate, with its own pre-registration:** a harder task, such as an advocated option that's wrong at a depth greater than 1, or the approval sentence withheld on one surface.
