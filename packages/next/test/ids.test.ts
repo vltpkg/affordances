@@ -213,3 +213,47 @@ describe('a capability-bound action', () => {
     expect(missingIds(scan(root))).toEqual([])
   })
 })
+
+// boundary review #11's idPrefix part, promoted (intake, 2026-11-18 12:26Z): withAffordances' idPrefix, from the
+// site's name, leads every suggested and written id, and none is written without one (RFC 0005 §1)
+describe('idPrefix', () => {
+  const files = {
+    'app/products/[slug]/actions.ts': `'use server'\n${action('addToCart')}${action('buyNow')}`,
+    'app/actions.ts': `'use server'\n${action('search')}`,
+  }
+  // every id in the files, as written
+  const idsIn = (root: string) =>
+    Object.keys(files)
+      .flatMap((f) => [...readFileSync(path.join(root, f), 'utf8').matchAll(/id: '([^']+)'/g)])
+      .map((m) => m[1]!)
+
+  test('a configured prefix leads every suggestion and every written id', () => {
+    const root = project(files)
+    expect(missingIds(scan(root), { idPrefix: 'acmeStore' }).map((m) => m.suggested)).toEqual([
+      'acmeStore.search',
+      'acmeStore.products.addToCart',
+      'acmeStore.products.buyNow',
+    ])
+    writeIds(root, { idPrefix: 'acmeStore' })
+    const prefixed = idsIn(root)
+    expect(prefixed).toHaveLength(3)
+    expect(prefixed.every((id) => id.startsWith('acmeStore.'))).toBe(true)
+    // read back as ids, nothing missing
+    expect(missingIds(scan(root), { idPrefix: 'acmeStore' })).toEqual([])
+  })
+
+  test('without one, no prefix is written', () => {
+    const root = project(files)
+    writeIds(root)
+    expect(idsIn(root).toSorted()).toEqual(['products.addToCart', 'products.buyNow', 'search'])
+  })
+
+  test('a taken suggestion still disambiguates under the prefix', () => {
+    const root = project({
+      'app/actions.ts': `'use server'\n${action('search')}${action('find', "\n  id: 'acmeStore.search',")}`,
+    })
+    expect(missingIds(scan(root), { idPrefix: 'acmeStore' }).map((m) => m.suggested)).toEqual([
+      'acmeStore.search2',
+    ])
+  })
+})

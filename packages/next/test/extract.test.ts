@@ -161,6 +161,12 @@ test('what isn’t a literal is read as absent, never guessed: no id, a computed
     detail: "id: 'account.rename'",
   })
   expect(r.capabilities.some((c) => c.id.endsWith('rename'))).toBe(false)
+  // with withAffordances' idPrefix, the suggestion leads with it (RFC 0005 §1)
+  expect(
+    extract(root, { idPrefix: 'acmeStore' }).diagnostics.find(
+      (d) => d.subject === 'rename' && d.code === 'W_NO_ID',
+    )?.detail,
+  ).toBe("id: 'acmeStore.account.rename'")
   // a computed expose: no authorization, so the capability isn't exposed (RFC 0002 §4.3), and said so
   expect(
     r.diagnostics.filter((d) => d.code === 'W_NOT_LITERAL').map((d) => [d.subject, d.detail]),

@@ -86,3 +86,25 @@ test('ids lists the actions without a capability id, and --write adds them', asy
   )
   expect((await list(false)).missing).toEqual([])
 })
+
+test('ids --prefix leads each suggested and written id with it, and refuses one that isn’t an id word', async () => {
+  const root = app()
+  mkdirSync(path.join(root, 'app/products/[slug]'), { recursive: true })
+  writeFileSync(
+    path.join(root, 'app/products/[slug]/actions.ts'),
+    `'use server'\nexport const addToCart = defineAction({\n  name: 'addToCart',\n  run: () => {},\n})\n`,
+  )
+  const listIds = (w: boolean, prefix?: string) =>
+    Effect.runPromise(ids(root, w, prefix).pipe(Effect.provide(NodeServices.layer)))
+  expect((await listIds(false, 'acmeStore')).missing.map((m) => m.suggested)).toEqual([
+    'acmeStore.products.addToCart',
+  ])
+  const refused = await Effect.runPromise(
+    ids(root, false, 'Acme Store').pipe(Effect.flip, Effect.provide(NodeServices.layer)),
+  )
+  expect(refused.message).toMatch(/--prefix 'Acme Store' isn't an id word/)
+  await listIds(true, 'acmeStore')
+  expect(read(root, 'app/products/[slug]/actions.ts')).toContain(
+    "  id: 'acmeStore.products.addToCart',",
+  )
+})

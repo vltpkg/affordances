@@ -234,11 +234,16 @@ const parts = (route: string, withParams: boolean) =>
       return param ? (withParams ? [segment(param[1]!)] : []) : [segment(s)]
     })
 
-// the route's static segments and the action's name: /products/[slug] and addToCart give products.addToCart
-export const suggestId = (route: string, name: string, withParams = false) =>
-  [...parts(route, withParams), segment(name)].join('.')
+// the route's static segments and the action's name: /products/[slug] and addToCart give products.addToCart. With
+// withAffordances' idPrefix, the site's name as an identifier, it leads: acmeStore.products.addToCart (RFC 0005 §1)
+export const suggestId = (route: string, name: string, withParams = false, idPrefix?: string) =>
+  [...(idPrefix ? [idPrefix] : []), ...parts(route, withParams), segment(name)].join('.')
 
-export const missingIds = (entries: RouteEntry[]): MissingId[] => {
+export const missingIds = (
+  entries: RouteEntry[],
+  options: { idPrefix?: string } = {},
+): MissingId[] => {
+  const { idPrefix } = options
   const taken = new Set(
     entries.flatMap((e) => e.actions?.exports.flatMap((x) => (x.id ? [x.id] : [])) ?? []),
   )
@@ -248,9 +253,10 @@ export const missingIds = (entries: RouteEntry[]): MissingId[] => {
       // a capability-bound action is identified by its capability (code review 9)
       if (x.id || x.bound) continue
       // two routes with the same static segments: name the params too, then number what's left
-      let suggested = suggestId(route, x.name)
-      if (taken.has(suggested)) suggested = suggestId(route, x.name, true)
-      for (let n = 2; taken.has(suggested); n++) suggested = `${suggestId(route, x.name, true)}${n}`
+      let suggested = suggestId(route, x.name, false, idPrefix)
+      if (taken.has(suggested)) suggested = suggestId(route, x.name, true, idPrefix)
+      for (let n = 2; taken.has(suggested); n++)
+        suggested = `${suggestId(route, x.name, true, idPrefix)}${n}`
       taken.add(suggested)
       out.push({
         code: 'W_NO_ID',
@@ -265,8 +271,8 @@ export const missingIds = (entries: RouteEntry[]): MissingId[] => {
 }
 
 // writes each suggestion into its defineAction, as `id: '…',` before the name, in the file's own indentation
-export const writeIds = (root: string): MissingId[] => {
-  const missing = missingIds(scan(root))
+export const writeIds = (root: string, options: { idPrefix?: string } = {}): MissingId[] => {
+  const missing = missingIds(scan(root), options)
   // Map.groupBy is ES2024; packages target ES2023 and Node 20
   const byFile = new Map<string, MissingId[]>()
   for (const m of missing) byFile.set(m.file, [...(byFile.get(m.file) ?? []), m])

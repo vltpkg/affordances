@@ -82,9 +82,15 @@ const idsCommand = Command.make(
       Flag.withDescription('Add each suggested id to its defineAction, as `id`'),
       Flag.withDefault(false),
     ),
+    prefix: Flag.String('prefix').pipe(
+      Flag.withDescription(
+        "Lead each suggested id with this identifier, e.g. acmeStore: withAffordances' prefix from the site's name",
+      ),
+      Flag.optional,
+    ),
     json,
   },
-  (o) => respond(o.json, ids(cwd(), o.write), format.ids),
+  (o) => respond(o.json, ids(cwd(), o.write, Option.getOrUndefined(o.prefix)), format.ids),
 ).pipe(
   Command.withDescription(
     "Experimental: list actions without a capability id, each with a suggested one from its route and name. --write adds them to source. A suggestion is never an id until it's in source.",

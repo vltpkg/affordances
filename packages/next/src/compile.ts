@@ -48,6 +48,8 @@ export const compileSync = (
     namespace?: string
     owner?: { id?: string; name: string; href?: string }
     strict?: boolean
+    // the prefix W_NO_ID's suggested ids take, from withAffordances' name (RFC 0005 §1)
+    idPrefix?: string
   } = {},
 ): Compiled => {
   const diagnostics: Diagnostic[] = []
@@ -91,7 +93,7 @@ export const compileSync = (
 
   // what extraction recovers from the v0 actions; each bound action's import resolved to a module export here, where
   // the file system is, so the child's merge needs none
-  const extracted = extract(root, { strict: options.strict })
+  const extracted = extract(root, { strict: options.strict, idPrefix: options.idPrefix })
   const extraction: Extraction = {
     capabilities: extracted.capabilities,
     resources: extracted.resources,

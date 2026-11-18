@@ -161,7 +161,11 @@ const byId = <T extends { id: string }>(xs: T[]) => xs.toSorted((a, b) => byCode
  * @experimental RFC 0005 §2.1's rules E1 to E9 over a v0 app, for M6c's pipeline. Throws only codegen's own errors
  * from its scan, which v0's build already fails on; everything it reads itself is a result or a diagnostic.
  */
-export const extract = (root: string, options: { strict?: boolean } = {}): Extracted => {
+export const extract = (
+  root: string,
+  // idPrefix: withAffordances' prefix for suggested ids, from the site's name (RFC 0005 §1)
+  options: { strict?: boolean; idPrefix?: string } = {},
+): Extracted => {
   const capabilities: ExtractedCapability[] = []
   const bindings: ExtractedBinding[] = []
   const resources = new Map<string, ExtractedResource>()
@@ -262,7 +266,7 @@ export const extract = (root: string, options: { strict?: boolean } = {}): Extra
         diagnostics.push({
           code: 'W_NO_ID',
           ...where,
-          detail: `id: '${suggestId(entry.route, name)}'`,
+          detail: `id: '${suggestId(entry.route, name, false, options.idPrefix)}'`,
         })
         continue
       }

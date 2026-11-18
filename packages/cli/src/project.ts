@@ -35,11 +35,16 @@ const manifest = (root: string) =>
   })
 
 // v0 actions without a capability id, each with a suggested one (RFC 0001 §10.1); --write puts them in source
-export const ids = (root: string, write: boolean) =>
+export const ids = (root: string, write: boolean, idPrefix?: string) =>
   Effect.gen(function* () {
     yield* appDir(root)
     const missing: MissingId[] = yield* Effect.try({
-      try: () => (write ? writeIds(root) : missingIds(scan(root))),
+      try: () => {
+        // a prefix is an id word, as withAffordances infers it from the site's name
+        if (idPrefix !== undefined && !/^[a-z][A-Za-z0-9]*$/.test(idPrefix))
+          throw new CodegenError(`--prefix '${idPrefix}' isn't an id word, such as acmeStore`)
+        return write ? writeIds(root, { idPrefix }) : missingIds(scan(root), { idPrefix })
+      },
       catch: (error) =>
         new Codegen({ message: error instanceof CodegenError ? error.message : String(error) }),
     })
