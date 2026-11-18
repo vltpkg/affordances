@@ -579,16 +579,26 @@ Only the tools differ. Three surfaces use the benchmark's four tools (§5.1):
 
 The record is [`confirmatory-2026-11-18/`](../apps/choice-bench/results/confirmatory-2026-11-18/README.md): 684 trials, on T6, with Sonnet and Haiku. Its pre-registered numbers stand as analyzed.
 
+- **The outcome is the intended end state** (§5.2): the share of trials whose choice was optimal, not of completed purchases.
+  - **Completed purchases:** Sonnet completed 102, 93 and 100 of 114 in A, C and S. Haiku completed 0, 1 and 0, so 1 of its 342 trials.
+
 - **H1, S against A:** not rejected.
-- **H2, C against A:** rejected, with C lower. The effect differs between the models: −73.7 points on Sonnet and −7.9 on Haiku.
+- **H2, C against A:** rejected, with C lower. The effect differs between the models:
+  - **Sonnet:** −73.7 points (Newcombe 95% CI −80.8 to −63.2, Fisher p 3.3e-31);
+  - **Haiku:** −7.9 points (−19.8 to +4.3, p 0.263), not significant on its own.
   - **Validity note** (intake, 2026-11-18). As built, C differs from A in two ways: the owner's claims, and the `advocated` policy's scope (neighborhood depth 1). That scope leaves out `hosting.plan.list`, the only offer carrying the plans' allowances.
   - **So H2 measures the advocated policy as a whole** against exhaustive disclosure. It doesn't isolate the claims, and no claim that advocacy steers agents is made.
   - **What the audit found** (post hoc, descriptive): conditional on seeing Pro's allowance before the first approval request, C on Sonnet was optimal in 17 of 19 trials. Without it, 0 of 95 were.
   - **What's next:** exploratory cells separate the two factors. RFC 0002 §6.6 proposes the runtime rule this case calls for.
 - **A lesson for condition construction:**
-  - **The rule:** a condition differs from its control only in the factor it manipulates, and that's checked mechanically, not by reading the condition's definition.
-  - **The check:** before any confirmatory run, each condition's first-view offer set is diffed against its control's, and the harness preflight refuses a difference beyond the manipulated factor.
-  - **Why:** RFC 0002 §6.1 maps C to a policy whose scope differs from A's, and nothing compared the two first views before the run.
+  - **The rule, the goal:** a condition differs from its control only in the factor it manipulates, and that's checked mechanically, not by reading the condition's definition.
+  - **The first step, built (588e7093):**
+    - each condition declares what it manipulates against A;
+    - before a real run, the harness compares the offer ids in the condition's first view with A's, and refuses any difference that a declared `scope` or `start` doesn't cover.
+  - **What it doesn't check yet:**
+    - claims, order or relevance;
+    - any condition that declares `scope` or `start`.
+  - **Why:** RFC 0002 §6.1 maps C to a policy whose scope differs from A's, and nothing compared the two first views before the run. Under the check, C and D as built refuse on T6, each missing `hosting.plan.list`.
 
 ## References
 

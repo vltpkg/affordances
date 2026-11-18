@@ -576,7 +576,7 @@ type Comparison = {
 
 **What it costs.**
 
-- **For this fixture:** 21 cells, about 400 bytes of canonical JSON. That's an estimate, not a measurement. It's small next to the 14 or 15 offers in each first view.
+- **For this fixture:** 21 cells, about 400 bytes of canonical JSON. That's an estimate, not a measurement. It's small next to the 11 to 14 offers in each confirmatory first view.
 - **For a wide set:** a choice set is already atomic, so every member's offer is in the view, and the comparison adds one row per member alongside it. 50 members with 12 differing attributes come to 600 cells, roughly the size of the 50 offers themselves.
 - **What bounds it:** a request that can't afford the table states a `facts` limit and gets the named cut. It never gets a silent one.
 
