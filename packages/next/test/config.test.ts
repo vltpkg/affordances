@@ -280,29 +280,65 @@ export const manifest = defineManifest({ namespace: 'https://acme.example/capabi
   }
 }, 60_000)
 
-test("next's worker processes inherit the build's environment, so a later config load doesn't compile or print again", async () => {
+test('a worker of the same build prints nothing new, but still compiles for itself', async () => {
   // the first load, in the build's own process
   const first = await fresh()
   const root = app({ 'app/actions.ts': "'use server'\nexport {}\n" })
   const spies = quiet()
+  const notices = () =>
+    spies.warn.mock.calls.filter((c) => String(c[0]).includes('W_NO_NAMESPACE')).length
   try {
     first({} as NextConfig, { root })
-    expect(
-      spies.warn.mock.calls.filter((c) => String(c[0]).includes('W_NO_NAMESPACE')),
-    ).toHaveLength(1)
+    expect(notices()).toBe(1)
     // a worker's load: a fresh module, as a new process has, with the same environment, which a worker inherits
     const worker = await fresh()
     worker({} as NextConfig, { root })
-    expect(
-      spies.warn.mock.calls.filter((c) => String(c[0]).includes('W_NO_NAMESPACE')),
-    ).toHaveLength(1)
-    // a different app in the same build still gets its own compile
-    const other = app({ 'app/actions.ts': "'use server'\nexport {}\n" })
-    worker({} as NextConfig, { root: other })
-    expect(
-      spies.warn.mock.calls.filter((c) => String(c[0]).includes('W_NO_NAMESPACE')),
-    ).toHaveLength(2)
+    expect(notices()).toBe(1)
+    // a different app in the same build prints its own
+    worker({} as NextConfig, { root: app({ 'app/actions.ts': "'use server'\nexport {}\n" }) })
+    expect(notices()).toBe(2)
   } finally {
     vi.restoreAllMocks()
   }
 })
+
+test('a process spawned by one that already compiled (a harness running next build) compiles again: never stale', async () => {
+  const harness = await fresh()
+  const root = mkdtempSync(path.join(import.meta.dirname, '.wire-'))
+  try {
+    mkdirSync(path.join(root, 'app'), { recursive: true })
+    const write = (ids: string[]) =>
+      writeFileSync(
+        path.join(root, 'app', 'capabilities.ts'),
+        `import { defineCapability } from '@affordances/ir'\n${ids
+          .map(
+            (id, i) =>
+              `export const c${i} = defineCapability({ id: '${id}', kind: 'query', description: 'Q', authorization: { principal: 'any' } })`,
+          )
+          .join('\n')}\n`,
+      )
+    const ids = () =>
+      (
+        JSON.parse(readFileSync(path.join(root, '.affordances', 'manifest.json'), 'utf8')) as {
+          capabilities: { id: string }[]
+        }
+      ).capabilities.map((c) => c.id)
+    const options = {
+      root,
+      namespace: 'https://acme.example/capabilities',
+      owner: { id: 'acme', name: 'Acme' },
+    }
+    quiet()
+    write(['acme.one'])
+    harness({} as NextConfig, options)
+    expect(ids()).toEqual(['acme.one'])
+    // the sources change, then the harness spawns next build: a new process, with the harness's environment
+    write(['acme.one', 'acme.two'])
+    const build = await fresh()
+    build({} as NextConfig, options)
+    expect(ids()).toEqual(['acme.one', 'acme.two'])
+  } finally {
+    vi.restoreAllMocks()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 60_000)

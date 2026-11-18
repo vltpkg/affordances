@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, watch } from 'node:fs'
 import path from 'node:path'
 import type { NextConfig } from 'next'
@@ -165,25 +166,32 @@ export const noNamespace = (root: string): Diagnostic => {
   }
 }
 
-// once per build and root. next loads its config more than once in one build, in the same process and in the worker
-// processes it spawns, which inherit its environment: so the roots compiled so far are kept in the environment too
-export const COMPILED_ENV = 'AFFORDANCES_COMPILED'
-const compiledRoots = () =>
-  new Set((process.env[COMPILED_ENV] ?? '').split(path.delimiter).filter(Boolean))
-const markCompiled = (root: string) => {
-  process.env[COMPILED_ENV] = [...compiledRoots().add(root)].join(path.delimiter)
+// compiled once per process and root, so what's written is never stale: a process always compiles for itself, even
+// when an ancestor already did (a harness that spawns next build)
+const compiled = new Set<string>()
+
+// printed once per build. next loads its config in more than one process, and its workers inherit the environment, so
+// what was printed is kept there, by root and line: a later load prints only what's new
+export const PRINTED_ENV = 'AFFORDANCES_PRINTED'
+const printed = () => new Set((process.env[PRINTED_ENV] ?? '').split('\n').filter(Boolean))
+const print = (root: string, line: string, error: boolean, once = true) => {
+  const key = `${root}\t${createHash('sha256').update(line).digest('base64url')}`
+  const seen = printed()
+  if (once && seen.has(key)) return
+  process.env[PRINTED_ENV] = [...seen.add(key)].join('\n')
+  if (error) console.error(line)
+  else console.warn(line)
 }
 
 // RFC 0005 §4: compile the app's capabilities, write .affordances/, and print each diagnostic once. compileSync never
 // reports W_NO_NAMESPACE, which withAffordances prints itself, with the line to paste
-const compile = (root: string, identity: Identity) => {
+// `once`: a build prints each line once across its processes; dev's watcher prints every recompile's, so an error that
+// comes back after a save shows again
+const compile = (root: string, identity: Identity, once = true) => {
   const result = compileSync(root, identity)
   writeCompiled(root, result)
-  for (const d of result.diagnostics) {
-    const line = `[affordances] ${format(d, identity.strict)}`
-    if (fails(d.code, identity.strict)) console.error(line)
-    else console.warn(line)
-  }
+  for (const d of result.diagnostics)
+    print(root, `[affordances] ${format(d, identity.strict)}`, fails(d.code, identity.strict), once)
   return result
 }
 
@@ -204,13 +212,13 @@ export const withAffordances = <C extends Config>(
   const entries = generate(root, options)
   const dev = process.env.NODE_ENV === 'development'
   // once per root: next loads its config more than once in one build, and each compile runs the evaluator twice
-  if (!compiledRoots().has(root)) {
-    markCompiled(root)
+  if (!compiled.has(root)) {
+    compiled.add(root)
     const result = compile(root, identity)
     // no manifest, and nothing failed: no namespace anywhere, in the config or a defineManifest export, which carries
     // its own (RFC 0005 §1). Then the build names the one line that turns it on
     if (result.canonical === undefined && !result.failed)
-      console.warn(`[affordances] ${format(noNamespace(root))}`)
+      print(root, `[affordances] ${format(noNamespace(root))}`, false)
     // a failed compile fails next build; in dev it's logged, and the watcher recompiles on the next change
     if (result.failed && !dev)
       throw new Error(
@@ -227,7 +235,7 @@ export const withAffordances = <C extends Config>(
         timer = setTimeout(() => {
           try {
             generate(root, options)
-            compile(root, identity)
+            compile(root, identity, false)
           } catch (error) {
             console.error(`[affordances] ${(error as Error).message}`)
           }

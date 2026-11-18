@@ -1,8 +1,16 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { expect, test } from 'vitest'
-import { generate, render, scan } from '../src/codegen.ts'
+import { generate, render, scan, writeIfChanged } from '../src/codegen.ts'
 import { fixtureCopy } from './support/fixture.ts'
 
 const fixture = fixtureCopy()
@@ -70,4 +78,27 @@ test('generate writes .affordances/manifest.ts', () => {
   expect(readFileSync(path.join(fixture, '.affordances/manifest.ts'), 'utf8')).toBe(
     render(scan(fixture), { name: 'Fixture' }),
   )
+})
+
+// next's workers can write .affordances/ at once, so a write is a rename into place: a reader sees the old file or the
+// new one, never half of one (review, 2026-11-18)
+test('writeIfChanged replaces a file by renaming a complete one into place, and only when it changed', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'affordances-write-'))
+  try {
+    const file = path.join(dir, '.affordances', 'manifest.json')
+    expect(writeIfChanged(file, 'one')).toBe(true)
+    expect(readFileSync(file, 'utf8')).toBe('one')
+    const before = statSync(file)
+    // unchanged: nothing is written, so the file is the same one
+    expect(writeIfChanged(file, 'one')).toBe(false)
+    expect(statSync(file).ino).toBe(before.ino)
+    // changed: a new file takes the old one's place, as a rename does; an in-place write would keep the inode
+    expect(writeIfChanged(file, 'two')).toBe(true)
+    expect(readFileSync(file, 'utf8')).toBe('two')
+    expect(statSync(file).ino).not.toBe(before.ino)
+    // and no temporary file is left behind
+    expect(readdirSync(path.dirname(file))).toEqual(['manifest.json'])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

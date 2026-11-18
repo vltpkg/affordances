@@ -1,4 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  writeFileSync,
+} from 'node:fs'
 import path from 'node:path'
 import { parseSync } from 'oxc-parser'
 
@@ -178,13 +185,24 @@ ${routes.join('\n')}
 `
 }
 
-// writes .affordances/manifest.ts only when it changed, so watchers don't loop
+/**
+ * @experimental Writes a file only when its content changed, so watchers don't loop, and atomically: next's workers
+ * can load the config, and so write .affordances/, at the same time, so the text goes to a temporary file in the same
+ * directory and is renamed into place. A reader sees the old file or the new one, never half of one (POSIX rename).
+ */
+export const writeIfChanged = (file: string, text: string) => {
+  if (existsSync(file) && readFileSync(file, 'utf8') === text) return false
+  mkdirSync(path.dirname(file), { recursive: true })
+  const temporary = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
+  writeFileSync(temporary, text)
+  renameSync(temporary, file)
+  return true
+}
+
+// writes .affordances/manifest.ts only when it changed
 export const generate = (root: string, options: { name?: string } = {}) => {
   const entries = scan(root)
-  const out = path.join(root, '.affordances', 'manifest.ts')
-  const code = render(entries, options)
-  mkdirSync(path.dirname(out), { recursive: true })
-  if (!existsSync(out) || readFileSync(out, 'utf8') !== code) writeFileSync(out, code)
+  writeIfChanged(path.join(root, '.affordances', 'manifest.ts'), render(entries, options))
   return entries
 }
 
