@@ -562,7 +562,7 @@ Only the tools differ. Three surfaces use the benchmark's four tools (§5.1):
 - **Trial isolation:**
   - **Where trials run:** from a pinned, git-free export, in fresh working directories outside any git tree and any `CLAUDE.md` or `AGENTS.md`. The CLIs' real config directories are used, so no credential is ever copied.
   - **What's switched off:** `CLAUDE.md` loading and auto-memory (`CLAUDE_CODE_DISABLE_CLAUDE_MDS`, `autoMemoryEnabled: false`), session persistence (Claude's `--no-session-persistence`, Codex's `--ephemeral`), and Codex's `AGENTS.md` loading (`project_doc_max_bytes=0`).
-  - **The canary:** a context canary in each driver's trial configuration must report none of these before a run starts.
+  - **The canary:** a context canary in each driver's trial configuration must report none of these before a run starts. For Codex it must also confirm that a global `AGENTS.md` (in Codex's home, not the project) is off. `project_doc_max_bytes=0` is verified only for a project's file, so the canary, not the setting, is what establishes it.
 - **One domain:** results are about one fictional hosting provider's options, and may not transfer to other domains or price structures.
 
 ## 15. Open questions
