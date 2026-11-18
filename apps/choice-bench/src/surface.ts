@@ -188,7 +188,7 @@ export const runSurfaceTrial = async (
   const configPath = file('config.json')
   const config: SurfaceServerConfig | V0Config | BrowserConfig | McpConfig | WebMcpConfig =
     surface.kind === 'mcp'
-      ? { url, session, task: spec.task, out }
+      ? { url, session, task: spec.task, project, out }
       : surface.kind === 'v0' || surface.kind === 'browser' || surface.kind === 'webmcp'
         ? { url, session, out }
         : {

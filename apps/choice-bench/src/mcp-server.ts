@@ -14,7 +14,8 @@ import { TASK_EDITS } from './conditions.ts'
 // does is the pilot's finding. If it doesn't, execute returns the refusal, which is the request event, and the trial
 // ends unconfirmed, with the intended measure only (§3, a harness limit). Nothing simulates a completion here
 
-export type McpConfig = { url: string; session: string; task: string; out: string }
+// project: the trial's own, the connection's start (intake, 16:27Z): every M7f cell starts from the user's project
+export type McpConfig = { url: string; session: string; task: string; project: string; out: string }
 export type McpCall = {
   tool: string
   input: Record<string, unknown>
@@ -156,7 +157,10 @@ const withSession: typeof fetch = (input, init = {}) => {
 }
 const edit = TASK_EDITS[config.task]
 await createMcpServer({
-  adapter: httpAdapter(`${config.url}/api/projection`, withSession, { policy: 'exhaustive' }),
+  adapter: httpAdapter(`${config.url}/api/projection`, withSession, {
+    policy: 'exhaustive',
+    start: { type: 'hosting.project', key: config.project },
+  }),
   // the public manifest the trial's server serves, with its task's claim edit
   manifest: edit ? edit.apply(lab.manifest) : lab.manifest,
   mode: 'generic',
