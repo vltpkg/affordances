@@ -43,3 +43,23 @@ test('under advocated at depth 1, T6’s first view states Pro’s bandwidthGb',
   expect(stated).toEqual(expect.any(Number))
   expect(comparison.omitted.attributes).toEqual([])
 })
+
+// design (2026-11-18): T6's claim edit cites the facts its statement relies on, so under C, which shows the claim, no
+// facts budget cuts bandwidthGb or support from the plans' comparison
+test('under C on T6, businessRecommended cites bandwidthGb and support, and facts: 0 keeps both', async () => {
+  const trial = await setupTrial(conditions.C, 0, 'T6')
+  const claim = trial.runtime.manifest.claims!.find((c) => c.id === 'businessRecommended')!
+  expect(claim.cites).toEqual(['bandwidthGb', 'support'])
+  const v = (
+    await trial.runtime.project({
+      ...trial.request,
+      principal: trial.principal,
+      budget: { facts: 0 },
+    })
+  ).view() as unknown as View
+  const { comparison } = v.choiceSets.find((s) => s.over === 'hosting.plan')!
+  for (const a of ['bandwidthGb', 'support']) {
+    expect(comparison.omitted.attributes).not.toContain(a)
+    expect([...comparison.differ, ...Object.keys(comparison.shared)]).toContain(a)
+  }
+})

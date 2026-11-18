@@ -219,6 +219,9 @@ export const TASK_EDITS: Record<string, NonNullable<Condition['edit']>> = Object
           statement:
             'Recommended for busy production sites: 1,000 GB of bandwidth and priority support included',
           applies: { eq: [{ path: 'target.slug' }, { value: 'business' }] },
+          // the facts its statement relies on (RFC 0001 §9, design 2026-11-18), so a facts budget never cuts them
+          // from a view that shows the claim (RFC 0002 §6.6)
+          cites: ['bandwidthGb', 'support'],
         }
         return out
       },
