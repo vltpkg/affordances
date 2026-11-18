@@ -5,6 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { findAppDir } from './codegen.ts'
 import type { Diagnostic } from './diagnostics.ts'
+import type { CompiledBinding, Extraction } from './merge.ts'
 import { aliasesOf, checkModule } from './modules.ts'
 
 // RFC 0005 §1's evaluation, the parent's side: the capability modules run in a child (evaluate.ts), never in the
@@ -14,17 +15,34 @@ import { aliasesOf, checkModule } from './modules.ts'
 
 /** @experimental The manifest the capability modules make, as canonical JSON, with what fromModules reported. */
 export type Evaluated = {
+  // the modules' manifest alone, when no extraction was given
   manifest?: string
+  // with an extraction: the merged, normalized, validated manifest as canonical JSON, and its digest, when nothing failed
+  canonical?: string
+  digest?: string
+  bindings?: CompiledBinding[]
   diagnostics: Diagnostic[]
   // each branded capability and resource, by module (relative to the root) and export name
   exported: { file: string; name: string; brand: 'capability' | 'resource'; id: string }[]
   reason?: 'no-namespace'
 }
 
+type ChildDiagnostic = {
+  code: string
+  file?: string
+  line?: number
+  subject?: string
+  // fromModules and validate say message; the merge's diagnostics already say detail
+  message?: string
+  detail?: string
+}
 type ChildOutput = {
   exported?: Evaluated['exported']
   manifest?: string
-  diagnostics?: { code: string; file?: string; subject?: string; message: string }[]
+  canonical?: string
+  digest?: string
+  bindings?: CompiledBinding[]
+  diagnostics?: ChildDiagnostic[]
   reason?: 'no-namespace'
 }
 
@@ -54,16 +72,12 @@ const readable = (root: string, appDir: string) => {
   return [...new Set(dirs)]
 }
 
-const toDiagnostic = (d: {
-  code: string
-  file?: string
-  subject?: string
-  message: string
-}): Diagnostic => ({
+const toDiagnostic = (d: ChildDiagnostic): Diagnostic => ({
   code: d.code as Diagnostic['code'],
   file: d.file ?? 'capabilities.ts',
+  ...(d.line !== undefined && { line: d.line }),
   ...(d.subject && { subject: d.subject }),
-  detail: d.message,
+  ...((d.message ?? d.detail) !== undefined && { detail: d.message ?? d.detail }),
 })
 
 /**
@@ -75,10 +89,17 @@ export const evaluateUnchecked = (
   root: string,
   modules: string[],
   identity: { namespace?: string; owner?: { id?: string; name: string; href?: string } },
-  options: { timeoutMs?: number } = {},
+  options: { timeoutMs?: number; extraction?: Extraction } = {},
 ): Evaluated => {
   const appDir = findAppDir(root)
-  const arg = JSON.stringify({ root, modules, identity, aliases: aliasesOf(root) })
+  // on stdin, since extraction's output can outgrow an argument
+  const input = JSON.stringify({
+    root,
+    modules,
+    identity,
+    aliases: aliasesOf(root),
+    ...(options.extraction && { extraction: options.extraction }),
+  })
   const run = () =>
     spawnSync(
       process.execPath,
@@ -86,10 +107,10 @@ export const evaluateUnchecked = (
         '--permission',
         ...readable(root, appDir).map((d) => `--allow-fs-read=${d}`),
         childProgram(),
-        arg,
       ],
       {
         cwd: appDir,
+        input,
         // next's types make NODE_ENV required; the child gets none, on purpose
         env: {} as NodeJS.ProcessEnv,
         encoding: 'utf8',
@@ -135,6 +156,9 @@ export const evaluateUnchecked = (
   }
   return {
     ...(output.manifest && { manifest: output.manifest }),
+    ...(output.canonical && { canonical: output.canonical }),
+    ...(output.digest && { digest: output.digest }),
+    ...(output.bindings && { bindings: output.bindings }),
     diagnostics: (output.diagnostics ?? []).map(toDiagnostic),
     exported: output.exported ?? [],
     ...(output.reason && { reason: output.reason }),
@@ -147,7 +171,7 @@ export const evaluateModules = (
   root: string,
   modules: string[],
   identity: { namespace?: string; owner?: { id?: string; name: string; href?: string } },
-  options: { timeoutMs?: number } = {},
+  options: { timeoutMs?: number; extraction?: Extraction } = {},
 ): Evaluated => {
   const checked = modules.flatMap((m) => checkModule(root, m))
   if (checked.some((d) => d.code.startsWith('E_'))) return { diagnostics: checked, exported: [] }

@@ -11,12 +11,8 @@ import { sliceInput } from './slice.ts'
 // that isn't a literal is read as absent. A capability-bound action extracts nothing but its binding (E1). The
 // output is IR-shaped definitions for M6c's pipeline, which composes them with the capability modules and validates
 
-/** @experimental The extractor's source, which every extracted field's provenance names. */
-export const SOURCE = {
-  id: 'affordances-next',
-  role: 'tool',
-  name: '@affordances/next extractor',
-} as const
+export { SOURCE } from './source.ts'
+import { SOURCE } from './source.ts'
 
 type Provenance = {
   source: string

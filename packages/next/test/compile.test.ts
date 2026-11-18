@@ -7,10 +7,11 @@ import {
   writeFileSync,
   existsSync,
 } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, expect, test } from 'vitest'
-import { compile, writeCompiled } from '../src/compile.ts'
+import { compileSync, writeCompiled, type Compiled } from '../src/compile.ts'
 
 // RFC 0005 §4's pipeline: capability modules and extraction, merged, normalized and validated, then written
 
@@ -28,6 +29,16 @@ beforeAll(() => {
   root = mkdtempSync(path.join(import.meta.dirname, '.modules-'))
 })
 afterAll(() => rmSync(root, { recursive: true, force: true }))
+
+type M = {
+  namespace: string
+  capabilities: { id: string; fieldProvenance?: Record<string, unknown> }[]
+  resources?: { id: string }[]
+  sources?: { id: string }[]
+  bindings?: { capability: string; address: unknown }[]
+}
+// the manifest as manifest.json holds it
+const manifestOf = (r: Compiled) => JSON.parse(r.canonical!) as M
 
 const options = {
   namespace: 'https://shop.example/capabilities',
@@ -49,16 +60,16 @@ test('modules and extraction merge into one valid manifest, with bindings for bo
     'app/products/[slug]/actions.ts': V0,
     'app/plans/actions.ts': BOUND,
   })
-  const r = await compile(dir, options)
+  const r = compileSync(dir, options)
   expect(r.diagnostics.filter((d) => d.code.startsWith('E_'))).toEqual([])
   expect(r.failed).toBe(false)
-  expect(r.manifest!.capabilities.map((c) => c.id)).toEqual([
+  expect(manifestOf(r).capabilities.map((c) => c.id)).toEqual([
     'shop.cart.add',
     'shop.plan.subscribe',
   ])
-  expect(r.manifest!.resources!.map((x) => x.id)).toEqual(['products', 'shop.plan'])
-  expect(r.manifest!.sources!.map((s) => s.id)).toContain('affordances-next')
-  expect(r.manifest!.bindings!.map((b) => [b.capability, b.address])).toEqual([
+  expect(manifestOf(r).resources!.map((x) => x.id)).toEqual(['products', 'shop.plan'])
+  expect(manifestOf(r).sources!.map((s) => s.id)).toContain('affordances-next')
+  expect(manifestOf(r).bindings!.map((b) => [b.capability, b.address])).toEqual([
     ['shop.cart.add', { route: '/products/[slug]', action: 'addToCart' }],
     ['shop.plan.subscribe', { route: '/plans', action: 'subscribe' }],
   ])
@@ -66,7 +77,7 @@ test('modules and extraction merge into one valid manifest, with bindings for bo
   // the extracted capability keeps its provenance, which names the extractor's source
   expect(
     (
-      r.manifest!.capabilities.find((c) => c.id === 'shop.cart.add')!.fieldProvenance as Record<
+      manifestOf(r).capabilities.find((c) => c.id === 'shop.cart.add')!.fieldProvenance as Record<
         string,
         unknown
       >
@@ -83,12 +94,12 @@ test('the outputs are written once, byte for byte the same on a second compile, 
     'app/products/[slug]/actions.ts': V0,
     'app/plans/actions.ts': BOUND,
   })
-  writeCompiled(dir, await compile(dir, options))
+  writeCompiled(dir, compileSync(dir, options))
   const files = ['manifest.json', 'bindings.ts', 'diagnostics.json'].map((f) =>
     path.join(dir, '.affordances', f),
   )
   const before = files.map((f) => [readFileSync(f, 'utf8'), statSync(f).mtimeMs])
-  writeCompiled(dir, await compile(dir, options))
+  writeCompiled(dir, compileSync(dir, options))
   expect(files.map((f) => [readFileSync(f, 'utf8'), statSync(f).mtimeMs])).toEqual(before)
   const bindings = readFileSync(files[1]!, 'utf8')
   expect(bindings).toContain('import * as a0 from "../app/plans/actions"')
@@ -103,11 +114,11 @@ test('an extracted id a module already defines is E_CAPABILITY_DUPLICATE, and fa
     'app/capabilities.ts': MODULE,
     'app/plans/actions.ts': `${ACTIONS}export const sub = defineAction({ name: 'sub', id: 'shop.plan.subscribe', description: 'Again', input: z.object({}), run: async () => {} })\n`,
   })
-  const r = await compile(dir, options)
+  const r = compileSync(dir, options)
   expect(r.diagnostics.find((d) => d.code === 'E_CAPABILITY_DUPLICATE')).toMatchObject({
     subject: 'shop.plan.subscribe',
   })
-  expect([r.failed, r.manifest]).toEqual([true, undefined])
+  expect([r.failed, r.canonical]).toEqual([true, undefined])
 }, 120_000)
 
 test('a bound action that also sets a field its capability defines is E_BOUND_REDEFINES', async () => {
@@ -115,7 +126,7 @@ test('a bound action that also sets a field its capability defines is E_BOUND_RE
     'app/capabilities.ts': MODULE,
     'app/plans/actions.ts': `${ACTIONS}import { subscribe } from '../capabilities'\nexport const sub = defineAction({ capability: subscribe, name: 'subscribe', description: 'Mine', expose: 'session', run: async () => {} })\n`,
   })
-  const r = await compile(dir, options)
+  const r = compileSync(dir, options)
   expect(r.diagnostics.filter((d) => d.code === 'E_BOUND_REDEFINES').map((d) => d.detail)).toEqual([
     "description redefines the capability's description",
     "expose redefines the capability's authorization",
@@ -128,14 +139,14 @@ test('a module that imports app code stops the pipeline before anything is evalu
     'app/lib.ts': "throw new Error('evaluated')\n",
     'app/capabilities.ts': "import '../app/lib'\nexport {}\n",
   })
-  const r = await compile(dir, options)
+  const r = compileSync(dir, options)
   expect(r.diagnostics.map((d) => d.code)).toEqual(['E_CAPABILITY_IMPORT'])
   expect(r.failed).toBe(true)
 }, 120_000)
 
 test('with no namespace, nothing but diagnostics is written, and W_NO_NAMESPACE isn’t repeated', async () => {
   const dir = app({ 'app/capabilities.ts': MODULE, 'app/products/[slug]/actions.ts': V0 })
-  const r = await compile(dir, {})
+  const r = compileSync(dir, {})
   writeCompiled(dir, r)
   expect(existsSync(path.join(dir, '.affordances', 'manifest.json'))).toBe(false)
   expect(r.diagnostics.map((d) => d.code)).not.toContain('W_NO_NAMESPACE')
@@ -155,7 +166,7 @@ const outside = (files: Record<string, string>) => {
 test('a v0 app, with no capability modules and no namespace, works as today: nothing loads and nothing is written', async () => {
   const dir = outside({ 'package.json': '{}', 'app/products/[slug]/actions.ts': V0 })
   try {
-    const r = await compile(dir, {})
+    const r = compileSync(dir, {})
     expect(r).toEqual({ bindings: [], diagnostics: [], failed: false })
     writeCompiled(dir, r)
     expect(existsSync(path.join(dir, '.affordances', 'manifest.json'))).toBe(false)
@@ -171,11 +182,11 @@ test('capability modules, or a namespace, without a resolvable ir: one E_IR_MISS
   ] as const) {
     const dir = outside(files)
     try {
-      const r = await compile(dir, opts)
+      const r = compileSync(dir, opts)
       expect(r.diagnostics.map((d) => [d.code, d.subject])).toEqual([
         ['E_IR_MISSING', '@affordances/ir'],
       ])
-      expect([r.failed, r.manifest]).toEqual([true, undefined])
+      expect([r.failed, r.canonical]).toEqual([true, undefined])
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -190,7 +201,7 @@ test('a module’s syntax error isn’t hidden behind a missing peer', async () 
     'app/cart/capabilities.tsx': 'export {}\n',
   })
   try {
-    expect((await compile(dir, options)).diagnostics.map((d) => d.code)).toEqual([
+    expect(compileSync(dir, options).diagnostics.map((d) => d.code)).toEqual([
       'E_CAPABILITY_SYNTAX',
       'E_IR_MISSING',
     ])
@@ -198,3 +209,32 @@ test('a module’s syntax error isn’t hidden behind a missing peer', async () 
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// compileSync is synchronous, for withAffordances, and the build's own process never loads ir: only the evaluator's
+// sandboxed child does. Checked in a fresh process whose load hook records any module loaded from ir's package
+test('compileSync never loads @affordances/ir in the process that calls it', () => {
+  const dir = app({ 'app/capabilities.ts': MODULE, 'app/products/[slug]/actions.ts': V0 })
+  const script = [
+    "import { registerHooks } from 'node:module'",
+    "import { realpathSync } from 'node:fs'",
+    "import path from 'node:path'",
+    "import { createRequire } from 'node:module'",
+    // ir's real package dir, where the app resolves it: finding it is fine (resolveIr does); loading from it isn't
+    `const irDir = path.dirname(realpathSync(createRequire(${JSON.stringify(path.join(dir, 'package.json'))}).resolve('@affordances/ir')))`,
+    'const asked = []',
+    'registerHooks({ load(url, c, next) { if (url.startsWith("file://") && realpathSync(new URL(url)).startsWith(irDir)) asked.push(url); return next(url, c) } })',
+    `const { compileSync, writeCompiled } = await import(${JSON.stringify(path.join(import.meta.dirname, '..', 'src', 'compile.ts'))})`,
+    `const r = compileSync(${JSON.stringify(dir)}, ${JSON.stringify(options)})`,
+    `writeCompiled(${JSON.stringify(dir)}, r)`,
+    'console.log(JSON.stringify({ asked, failed: r.failed, written: !!r.canonical }))',
+  ].join('\n')
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    encoding: 'utf8',
+  })
+  expect(JSON.parse(child.stdout.trim().split('\n').at(-1)!)).toEqual({
+    asked: [],
+    failed: false,
+    written: true,
+  })
+  expect(existsSync(path.join(dir, '.affordances', 'manifest.json'))).toBe(true)
+}, 120_000)

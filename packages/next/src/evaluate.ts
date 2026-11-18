@@ -1,22 +1,28 @@
+import { readFileSync } from 'node:fs'
 import { registerHooks } from 'node:module'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { merge, type Extraction, type ModuleManifest } from './merge.ts'
 
 // RFC 0005 §1's evaluation, the child's side: run in a fresh process with an empty environment, by evaluator.ts, twice.
-// It imports each capability module, hands every module's exports to fromModules, and prints the manifest's canonical
-// JSON and the diagnostics, as data. Imports without extensions and tsconfig aliases, which Next apps use and Node
-// won't resolve, go through one resolve hook. The static checks (modules.ts) ran before this, so a module here is
-// data; what it throws is reported, never a crash of the build
-//   node evaluate.js '<json: { root, modules, identity, aliases }>'
+// It imports each capability module, hands every module's exports to fromModules, merges in extraction's output
+// (merge.ts), and normalizes, validates and digests the result with ir. It prints all of it as data. ir is loaded
+// here and only here, so the build's own process never loads it. Imports without extensions and tsconfig aliases,
+// which Next apps use and Node won't resolve, go through one resolve hook. The static checks (modules.ts) ran before
+// this, so a module here is data; what it throws is reported, never a crash of the build
+//   node evaluate.js < '<json: { root, modules, identity, aliases, extraction? }>'
 
 type Input = {
   root: string
   modules: string[]
   identity: { namespace?: string; owner?: { id?: string; name: string; href?: string } }
   aliases: { prefix: string; targets: string[] }[]
+  // extraction's output, to merge in; without it, the modules' manifest alone
+  extraction?: Extraction
 }
 
-const input = JSON.parse(process.argv[2] ?? '{}') as Input
+// on stdin: extraction's output can outgrow an argument
+const input = JSON.parse(readFileSync(0, 'utf8') || '{}') as Input
 
 const TS = ['.ts', '/index.ts']
 registerHooks({
@@ -56,12 +62,19 @@ const out = (value: unknown) => process.stdout.write(JSON.stringify(value))
 type Ir = {
   brandOf: (value: unknown) => string | undefined
   canonicalJson: (value: unknown) => string
+  normalize: (manifest: ModuleManifest) => ModuleManifest
+  validate: (manifest: unknown) => {
+    ok: boolean
+    issues?: { code: string; at: string; message: string }[]
+  }
+  digest: (manifest: ModuleManifest) => Promise<string>
   fromModules: (
     modules: { file: string; exports: Record<string, unknown> }[],
     identity: unknown,
   ) => { manifest?: unknown; diagnostics: unknown[]; reason?: 'no-namespace' }
 }
-const { brandOf, canonicalJson, fromModules } = (await import('@affordances/ir')) as Ir
+const ir = (await import('@affordances/ir')) as unknown as Ir
+const { brandOf, canonicalJson, fromModules } = ir
 
 const modules = []
 for (const file of input.modules)
@@ -96,9 +109,37 @@ const exported = modules.flatMap(({ file, exports }) =>
       : []
   }),
 )
+if (!manifest || !input.extraction) {
+  out({
+    manifest: manifest && canonicalJson(manifest),
+    diagnostics,
+    exported,
+    ...(reason && { reason }),
+  })
+  process.exit(0)
+}
+
+// the merge, then ir's normalize and validate; any error, from fromModules, the merge or validate, stops the manifest
+const merged = merge(manifest as ModuleManifest, exported, input.extraction)
+const normalized = ir.normalize(merged.manifest)
+const validation = ir.validate(normalized)
+const all = [
+  ...diagnostics,
+  ...merged.diagnostics,
+  ...(validation.issues ?? []).map((i) => ({
+    code: i.code,
+    file: '.affordances/manifest.json',
+    subject: i.at,
+    message: i.message,
+  })),
+]
+const failed = all.some((d) => String((d as { code: string }).code).startsWith('E_'))
 out({
-  manifest: manifest && canonicalJson(manifest),
-  diagnostics,
+  ...(!failed && {
+    canonical: canonicalJson(normalized),
+    digest: await ir.digest(normalized),
+  }),
+  bindings: merged.bindings,
+  diagnostics: all,
   exported,
-  ...(reason && { reason }),
 })
