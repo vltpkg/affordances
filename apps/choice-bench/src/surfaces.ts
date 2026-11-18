@@ -20,6 +20,13 @@ export type Surface = {
   pilotOnly?: true
 }
 
+// the approval, identical on every surface's instruction line (intake, 2026-11-18 18:37Z, after the pilot): the
+// person has already approved the purchase, so no surface's agent stops to ask. One sentence, the same bytes everywhere,
+// so the instruction line stays the prompt's only difference between surfaces, as the preflight checks
+export const APPROVAL =
+  'The person has approved completing the purchase you judge best; complete it without asking.'
+const line = (tools: string) => `${tools} ${APPROVAL}`
+
 const builtIn = (id: string) => {
   const p = builtInPolicies.find((x) => x.id === id)
   if (!p) throw new Error(`the runtime has no built-in policy ${id}`)
@@ -30,7 +37,7 @@ const tools = (id: 'full' | 'progressive', policy: string, name: string): Surfac
   id,
   name,
   kind: 'tools',
-  instruction: 'Your tools are project, expand, inspect and execute.',
+  instruction: line('Your tools are project, expand, inspect and execute.'),
   condition: { id: 'A', name, policy: builtIn(policy), manipulates: [] },
 })
 
@@ -41,26 +48,26 @@ export const surfaces: Record<SurfaceId, Surface> = {
     id: 'v0',
     name: 'Affordances v0',
     kind: 'v0',
-    instruction: 'Your tools are affordances_open and affordances_call.',
+    instruction: line('Your tools are affordances_open and affordances_call.'),
   },
   browser: {
     id: 'browser',
     name: 'browser automation',
     kind: 'browser',
-    instruction: 'Your tools are open, snapshot, click, fill and submit.',
+    instruction: line('Your tools are open, snapshot, click, fill and submit.'),
   },
   mcp: {
     id: 'mcp',
     name: 'MCP, generic mode',
     kind: 'mcp',
-    instruction: 'Your tools are project, expand, inspect and execute.',
+    instruction: line('Your tools are project, expand, inspect and execute.'),
     pilotOnly: true,
   },
   webmcp: {
     id: 'webmcp',
     name: 'WebMCP',
     kind: 'webmcp',
-    instruction: 'Your tools are the page’s project, expand, inspect and execute.',
+    instruction: line('Your tools are the page’s project, expand, inspect and execute.'),
     pilotOnly: true,
   },
 }

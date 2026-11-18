@@ -13,8 +13,21 @@ export const PILOT_MODELS = ['claude-sonnet-5-5', 'claude-haiku-5-5']
 export const PILOT_PER_CELL = 5
 export const PILOT_TASK = 'T6'
 
-const specOf = (surface: SurfaceId, model: string, index: number, driver: string): TrialSpec => ({
-  id: `pilot-${surface}-${PILOT_TASK}-${model}-${index}`.replace(/[^\w.-]/g, '_'),
+// the re-pilot (intake, 2026-11-18 18:37Z, after the pilot): the 4 confirmatory surfaces x 2 models x 2 = 16, in the
+// same interleaved and rotated order, on the new pin with the approval sentence
+export const REPILOT_SURFACES: SurfaceId[] = ['full', 'progressive', 'v0', 'browser']
+export const REPILOT_PER_CELL = 2
+
+type PlanShape = { prefix: string; surfaces: SurfaceId[]; perCell: number }
+
+const specOf = (
+  prefix: string,
+  surface: SurfaceId,
+  model: string,
+  index: number,
+  driver: string,
+): TrialSpec => ({
+  id: `${prefix}-${surface}-${PILOT_TASK}-${model}-${index}`.replace(/[^\w.-]/g, '_'),
   condition: 'A',
   surface,
   task: PILOT_TASK,
@@ -23,14 +36,24 @@ const specOf = (surface: SurfaceId, model: string, index: number, driver: string
   index,
 })
 
-/** The surfaces in index i's rotation: the list turned i places. */
-export const rotation = (i: number) =>
-  PILOT_SURFACES.map((_, k) => PILOT_SURFACES[(k + i) % PILOT_SURFACES.length]!)
+/** A plan's surfaces in index i's rotation: the list turned i places. */
+export const rotation = (i: number, surfaces: SurfaceId[] = PILOT_SURFACES) =>
+  surfaces.map((_, k) => surfaces[(k + i) % surfaces.length]!)
 
-/** The 60, in the order they run. driver 'fake' is the dry run's, with no model. */
-export const surfacePilotPlan = (driver = 'claude-cli'): TrialSpec[] =>
-  Array.from({ length: PILOT_PER_CELL }, (_, index) =>
+// by index, each index's specs side by side, the model order alternating, the surfaces rotated per index
+const planOf = (shape: PlanShape, driver: string): TrialSpec[] =>
+  Array.from({ length: shape.perCell }, (_, index) =>
     (index % 2 === 0 ? PILOT_MODELS : [...PILOT_MODELS].toReversed()).flatMap((model) =>
-      rotation(index).map((surface) => specOf(surface, model, index, driver)),
+      rotation(index, shape.surfaces).map((surface) =>
+        specOf(shape.prefix, surface, model, index, driver),
+      ),
     ),
   ).flat()
+
+/** The pilot's 60, in the order they run. driver 'fake' is the dry run's, with no model. */
+export const surfacePilotPlan = (driver = 'claude-cli') =>
+  planOf({ prefix: 'pilot', surfaces: PILOT_SURFACES, perCell: PILOT_PER_CELL }, driver)
+
+/** The re-pilot's 16, in the order they run. */
+export const surfaceRepilotPlan = (driver = 'claude-cli') =>
+  planOf({ prefix: 'repilot', surfaces: REPILOT_SURFACES, perCell: REPILOT_PER_CELL }, driver)

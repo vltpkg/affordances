@@ -18,13 +18,19 @@ import { PIN_FILE } from './pin.ts'
 import { surfacePreflight } from './preflight.ts'
 import { MAX_ATTEMPTS, runSurfaceSpecs, SurfaceRunStopped } from './surface.ts'
 import { cellTotals, statusOf } from './status.ts'
-import { PILOT_SURFACES, surfacePilotPlan } from './surface-plan.ts'
+import {
+  PILOT_SURFACES,
+  REPILOT_SURFACES,
+  surfacePilotPlan,
+  surfaceRepilotPlan,
+} from './surface-plan.ts'
 
 // M7f's surface run, launch and resume (the planner, 2026-11-18 17:35Z). M5's run.ts and its modes are left as they ran.
 //   node src/surface-run.ts plan               the pilot's 60, listed in their order, not run
 //   node src/surface-run.ts pilot <out>        runs them, or resumes: from the pinned export, in the announced window
 //   node src/surface-run.ts pilot <out> --dry  the same entry with the fake driver and no model: the rehearsal
 //   node src/surface-run.ts status <out>       a liveness check: non-outcome fields only, read-only, safe mid-run
+//   node src/surface-run.ts repilot <out> [--dry]   the re-pilot's 16 (intake, 18:37Z): the same entry and gates
 // Every launch and every resume runs the pinned preflight FIRST (the tree hash, parity, the same start, the mcp pin,
 // one build) and refuses, with no trial started, unless it passes. Then M5's integrity steps: the logins read-only,
 // a canary per model against its baseline, the owner's files stamped, and the load gate. The trials run two at a time,
@@ -41,8 +47,14 @@ const refuse = (why: string): never => {
 const PREFLIGHT_PORT = 3941
 const WORKER_PORTS = [3931, 3932]
 
-if (mode === 'plan') {
-  for (const s of surfacePilotPlan()) console.log(`${s.id} ${s.surface} ${s.model} ${s.index}`)
+// which plan a mode runs: the pilot's 60, or the re-pilot's 16, with the surfaces its preflight checks
+const PLANS = {
+  pilot: { specs: surfacePilotPlan, surfaces: PILOT_SURFACES },
+  repilot: { specs: surfaceRepilotPlan, surfaces: REPILOT_SURFACES },
+} as const
+if (mode === 'plan' || mode === 'plan-repilot') {
+  for (const s of PLANS[mode === 'plan' ? 'pilot' : 'repilot'].specs())
+    console.log(`${s.id} ${s.surface} ${s.model} ${s.index}`)
   process.exit(0)
 }
 // the liveness check (intake, 18:18Z): non-outcome fields only, read-only, safe mid-run. It reads no pin and starts
@@ -52,13 +64,20 @@ if (mode === 'status') {
     console.error('usage: node src/surface-run.ts status <out>')
     process.exit(2)
   }
-  const lines = statusOf(path.resolve(outArg), surfacePilotPlan())
+  // the plan whose specs the out dir holds: the re-pilot's when any of its spec files are there, else the pilot's
+  const out = path.resolve(outArg)
+  const specs = readdirSync(out).some((f) => f.startsWith('repilot-'))
+    ? surfaceRepilotPlan()
+    : surfacePilotPlan()
+  const lines = statusOf(out, specs)
   for (const l of lines) console.log(JSON.stringify(l))
   console.log(JSON.stringify({ cells: cellTotals(lines) }))
   process.exit(0)
 }
-if (mode !== 'pilot' || !outArg) {
-  console.error('usage: node src/surface-run.ts plan | status <out> | pilot <out> [--dry]')
+if ((mode !== 'pilot' && mode !== 'repilot') || !outArg) {
+  console.error(
+    'usage: node src/surface-run.ts plan | plan-repilot | status <out> | pilot|repilot <out> [--dry]',
+  )
   process.exit(2)
 }
 const dry = flags.includes('--dry')
@@ -85,12 +104,12 @@ const preflight = await surfacePreflight({
   dir: path.join(out, `preflight-${launch}`),
   root: ROOT,
   pinned: true,
-  surfaces: PILOT_SURFACES,
+  surfaces: [...PLANS[mode].surfaces],
 })
 write('preflight', preflight)
 if (!preflight.ok) refuse(`the pinned preflight: ${preflight.refusals.join('; ')}`)
 
-const specs = surfacePilotPlan(dry ? 'fake' : 'claude-cli')
+const specs = PLANS[mode].specs(dry ? 'fake' : 'claude-cli')
 const driverFor = (s: TrialSpec): Driver =>
   s.driver === 'fake'
     ? fakeDriver(s.index, path.join(out, `${s.id}.raw.json`))

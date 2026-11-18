@@ -4,7 +4,14 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, expect, test } from 'vitest'
 import { loadGate, ownerChanges, stampOwnerFiles } from '../src/integrity.ts'
-import { PILOT_MODELS, PILOT_SURFACES, surfacePilotPlan } from '../src/surface-plan.ts'
+import {
+  PILOT_MODELS,
+  PILOT_SURFACES,
+  REPILOT_SURFACES,
+  surfacePilotPlan,
+  surfaceRepilotPlan,
+} from '../src/surface-plan.ts'
+import { APPROVAL, surfaces } from '../src/surfaces.ts'
 
 // M7f's surface run (the planner, 17:35Z): its plan and order, its integrity steps, and its refusal off the pin
 
@@ -69,4 +76,32 @@ test('off the pinned export, the entry refuses before any trial: no pin.json, no
   expect(r.stderr).toMatch(/REFUSED: no pin.json: a surface run runs only from the pinned export/)
   // nothing but its own empty directory: no preflight, no launch record, no trial
   expect(readdirSync(out)).toEqual([])
+})
+
+// intake (18:37Z, after the pilot): one approval sentence, the same bytes on every surface's instruction line, and the
+// re-pilot's 16
+test('every surface’s instruction line ends with the one approval sentence, identical bytes', () => {
+  expect(APPROVAL).toBe(
+    'The person has approved completing the purchase you judge best; complete it without asking.',
+  )
+  for (const s of Object.values(surfaces)) expect(s.instruction.endsWith(` ${APPROVAL}`)).toBe(true)
+  expect(
+    new Set(Object.values(surfaces).map((s) => s.instruction.slice(-APPROVAL.length))).size,
+  ).toBe(1)
+})
+
+test('the re-pilot: the 4 confirmatory surfaces x 2 models x 2, interleaved, alternating and rotated', () => {
+  const plan = surfaceRepilotPlan()
+  expect(plan).toHaveLength(16)
+  expect(new Set(plan.map((s) => `${s.surface} ${s.model} ${s.index}`)).size).toBe(16)
+  expect(new Set(plan.map((s) => s.surface))).toEqual(new Set(REPILOT_SURFACES))
+  for (let i = 0; i < 2; i++) {
+    const block = plan.slice(i * 8, i * 8 + 8)
+    expect(block.every((s) => s.index === i)).toBe(true)
+    expect(block[0]!.model).toBe(i % 2 === 0 ? 'claude-sonnet-5-5' : 'claude-haiku-5-5')
+    expect(block[0]!.surface).toBe(REPILOT_SURFACES[i])
+  }
+  expect(plan.every((s) => s.id.startsWith('repilot-'))).toBe(true)
+  // the pilot's own ids are as they were, so its committed record still matches its plan
+  expect(surfacePilotPlan()[0]!.id).toBe('pilot-full-T6-claude-sonnet-5-5-0')
 })
