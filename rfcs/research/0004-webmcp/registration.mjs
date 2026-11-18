@@ -14,52 +14,62 @@ const [root] = process.argv.slice(2)
 const require = createRequire(path.join(root, 'apps/hosting-lab/package.json'))
 const { chromium } = require('@playwright/test')
 
+// the probe's two helpers, at module scope, and handed to the page as source: page.evaluate runs its callback in the
+// page, where this module's scope doesn't exist
+function tool(name, d) {
+  return {
+    name,
+    description: d,
+    inputSchema: { type: 'object', properties: {} },
+    execute: async () => ({ content: [{ type: 'text', text: d }] }),
+  }
+}
+async function settle(p) {
+  try {
+    await p
+    return 'resolved'
+  } catch (e) {
+    return `rejected: ${e.name}: ${e.message}`
+  }
+}
+
 const browser = await chromium.launch({ headless: true, args: ['--enable-features=WebMCP'] })
 const page = await browser.newPage()
 await page.route('http://localhost:9/**', (r) =>
   r.fulfill({ contentType: 'text/html', body: '<!doctype html><title>registration</title>' }),
 )
 await page.goto('http://localhost:9/')
+await page.addScriptTag({ content: `window.probeTool = ${tool}\nwindow.probeSettle = ${settle}` })
 const report = await page.evaluate(async () => {
   const c = document.modelContext
   if (!c) return { modelContext: false }
-  const tool = (name, d) => ({
-    name,
-    description: d,
-    inputSchema: { type: 'object', properties: {} },
-    execute: async () => ({ content: [{ type: 'text', text: d }] }),
-  })
+  // the helpers, as the page has them
+  const { probeTool, probeSettle } = window
   const listed = async (name) =>
     (await c.getTools()).filter((t) => t.name === name).map((t) => t.description)
-  const settle = async (p) => {
-    try {
-      await p
-      return 'resolved'
-    } catch (e) {
-      return `rejected: ${e.name}: ${e.message}`
-    }
-  }
   const out = {
     modelContext: true,
     methods: Object.keys(Object.getPrototypeOf(c)).toSorted(),
     unregisterTool: typeof c.unregisterTool,
   }
   // a duplicate name, with no signal
-  out.first = await settle(c.registerTool(tool('dup', 'first')))
-  out.duplicate = await settle(c.registerTool(tool('dup', 'second')))
+  out.first = await probeSettle(c.registerTool(probeTool('dup', 'first')))
+  out.duplicate = await probeSettle(c.registerTool(probeTool('dup', 'second')))
   out.afterDuplicate = await listed('dup')
   // a signal, aborted
   const a = new AbortController()
-  out.withSignal = await settle(c.registerTool(tool('sig', 'registered'), { signal: a.signal }))
+  out.withSignal = await probeSettle(
+    c.registerTool(probeTool('sig', 'registered'), { signal: a.signal }),
+  )
   out.beforeAbort = await listed('sig')
   a.abort()
   out.afterAbort = await listed('sig')
   // the same name at once after an abort: React's cleanup, then its effect again
   const b = new AbortController()
-  c.registerTool(tool('again', 'one'), { signal: b.signal })
+  c.registerTool(probeTool('again', 'one'), { signal: b.signal })
   b.abort()
-  out.reregisteredAfterAbort = await settle(
-    c.registerTool(tool('again', 'two'), { signal: new AbortController().signal }),
+  out.reregisteredAfterAbort = await probeSettle(
+    c.registerTool(probeTool('again', 'two'), { signal: new AbortController().signal }),
   )
   out.afterReregister = await listed('again')
   return out
