@@ -563,7 +563,7 @@ type Comparison = {
   - **What gets cut:** columns, never rows, so no member carries less than another. Each cut column is named in `omitted.attributes`, and `expand({ from: choiceSetId, along: 'comparison' })` returns the whole table.
   - **The column order is fixed by the runtime:**
     - first, attributes that a shown claim on the capability cites (this needs `cites`, below);
-    - then attributes the capability's conditions, effects or input read, such as the price;
+    - then attributes the capability's conditions, effects or input read, and those its confirmation summary renders, since the person approves those words (intake, 2026-11-18): the price, and the plan's name;
     - then the rest, in declared order.
   - **What's never cut:** the first two groups. A `facts` limit smaller than them cuts only the rest.
   - **A policy's default budget never applies here.** Only a `facts` limit the request states can cut the comparison. Otherwise a policy could truncate the facts it prefers the agent not to compare.
