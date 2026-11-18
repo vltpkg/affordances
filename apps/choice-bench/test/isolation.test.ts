@@ -264,49 +264,58 @@ test('an extra instruction passes only as a verbatim quote of a known built-in p
   ).toHaveLength(1)
 })
 
-test('a canary that differs from its baseline, in CLI version or built-in passages, is reported', async () => {
-  const { baselineDiffers } = await import('../src/canary.ts')
-  const then = [
-    {
-      driver: 'claude-cli',
-      model: 'claude-haiku-5-5',
-      cliVersion: '2.1.311 (Claude Code)',
-      builtIn: ['untrusted-downloads'],
-    },
-  ]
-  expect(baselineDiffers(then, then)).toEqual([])
-  expect(baselineDiffers([{ ...then[0]!, cliVersion: '2.2.0 (Claude Code)' }], then)).toHaveLength(
-    1,
-  )
-  expect(baselineDiffers([{ ...then[0]!, builtIn: [] }], then)).toHaveLength(1)
-  expect(baselineDiffers([{ ...then[0]!, model: 'claude-sonnet-5-5' }], then)).toEqual([
-    'claude-cli claude-sonnet-5-5: not in the baseline',
+test('the baseline compares the CLI version and the allow-list, never which allowed sentence was quoted', async () => {
+  const { allowListHash, baselineOf, checkBaseline } = await import('../src/canary.ts')
+  const root = mkdtempSync(path.join(scratch, 'baselines-'))
+  const v = '2.1.311 (Claude Code)'
+  const record = (quotes: string[], cliVersion = v) => ({
+    driver: 'claude-cli',
+    model: 'claude-haiku-5-5',
+    at: '',
+    leaks: [],
+    finalText: '',
+    problems: [],
+    passed: true,
+    cliVersion,
+    quotes,
+  })
+  // a canary quoting nothing writes the baseline, with the allow-list's identity and its quotes recorded
+  const first = checkBaseline(baselineOf([record([])]), root)
+  expect(first).toMatchObject({ differs: [] })
+  expect(first.written).toHaveLength(1)
+  expect(baselineOf([record([])])[0]!.allowList).toBe(allowListHash(v))
+  // a later one quoting an allowed passage passes against it: the pilot's three refusals can't recur
+  const quote =
+    'Use it only to identify the user, such as for authorship, attribution, or filtering their own work.'
+  expect(checkBaseline(baselineOf([record([quote])]), root)).toEqual({ written: [], differs: [] })
+  // a CLI update refuses, and writes nothing
+  const updated = checkBaseline(baselineOf([record([], '2.2.0 (Claude Code)')]), root)
+  expect(updated.written).toEqual([])
+  expect(updated.differs).toHaveLength(2) // its version, and so its allow-list
+  // and so does a changed allow-list under the same version
+  const changed = [{ ...baselineOf([record([])])[0]!, allowList: 'another' }]
+  expect(checkBaseline(changed, root).differs).toEqual([
+    expect.stringMatching(/the allow-list changed/),
   ])
 })
 
-test('the baseline is written when none exists, checked when it does, and a difference refuses', async () => {
-  const { checkBaseline } = await import('../src/canary.ts')
-  const root = mkdtempSync(path.join(scratch, 'baselines-'))
-  const now = [
-    {
-      driver: 'claude-cli',
-      model: 'claude-haiku-5-5',
-      cliVersion: '2.1.311 (Claude Code)',
-      builtIn: ['untrusted-downloads'],
-    },
-  ]
-  // the first run writes it
-  const first = checkBaseline(now, root)
-  expect(first.written).toHaveLength(1)
-  expect(first.differs).toEqual([])
-  // the next checks it, and passes on the same canary
-  expect(checkBaseline(now, root)).toEqual({ written: [], differs: [] })
-  // a CLI update is a difference, never a new baseline
-  const updated = checkBaseline([{ ...now[0]!, cliVersion: '2.2.0 (Claude Code)' }], root)
-  expect(updated.written).toEqual([])
-  expect(updated.differs).toHaveLength(1)
-  // and so is a different passage
-  expect(checkBaseline([{ ...now[0]!, builtIn: ['account-context'] }], root).differs).toHaveLength(
-    1,
+test('a quote that isn’t on the allow-list refuses the canary itself, so it never reaches a baseline', async () => {
+  const { readCanary: read } = await import('../src/canary.ts')
+  const booleans = {
+    agentsMd: false,
+    claudeMd: false,
+    userInstructions: false,
+    memoryIndex: false,
+    memoryInstructions: false,
+    gitInfo: false,
+    accountContext: true,
+  }
+  const r = read(
+    JSON.stringify({
+      ...booleans,
+      otherInstructions: ['Use GitButler for version control, always.'],
+    }),
+    '2.1.311 (Claude Code)',
   )
+  expect(r.problems).toEqual([expect.stringMatching(/^not built-in/)])
 })

@@ -1,5 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
+import { createHash } from 'node:crypto'
+import { canonicalJson } from '@affordances/ir'
 import path from 'node:path'
 import { contextLeaks } from './drivers/isolation.ts'
 import type { Driver } from './drivers/types.ts'
@@ -122,6 +124,7 @@ export type CanaryRecord = {
   model: string
   cliVersion?: string
   builtIn?: string[] // the built-in passages its quotes came from
+  quotes?: string[] // its otherInstructions, verbatim, every one on the allow-list
   at: string
   leaks: string[]
   finalText: string
@@ -154,12 +157,13 @@ export const runCanary = async (
     maxTurns: 2,
   })
   const cliVersion = result.cli.version
-  const { problems, builtIn = [] } = readCanary(result.finalText, cliVersion)
+  const { answer, problems, builtIn = [] } = readCanary(result.finalText, cliVersion)
   if (result.trace.length) problems.push(`the canary called ${result.trace.length} tool(s)`)
   const record = {
     ...base,
     cliVersion,
     builtIn,
+    quotes: Array.isArray(answer?.otherInstructions) ? answer.otherInstructions : [],
     finalText: result.finalText,
     problems,
     passed: problems.length === 0,
@@ -174,13 +178,28 @@ export const runCanary = async (
 // a run's canaries as a baseline (intake, 2026-11-18): per driver and model, the CLI version and the built-in passages
 // quoted. A later run whose canary differs (a CLI update, a new built-in item) doesn't start: it's flagged first, so a
 // change mid-study is never silently mixed
-export type Baseline = { driver: string; model: string; cliVersion?: string; builtIn: string[] }[]
+// a run's canaries as a baseline (intake and review, 2026-11-18): per driver and model, the CLI version and the
+// identity of that version's allow-list. Which allowed sentence a model happens to quote isn't compared, so a canary
+// can't refuse on that; the quotes are recorded. A CLI update or a change to the allow-list is a difference, and
+// refuses until it's re-baselined by an operator, with intake's OK
+export type Baseline = {
+  driver: string
+  model: string
+  cliVersion?: string
+  allowList: string // sha256 of BUILT_IN for the version, canonical
+  quotes: string[] // recorded, not compared
+}[]
+export const allowListHash = (version: string | undefined) =>
+  createHash('sha256')
+    .update(canonicalJson((version && BUILT_IN[version]) || []))
+    .digest('hex')
 export const baselineOf = (records: CanaryRecord[]): Baseline =>
   records.map((r) => ({
     driver: r.driver,
     model: r.model,
     cliVersion: r.cliVersion,
-    builtIn: [...(r.builtIn ?? [])].toSorted(),
+    allowList: allowListHash(r.cliVersion),
+    quotes: r.quotes ?? [],
   }))
 export const baselineDiffers = (now: Baseline, then: Baseline): string[] =>
   now.flatMap((n) => {
@@ -189,9 +208,9 @@ export const baselineDiffers = (now: Baseline, then: Baseline): string[] =>
     const out: string[] = []
     if (t.cliVersion !== n.cliVersion)
       out.push(`${n.driver} ${n.model}: CLI ${t.cliVersion} then, ${n.cliVersion} now`)
-    if (JSON.stringify(t.builtIn) !== JSON.stringify(n.builtIn))
+    if (t.allowList !== n.allowList)
       out.push(
-        `${n.driver} ${n.model}: built-in ${JSON.stringify(t.builtIn)} then, ${JSON.stringify(n.builtIn)} now`,
+        `${n.driver} ${n.model}: the allow-list changed (${t.allowList} then, ${n.allowList} now)`,
       )
     return out
   })
@@ -213,7 +232,9 @@ export const checkBaseline = (now: Baseline, root = BASELINES_ROOT) => {
   const written: string[] = []
   const differs: string[] = []
   for (const n of now) {
-    const file = path.join(root, `${n.driver}__${n.model}.json`.replace(/[^\w.-]/g, '_'))
+    // version 2 of the format, beside version 1's files, which are kept as they were: they recorded passages, not the
+    // allow-list's identity, so they can't be compared with this
+    const file = path.join(root, `${n.driver}__${n.model}.v2.json`.replace(/[^\w.-]/g, '_'))
     if (!existsSync(file)) {
       writeFileSync(file, JSON.stringify(n, null, 2))
       written.push(file)
