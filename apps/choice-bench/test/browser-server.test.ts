@@ -23,6 +23,16 @@ beforeAll(async () => {
     pathsSeen.push(req.url ?? '')
     res.setHeader('content-type', 'text/html')
     if (req.url === '/away') return res.end('<h1>Elsewhere</h1>')
+    // the app's Confirm in miniature: a slow server request, then a client-side navigation with no new document
+    if (req.url === '/slow') return void setTimeout(() => res.end('ok'), 600)
+    if (req.url === '/confirm')
+      return res.end(`<main><h1>Review</h1><button id="go">Confirm</button></main><script>
+        document.getElementById('go').onclick = async () => {
+          await fetch('/slow')
+          history.pushState({}, '', '/after')
+          document.body.innerHTML = '<main><h1>After</h1></main>'
+        }
+      </script>`)
     // another origin: an image, and a link a click would follow
     res.end(`<main><h1>Home</h1>
       <img alt="tracker" src="http://localhost:${(site.address() as AddressInfo).port}/pixel">
@@ -99,5 +109,43 @@ test(
     expect(record.launchArgs).toEqual([])
     expect(record.stalls).toEqual([])
     expect(record.errors).toEqual([])
+  },
+)
+
+// the settle-wait (the re-pilot's one fault; intake, 19:35Z): a click whose action navigates on the client after a
+// slow request returns the page it settled on, never the one before, and records how long it waited
+test(
+  'a click that navigates client-side after a slow request returns the settled page, with its settle time',
+  { timeout: 120_000 },
+  async () => {
+    const out = path.join(dir, 'settle.json')
+    const config = path.join(dir, 'settle-config.json')
+    writeFileSync(config, JSON.stringify({ url, session: SESSION, out }))
+    const client = new Client({ name: 'test', version: '0' })
+    await client.connect(
+      new StdioClientTransport({
+        command: process.execPath,
+        args: [path.join(import.meta.dirname, '..', 'src', 'browser-server.ts'), config],
+      }),
+    )
+    try {
+      const text = async (name: string, args: Record<string, unknown> = {}) =>
+        ((await client.callTool({ name, arguments: args })) as { content: { text: string }[] })
+          .content[0]!.text
+      const review = await text('open', { path: '/confirm' })
+      const ref = review.match(/button "Confirm" \[ref=(\w+)\]/)![1]
+      const after = await text('click', { ref })
+      expect(after.split('\n')[0]).toBe('Page: /after')
+      expect(after).toContain('heading "After"')
+      expect(after).not.toContain('button "Confirm"')
+    } finally {
+      await client.close()
+    }
+    const calls = (JSON.parse(readFileSync(out, 'utf8')) as BrowserRecord).calls
+    const click = calls.find((c) => c.tool === 'click')!
+    // it waited out the 600 ms request and the quiet window after it, well inside the bound
+    expect(click.settleMs).toBeGreaterThanOrEqual(600)
+    expect(click.settleTimedOut).toBe(false)
+    expect(calls.find((c) => c.tool === 'open')!.settleMs).toBeGreaterThanOrEqual(300)
   },
 )

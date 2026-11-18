@@ -20,6 +20,10 @@ export type BrowserCall = {
   isError: boolean
   at: number
   ms: number
+  // how long the page took to settle after the tool acted, before its snapshot (the settle-wait, intake 19:35Z), and
+  // whether the 10 s bound was hit first
+  settleMs?: number
+  settleTimedOut?: boolean
 }
 // a main-frame load: its url, and on the review page, the selection it carries (its action and fields)
 export type BrowserLoad = { url: string; at: number; review?: Record<string, string> }
@@ -103,6 +107,41 @@ page.on('framenavigated', (frame) => {
 })
 save()
 
+// the settle-wait (the re-pilot's one fault, and intake's ruling, 19:35Z): a tool that can navigate (open, click, fill,
+// submit) snapshots only once the page has settled. The app's Confirm runs a server action, then redirects on the
+// client, with no new document, so waiting for 'load' alone snapshotted the page before the redirect, and the agent was
+// shown a stale review page. The page's own requests are the signal: its navigation and whatever it triggers are each
+// in flight until they finish. So it's settled once none has been in flight for 300 ms, bounded at 10 s
+const SETTLE_QUIET_MS = 300
+const SETTLE_BOUND_MS = 10_000
+let inflight = 0
+context.on('request', () => inflight++)
+context.on('requestfinished', () => inflight--)
+context.on('requestfailed', () => inflight--)
+// the last call's settle, on an object so its reset before each call and its write inside settle() both hold
+const settling: { last?: { ms: number; timedOut: boolean } } = {}
+// the trace's fields for the last call's settle, read through a function, so no narrowing of the reset holds
+const settleFields = (): { settleMs?: number; settleTimedOut?: boolean } =>
+  settling.last ? { settleMs: settling.last.ms, settleTimedOut: settling.last.timedOut } : {}
+const settle = async () => {
+  const t0 = Date.now()
+  let quietSince: number | undefined
+  for (;;) {
+    const now = Date.now()
+    if (inflight <= 0) {
+      quietSince ??= now
+      if (now - quietSince >= SETTLE_QUIET_MS) break
+    } else quietSince = undefined
+    if (now - t0 >= SETTLE_BOUND_MS) {
+      settling.last = { ms: now - t0, timedOut: true }
+      return
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  await page.waitForLoadState('load').catch(() => {})
+  settling.last = { ms: Date.now() - t0, timedOut: false }
+}
+
 // the refs the agent was last shown: a call naming one of these that won't resolve is the harness's fault
 let shown = new Set<string>()
 const snapshot = async () => {
@@ -147,6 +186,7 @@ const TOOLS = {
       const to = new URL(path, config.url)
       if (to.origin !== origin) throw new AgentError(`${to.href} isn’t on ${origin}`)
       await page.goto(to.href)
+      await settle()
       return snapshot()
     },
   },
@@ -162,6 +202,7 @@ const TOOLS = {
       const locator = await element(call, 'click', ref)
       if (await confirms(locator)) record.confirms.push({ call, at: Date.now() })
       await locator.click()
+      await settle()
       return snapshot()
     },
   },
@@ -170,6 +211,7 @@ const TOOLS = {
     inputSchema: { ref: z.string(), value: z.string() },
     run: async (call: number, { ref, value }: { ref: string; value: string }) => {
       await (await element(call, 'fill', ref)).fill(value)
+      await settle()
       return snapshot()
     },
   },
@@ -191,6 +233,7 @@ const TOOLS = {
           form.requestSubmit()
         }),
       ])
+      await settle()
       return snapshot()
     },
   },
@@ -208,6 +251,7 @@ for (const [name, tool] of Object.entries(TOOLS))
       let output: string
       let isError = false
       left = undefined
+      settling.last = undefined
       try {
         output = await (
           tool.run as (call: number, input: Record<string, unknown>) => Promise<string>
@@ -228,7 +272,15 @@ for (const [name, tool] of Object.entries(TOOLS))
           })
         }
       }
-      record.calls.push({ tool: name, input, output, isError, at, ms: Date.now() - at })
+      record.calls.push({
+        tool: name,
+        input,
+        output,
+        isError,
+        at,
+        ms: Date.now() - at,
+        ...settleFields(),
+      })
       save()
       return {
         content: [{ type: 'text' as const, text: output }],
