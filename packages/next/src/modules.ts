@@ -70,24 +70,43 @@ export const findModules = (root: string): { modules: string[]; diagnostics: Dia
   return { modules: modules.toSorted(byCodeUnit), diagnostics }
 }
 
-// tsconfig's JSONC as JSON: comments and trailing commas go, outside strings only, since a string holds globs like
-// "**/*.ts" and URLs that a plain regex reads as comments (hosting-lab's real build, 2026-11-18)
-const jsonc = (text: string) => {
-  let out = ''
+// a string literal's end in JSON text: the index of its closing quote, past any escapes
+const stringEnd = (text: string, start: number) => {
+  let i = start + 1
+  while (i < text.length && text[i] !== '"') i += text[i] === '\\' ? 2 : 1
+  return i
+}
+
+// tsconfig's JSONC as JSON, in two passes outside strings, since a string holds globs like "**/*.ts" and URLs that a
+// plain regex reads as comments (hosting-lab's real build, 2026-11-18): comments first, so a trailing comma followed
+// by a comment is still seen as trailing (review of 65d47ddb), then trailing commas
+export const jsonc = (text: string): unknown => {
+  let bare = ''
   for (let i = 0; i < text.length; i++) {
-    const c = text[i]!
-    if (c === '"') {
-      const start = i
-      for (i++; i < text.length && text[i] !== '"'; i++) if (text[i] === '\\') i++
-      out += text.slice(start, i + 1)
-    } else if (c === '/' && text[i + 1] === '/') while (i < text.length && text[i + 1] !== '\n') i++
-    else if (c === '/' && text[i + 1] === '*') {
+    if (text[i] === '"') {
+      const end = stringEnd(text, i)
+      bare += text.slice(i, end + 1)
+      i = end
+    } else if (text.startsWith('//', i)) {
+      const end = text.indexOf('\n', i)
+      i = end === -1 ? text.length : end - 1
+    } else if (text.startsWith('/*', i)) {
       const end = text.indexOf('*/', i + 2)
-      i = end === -1 ? text.length : end + 1
-    } else if (c === ',' && /^\s*[}\]]/.test(text.slice(i + 1))) continue
-    else out += c
+      if (end === -1) throw new SyntaxError('an unterminated /* comment')
+      bare += ' '
+      i = end + 1
+    } else bare += text[i]
   }
-  return JSON.parse(out) as unknown
+  let json = ''
+  for (let i = 0; i < bare.length; i++) {
+    if (bare[i] === '"') {
+      const end = stringEnd(bare, i)
+      json += bare.slice(i, end + 1)
+      i = end
+    } else if (bare[i] === ',' && /^\s*[}\]]/.test(bare.slice(i + 1))) continue
+    else json += bare[i]
+  }
+  return JSON.parse(json)
 }
 
 type TsConfig = {
@@ -95,32 +114,61 @@ type TsConfig = {
   compilerOptions?: { baseUrl?: string; paths?: Record<string, string[]> }
 }
 
-// the app's tsconfig paths, for aliased imports (`@/x`), as Next resolves them
-export const aliasesOf = (root: string): { prefix: string; targets: string[] }[] => {
-  // paths, from the app's tsconfig or the nearest config it extends by a relative path, resolved against the baseUrl
-  // of the config that sets it, else that config's own directory
-  let file = path.join(root, 'tsconfig.json')
-  for (let depth = 0; depth < 8 && existsSync(file); depth++) {
+type Alias = { prefix: string; targets: string[] }
+
+/** @experimental The app's paths aliases, as TypeScript reads them, and the config it couldn't read, if any. */
+export const readAliases = (
+  root: string,
+): { aliases: Alias[]; unreadable?: { file: string; detail: string } } => {
+  // tsconfig.json, else jsconfig.json, as Next reads them; then each config it extends by a relative path. As in tsc,
+  // the nearest config that sets paths or baseUrl wins for each, and paths resolve against baseUrl when there is one,
+  // else against the directory of the config that sets them
+  const first = ['tsconfig.json', 'jsconfig.json']
+    .map((f) => path.join(root, f))
+    .find((f) => existsSync(f))
+  let paths: { value: Record<string, string[]>; dir: string } | undefined
+  let baseUrl: string | undefined
+  const seen = new Set<string>()
+  for (let file = first; file;) {
+    if (seen.has(file)) break
+    seen.add(file)
     let config: TsConfig
     try {
       config = jsonc(readFileSync(file, 'utf8')) as TsConfig
-    } catch {
-      return []
+    } catch (error) {
+      return {
+        aliases: [],
+        unreadable: { file: path.relative(root, file), detail: (error as Error).message },
+      }
     }
     const options = config.compilerOptions
-    if (options?.paths) {
-      const base = path.resolve(path.dirname(file), options.baseUrl ?? '.')
-      return Object.entries(options.paths).map(([key, targets]) => ({
-        prefix: key.replace(/\*$/, ''),
-        targets: targets.map((t) => path.resolve(base, t.replace(/\*$/, ''))),
-      }))
-    }
-    if (!config.extends?.startsWith('.')) return []
-    const next = path.resolve(path.dirname(file), config.extends)
-    file = next.endsWith('.json') ? next : `${next}.json`
+    if (options?.paths && !paths) paths = { value: options.paths, dir: path.dirname(file) }
+    if (options?.baseUrl !== undefined && baseUrl === undefined)
+      baseUrl = path.resolve(path.dirname(file), options.baseUrl)
+    if (!config.extends?.startsWith('.')) break
+    const extended = path.resolve(path.dirname(file), config.extends)
+    file = extended.endsWith('.json') ? extended : `${extended}.json`
+    if (!existsSync(file))
+      return {
+        aliases: [],
+        unreadable: {
+          file: path.relative(root, file),
+          detail: 'the config it extends doesn’t exist',
+        },
+      }
   }
-  return []
+  if (!paths) return { aliases: [] }
+  const base = baseUrl ?? paths.dir
+  return {
+    aliases: Object.entries(paths.value).map(([key, targets]) => ({
+      prefix: key.replace(/\*$/, ''),
+      targets: targets.map((t) => path.resolve(base, t.replace(/\*$/, ''))),
+    })),
+  }
 }
+
+// the app's paths aliases, for aliased imports (`@/x`), as Next resolves them; compileSync reports an unreadable config
+export const aliasesOf = (root: string): Alias[] => readAliases(root).aliases
 
 // the files an import could name, in Node's and TypeScript's order of extensions
 const candidates = (base: string) =>

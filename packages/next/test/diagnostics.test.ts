@@ -18,7 +18,12 @@ test("the catalog's codes are exactly RFC 0005 §3's table, so the two can't dri
 
 test('errors always fail a build; a strict warning fails only in strict mode; other warnings never do', () => {
   expect(fails('E_CAPABILITY_IMPORT')).toBe(true)
-  for (const code of ['W_NO_ID', 'W_INPUT_OPAQUE', 'W_INPUT_LOSSY'] as DiagnosticCode[]) {
+  for (const code of [
+    'W_NO_ID',
+    'W_INPUT_OPAQUE',
+    'W_INPUT_LOSSY',
+    'W_TSCONFIG_UNREADABLE',
+  ] as DiagnosticCode[]) {
     expect(fails(code)).toBe(false)
     expect(fails(code, true)).toBe(true)
   }

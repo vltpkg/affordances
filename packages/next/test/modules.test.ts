@@ -1,7 +1,14 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { afterAll, beforeAll, expect, test } from 'vitest'
-import { aliasesOf, checkModule, findModules, resolveImport } from '../src/modules.ts'
+import {
+  aliasesOf,
+  checkModule,
+  findModules,
+  jsonc,
+  readAliases,
+  resolveImport,
+} from '../src/modules.ts'
 
 // RFC 0005 §1's capability modules: found by the walk codegen does, and checked statically before anything is
 // evaluated. A module may import the authoring API, a schema library and other capability modules; it may not reach the
@@ -202,6 +209,69 @@ test('tsconfig paths survive globs, URLs, comments and trailing commas in string
     expect(
       resolveImport(app, path.join(app, 'src', 'app', 'actions.ts'), '@/app/capabilities'),
     ).toBe(target)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// jsonc against TypeScript's own JSONC rules: every placement of a comment and a trailing comma it accepts, and strings
+// that look like either (review of 65d47ddb: a trailing comma followed by a comment threw)
+test('jsonc reads every comment and trailing-comma placement TypeScript accepts, and leaves strings alone', () => {
+  const corpus: [string, unknown][] = [
+    ['{ "a": 1, // aliases\n}', { a: 1 }],
+    ['[1, /* last */ ]', [1]],
+    ['[1, /* a */ /* b */\n// c\n]', [1]],
+    ['{ "a": [1,], }', { a: [1] }],
+    ['{ "a": 1 /* x */, "b": 2 }', { a: 1, b: 2 }],
+    ['// first\n{ "a": 1 }\n// last', { a: 1 }],
+    ['{ "a": 1 } // no newline at the end', { a: 1 }],
+    ['{ "a": "**/*.ts", "b": "./src/*" }', { a: '**/*.ts', b: './src/*' }],
+    [
+      '{ "a": "https://example.com/x", "b": "a,]" , "c": "a,}" }',
+      { a: 'https://example.com/x', b: 'a,]', c: 'a,}' },
+    ],
+    [
+      '{ "a": "quote \\" // not a comment", "b": "back\\\\" }',
+      { a: 'quote " // not a comment', b: 'back\\' },
+    ],
+    ['{ "a"/* between */: 1 }', { a: 1 }],
+  ]
+  for (const [text, value] of corpus) expect({ text, value: jsonc(text) }).toEqual({ text, value })
+  // an unterminated block comment is unreadable. A lone comma ('[,]') reads as a trailing one, so as empty: laxer than
+  // tsc, and harmless for reading a config
+  expect(() => jsonc('{ "a": 1 /* open')).toThrow('an unterminated /* comment')
+})
+
+test('an unreadable tsconfig, or a missing extended one, is named; a jsconfig is read when there’s no tsconfig', () => {
+  const dir = mkdtempSync(path.join(import.meta.dirname, '.aliases-'))
+  try {
+    writeFileSync(
+      path.join(dir, 'tsconfig.json'),
+      '{ "compilerOptions": { "paths": { "@/*": ["./*"] } ',
+    )
+    expect(readAliases(dir)).toMatchObject({ aliases: [], unreadable: { file: 'tsconfig.json' } })
+    writeFileSync(path.join(dir, 'tsconfig.json'), '{ "extends": "./missing" }')
+    expect(readAliases(dir)).toMatchObject({ aliases: [], unreadable: { file: 'missing.json' } })
+    rmSync(path.join(dir, 'tsconfig.json'))
+    writeFileSync(
+      path.join(dir, 'jsconfig.json'),
+      '{ "compilerOptions": { "paths": { "@/*": ["./src/*"] }, }, }',
+    )
+    expect(readAliases(dir)).toEqual({
+      aliases: [{ prefix: '@/', targets: [path.join(dir, 'src')] }],
+    })
+    // baseUrl from the app's config, paths from the one it extends: paths resolve against the baseUrl, as in tsc
+    rmSync(path.join(dir, 'jsconfig.json'))
+    mkdirSync(path.join(dir, 'base'))
+    writeFileSync(
+      path.join(dir, 'base', 'tsconfig.json'),
+      '{ "compilerOptions": { "paths": { "~/*": ["lib/*"] } } }',
+    )
+    writeFileSync(
+      path.join(dir, 'tsconfig.json'),
+      '{ "extends": "./base/tsconfig.json", "compilerOptions": { "baseUrl": "./app" } }',
+    )
+    expect(aliasesOf(dir)).toEqual([{ prefix: '~/', targets: [path.join(dir, 'app', 'lib')] }])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

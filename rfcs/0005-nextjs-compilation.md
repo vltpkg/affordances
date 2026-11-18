@@ -177,7 +177,7 @@ These are never extracted, because code doesn't state them. Each one missing is 
   - names the file, the line and the rule;
   - says what to declare, and where;
   - is collected in `.affordances/diagnostics.json`, and printed once per build.
-  - In strict mode (`withAffordances({ strict: true })`), `W_NO_ID`, `W_INPUT_OPAQUE` and `W_INPUT_LOSSY` are errors.
+  - In strict mode (`withAffordances({ strict: true })`), `W_NO_ID`, `W_INPUT_OPAQUE`, `W_INPUT_LOSSY` and `W_TSCONFIG_UNREADABLE` are errors.
 
 | Code                            | When                                                                                                                                              |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -192,6 +192,7 @@ These are never extracted, because code doesn't state them. Each one missing is 
 | `W_NO_OWNER`                    | no owner configured                                                                                                                               |
 | `W_INPUT_LOSSY`                 | E3's slice converts, but drops a refinement or transform; each is named                                                                           |
 | `W_NOT_LITERAL`                 | a field an extraction rule reads (`name`, `expose`, `description`, `readOnly`, `requires`) isn't a literal; a non-literal `name` skips the action |
+| `W_TSCONFIG_UNREADABLE`         | the app's tsconfig, or one it extends, can't be read, so its `paths` aliases are ignored                                                          |
 | `W_SEGMENT_CONFLICT`            | two routes infer one resource type from their segments with different keys (`/products/[slug]`, `/products/[id]`); neither is used                |
 | `E_IR_MISSING`                  | the app has capability modules or a namespace, but `@affordances/ir`, `@affordances/next`'s optional peer, doesn't resolve from the app's root    |
 | `E_CAPABILITY_IMPORT`           | a capability module imports application code                                                                                                      |
@@ -224,7 +225,7 @@ These are never extracted, because code doesn't state them. Each one missing is 
 
 - **The existing route manifest is kept.** `.affordances/manifest.ts` stays v0's, unchanged.
 - **Deterministic:** the same sources give byte-identical output, and `manifest.json` changes only when its content does, as codegen's writer already does (`codegen.ts:178-186`).
-- **Validation:** an `E_*` from `validate` fails the build. A `W_*` doesn't. In strict mode, §3's three strict codes (`W_NO_ID`, `W_INPUT_OPAQUE` and `W_INPUT_LOSSY`) do.
+- **Validation:** an `E_*` from `validate` fails the build. A `W_*` doesn't. In strict mode, §3's four strict codes (`W_NO_ID`, `W_INPUT_OPAQUE`, `W_INPUT_LOSSY` and `W_TSCONFIG_UNREADABLE`) do.
 
 ## 5. The runtime interop
 

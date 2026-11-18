@@ -5,7 +5,7 @@ import { CATALOG, fails, type Diagnostic, type DiagnosticCode } from './diagnost
 import { evaluateModules } from './evaluator.ts'
 import { extract } from './extract.ts'
 import type { CompiledBinding, Extraction } from './merge.ts'
-import { findModules, resolveImport } from './modules.ts'
+import { findModules, readAliases, resolveImport } from './modules.ts'
 import { byCodeUnit } from './order.ts'
 
 // RFC 0005 §4's pipeline: the capability modules, checked statically and evaluated twice, then what extraction recovers
@@ -65,6 +65,15 @@ export const compileSync = (
   // an app with no capability modules and no namespace is a v0 app: nothing here loads, ir included (intake)
   if (found.modules.length === 0 && found.diagnostics.length === 0 && !options.namespace)
     return done({ bindings: [] })
+  // an unreadable tsconfig is said, never a silent loss of every alias (review of 65d47ddb); a v0 app
+  // resolves no aliases, so it's never asked
+  const { unreadable } = readAliases(root)
+  if (unreadable)
+    diagnostics.push({
+      code: 'W_TSCONFIG_UNREADABLE',
+      file: unreadable.file,
+      detail: unreadable.detail,
+    })
   if (!resolveIr(root)) {
     diagnostics.push({
       code: 'E_IR_MISSING',

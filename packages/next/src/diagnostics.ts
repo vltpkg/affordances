@@ -84,6 +84,12 @@ export const CATALOG = {
     means: 'No owner is configured, so no field can be `declared`',
     fix: 'Pass `owner: { id, name }` to withAffordances',
   },
+  W_TSCONFIG_UNREADABLE: {
+    severity: 'warning',
+    strict: true,
+    means: "The app's tsconfig, or one it extends, can't be read, so its paths aliases are ignored",
+    fix: 'Make the named tsconfig valid JSON with comments, as TypeScript reads it; comments and trailing commas are allowed',
+  },
   W_NOT_LITERAL: {
     severity: 'warning',
     means:

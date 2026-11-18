@@ -304,3 +304,18 @@ test('a bound action keeps v0’s effects, its delta keys, without redefining th
   expect(r.diagnostics.filter((d) => d.code.startsWith('E_'))).toEqual([])
   expect(r.bindings.map((b) => b.capability)).toEqual(['shop.plan.subscribe'])
 }, 120_000)
+
+test('an unreadable tsconfig is W_TSCONFIG_UNREADABLE, never a silent loss of every alias, and fails in strict mode', async () => {
+  const dir = app({ 'tsconfig.json': '{ "compilerOptions": { ', 'app/capabilities.ts': MODULE })
+  const codes = (strict: boolean) => {
+    const r = compileSync(dir, { ...options, strict })
+    return {
+      failed: r.failed,
+      unreadable: r.diagnostics
+        .filter((d) => d.code === 'W_TSCONFIG_UNREADABLE')
+        .map((d) => d.file),
+    }
+  }
+  expect(codes(false)).toEqual({ failed: false, unreadable: ['tsconfig.json'] })
+  expect(codes(true)).toEqual({ failed: true, unreadable: ['tsconfig.json'] })
+}, 120_000)
