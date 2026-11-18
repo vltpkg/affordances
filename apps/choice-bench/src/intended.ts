@@ -7,6 +7,7 @@ import { conditions } from './conditions.ts'
 import { askedToConfirm } from './response.ts'
 import type { ServerRecord } from './server.ts'
 import type { SurfaceServerRecord } from './surface-server.ts'
+import { browserRequestsOf, type BrowserTrial } from './browser.ts'
 import { surfaces, type SurfaceId } from './surfaces.ts'
 import { setupTrial } from './trial.ts'
 import { v0RequestsOf, type CapabilityRequest, type V0Trial } from './v0.ts'
@@ -130,10 +131,19 @@ const replayOnce = async (record: Base, given: (Request | CapabilityRequest)[]) 
   return { state: lab.endState(trial.sid), replayed, skipped, decisions, requests }
 }
 
-const replay = async (record: ServerRecord | SurfaceServerRecord | V0Trial): Promise<Intended> => {
-  // 'none' is an agent that never executed anything: on v0, never called an action. One that did, though nothing
-  // applied, replays to the starting state
-  const v0 = 'surface' in record && record.surface === 'v0'
+const replay = async (
+  record: ServerRecord | SurfaceServerRecord | V0Trial | BrowserTrial,
+): Promise<Intended> => {
+  // 'none' is an agent that never executed anything: on v0, never called an action; on the browser, never loaded the
+  // review step with a selection. One that did, though nothing applied, replays to the starting state
+  const surface = 'surface' in record ? record.surface : undefined
+  if (surface === 'browser') {
+    const browser = record as BrowserTrial
+    if (!browserRequestsOf(browser, 'first-load').length)
+      return { state: undefined, replayed: [], skipped: [], alternatives: [] }
+    return replayAll(browser, browserRequestsOf(browser, browser.rule))
+  }
+  const v0 = surface === 'v0'
   const executed = record.calls.some((c) => c.tool === (v0 ? 'affordances_call' : 'execute'))
   if (!executed) return { state: undefined, replayed: [], skipped: [], alternatives: [] }
   return replayAll(

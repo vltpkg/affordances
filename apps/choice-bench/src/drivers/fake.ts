@@ -47,10 +47,14 @@ export const fakeDriver = (seed: number, raw: string): Driver => ({
     }
     let finalText = 'I looked and found nothing to subscribe to.'
     // the v0 surface's two tools (M7f): its own script, below; the four tools' is M5's, unchanged
-    const v0 = (await client.listTools()).tools.some((t) => t.name === 'affordances_open')
+    const listed = new Set((await client.listTools()).tools.map((t) => t.name))
     try {
-      if (v0) {
+      if (listed.has('affordances_open')) {
         finalText = await v0Script(seed, call)
+        return finish()
+      }
+      if (listed.has('snapshot')) {
+        finalText = await browserScript(seed, call)
         return finish()
       }
       const first = parse((await call('project')).text) as View
@@ -124,4 +128,28 @@ const v0Script = async (
   if (first.error?.code === 'confirm_required')
     await call('affordances_call', { ...subscribe, confirm: true })
   return `I subscribed the project to ${pick.slug}.`
+}
+
+// a snapshot's buttons whose names match, with their refs
+const refOf = (snapshot: string, name: RegExp) =>
+  [...snapshot.matchAll(/button "([^"]*)" \[ref=(\w+)\]/g)].filter((m) => name.test(m[1]!))
+
+// the browser's scripted agent: it opens the plans page, presses one 'Move to' button, chosen by the seed, which loads
+// the review step with that selection, and confirms there, as the user approves
+const browserScript = async (
+  seed: number,
+  call: (
+    name: string,
+    input?: Record<string, unknown>,
+  ) => Promise<{ text: string; error: boolean }>,
+) => {
+  const plans = await call('open', { path: '/plans' })
+  const moves = refOf(plans.text, /^Move to (Hobby|Pro|Business)$/)
+  const pick = moves[seed % Math.max(moves.length, 1)]
+  if (!pick) return 'I looked and found nothing to subscribe to.'
+  const review = await call('click', { ref: pick[2] })
+  const confirm = refOf(review.text, /^Confirm$/)[0]
+  if (!confirm) return 'The review step offered no confirmation.'
+  await call('click', { ref: confirm[2] })
+  return `I moved the project to ${pick[1]}.`
 }

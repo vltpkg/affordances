@@ -35,3 +35,61 @@ export const structured = (text: unknown): unknown => {
     return undefined
   }
 }
+
+// the browser's matcher (design, 15:02Z): the agent's snapshot, Playwright's ARIA snapshot in 'ai' mode, read as a
+// tree. A fact shows when the smallest node holding both its label (a node named exactly that: 'Pro', never 'Pro Plus'
+// or 'Move to Pro') and its value as rendered holds no other label of the same kind (plan, add-on or bundle). A value
+// node's own name or text holds the value as a whole phrase (design, 15:19Z): not preceded by a word character, $, a
+// dot or a comma, and not followed by a word character. So '100 GB' is in '100 GB bandwidth', but not in '1,000 GB',
+// and '$20 a month' isn't in '$120 a month'. A value read off another row, or off the add-on 'Extra bandwidth, 100 GB',
+// doesn't count for Pro
+export type AriaNode = { role: string; name?: string; text?: string; children: AriaNode[] }
+
+const LINE = /^(\s*)- ([\w/-]+)(?: "((?:[^"\\]|\\.)*)")?((?: \[[^\]]*\])*)(?::(?: (.*))?)?$/
+/** Playwright's ARIA snapshot as a tree, its [ref=…] and other bracketed annotations dropped. */
+export const parseAria = (snapshot: string): AriaNode => {
+  const root: AriaNode = { role: 'root', children: [] }
+  const stack: { depth: number; node: AriaNode }[] = [{ depth: -1, node: root }]
+  for (const line of snapshot.split('\n')) {
+    const m = LINE.exec(line)
+    if (!m) continue
+    const depth = m[1]!.length / 2
+    const node: AriaNode = { role: m[2]!, children: [] }
+    if (m[3] !== undefined) node.name = m[3].replaceAll(/\\(.)/g, '$1')
+    if (m[5] !== undefined && m[5] !== '') node.text = m[5].replace(/^"(.*)"$/, '$1')
+    while (stack.at(-1)!.depth >= depth) stack.pop()
+    stack.at(-1)!.node.children.push(node)
+    stack.push({ depth, node })
+  }
+  return root
+}
+
+const escape = (s: string) => s.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')
+/** Whether text holds the value as a whole phrase, as a rendered value node does. */
+export const holdsPhrase = (text: string, value: string) =>
+  new RegExp(`(^|[^\\w$.,])${escape(value)}(?![\\w])`).test(text)
+const named = (node: AriaNode, s: string) => node.name === s || node.text === s
+const valued = (node: AriaNode, s: string) =>
+  [node.name, node.text].some((t) => t !== undefined && holdsPhrase(t, s))
+const holds = (node: AriaNode, s: string, match = named): boolean =>
+  match(node, s) || node.children.some((c) => holds(c, s, match))
+
+/** Whether the snapshot shows label's value, with no other label of its kind beside them. */
+export const showsInTree = (
+  tree: AriaNode,
+  label: string,
+  value: string,
+  others: string[],
+): boolean => {
+  // the smallest node holding both: a child holding both is smaller, so it's found first
+  const smallest = (node: AriaNode): AriaNode | undefined => {
+    if (!holds(node, label) || !holds(node, value, valued)) return undefined
+    for (const c of node.children) {
+      const inner = smallest(c)
+      if (inner) return inner
+    }
+    return node
+  }
+  const at = smallest(tree)
+  return !!at && !others.some((o) => o !== label && holds(at, o))
+}

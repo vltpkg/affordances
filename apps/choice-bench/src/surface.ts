@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { loadavg } from 'node:os'
 import path from 'node:path'
 import type { Driver, DriverResult } from './drivers/types.ts'
-import { planAttributes, showsFact, structured } from './facts.ts'
+import { parseAria, planAttributes, showsFact, showsInTree, structured } from './facts.ts'
 import {
   CAPS,
   DriverFailure,
@@ -35,6 +35,8 @@ import { TOOLS } from './tools.ts'
 import { permutationFor } from './trial.ts'
 import type { V0Config, V0Record } from './v0-server.ts'
 import { consequential, type V0Trial } from './v0.ts'
+import type { BrowserConfig, BrowserRecord } from './browser-server.ts'
+import { browserCompleted, browsingLoad, firstRequestAt, type BrowserTrial } from './browser.ts'
 
 // one M7f surface trial (surfaces/PLAN.md §3, §5; the planner, 14:50Z): the trial's own fresh server, the surface's
 // tools, the driver, and the outcome read the same way on every surface. The intended end state is replayed from the
@@ -59,17 +61,43 @@ export type SurfaceOptions = {
 const SERVERS = {
   tools: path.resolve(import.meta.dirname, 'surface-server.ts'),
   v0: path.resolve(import.meta.dirname, 'v0-server.ts'),
+  browser: path.resolve(import.meta.dirname, 'browser-server.ts'),
 }
 const V0_TOOLS = new Set(['affordances_open', 'affordances_call'])
+const BROWSER_TOOLS = new Set(['open', 'snapshot', 'click', 'fill', 'submit'])
 
 // what the runner reads from each surface's record, the same facts on every surface
 const factsOf = async (
   surface: Surface,
   task: string,
-  record: SurfaceServerRecord | V0Record,
+  record: SurfaceServerRecord | V0Record | BrowserRecord,
   endState: lab.EndState,
 ): Promise<SurfaceFacts> => {
   const gb = (await planAttributes('pro')).bandwidthGb
+  if (surface.kind === 'browser') {
+    const b = record as BrowserRecord
+    const at = firstRequestAt(b)
+    // a call's output came before the first request event when it returned before that review load
+    const before = b.calls.filter((c) => at === undefined || c.at + c.ms <= at)
+    const plans = await Promise.all(
+      ['hobby', 'pro', 'business'].map(async (s) => String((await planAttributes(s)).name)),
+    )
+    const pro = String((await planAttributes('pro')).name)
+    return {
+      surface: surface.id,
+      task,
+      calls: b.calls.length,
+      firstRequest: at === undefined ? undefined : before.length,
+      // the value in the page's own format, '100 GB', matched as a whole phrase (design, 15:19Z)
+      proAllowanceSeen: before.some((c) =>
+        showsInTree(parseAria(c.output), pro, `${Number(gb).toLocaleString('en')} GB`, plans),
+      ),
+      completed: browserCompleted(b),
+      // the browser reaches no API: a refusal is the page's, never 'unauthorized'
+      unauthorized: false,
+      endState,
+    }
+  }
   if (surface.kind === 'v0') {
     const calls = (record as V0Record).calls
     const first = calls.findIndex(consequential)
@@ -120,7 +148,7 @@ export const runSurfaceTrial = async (
 ) => {
   if (!spec.surface) throw new Error(`trial ${spec.id} names no surface`)
   const surface = surfaces[spec.surface]
-  if (surface.kind !== 'tools' && surface.kind !== 'v0')
+  if (surface.kind !== 'tools' && surface.kind !== 'v0' && surface.kind !== 'browser')
     throw new Error(`the ${surface.id} surface's driver isn't built yet`)
   const task = lab.tasks.find((t) => t.id === spec.task)
   if (!task) throw new Error(`no task ${spec.task}`)
@@ -149,8 +177,8 @@ export const runSurfaceTrial = async (
   })
   const out = file('server.json')
   const configPath = file('config.json')
-  const config: SurfaceServerConfig | V0Config =
-    surface.kind === 'v0'
+  const config: SurfaceServerConfig | V0Config | BrowserConfig =
+    surface.kind === 'v0' || surface.kind === 'browser'
       ? { url, session, out }
       : {
           surface: surface.id as 'full' | 'progressive',
@@ -221,6 +249,23 @@ export const runSurfaceTrial = async (
         detail: `the app answered ${answered5xx.map((e) => `${e.status} on ${e.route}`).join(', ')}`,
       }
     : undefined
+  // the browser's two stalls (§5): the browser itself failed, or a ref from the immediately preceding snapshot didn't
+  // resolve. A ref the agent invented is its own mistake, told to it, and no stall
+  const browserRecord =
+    surface.kind === 'browser' && existsSync(out)
+      ? (JSON.parse(readFileSync(out, 'utf8')) as BrowserRecord)
+      : undefined
+  fault ??= browserRecord?.errors.length
+    ? {
+        kind: 'stall',
+        detail: `the browser failed: ${browserRecord.errors.map((e) => e.detail).join('; ')}`,
+      }
+    : browserRecord?.stalls.length
+      ? {
+          kind: 'stall',
+          detail: `a ref from the preceding snapshot didn't resolve: ${browserRecord.stalls.map((s) => `${s.tool} ${s.ref}`).join(', ')}`,
+        }
+      : undefined
   if (fault) {
     // the attempt is kept whole, beside its reason: setAside moves its record, state file, server log and raw output
     // into interrupted/, never deleting them (M5's rule)
@@ -237,7 +282,10 @@ export const runSurfaceTrial = async (
   if (failed && attempts === 1) sendFailure()
   if (!existsSync(out))
     throw new Error(`trial ${spec.id}: the tool server never started (${thrown ?? 'no error'})`)
-  const record = JSON.parse(readFileSync(out, 'utf8')) as SurfaceServerRecord | V0Record
+  const record = JSON.parse(readFileSync(out, 'utf8')) as
+    | SurfaceServerRecord
+    | V0Record
+    | BrowserRecord
   // the replay's record: the surface's, with what a fresh store needs
   const replayFile = file('replay.json')
   writeFileSync(
@@ -251,10 +299,41 @@ export const runSurfaceTrial = async (
             task: spec.task,
             project,
           } satisfies V0Trial)
-        : record,
+        : surface.kind === 'browser'
+          ? ({
+              ...(record as BrowserRecord),
+              condition: 'A',
+              index: spec.index,
+              task: spec.task,
+              project,
+              rule: 'first-load',
+            } satisfies BrowserTrial)
+          : record,
     ),
   )
   const intended = await intendedEndState(replayFile)
+  // the browser's alternate request event (§5), for the pilot's browsing rule: the confirm click with the review-page
+  // load just before it, replayed the same way
+  let browserMetrics: { browsingLoad: boolean; optimalConfirmLoad: boolean } | undefined
+  if (surface.kind === 'browser') {
+    const b = record as BrowserRecord
+    const confirmFile = file('replay-confirm.json')
+    const confirmTrial: BrowserTrial = {
+      ...b,
+      condition: 'A',
+      index: spec.index,
+      task: spec.task,
+      project,
+      rule: 'confirm-load',
+    }
+    writeFileSync(confirmFile, JSON.stringify(confirmTrial))
+    const alternate = await intendedEndState(confirmFile)
+    browserMetrics = {
+      browsingLoad: browsingLoad(b),
+      optimalConfirmLoad:
+        !!alternate.state && lab.groundTruth(task).optimal.includes(lab.label(alternate.state)),
+    }
+  }
   const usage = result?.usage ?? { inputTokens: 0, outputTokens: 0 }
   // M5's count: input plus output, with cache writes as input and cache reads excluded
   const tokens = usage.inputTokens + usage.outputTokens + (usage.cacheWriteTokens ?? 0)
@@ -267,14 +346,17 @@ export const runSurfaceTrial = async (
   ].filter((x): x is string => typeof x === 'string')
   const end: EndReason = failed ? 'failed' : capHits.length ? 'capped' : 'final'
   const facts = await factsOf(surface, spec.task, record, endState!)
-  const metrics = surfaceMetrics(
-    facts,
-    intended,
-    { tokens, durationMs: result?.durationMs ?? 0 },
-    end,
-  )
+  const metrics = {
+    ...surfaceMetrics(facts, intended, { tokens, durationMs: result?.durationMs ?? 0 }, end),
+    ...browserMetrics,
+  }
   // the driver's record of its calls against the server's: a mismatch marks the trial, as in M5
-  const known = surface.kind === 'v0' ? V0_TOOLS : new Set(Object.keys(TOOLS))
+  const known =
+    surface.kind === 'v0'
+      ? V0_TOOLS
+      : surface.kind === 'browser'
+        ? BROWSER_TOOLS
+        : new Set(Object.keys(TOOLS))
   const names = (result?.trace ?? []).map((t) => t.name.replace(/^mcp__bench__/, ''))
   const driverCalls = names.filter((n) => known.has(n))
   const otherTools = names.filter((n) => !known.has(n))
@@ -303,6 +385,16 @@ export const runSurfaceTrial = async (
       },
       prompt,
       instruction: surface.instruction,
+      // the browser's, the same across trials (the preflight checks it): Chromium's and Playwright's versions, and its
+      // flags, none beyond Playwright's, so no WebMCP; and any request to another origin, aborted
+      ...(surface.kind === 'browser' && {
+        browser: {
+          chromium: (record as BrowserRecord).chromium,
+          playwright: (record as BrowserRecord).playwright,
+          launchArgs: (record as BrowserRecord).launchArgs,
+          aborted: (record as BrowserRecord).aborted,
+        },
+      }),
     },
     ...record.calls.map((c) => ({ kind: 'call', ...c })),
     {

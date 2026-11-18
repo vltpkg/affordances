@@ -1030,6 +1030,7 @@
     "workspace~apps+bench @affordances/mcp": "prod workspace:* workspace~packages+mcp",
     "workspace~apps+bench @affordances/protocol": "prod workspace:* workspace~packages+protocol",
     "workspace~apps+choice-bench @modelcontextprotocol/sdk": "prod ^1.32.2 ~npm~@modelcontextprotocol+sdk@1.32.2~peer.b1cb2f6de5198dea",
+    "workspace~apps+choice-bench playwright": "prod ^1.64.1 ~npm~playwright@1.64.1",
     "workspace~apps+choice-bench zod": "prod ^4.6.7 ~npm~zod@4.6.7",
     "workspace~apps+choice-bench @affordances/hosting-lab": "prod workspace:* workspace~apps+hosting-lab",
     "workspace~apps+choice-bench @affordances/ir": "prod workspace:* workspace~packages+ir",

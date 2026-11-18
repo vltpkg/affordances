@@ -80,10 +80,11 @@ const spec = (surface: SurfaceId, id: string, index = 1): TrialSpec =>
   }) as unknown as TrialSpec
 
 test.skipIf(!build)(
-  'the fake driver on full, progressive and v0: a trace with design’s metric fields, the outcome cross-checked',
+  'the fake driver on full, progressive, v0 and browser: a trace with design’s metric fields, the outcome cross-checked',
   async () => {
     const at = path.join(dir, 'runs')
-    for (const [i, surface] of (['full', 'progressive', 'v0'] as const).entries()) {
+    let browserMetrics: Record<string, any> | undefined
+    for (const [i, surface] of (['full', 'progressive', 'v0', 'browser'] as const).entries()) {
       const s = spec(surface, `${surface}-fake`)
       const r = await runSurfaceTrial(s, fakeDriver(i, path.join(at, `${s.id}.raw.json`)), at, {
         labBuild: build!,
@@ -119,7 +120,13 @@ test.skipIf(!build)(
       expect(metrics.choice).toBe(metrics.endChoice)
       // and it read the plans page or the plan list before buying, where Pro's allowance is
       expect(metrics.proAllowanceSeen).toBe(true)
+      if (surface === 'browser') browserMetrics = metrics
     }
+    // the browser's two pilot flags: one review load, then its confirm, so no browsing, and the same choice either way
+    expect(browserMetrics).toMatchObject({
+      browsingLoad: false,
+      optimalConfirmLoad: browserMetrics!.optimal,
+    })
   },
   600_000,
 )
@@ -282,6 +289,34 @@ test.skipIf(!build)(
       }),
     ).rejects.toThrow(/3 harness faults in 3 trials run, more than the pilot’s 2/)
     expect(faultsByCell(at)).toEqual({ 'v0 T6 fake': 3 })
+  },
+  600_000,
+)
+
+// the planner (14:22Z, condition 3): the same purchase through each surface ends in the same endState. The fake agent
+// with seed 0 buys Pro on v0 and in the browser; lab-server.test's protocol-1 purchase of Pro ends in this same state
+test.skipIf(!build)(
+  'the same purchase on v0 and in the browser: the same endState, and the same intended state',
+  async () => {
+    const at = path.join(dir, 'same')
+    const PRO = { plan: 'pro', bundle: null, addOns: [] }
+    for (const surface of ['v0', 'browser'] as const) {
+      const s = spec(surface, `${surface}-same`)
+      const r = await runSurfaceTrial(s, fakeDriver(0, path.join(at, `${s.id}.raw.json`)), at, {
+        labBuild: build!,
+        port: PORT,
+      })
+      expect(r).not.toHaveProperty('fault')
+      const lines = readFileSync(path.join(at, `${s.id}.jsonl`), 'utf8')
+        .trim()
+        .split('\n')
+      const end = JSON.parse(lines.find((l) => l.includes('"kind":"end"'))!)
+      expect({ surface, endState: end.endState }).toEqual({ surface, endState: PRO })
+      expect((r as { metrics: { choice: string; completed: boolean } }).metrics).toMatchObject({
+        choice: 'pro',
+        completed: true,
+      })
+    }
   },
   600_000,
 )
