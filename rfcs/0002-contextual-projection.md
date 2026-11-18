@@ -464,15 +464,25 @@ That's enough for every benchmark condition (§6.1).
 ### 6.4 Order and salience
 
 ```ts
-type OrderBasis =
+// a basis that names no claim, recommendation or source
+type ClaimFreeOrderBasis =
   | { by: 'canonical' } // the IR's canonical order: ids, then keys. It means nothing
   | { by: 'relevance'; method: RelevanceMethodId } // ties keep canonical order
-  | { by: 'claim'; kind: 'recommendation'; source: string } // the named source's recommendations first
+  | { by: 'group'; key: GroupKey; within: ClaimFreeOrderBasis } // grouped by a manifest-derived attribute
+// targetType: the offer's target's resource type; untargeted offers first, then the manifest's resource order
+type GroupKey = 'targetType'
+type OrderBasis = ClaimFreeOrderBasis | { by: 'claim'; kind: 'recommendation'; source: string } // the named source's recommendations first
 ```
 
 - **Every view and every choice set states its order's basis.** An agent, or a person auditing a trace, can tell "this is first because the store recommends it" from "this is first because it's alphabetical".
 - **Canonical order is declared to mean nothing.** It exists so that a neutral view is deterministic. RFC 0001 already makes manifest order meaningless (§7.2).
 - **A claim-based order names its source.** Ordering by the owner's recommendations is publisher preference applied to presentation, so the view says so.
+- **A group basis groups by a manifest-derived attribute, and nothing else.**
+  - **The key is closed:** `targetType` is the only key, and a key is never free text. So a group basis can't carry framing such as "best value first".
+  - **The order is fixed:** the variant itself fixes the order of the groups (untargeted offers first, then the manifest's resource order). `within` states the order inside each group.
+  - **It names no claim:** `within` is claim-free, at any depth.
+  - **It's checkable:** `checkOrderBasis` rejects an unknown key, free text, a claim inside a group, and any field the variant doesn't name.
+  - **Why it exists:** RFC 0003's S control groups a view's offers this way, and states that basis truthfully rather than claiming A's (intake, 2026-11-18).
 - **Salience beyond order isn't represented.** There are no badges, highlights or emphasis fields. What a view can do to make an offer prominent is limited to its position and to the claims it shows, both of which are explicit. That's the limit of what condition D can vary through a policy (§6.1).
 
 ### 6.5 Expansion and inspection
