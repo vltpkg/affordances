@@ -3,7 +3,7 @@ import { addOns } from '@/catalog'
 import { usd } from '@/components/usd'
 import { effectiveAddOns } from '@/lib/store'
 import { currentAccount } from '@/lib/view'
-import { addAddOn, removeAddOn } from './actions'
+import { removeAddOn } from './actions'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Add-ons' }
@@ -29,21 +29,28 @@ const Page = async () => {
                   {included && ', included in your bundle'}
                 </p>
               </div>
-              {included ? null : (
+              {included ? null : added && !removing ? (
+                // removing charges nothing, so it needs no confirmation and runs at once
                 <form
                   action={async (form: FormData) => {
                     'use server'
-                    await (added && !removing ? removeAddOn : addAddOn)(form)
+                    await removeAddOn(form)
                   }}
                 >
                   <input type="hidden" name="addOn" value={a.slug} />
                   <input type="hidden" name="projectId" value={project.id} />
-                  <Button
-                    type="submit"
-                    size="sm"
-                    variant={added && !removing ? 'outline' : 'default'}
-                  >
-                    {added && !removing ? 'Remove' : 'Add'}
+                  <Button type="submit" size="sm" variant="outline">
+                    Remove
+                  </Button>
+                </form>
+              ) : (
+                // adding charges it, so it goes through its review-and-confirm step first (src/app/review)
+                <form method="get" action="/review">
+                  <input type="hidden" name="action" value="addAddOn" />
+                  <input type="hidden" name="addOn" value={a.slug} />
+                  <input type="hidden" name="projectId" value={project.id} />
+                  <Button type="submit" size="sm">
+                    Add
                   </Button>
                 </form>
               )}

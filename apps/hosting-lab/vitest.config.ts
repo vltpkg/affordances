@@ -5,5 +5,6 @@ import { defineConfig } from 'vitest/config'
 // (tsconfig.json), so a test can load the app's real state loaders
 export default defineConfig({
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
-  test: { include: ['test/**/*.test.ts'] },
+  // .tsx too: a component's rendering is tested with react-dom/server
+  test: { include: ['test/**/*.test.{ts,tsx}'] },
 })

@@ -3,7 +3,6 @@ import { bundles } from '@/catalog'
 import { currentPlans } from '@/lib/store'
 import { usd } from '@/components/usd'
 import { currentAccount } from '@/lib/view'
-import { subscribe, subscribeBundle } from './actions'
 
 export const dynamic = 'force-dynamic'
 export const metadata = { title: 'Plans' }
@@ -29,12 +28,9 @@ const Page = async () => {
               {current ? (
                 <p className="text-sm font-medium">Current plan</p>
               ) : (
-                <form
-                  action={async (form: FormData) => {
-                    'use server'
-                    await subscribe(form)
-                  }}
-                >
+                // a purchase goes through its review-and-confirm step first (src/app/review)
+                <form method="get" action="/review">
+                  <input type="hidden" name="action" value="subscribe" />
                   <input type="hidden" name="plan" value={p.id} />
                   <input type="hidden" name="projectId" value={project.id} />
                   <Button type="submit" size="sm">
@@ -59,12 +55,8 @@ const Page = async () => {
             {project.bundle === b.slug ? (
               <p className="text-sm font-medium">Current</p>
             ) : (
-              <form
-                action={async (form: FormData) => {
-                  'use server'
-                  await subscribeBundle(form)
-                }}
-              >
+              <form method="get" action="/review">
+                <input type="hidden" name="action" value="subscribeBundle" />
                 <input type="hidden" name="bundle" value={b.slug} />
                 <input type="hidden" name="projectId" value={project.id} />
                 <Button type="submit" size="sm">
