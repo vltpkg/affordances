@@ -146,6 +146,7 @@ export const parse = (
     durationMs: ran.durationMs,
     exitCode: ran.timedOut ? 124 : ran.exitCode,
     cli: { name: 'codex', version },
+    turns: trace.length + 1,
     raw: ran.raw,
   }
 }

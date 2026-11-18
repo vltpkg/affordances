@@ -21,6 +21,8 @@ export type DriverResult = {
   exitCode: number
   cli: { name: string; version: string }
   resolvedModel?: string // the model the CLI says it ran, when it says
+  // model turns: claude's own count; codex reports none, so its tool calls plus the final message
+  turns?: number
   raw: string // the path of the stored stdout
 }
 

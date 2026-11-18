@@ -1,6 +1,7 @@
 import * as lab from '@affordances/hosting-lab/trial'
 import { canonicalJson } from '@affordances/ir'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { loadavg } from 'node:os'
 import path from 'node:path'
 import { conditions, type ConditionId } from './conditions.ts'
 import type { Driver, DriverResult } from './drivers/types.ts'
@@ -61,6 +62,8 @@ export const runTrial = async (spec: TrialSpec, driver: Driver, dir: string) => 
   writeFileSync(configPath, JSON.stringify(config))
   const prompt = promptFor(task)
   const startedAt = new Date().toISOString()
+  // the host's load, every user's, beside the trial's latency (intake's runbook)
+  const loadAtStart = loadavg()
   let result: DriverResult | undefined
   let failure: string | undefined
   try {
@@ -133,6 +136,8 @@ export const runTrial = async (spec: TrialSpec, driver: Driver, dir: string) => 
       usage,
       totalTokens: tokens,
       durationMs: result?.durationMs ?? 0,
+      turns: result?.turns ?? null,
+      load: { start: loadAtStart, end: loadavg() },
       endState: record.endState,
       raw: result?.raw ?? null,
     },
@@ -143,7 +148,18 @@ export const runTrial = async (spec: TrialSpec, driver: Driver, dir: string) => 
     path.join(dir, `${spec.id}.jsonl`),
     `${lines.map((l) => JSON.stringify(l)).join('\n')}\n`,
   )
-  return { spec, end, capHits, traceMismatch, spawned, metrics }
+  return {
+    spec,
+    end,
+    capHits,
+    traceMismatch,
+    spawned,
+    metrics,
+    turns: result?.turns ?? null,
+    load: loadAtStart[0]!,
+    cli: result?.cli ?? null,
+    resolvedModel: result?.resolvedModel ?? null,
+  }
 }
 
 // the pilot (§8, as the planner sized it): 110 trials, five per cell

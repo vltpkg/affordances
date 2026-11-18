@@ -62,6 +62,7 @@ export const parse = (
   const open = new Map<string, { index: number; at: number }>()
   let finalText = ''
   let resolvedModel: string | undefined
+  let turns: number | undefined
   const usage: DriverResult['usage'] = { inputTokens: 0, outputTokens: 0 }
   for (const { at, text } of ran.lines) {
     const event = json(text)
@@ -99,6 +100,7 @@ export const parse = (
       }
     if (event.type === 'result') {
       finalText = typeof event.result === 'string' ? event.result : ''
+      if (typeof event.num_turns === 'number') turns = event.num_turns
       const u = (event.usage ?? {}) as Record<string, number | undefined>
       usage.inputTokens = u.input_tokens ?? 0
       usage.outputTokens = u.output_tokens ?? 0
@@ -115,6 +117,7 @@ export const parse = (
     exitCode: ran.timedOut ? 124 : ran.exitCode,
     cli: { name: 'claude', version },
     ...(resolvedModel && { resolvedModel }),
+    ...(turns !== undefined && { turns }),
     raw: ran.raw,
   }
 }

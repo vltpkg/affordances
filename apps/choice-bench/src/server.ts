@@ -26,6 +26,9 @@ export type ServerRecord = {
   endState: lab.EndState
 }
 
+// the inspector would show the agent the app's internals: no trial runs with it on (intake's runbook)
+if (process.env.HOSTING_LAB_INSPECTOR !== undefined)
+  throw new Error('HOSTING_LAB_INSPECTOR is set: a trial runs with it unset')
 const config = JSON.parse(readFileSync(process.argv[2]!, 'utf8')) as ServerConfig
 const condition = conditions[config.condition]
 const task = lab.tasks.find((t) => t.id === config.task)
