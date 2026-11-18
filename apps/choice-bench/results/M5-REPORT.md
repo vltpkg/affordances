@@ -171,9 +171,9 @@ Each contrast is the optimal rate's risk difference, in points, with Newcombe's 
 
 **Intake's reading, descriptive** (2026-11-18 09:03Z). It's on Sonnet, where the effects are. No mechanism is claimed as established.
 
-1. **Advocacy at full scope shows no detectable effect.** E1 is −4.6 (−17.9 to +5.9). Opus is not distinguishable from A, with a wide interval: E5 is +16.0 (−10.1 to +39.4), at n = 25 per cell.
-2. **The narrow scope alone lowers the scored rate,** by 38.6 points (E2). Yet `A-scope` scored 25 of 50 while Pro's allowance was seen first in 49 of 50, so the gap isn't missing information. Its text-stated rate, 47 of 50, is only an upper bound, and it fits the partial-approval pattern, where the agent names the add-on but asks to approve Pro alone. E2 is cross-run.
-3. **C's trials reached Pro's allowance far less often than `A-scope`'s:** 19 of 114, against 49 of 50 (cross-run). E3, the optimal-rate difference, is −35.1. The causal reading is only the hypothesis below.
+1. **Advocacy at full scope shows no detectable effect.** E1 is −4.6 (−17.9 to +5.9). E5's interval, on Opus within the run, also includes 0: +16.0 (−10.1 to +39.4).
+2. **The narrow scope alone lowers the scored rate,** by 38.6 points (E2). `A-scope` scored 25 of 50 while it saw Pro's allowance first in 49 of 50 trials, and its text-stated rate, an upper bound, was 47 of 50. That's consistent with much of the gap being the partial-approval pattern, where the agent names the add-on but asks to approve Pro alone, rather than missing information (cross-run).
+3. **Under the narrow scope, trials with the claims saw Pro's allowance far less often:** 19 of 114 under C, against 49 of 50 under `A-scope` (cross-run). E3, the optimal-rate difference, is −35.1.
    - **A hypothesis, not a finding:** when the deciding fact is off the first view, claims suppress exploration. It's offered as a candidate for a future pre-registered run, and isn't claimed here.
 
 **For Haiku,** every interval includes 0 except E4's, which only just excludes it (−16.2, −31.8 to −0.4).
