@@ -558,6 +558,11 @@ Only the tools differ. Three surfaces use the benchmark's four tools (§5.1):
 - **The bundle can't be refused as current:** the project records its plan and add-ons, not a bundle. So "already on Pro Plus" has no precondition. No task starts on a bundle, so no trial depends on it.
 - **No user replies:** a trial ends when the agent asks the user something (§5.2).
 - **The pilot's add-on price never reached agents:** in every condition, the add-on's offer rendered "Add unknown to …, for unknown USD a month". It took the add-on as an unbound input reference, and nothing listed add-ons. So the pilot's T1 cells are invalid, and T3's ceiling may come from the gap. The fixture now targets the add-on, as subscribing targets a plan. A test derived from the manifest's financial effects checks that every priced offer shows its amount, under every built-in policy and in inspect. The harness runs the same check for each condition's policy.
+- **Constant account context:** Claude Code gives every trial's agent the user's account context, an email and an organization. It's identical across every condition and trial, and it names no project or benchmark. A named exclusion in the context canary allows it, and the canary records it.
+- **Trial isolation:**
+  - **Where trials run:** from a pinned, git-free export, in fresh working directories outside any git tree and any `CLAUDE.md` or `AGENTS.md`. The CLIs' real config directories are used, so no credential is ever copied.
+  - **What's switched off:** `CLAUDE.md` loading and auto-memory (`CLAUDE_CODE_DISABLE_CLAUDE_MDS`, `autoMemoryEnabled: false`), session persistence (Claude's `--no-session-persistence`, Codex's `--ephemeral`), and Codex's `AGENTS.md` loading (`project_doc_max_bytes=0`).
+  - **The canary:** a context canary in each driver's trial configuration must report none of these before a run starts.
 - **One domain:** results are about one fictional hosting provider's options, and may not transfer to other domains or price structures.
 
 ## 15. Open questions
