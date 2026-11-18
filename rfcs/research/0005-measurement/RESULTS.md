@@ -49,7 +49,7 @@
 
 1. **id (0.00 in both apps):** a rule defect.
    - **What happened:** stage B's ids are the codemod's suggestions (`cart.updateQuantity`, `plans.subscribe`), with no namespace prefix. RFC 0005 §1 says suggested ids take the prefix inferred from the app's name (`idPrefix`), but `writeIds` doesn't read it. That's the boundary review's #11, "computed but unread".
-   - **Even with a prefix,** route-derived suggestions wouldn't reproduce hand-chosen ids (`acme.cart.setQuantity` for `updateQuantity`). Ids stay a developer's to write, as §7 expected.
+   - **Even with a prefix,** route-derived suggestions wouldn't reproduce hand-chosen ids (`acme.cart.setQuantity` for `updateQuantity`, `hosting.plan.list` for `listPlans`). With the prefixes the apps' names give (`acmeStore`, `hostingLab`), 0 of 13 would match, and with a prefix equal to each reference's namespace (`acme`, `hosting`), 2 of 13 (review, 12:15Z, recomputed here from `scores.json`). Ids stay a developer's to write, as §7 expected.
 2. **input (0.00 on apps/example; 1.00 on hosting-lab):** a reference defect, not an extractor one.
    - **The check (post hoc, and not a change to the scored numbers):** all 5 mismatches differ only by `additionalProperties: false`, which the hand-written example reference asserts, and which zod's `z.object` doesn't imply. It strips unknown keys rather than refusing them. Without that one key, all 5 match.
    - **hosting-lab's reference** was generated from its IR, and matches 1.00 / 1.00.
@@ -69,4 +69,4 @@
   - declarative preconditions in place of opaque guards;
   - claims and relations;
   - a summary template in place of v0's generic one.
-- **So it's enrichment, not a rewrite:** nothing extracted had to be thrown away, and every precision below 1 traces to a named rule or reference cause above, not to wrong extracted content.
+- **So it's enrichment, not a rewrite, apart from ids:** the ids are suggestions a developer replaces. 0 of 13 matched, 0 of 13 would with the apps' own prefixes, and 2 of 13 would with each reference's namespace. Beyond ids, nothing extracted had to be thrown away, and every other precision below 1 traces to a named rule or reference cause above.

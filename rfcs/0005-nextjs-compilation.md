@@ -287,7 +287,7 @@ These are never extracted, because code doesn't state them. Each one missing is 
   - **apps/example's inputs:** they differ from its hand-written reference only by an `additionalProperties: false` the reference asserts and zod doesn't imply;
   - **targets and resource types:** E9 names them by the segment as written, decided after that reference.
 - **Zero by design,** as expected: effects, declarative preconditions, claims and relations.
-- **So it's enrichment, not a rewrite:** nothing extracted is wrong content to throw away.
+- **So it's enrichment, not a rewrite, apart from ids:** the codemod's ids are suggestions a developer replaces (0 of 13 matched, and 2 of 13 would even with each reference's namespace as the prefix). Beyond ids, nothing extracted is wrong content to throw away.
 
 **The compiler's own tests,** alongside the measurement:
 
