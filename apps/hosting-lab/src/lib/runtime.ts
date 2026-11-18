@@ -9,7 +9,7 @@ import { principalFor, resolvers } from './resolvers.ts'
 // every route bundle signs and spends tokens alike
 
 const shared = globalThis as { hostingLabApprovals?: { key: CryptoKey; seen: TokenStore } }
-const approvals = (shared.hostingLabApprovals ??= {
+export const approvals = (shared.hostingLabApprovals ??= {
   key: (await crypto.subtle.generateKey({ name: 'HMAC', hash: 'SHA-256' }, false, [
     'sign',
     'verify',
