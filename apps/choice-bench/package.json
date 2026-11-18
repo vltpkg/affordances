@@ -12,6 +12,7 @@
   "dependencies": {
     "@affordances/hosting-lab": "workspace:*",
     "@affordances/ir": "workspace:*",
+    "@affordances/mcp": "workspace:*",
     "@affordances/runtime": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "zod": "^4.6.7"

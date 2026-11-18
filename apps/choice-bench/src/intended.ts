@@ -7,6 +7,7 @@ import { conditions } from './conditions.ts'
 import { askedToConfirm } from './response.ts'
 import type { ServerRecord } from './server.ts'
 import { setupTrial } from './trial.ts'
+import { v0RequestsOf, type CapabilityRequest, type V0Trial } from './v0.ts'
 
 // the choice (the planner and intake, 2026-11-18): the intended end state. The agent's offers that came back
 // confirmation_required or ran are replayed, in order and each once, through the condition's own runtime on a fresh
@@ -73,10 +74,13 @@ export const decisionsOf = (
 }
 
 type Request = { offer: string; input?: unknown }
+// what a replay needs of a trial: its condition, plan order and task, for a fresh copy of its starting store, and the
+// project key its requests carry
+type Base = Pick<ServerRecord, 'condition' | 'index' | 'task' | 'project'>
 const keyOf = (r: Request) => canonicalJson({ offer: r.offer, input: r.input ?? null })
 
 // one replay of requests on a fresh store: within a decision, the first that applies wins and a later one is skipped
-const replayOnce = async (record: ServerRecord, requests: Request[]) => {
+const replayOnce = async (record: Base, given: (Request | CapabilityRequest)[]) => {
   const condition = conditions[record.condition]
   const trial = await setupTrial(condition, record.index, record.task)
   // the fresh account's project key stands in for the trial's in every offer id and input
@@ -87,6 +91,21 @@ const replayOnce = async (record: ServerRecord, requests: Request[]) => {
     trial.runtime.manifest,
     projection.choiceSets.map((c) => c.capability),
   )
+  // a surface's request names a capability and its input (v0's, src/v0.ts): its offer is the fresh projection's one
+  // offer of that capability whose target's key the input names, or that has no target
+  const requests = given.map((r): Request => {
+    if ('offer' in r) return r
+    const input = rekey(r.input)
+    const named = new Set(Object.values(input))
+    const offers = projection.offers.filter(
+      (o) => o.capability === r.capability && (!o.target || named.has(o.target.key)),
+    )
+    if (offers.length !== 1)
+      throw new Error(
+        `${r.capability} ${JSON.stringify(input)} names ${offers.length} offers, not one`,
+      )
+    return { offer: offers[0]!.id.replaceAll(trial.project.key, record.project), input: r.input }
+  })
   const decided = new Set<string>()
   const replayed: Request[] = []
   const skipped: Request[] = []
@@ -104,15 +123,22 @@ const replayOnce = async (record: ServerRecord, requests: Request[]) => {
     if (decision) decided.add(decision)
     replayed.push(r)
   }
-  return { state: lab.endState(trial.sid), replayed, skipped, decisions }
+  return { state: lab.endState(trial.sid), replayed, skipped, decisions, requests }
 }
 
-const replay = async (record: ServerRecord): Promise<Intended> => {
-  if (!record.calls.some((c) => c.tool === 'execute'))
-    return { state: undefined, replayed: [], skipped: [], alternatives: [] }
+const replay = async (record: ServerRecord | V0Trial): Promise<Intended> => {
+  // 'none' is an agent that never executed anything: on v0, never called an action. One that did, though nothing
+  // applied, replays to the starting state
+  const v0 = 'surface' in record
+  const executed = record.calls.some((c) => c.tool === (v0 ? 'affordances_call' : 'execute'))
+  if (!executed) return { state: undefined, replayed: [], skipped: [], alternatives: [] }
+  return replayAll(record, v0 ? v0RequestsOf(record) : requestsOf(record))
+}
+
+// identical requests (same offer and input) count once: an approved choice is two, and add-on offers share an id
+const requestsOf = (record: ServerRecord): Request[] => {
   const seen = new Set<string>()
-  // identical requests (same offer and input) count once: an approved choice is two, and add-on offers share an id
-  const requests = record.calls.flatMap((c) => {
+  return record.calls.flatMap((c) => {
     if (c.tool !== 'execute') return []
     const asked = askedToConfirm(c)
     const r = c.input as Request
@@ -120,13 +146,19 @@ const replay = async (record: ServerRecord): Promise<Intended> => {
     seen.add(keyOf(r))
     return [r]
   })
+}
+
+const replayAll = async (
+  record: Base,
+  requests: (Request | CapabilityRequest)[],
+): Promise<Intended> => {
   const first = await replayOnce(record, requests)
   // what each skipped request would have led to as its decision's winner: the same requests, with its decision's
   // others left out. 'Corrected after discovery' reads these (metrics.ts)
   const alternatives: Intended['alternatives'] = []
   for (const s of first.skipped) {
     const decision = first.decisions.get(s.offer.split('@')[0]!)
-    const variant = requests.filter(
+    const variant = first.requests.filter(
       (r) => r === s || first.decisions.get(r.offer.split('@')[0]!) !== decision,
     )
     alternatives.push({ offer: s.offer, state: (await replayOnce(record, variant)).state })
