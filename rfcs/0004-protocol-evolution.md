@@ -148,11 +148,11 @@ type ExecuteRequest = ViewRequest & {
 
 ## 5. WebMCP
 
-**Decision: generic tools by default, as on MCP (§4). One tool per capability the page's view offers is an option: it's named by the capability id, and registered and unregistered as the view changes** (amended, intake, 2026-11-18; the per-capability details below apply to that option).
+**Decision: generic tools by default, as on MCP (§4). One tool per capability is an option: it's named by the capability id, for the capabilities everyone can see, as on MCP** (amended, intake, 2026-11-18; the per-capability details below apply to that option). Registering and unregistering those tools as the page's view changes isn't built (M7e).
 
 - **The name:** WebMCP's rule is normative. `registerTool()` rejects a name that isn't 1-128 characters of `[A-Za-z0-9_.-]` (prior art §4.2). A capability id always passes, and an id that wouldn't is already invalid in the IR. So a capability's WebMCP tool name is its id, unchanged.
 - **One tool per capability, not per offer:** when a view has several offers of one capability (the plans of a choice set), it registers one tool, and the target goes in its input, as `targetAt` names it (RFC 0001 §2.2).
-- **Registration follows the view:** an offer that appears registers its capability's tool, and one that's removed unregisters it.
+- **Registration, as built:** the option registers a fixed list from the public manifest, one tool for each capability whose authorization is `any`, through the same shared core as MCP's per-capability mode (§4). Following the view isn't built: registering a capability's tool when one of its offers appears, and unregistering it when they're all removed (`rfcs/research/0004-fidelity.md`).
 - **Beside v0's tools:** v0's WebMCP tools are bare action names (repo audit §6). Version-1 names are dotted ids, so the two can't collide, and a page can serve both.
 - **Confirmation fails closed** (amended, intake, 2026-11-18). The rule is unchanged: an agent's own resend is never consent, and no tool returns a token to the agent. What changed is the mechanism, since Chromium's WebMCP has no browser-mediated consent (`rfcs/research/0004-webmcp/SPIKE.md`).
   - **A call that needs confirmation:** when `execute` is refused with `confirmation_required`, the tool returns only the refusal, through the same boundary every tool result passes (`toModel`), with no token and no way to approve. The person confirms in the app's own review-and-confirm step.
