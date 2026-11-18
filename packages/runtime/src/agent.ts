@@ -1,4 +1,5 @@
 import { canonicalJson, renderConfirmation, type CapabilityManifest } from '@affordances/ir'
+import { ALONG } from './along.ts'
 import type { ExecutionResult, OfferDetails, ProjectionRequest, View } from './types.ts'
 
 // RFC 0004 §3 and §4's agent tools, transport-free and browser-safe (intake, 2026-11-18 13:43Z; design's split): the
@@ -108,15 +109,7 @@ export const GENERIC_TOOLS: AgentTool[] = [
         from: { anyOf: [{ type: 'string' }, ref] },
         along: {
           type: 'string',
-          enum: [
-            'alternatives',
-            'members',
-            'relations',
-            'contains',
-            'enables',
-            'more',
-            'comparison',
-          ],
+          enum: [...ALONG],
         },
       },
       required: ['from', 'along'],

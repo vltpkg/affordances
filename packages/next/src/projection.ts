@@ -187,17 +187,6 @@ const crossSite = (request: Request, allowed: ReadonlySet<string>): Response | u
 // a budget's limit, on the view's query and in an expansion's body alike
 const positiveWhole = (n: unknown) => typeof n === 'number' && Number.isInteger(n) && n > 0
 
-const ALONG = new Set<string>([
-  'alternatives',
-  'members',
-  'relations',
-  'contains',
-  'enables',
-  'more',
-  // a choice set whole, as RFC 0002 §6.6 has it (code review of M8, #1)
-  'comparison',
-])
-
 type Params = Record<string, unknown>
 const startOf = (value: unknown): ProjectionRequest['start'] => {
   if (typeof value !== 'string' || !value) return undefined
@@ -244,6 +233,7 @@ export const createProjectionRoute = <Session = unknown>(
         rt: ReturnType<Runtime['createRuntime']>
         statusOf: Runtime['statusOf']
         policies: Set<string>
+        along: Runtime['ALONG']
       }>
     | undefined
   const runtime = () =>
@@ -252,7 +242,7 @@ export const createProjectionRoute = <Session = unknown>(
       throw error
     }))
   const make = async () => {
-    const { createRuntime, statusOf, builtInPolicies, devApprovalKey, memoryTokenStore } =
+    const { createRuntime, statusOf, builtInPolicies, devApprovalKey, memoryTokenStore, ALONG } =
       await loadRuntime()
     const rt = createRuntime({
       manifest: options.manifest as never,
@@ -261,7 +251,7 @@ export const createProjectionRoute = <Session = unknown>(
       approvalKeys: { current: options.approvalKey ?? (await devApprovalKey()) },
       seenTokens: options.seenTokens ?? memoryTokenStore(),
     })
-    return { rt, statusOf, policies: new Set(builtInPolicies.map((p) => p.id)) }
+    return { rt, statusOf, policies: new Set(builtInPolicies.map((p) => p.id)), along: ALONG }
   }
 
   const projectionOf = async (request: Request, p: Params): Promise<ProjectionRequest | string> => {
@@ -313,7 +303,7 @@ export const createProjectionRoute = <Session = unknown>(
         return refuse(400, 'The body is a JSON object')
       const p = await projectionOf(request, body)
       if (typeof p === 'string') return refuse(400, p)
-      const { rt, statusOf } = await runtime()
+      const { rt, statusOf, along: ALONG } = await runtime()
       const op = operation(request)
       if (op === 'expand') {
         const { from, along, budget } = body
@@ -325,8 +315,8 @@ export const createProjectionRoute = <Session = unknown>(
             400,
             'from is an offer id, a choice set id, a more cursor, or { type, key }',
           )
-        if (typeof along !== 'string' || !ALONG.has(along))
-          return refuse(400, `along is one of ${[...ALONG].join(', ')}`)
+        if (typeof along !== 'string' || !(ALONG as readonly string[]).includes(along))
+          return refuse(400, `along is one of ${ALONG.join(', ')}`)
         // the view's rule (code review of M8, #5): offers and facts, each a positive whole number, and nothing else
         if (
           budget !== undefined &&

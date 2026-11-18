@@ -1,4 +1,5 @@
 import type { Basis, CapabilityDefinition, CapabilityManifest, Id } from '@affordances/ir'
+import type { Along } from './along.ts'
 
 // RFC 0002's types (§2-§8), as the RFC states them
 
@@ -189,7 +190,7 @@ export type OrderBasis =
   | { by: 'claim'; kind: 'recommendation'; source: string }
 export type Expansion = {
   from: OfferId | ChoiceSetId | ResourceRef
-  along: 'alternatives' | 'members' | 'relations' | 'contains' | 'enables' | 'more' | 'comparison'
+  along: Along
   count: number
   // a choice set summarized to its member count keeps its comparison, whole but for the request's facts (§6.6)
   comparison?: Comparison

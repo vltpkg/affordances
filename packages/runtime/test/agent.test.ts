@@ -7,7 +7,7 @@ import { createToolset, GENERIC_TOOLS, type AgentAdapter, type Confirm } from '.
 // the transport-free agent tools (intake, 2026-11-18 13:43Z; design's split): the core is browser-safe, and whatever
 // an adapter returns, nothing a tool call gives the model carries a token
 
-test('the core imports ir and runtime’s types only: no runtime, no key, no transport', () => {
+test('the core imports ir, runtime’s types and its expansion directions only: no runtime, no key, no transport', () => {
   const source = readFileSync(new URL('../src/agent.ts', import.meta.url), 'utf8')
   const imports = [...source.matchAll(/^import (type )?\{[^}]*\} from '([^']+)'/gm)].map((m) => [
     m[2],
@@ -15,9 +15,12 @@ test('the core imports ir and runtime’s types only: no runtime, no key, no tra
   ])
   expect(imports).toEqual([
     ['@affordances/ir', false],
+    ['./along.ts', false],
     ['./types.ts', true],
   ])
   expect(source).not.toMatch(/\bcrypto\.|\bprocess\.|createRuntime/)
+  // and the one value it takes from the runtime, the expansion directions, imports nothing
+  expect(readFileSync(new URL('../src/along.ts', import.meta.url), 'utf8')).not.toMatch(/^import /m)
 })
 
 // a hostile adapter: every result it returns carries a token, in the field and in free text
