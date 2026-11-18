@@ -62,6 +62,8 @@ Everything else is byte-identical across the six, and the preflight refuses a ru
 
 **Pilot only:** MCP and WebMCP. They're described, not estimated, and their confirmatory comparison is a later round.
 
+**The browser cell stays on the site** (backend, 15:53Z). A link or redirect off the trial's origin is aborted at the browser context. The agent stays on the page it was on, and is told: "That goes to <url>, off the site, so it wasn't followed." The trial line records the browser's build, its Playwright version, its launch arguments and every aborted navigation, for the preflight. The browser's `proAllowanceSeen` reads every snapshot returned before the first review-page load.
+
 **The server, on every surface** (the planner, 14:10Z): a port per worker, and a fresh server per trial.
 
 - **What it is:** hosting-lab's one production build, from the pinned export, started fresh for each trial on its worker's port.
