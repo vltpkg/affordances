@@ -341,7 +341,7 @@ test.skipIf(!build)(
         labBuild: build!,
         port: PORT,
         pilot: true,
-        maxFaults: 10,
+        maxAttempts: 10,
       }),
     ).rejects.toThrow(/3 harness faults in 3 trials run, more than the pilot’s 2/)
     expect(faultsByCell(at)).toEqual({ 'v0 T6 fake': 3 })
@@ -565,6 +565,62 @@ test.skipIf(!build)(
     })
     expect(r).toEqual({ missing: [s.id], faults: 2, trialsRun: 2 })
     expect(existsSync(path.join(at, `${s.id}.jsonl`))).toBe(false)
+  },
+  600_000,
+)
+
+// the planner (17:40Z): the final attempt's class decides. A crash and then a harness fault leaves the spec missing;
+// a harness fault and then a crash is scored failed, under intake's rule for a CLI failure on the final attempt
+const inTurn = (drivers: Driver[]): Driver => {
+  let n = 0
+  return { id: 'in-turn', run: (trial) => drivers[Math.min(n++, drivers.length - 1)]!.run(trial) }
+}
+
+test.skipIf(!build)(
+  'a crash, then a harness fault: missing; a harness fault, then a crash: scored failed',
+  async () => {
+    const at = path.join(dir, 'final-class')
+    const run = (s: TrialSpec, driver: Driver) =>
+      runSurfaceSpecs([s], () => driver, at, {
+        labBuild: build!,
+        port: PORT,
+        ports: [PORT],
+        pilot: true,
+      })
+    const a = spec('full', 'crash-then-fault')
+    const faultA = editing(
+      fakeDriver(1, path.join(at, 'a2.raw.json')),
+      path.join(at, `${a.id}.state.json`),
+      (w) => {
+        w.serverErrors = [{ status: 500, route: '/plans', at: '' }]
+      },
+    )
+    expect(
+      await run(a, inTurn([crashing(fakeDriver(1, path.join(at, 'a1.raw.json'))), faultA])),
+    ).toMatchObject({
+      missing: [a.id],
+    })
+    expect(existsSync(path.join(at, `${a.id}.jsonl`))).toBe(false)
+    const b = spec('v0', 'fault-then-crash')
+    const faultB = editing(
+      fakeDriver(1, path.join(at, 'b1.raw.json')),
+      path.join(at, `${b.id}.state.json`),
+      (w) => {
+        w.serverErrors = [{ status: 500, route: '/plans', at: '' }]
+      },
+    )
+    expect(
+      await run(b, inTurn([faultB, crashing(fakeDriver(1, path.join(at, 'b2.raw.json')))])),
+    ).toMatchObject({
+      missing: [],
+    })
+    const end = JSON.parse(
+      readFileSync(path.join(at, `${b.id}.jsonl`), 'utf8')
+        .trim()
+        .split('\n')
+        .find((l) => l.includes('"kind":"end"'))!,
+    )
+    expect(end).toMatchObject({ end: 'failed', attempts: 2 })
   },
   600_000,
 )

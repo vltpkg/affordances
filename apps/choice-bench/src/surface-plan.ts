@@ -12,8 +12,6 @@ export const PILOT_SURFACES: SurfaceId[] = ['full', 'progressive', 'v0', 'browse
 export const PILOT_MODELS = ['claude-sonnet-5-5', 'claude-haiku-5-5']
 export const PILOT_PER_CELL = 5
 export const PILOT_TASK = 'T6'
-// the PLAN's budget: one retry per trial, whether the first attempt was a harness fault or a CLI crash
-export const PILOT_MAX_ATTEMPTS = 2
 
 const specOf = (surface: SurfaceId, model: string, index: number, driver: string): TrialSpec => ({
   id: `pilot-${surface}-${PILOT_TASK}-${model}-${index}`.replace(/[^\w.-]/g, '_'),

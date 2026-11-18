@@ -16,8 +16,8 @@ import { faultsByCell, missingLogins, type TrialSpec } from './harness.ts'
 import { loadGate, ownerChanges, stampOwnerFiles } from './integrity.ts'
 import { PIN_FILE } from './pin.ts'
 import { surfacePreflight } from './preflight.ts'
-import { runSurfaceSpecs, SurfaceRunStopped } from './surface.ts'
-import { PILOT_MAX_ATTEMPTS, PILOT_SURFACES, surfacePilotPlan } from './surface-plan.ts'
+import { MAX_ATTEMPTS, runSurfaceSpecs, SurfaceRunStopped } from './surface.ts'
+import { PILOT_SURFACES, surfacePilotPlan } from './surface-plan.ts'
 
 // M7f's surface run, launch and resume (the planner, 2026-11-18 17:35Z). M5's run.ts and its modes are left as they ran.
 //   node src/surface-run.ts plan               the pilot's 60, listed in their order, not run
@@ -122,7 +122,7 @@ write('launch', {
   canaries: canaries.map((c) => ({ model: c.model, passed: c.passed })),
   stampsBefore,
   specs: specs.length,
-  maxAttempts: PILOT_MAX_ATTEMPTS,
+  maxAttempts: MAX_ATTEMPTS,
   ports: WORKER_PORTS,
 })
 console.error(`START ${startedAt} launch ${launch}, ${specs.length} specs, load ${gate.load}`)
@@ -136,7 +136,6 @@ try {
     port: WORKER_PORTS[0]!,
     ports: WORKER_PORTS,
     pilot: true,
-    maxAttempts: PILOT_MAX_ATTEMPTS,
   })
 } catch (e) {
   if (!(e instanceof SurfaceRunStopped)) throw e

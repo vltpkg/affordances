@@ -59,6 +59,8 @@ export type SurfaceOptions = {
   labBuild: string
   // the worker's port
   port: number
+  // the attempt cap, MAX_ATTEMPTS unless a test sets another
+  maxAttempts?: number
 }
 
 const SERVERS = {
@@ -180,6 +182,16 @@ const factsOf = async (
     endState,
   }
 }
+
+/**
+ * The PLAN's budget (§4; the planner, 17:40Z): at most two attempts a spec, one retry, whatever the cause. One
+ * constant, used by the runner, its spec loop and the entry
+ */
+export const MAX_ATTEMPTS = 2
+
+/** A spec's attempts so far, from disk: its recorded harness faults and its CLI failures. */
+export const attemptsOf = (dir: string, id: string) =>
+  faultsOf(dir).filter((f) => f.spec.id === id).length + priorFailures(dir, id)
 
 export const runSurfaceTrial = async (
   spec: TrialSpec,
@@ -323,8 +335,10 @@ export const runSurfaceTrial = async (
     })
     return { spec, fault }
   }
-  const attempts = priorFailures(dir, spec.id) + 1
-  if (failed && attempts === 1) sendFailure()
+  // this attempt's number, faults and failures before it counted: a CLI failure on the final attempt is scored failed
+  // (intake's 12:05Z rule, ITT), and on an earlier one it's set aside for its retry (the planner, 17:40Z)
+  const attempts = attemptsOf(dir, spec.id) + 1
+  if (failed && attempts < (options.maxAttempts ?? MAX_ATTEMPTS)) sendFailure()
   if (!existsSync(out))
     throw new Error(`trial ${spec.id}: the tool server never started (${thrown ?? 'no error'})`)
   const record = JSON.parse(readFileSync(out, 'utf8')) as
@@ -527,10 +541,11 @@ const scored = (dir: string, id: string) => {
 export class SurfaceRunStopped extends Error {}
 
 /**
- * A surface run's specs, one at a time on the worker's port. A harness fault is rerun at once, and counted; the run
- * pauses past 2% of the trials run, or 2 in the pilot, counting what's on disk so a resume counts the same. A CLI
- * driver's crash or 529 is rerun once, then scored failed, and auth stops the run (intake, 12:05Z). A spec still
- * without a scored trace after maxFaults faulted attempts is reported missing, never imputed.
+ * A surface run's specs, each until it's scored or out of attempts, from one ordered queue, a worker per port. At most
+ * MAX_ATTEMPTS attempts a spec, whatever the cause, counted from disk so a resume counts the same; the final attempt's
+ * class decides (runSurfaceTrial): a CLI crash or 529 on it is scored failed, and a harness fault on it leaves the
+ * spec missing, never imputed. Auth stops the run, and so does the fault pause: past 2% of the trials run, or 2 in the
+ * pilot (intake, 14:24Z).
  */
 export const runSurfaceSpecs = async (
   specs: TrialSpec[],
@@ -538,26 +553,19 @@ export const runSurfaceSpecs = async (
   dir: string,
   options: SurfaceOptions & {
     pilot: boolean
-    maxFaults?: number
     // workers: one per port, taking the next spec from the one ordered queue (M5's concurrency 2)
     ports?: number[]
-    // a cap on every spec's attempts, faults and CLI crashes together, counted from disk (the PLAN's one retry)
-    maxAttempts?: number
   },
 ) => {
   const missing: string[] = []
   const trialsRun = () => specs.filter((s) => scored(dir, s.id)).length + faultsOf(dir).length
-  // a spec's attempts so far, from disk, so a resume counts the same: its faults and its CLI failures
-  const attemptsOf = (id: string) =>
-    faultsOf(dir).filter((f) => f.spec.id === id).length + priorFailures(dir, id)
+  const cap = options.maxAttempts ?? MAX_ATTEMPTS
   const queue = specs.filter((s) => !scored(dir, s.id))
   let stopped: Error | undefined
   const runOne = async (s: TrialSpec, port: number) => {
-    let faults = 0
-    let crashes = 0
     for (;;) {
       if (stopped) return
-      if (options.maxAttempts !== undefined && attemptsOf(s.id) >= options.maxAttempts) {
+      if (attemptsOf(dir, s.id) >= cap) {
         missing.push(s.id)
         return
       }
@@ -565,18 +573,15 @@ export const runSurfaceSpecs = async (
       try {
         r = await runSurfaceTrial(s, driverFor(s), dir, { ...options, port })
       } catch (e) {
-        if (e instanceof DriverFailure && e.kind !== 'auth' && crashes++ === 0) continue
         if (e instanceof DriverFailure && e.kind === 'auth')
           throw new SurfaceRunStopped(`an auth failure in ${s.id}: re-login is the human's`)
+        // a crash or 529 before the final attempt, set aside for its retry
+        if (e instanceof DriverFailure) continue
         throw e
       }
       if (!('fault' in r)) return
       const paused = faultPause(dir, trialsRun(), options.pilot)
       if (paused) throw new SurfaceRunStopped(paused)
-      if (options.maxAttempts === undefined && ++faults >= (options.maxFaults ?? 3)) {
-        missing.push(s.id)
-        return
-      }
     }
   }
   const ports = options.ports ?? [options.port]
