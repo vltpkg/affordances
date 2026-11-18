@@ -164,16 +164,38 @@ test('a defineManifest export is used whole, and nothing may sit beside it', () 
     resources: [plan],
     capabilities: [subscribe],
   })
+  const withAll = defineManifest({
+    namespace: 'https://lab.example/capabilities',
+    owner,
+    resources: [plan],
+    capabilities: [subscribe, subscribeBundle],
+    claims: [recommended],
+    relations: alternatives.relations,
+  })
   const alone = fromModules([{ file: 'app/capabilities.ts', exports: { whole } }], {
     namespace: 'other',
   })
   expect(alone.diagnostics).toEqual([])
   expect(alone.manifest).toBe(whole)
 
+  // its own parts may sit beside it, as an app's bound actions import them
+  const parts = fromModules(
+    [
+      {
+        file: 'app/capabilities.ts',
+        exports: { plan, subscribe, recommended, alternatives, whole: withAll },
+      },
+    ],
+    { namespace: 'https://other.example/capabilities' },
+  )
+  expect(parts.diagnostics).toEqual([])
+  expect(parts.manifest).toBe(withAll)
+
+  // anything it doesn't hold would be left out, so it's refused
   const beside = fromModules(
     [
       { file: 'app/capabilities.ts', exports: { whole } },
-      { file: 'app/plans/capabilities.ts', exports: { subscribeBundle } },
+      { file: 'app/plans/capabilities.ts', exports: { subscribe, subscribeBundle } },
     ],
     { namespace: 'https://lab.example/capabilities', owner },
   )

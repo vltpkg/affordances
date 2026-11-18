@@ -36,6 +36,11 @@ type Found = { file: string; name: string; brand: Brand; value: unknown }
 
 const where = (f: Found) => `${f.name} in ${f.file}`
 const definition = (v: { definition: unknown }) => canonicalJson(v.definition)
+// a part as the manifest holds it: claims and relations gain the manifest's provenance there, so it's set aside
+const withoutProvenance = (value: object) => {
+  const { provenance: _, ...rest } = value as { provenance?: unknown }
+  return canonicalJson(rest)
+}
 
 /** @experimental One manifest from every capability module's exports, or the diagnostics that stop it. */
 export const fromModules = (
@@ -54,20 +59,43 @@ export const fromModules = (
       found.push({ file, name, brand, value })
     }
 
-  // a defineManifest export is the whole manifest, so nothing may sit beside it
+  // a defineManifest export is the whole manifest. Its own parts may be exported beside it, since a bound action
+  // imports its capability; anything the manifest doesn't hold, byte for byte, would be silently left out
   const manifests = found.filter((f) => f.brand === 'manifest')
   if (manifests.length) {
-    const beside = found.filter((f) => f !== manifests[0])
+    const whole = manifests[0]!.value as CapabilityManifest
+    const held = new Set(
+      [
+        ...(whole.principal ? [whole.principal] : []),
+        ...whole.resources,
+        ...whole.capabilities,
+        ...(whole.claims ?? []),
+        ...(whole.relations ?? []),
+      ].map(withoutProvenance),
+    )
+    const holds = (f: Found) => {
+      switch (f.brand) {
+        case 'manifest':
+          return false
+        case 'claims':
+          return (f.value as DefinedClaims).claims.every((c) => held.has(withoutProvenance(c)))
+        case 'relations':
+          return (f.value as DefinedRelations).relations.every((r) =>
+            held.has(withoutProvenance(r)),
+          )
+        default:
+          return held.has(withoutProvenance((f.value as { definition: object }).definition))
+      }
+    }
+    const beside = found.filter((f) => f !== manifests[0] && !holds(f))
     for (const other of beside)
       diagnostics.push({
         code: 'E_CAPABILITY_MANIFEST',
         file: other.file,
         subject: other.name,
-        message: `${where(other)} sits beside the defineManifest export ${where(manifests[0]!)}, which is used whole`,
+        message: `${where(other)} sits beside the defineManifest export ${where(manifests[0]!)}, which doesn't hold it`,
       })
-    return beside.length
-      ? { diagnostics }
-      : { manifest: manifests[0]!.value as CapabilityManifest, diagnostics }
+    return beside.length ? { diagnostics } : { manifest: whole, diagnostics }
   }
 
   // the namespace is the app's identity, so it's never inferred: without one there's no manifest (RFC 0005 §1)
