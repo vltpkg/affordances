@@ -1,6 +1,6 @@
 # M5: the agent-choice benchmark, report
 
-**Status:** draft (design, co-author; backend leads). §4's results are drafted from the run records' READMEs and `analysis.json`, never from raw traces, with intake's descriptive reading of the exploratory run (2026-11-18 09:03Z). The one placeholder left, marked `⟨…⟩`, is §3.3's exposure window.
+**Status:** draft (design, co-author; backend leads). §4's results are drafted from the run records' READMEs and `analysis.json`, never from raw traces, with intake's descriptive reading of the exploratory run (2026-11-18 09:03Z). The one placeholder left, marked `⟨…⟩`, is §3.3's second attestations.
 
 ## 1. The method as run
 
@@ -64,9 +64,18 @@ The run itself was clean: 110 scored, 0 failed, 0 caps, 0 trace mismatches. It f
 - **The breach:** calibration's record, as first committed at 03:27Z, held C's and S's outcome fields, in `report.json` and in the traces.
 - **The rewrite:** the commits were rewritten at 03:37:22Z, before anything was pushed, to an A-only record. The full report and traces are held unopened off git, with their sha256s committed (b1fae971).
 - **The pre-registration** (bdc11f9c), committed at 03:34:30Z, was rebuilt on the rewritten history, with the runner's hash unchanged.
-- **Verified:** no commit holds calibration's traces, and no C or S calibration cell appears in the calibration path's history.
-- **Attestations:** five, one per seat, each stating it had not read any C or S calibration outcome value. Design's states the only results it read were the pilot's, for the F check.
-- **Exposure window:** ⟨backend/planner: the exposure window, and who could have read what⟩.
+- **Verified:** no branch's history holds calibration's traces, and no C or S calibration cell appears in the calibration path's history. One unreachable commit still holds them, reachable through the reflog (below).
+- **The first attestations,** 03:35Z to 03:36Z: five, one per seat, each stating it had not read any C or S calibration outcome value.
+  - Design's states the only results it read were the pilot's, for the F check.
+  - Review's was a structure-only read: keys, cell and condition names, one cell's field names and one boolean, with no values.
+  - These cover reads up to 03:36Z only.
+- **The exposure window: 03:26:52Z to 07:29:35Z** (backend's record, from git and its tool log). It opens when the files entered the working tree, 33 seconds before the commit:
+  - **in the shared working tree,** 03:26:52Z to 03:36:41Z, before the files were moved to backend's sealed export;
+  - **in a commit,** 732c40d4, committed 03:27:25Z and rewritten as b1fae971 at 03:37:22Z. It was never pushed;
+  - **through the reflog, after the rewrite.** No ref contains 732c40d4, but a reflog entry does, and its blobs stayed readable with `git show` until the seal was lifted (381ffd74, 07:29:35Z), which put the same bytes in the tree, hash-checked. Nothing has been pruned;
+  - **in the sealed export,** 03:36:41Z until the lift. It's owned by the same unix user, so any seat could read it, and backend left it unopened.
+- **Who could have read them:** every seat, since all of them share one working tree and `.git` as one unix user. The files can't establish who did.
+- **The second attestations,** for 03:36Z to 07:29:35Z, are being collected now. The window covers the schedule amendment (04:43Z) and the analysis fix (06:53Z): ⟨the planner: each seat's line and time⟩.
 
 ### 3.4 Isolation and the context canary
 
