@@ -109,6 +109,20 @@ export const pauseFor = (dir: string, specs: TrialSpec[]): string | undefined =>
     return `${pending.length} specs failed and await their rerun, more than 5% (${limit}): tell intake before resuming`
 }
 
+// the logins a plan needs: one per CLI its specs run, never one it doesn't (boundary review #9). Both are still read
+// and recorded; only the needed ones gate the run
+const LOGIN_OF: Record<string, 'claude' | 'codex'> = {
+  'claude-cli': 'claude',
+  'codex-cli': 'codex',
+}
+export const missingLogins = (
+  logins: { claude: boolean; codex: boolean },
+  specs: TrialSpec[],
+): ('claude' | 'codex')[] =>
+  [...new Set(specs.flatMap((s) => (LOGIN_OF[s.driver] ? [LOGIN_OF[s.driver]!] : [])))]
+    .toSorted()
+    .filter((l) => !logins[l])
+
 // codex's default: the first listed model in its cache, as codex exec with no -m takes it
 const codexDefault = () => {
   try {

@@ -9,6 +9,7 @@ import {
   DriverFailure,
   failureOf,
   INSTRUCTIONS,
+  missingLogins,
   pauseFor,
   pilotPlan,
   priorFailures,
@@ -340,4 +341,18 @@ describe('driver failures, by class', () => {
     writeFileSync(path.join(at, 'p2.jsonl'), '{}\n')
     expect(pauseFor(at, plan)).toBeUndefined()
   })
+})
+
+// boundary review #9: a plan is gated on the logins its drivers use, so a Claude-only plan runs without Codex's
+test('a run needs only the logins its plan’s drivers use', () => {
+  const claudeOnly = [{ ...spec('c'), driver: 'claude-cli' }] as unknown as TrialSpec[]
+  const both = pilotPlan()
+  expect(missingLogins({ claude: true, codex: false }, claudeOnly)).toEqual([])
+  expect(missingLogins({ claude: false, codex: true }, claudeOnly)).toEqual(['claude'])
+  expect(missingLogins({ claude: true, codex: false }, both)).toEqual(['codex'])
+  expect(missingLogins({ claude: false, codex: false }, both)).toEqual(['claude', 'codex'])
+  // a dry run's fake driver needs no login
+  expect(
+    missingLogins({ claude: false, codex: false }, [spec('f')] as unknown as TrialSpec[]),
+  ).toEqual([])
 })

@@ -12,6 +12,7 @@ import type { Driver } from './drivers/types.ts'
 import {
   calibrationPlan,
   DriverFailure,
+  missingLogins,
   pauseFor,
   pilotPlan,
   runTrial,
@@ -187,10 +188,13 @@ if (mode === 'plan') {
   }
   const commit = { ...codeIdentity(exported), loadedFiles: loadedDigest() }
   const canaries: CanaryRecord[] = []
-  // the logins, read-only, before the run; a run doesn't start without both
+  // the logins, read-only, before the run, both recorded; a run doesn't start without every login its plan's drivers use
   const loginsBefore = real ? loginStatus() : undefined
-  if (loginsBefore && !(loginsBefore.claude && loginsBefore.codex)) {
-    console.error('a login isn’t valid: no run starts. Re-login is the human’s action')
+  const missingBefore = loginsBefore ? missingLogins(loginsBefore, specs) : []
+  if (missingBefore.length) {
+    console.error(
+      `the ${missingBefore.join(' and ')} login isn’t valid: no run starts. Re-login is the human’s action`,
+    )
     process.exit(3)
   }
   if (real) {
@@ -375,7 +379,7 @@ if (mode === 'plan') {
   }
   writeFileSync(path.join(out, 'report.json'), JSON.stringify(report, null, 2))
   console.log(JSON.stringify(report, null, 2))
-  if (stopped || (loginsAfter && !(loginsAfter.claude && loginsAfter.codex))) {
+  if (stopped || (loginsAfter && missingLogins(loginsAfter, specs).length)) {
     console.error(
       stopped ??
         'a login is no longer valid after the run: stop, and tell intake; re-login is the human’s',
