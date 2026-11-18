@@ -19,7 +19,8 @@ import {
   type Source,
   type URI,
 } from '../schema.ts'
-import { validate } from '../validate.ts'
+import { validate, type Validation } from '../validate.ts'
+import { branded } from './brand.ts'
 import type { ContextPaths } from './paths.ts'
 import { toJsonSchema, type Infer, type StandardSchemaV1 } from './standard.ts'
 import type { Declared, Guard, When } from './when.ts'
@@ -94,32 +95,40 @@ export const defineResource = <const S extends StandardSchemaV1 | undefined = un
   contains?: readonly (DefinedResource | Id)[]
   // instances are mutually exclusive choices, such as plans (RFC 0001 §2.1)
   alternatives?: true
-}): DefinedResource<Infer<S>> => ({
-  definition: defined({
-    id: spec.id,
-    title: spec.title,
-    description: spec.description,
-    key: spec.key,
-    attributes: spec.attributes && toJsonSchema(spec.attributes, `${spec.id}'s attributes`),
-    contains: spec.contains?.map(idOf),
-    alternatives: spec.alternatives,
-    ...fieldProvenance(spec.attributes ? ['attributes'] : []),
-  }) as ResourceDefinition,
-  schemas: defined({ attributes: spec.attributes }),
-})
+}): DefinedResource<Infer<S>> =>
+  branded(
+    {
+      definition: defined({
+        id: spec.id,
+        title: spec.title,
+        description: spec.description,
+        key: spec.key,
+        attributes: spec.attributes && toJsonSchema(spec.attributes, `${spec.id}'s attributes`),
+        contains: spec.contains?.map(idOf),
+        alternatives: spec.alternatives,
+        ...fieldProvenance(spec.attributes ? ['attributes'] : []),
+      }) as ResourceDefinition,
+      schemas: defined({ attributes: spec.attributes }),
+    },
+    'resource',
+  )
 
 // the attributes conditions can read about the caller (RFC 0001 §2.3); `authenticated` is built in, and isn't a path
 export const definePrincipal = <const S extends StandardSchemaV1>(spec: {
   description?: string
   attributes: S
-}): DefinedPrincipal<Infer<S>> => ({
-  definition: defined({
-    description: spec.description,
-    attributes: toJsonSchema(spec.attributes, "the principal's attributes"),
-    ...fieldProvenance(['attributes']),
-  }) as PrincipalDefinition,
-  schemas: { attributes: spec.attributes },
-})
+}): DefinedPrincipal<Infer<S>> =>
+  branded(
+    {
+      definition: defined({
+        description: spec.description,
+        attributes: toJsonSchema(spec.attributes, "the principal's attributes"),
+        ...fieldProvenance(['attributes']),
+      }) as PrincipalDefinition,
+      schemas: { attributes: spec.attributes },
+    },
+    'principal',
+  )
 
 // ---- capabilities ----
 
@@ -234,48 +243,51 @@ export const defineCapability = <
   deprecated?: { replacedBy?: DefinedCapability | Id; reason?: string }
 }): DefinedCapability<GuardIds<Pre> | GuardIds<Auth>, Infer<I>, Infer<O>> => {
   const converted = [spec.input && 'input', spec.output && 'output'].filter((f) => f !== undefined)
-  return {
-    definition: defined({
-      id: spec.id,
-      kind: spec.kind,
-      title: spec.title,
-      description: spec.description,
-      target: spec.target?.definition.id,
-      targetAt: spec.targetAt && pointer(spec.targetAt),
-      references:
-        spec.references &&
-        Object.entries(spec.references as Record<string, ReferenceSpec>).map(([name, r]) => ({
-          name,
-          resource: r.resource.definition.id,
-          at: pointer(r.at),
-        })),
-      input: spec.input && toJsonSchema(spec.input, `${spec.id}'s input`),
-      output: spec.output && toJsonSchema(spec.output, `${spec.id}'s output`),
-      safe: spec.safe,
-      idempotent: spec.idempotent,
-      preconditions: spec.preconditions && conditions(spec.preconditions),
-      authorization:
-        spec.authorization &&
-        defined({
-          principal: spec.authorization.principal,
-          conditions: spec.authorization.conditions && conditions(spec.authorization.conditions),
-        }),
-      confirmation: spec.confirmation && { summary: spec.confirmation.summary },
-      effects: spec.effects?.map(effect),
-      deprecated:
-        spec.deprecated &&
-        defined({
-          replacedBy: spec.deprecated.replacedBy && idOf(spec.deprecated.replacedBy),
-          reason: spec.deprecated.reason,
-        }),
-      ...fieldProvenance(converted),
-    }) as CapabilityDefinition,
-    schemas: defined({ input: spec.input, output: spec.output }),
-    ...(spec.confirmation && {
-      summary: (input: unknown) =>
-        renderSummary(spec.confirmation!.summary, { input: input as Record<string, unknown> }),
-    }),
-  }
+  return branded(
+    {
+      definition: defined({
+        id: spec.id,
+        kind: spec.kind,
+        title: spec.title,
+        description: spec.description,
+        target: spec.target?.definition.id,
+        targetAt: spec.targetAt && pointer(spec.targetAt),
+        references:
+          spec.references &&
+          Object.entries(spec.references as Record<string, ReferenceSpec>).map(([name, r]) => ({
+            name,
+            resource: r.resource.definition.id,
+            at: pointer(r.at),
+          })),
+        input: spec.input && toJsonSchema(spec.input, `${spec.id}'s input`),
+        output: spec.output && toJsonSchema(spec.output, `${spec.id}'s output`),
+        safe: spec.safe,
+        idempotent: spec.idempotent,
+        preconditions: spec.preconditions && conditions(spec.preconditions),
+        authorization:
+          spec.authorization &&
+          defined({
+            principal: spec.authorization.principal,
+            conditions: spec.authorization.conditions && conditions(spec.authorization.conditions),
+          }),
+        confirmation: spec.confirmation && { summary: spec.confirmation.summary },
+        effects: spec.effects?.map(effect),
+        deprecated:
+          spec.deprecated &&
+          defined({
+            replacedBy: spec.deprecated.replacedBy && idOf(spec.deprecated.replacedBy),
+            reason: spec.deprecated.reason,
+          }),
+        ...fieldProvenance(converted),
+      }) as CapabilityDefinition,
+      schemas: defined({ input: spec.input, output: spec.output }),
+      ...(spec.confirmation && {
+        summary: (input: unknown) =>
+          renderSummary(spec.confirmation!.summary, { input: input as Record<string, unknown> }),
+      }),
+    },
+    'capability',
+  )
 }
 
 // ---- claims ----
@@ -296,74 +308,116 @@ export const defineClaims = (
       applies?: When<`target.${string}`>
     }
   >,
-): DefinedClaims => ({
-  claims: Object.entries(spec).map(
-    ([id, c]) =>
-      defined({
-        id,
-        subject: typeof c.subject === 'string' ? c.subject : c.subject.definition.id,
-        about: c.about,
-        kind: c.kind,
-        statement: c.statement,
-        quantity: c.quantity,
-        applies: c.applies?.expr,
-      }) as Omit<Claim, 'provenance'>,
-  ),
-})
+): DefinedClaims =>
+  branded(
+    {
+      claims: Object.entries(spec).map(
+        ([id, c]) =>
+          defined({
+            id,
+            subject: typeof c.subject === 'string' ? c.subject : c.subject.definition.id,
+            about: c.about,
+            kind: c.kind,
+            statement: c.statement,
+            quantity: c.quantity,
+            applies: c.applies?.expr,
+          }) as Omit<Claim, 'provenance'>,
+      ),
+    },
+    'claims',
+  )
+
+// ---- relations ----
+
+// relations between capabilities, for a capability module that has no defineManifest (RFC 0005 §1); ids or
+// defined capabilities
+export type DefinedRelations = { readonly relations: readonly Relation[] }
+
+export const defineRelations = (
+  relations: readonly (Omit<Relation, 'from' | 'to'> & {
+    from: DefinedCapability | Ref
+    to: DefinedCapability | Ref
+  })[],
+): DefinedRelations =>
+  branded(
+    {
+      relations: relations.map((r) => ({ ...r, from: idOf(r.from), to: idOf(r.to) })),
+    },
+    'relations',
+  )
 
 // ---- the manifest ----
 
-// one place declares the namespace and the owner; the owner's statements are `declared`, and only the owner's
-// (RFC 0001 §12.1, rule 3)
-export const defineManifest = (spec: {
+// what a manifest is made of; without an owner, nothing in it is the owner's statement, so it's attributed to authoring
+// as inferred, and it can carry no claims (RFC 0005 §1, W_NO_OWNER)
+export type ManifestSpec = {
   namespace: URI
   title?: string
-  owner: { id?: string; name: string; href?: URI }
+  owner?: { id?: string; name: string; href?: URI }
   principal?: DefinedPrincipal
   resources: readonly DefinedResource[]
   capabilities: readonly DefinedCapability[]
   claims?: readonly DefinedClaims[]
   relations?: readonly Relation[]
   bindings?: readonly Binding[]
-}): CapabilityManifest => {
-  const owner = spec.owner.id ?? 'owner'
+}
+
+// the manifest, validated, without throwing: defineManifest throws on its errors, and fromModules reports them
+export const assemble = (spec: ManifestSpec): Validation => {
   const definitions = [
     ...(spec.principal ? [spec.principal.definition] : []),
     ...spec.resources.map((r) => r.definition),
     ...spec.capabilities.map((c) => c.definition),
   ]
-  const usesTool = definitions.some((d) => d.fieldProvenance !== undefined)
+  const usesTool = !spec.owner || definitions.some((d) => d.fieldProvenance !== undefined)
+  const owner = spec.owner && (spec.owner.id ?? 'owner')
   const sources: Source[] = [
-    defined({ id: owner, role: 'owner' as const, name: spec.owner.name, href: spec.owner.href }),
+    ...(spec.owner
+      ? [
+          defined({
+            id: owner!,
+            role: 'owner' as const,
+            name: spec.owner.name,
+            href: spec.owner.href,
+          }),
+        ]
+      : []),
     ...(usesTool
       ? [{ id: AUTHORING_SOURCE, role: 'tool' as const, name: '@affordances/ir authoring' }]
       : []),
   ]
+  const provenance: Provenance = owner ? { source: owner, basis: 'declared' } : inferred
   const claims = spec.claims?.flatMap((c) =>
-    c.claims.map((claim): Claim => ({
-      ...claim,
-      provenance: { source: owner, basis: 'declared' },
-    })),
+    c.claims.map((claim): Claim => ({ ...claim, provenance })),
   )
-  const manifest = defined({
-    schemaVersion: '0.1' as const,
-    namespace: spec.namespace,
-    title: spec.title,
-    provenance: { source: owner, basis: 'declared' as const },
-    principal: spec.principal?.definition,
-    sources,
-    resources: spec.resources.map((r) => r.definition),
-    capabilities: spec.capabilities.map((c) => c.definition),
-    relations: spec.relations && [...spec.relations],
-    claims: claims?.length ? claims : undefined,
-    bindings: spec.bindings && [...spec.bindings],
-  })
+  return validate(
+    defined({
+      schemaVersion: '0.1' as const,
+      namespace: spec.namespace,
+      title: spec.title,
+      provenance,
+      principal: spec.principal?.definition,
+      sources,
+      resources: spec.resources.map((r) => r.definition),
+      capabilities: spec.capabilities.map((c) => c.definition),
+      relations: spec.relations && [...spec.relations],
+      claims: claims?.length ? claims : undefined,
+      bindings: spec.bindings && [...spec.bindings],
+    }),
+  )
+}
+
+// one place declares the namespace and the owner; the owner's statements are `declared`, and only the owner's
+// (RFC 0001 §12.1, rule 3)
+export const defineManifest = (
+  spec: ManifestSpec & { owner: NonNullable<ManifestSpec['owner']> },
+): CapabilityManifest => {
   // safe by default: an authored manifest is valid IR, or defineManifest says where it isn't (RFC 0001 §7.3)
-  const result = validate(manifest)
+  const result = assemble(spec)
   const errors = result.issues.filter((i) => i.code.startsWith('E_'))
   if (!result.ok || errors.length)
     throw new TypeError(
       `defineManifest: the manifest isn't valid IR:\n${errors.map((i) => `  ${i.code} at ${i.at || '/'}: ${i.message}`).join('\n')}`,
     )
-  return result.manifest
+  return branded(result.manifest, 'manifest')
 }
