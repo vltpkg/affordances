@@ -124,6 +124,26 @@ describe('an app with capabilities', () => {
     expect(hidden.status).toBe(404)
   })
 
+  // simplify #11, skipped for this test: route.ts strips the route's own path before matching the manifest, as core's
+  // handler does for the index, so the two answer alike at the url a rewrite delivers and at the prefixed one
+  test('the manifest and the index normalize alike, unprefixed and under the route’s own path', async () => {
+    const route = createRouteHandler({ manifest, compiled, visibility: 'public' })
+    const at = async (url: string) => {
+      const r = await route(new Request(`${origin}${url}`))
+      return r.status
+    }
+    const indexPath = '/.well-known/affordances.json'
+    for (const prefix of ['', API_PATH])
+      expect([
+        prefix,
+        await at(`${prefix}${indexPath}`),
+        await at(`${prefix}${MANIFEST_PATH}`),
+      ]).toEqual([prefix, 200, 200])
+    // and both refuse the same near miss under the prefix: a path that only ends like theirs
+    for (const near of [`${API_PATH}/x${indexPath}`, `${API_PATH}/x${MANIFEST_PATH}`])
+      expect([near, await at(near)]).toEqual([near, 404])
+  })
+
   test('a base set for the route is the one the index names', async () => {
     const route = createRouteHandler({ manifest, compiled, base: '/v1' })
     expect(JSON.parse(await index(route)).capabilities.base).toBe('/v1')
