@@ -31,8 +31,7 @@
                 }
               }
             },
-            "required": ["route", "actions"],
-            "additionalProperties": false
+            "required": ["route", "actions"]
           }
         },
         "auth": {
@@ -59,12 +58,10 @@
               "description": "The base URL of version 1's endpoints (RFC 0004 §2)"
             }
           },
-          "required": ["manifest", "base"],
-          "additionalProperties": false
+          "required": ["manifest", "base"]
         }
       },
-      "required": ["v", "routes", "auth"],
-      "additionalProperties": false
+      "required": ["v", "routes", "auth"]
     },
     "ActionSummary": {
       "type": "object",
@@ -112,8 +109,7 @@
           "type": "boolean"
         }
       },
-      "required": ["name", "description", "input", "expose"],
-      "additionalProperties": false
+      "required": ["name", "description", "input", "expose"]
     }
   }
 }

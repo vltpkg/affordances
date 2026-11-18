@@ -1168,6 +1168,7 @@
     "workspace~packages+next oxc-parser": "prod ^0.156.0 ~npm~oxc-parser@0.156.0",
     "workspace~packages+next @affordances/core": "prod workspace:* workspace~packages+core",
     "workspace~packages+next @affordances/protocol": "prod workspace:* workspace~packages+protocol",
+    "workspace~packages+protocol ajv": "dev ^8.17.1 ~npm~ajv@8.20.0",
     "workspace~packages+protocol zod": "prod ^4.6.7 ~npm~zod@4.6.7",
     "workspace~packages+react @types/react-dom": "dev ^19.3.0 ~npm~@types+react-dom@19.3.0~peer.f18d9ecf01787eaa",
     "workspace~packages+react @types/react": "dev ^19.3.0 ~npm~@types+react@19.3.0",
