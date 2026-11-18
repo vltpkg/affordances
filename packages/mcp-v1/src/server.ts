@@ -36,16 +36,40 @@ export type McpServerOptions = {
   seenTokens?: TokenStore
   // how long the person has to answer a confirmation before it counts as declined
   elicitTimeoutMs?: number
+  // the runtime's approval expiry and clock (RFC 0002 §8.2), passed through
+  approvalTtlMs?: number
+  now?: () => number
 }
 
 // RFC 8785's order, so a result's bytes are the same wherever it's rendered (RFC 0004 §3)
-const text = (value: unknown) => ({
-  content: [{ type: 'text' as const, text: canonicalJson(value) }],
+// THE BOUNDARY (the planner, after review of 3a02e2c8): everything a tool returns reaches the model only through
+// toModel. RFC 0004 §4 gives the person, never the model, the approval token: so every `approval` field, at any depth,
+// is removed, and any text shaped like a token (the runtime's expiresAt~nonce~mac) is replaced. One function, not one
+// check per path, so a new path can't forget it
+/** @experimental The runtime's approval token's shape: `${expiresAt}~${nonce}~${mac}`. */
+export const TOKEN = /[^\s"~]+~[A-Za-z0-9_-]+~[A-Za-z0-9_-]{16,}/g
+const strip = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(strip)
+    : value !== null && typeof value === 'object'
+      ? Object.fromEntries(
+          Object.entries(value).flatMap(([k, v]) => (k === 'approval' ? [] : [[k, strip(v)]])),
+        )
+      : typeof value === 'string'
+        ? value.replace(TOKEN, '[withheld]')
+        : value
+/** @experimental A tool's result as the model may see it: never a token. */
+export const toModel = (value: unknown, error?: true) => ({
+  ...(error && { isError: true }),
+  content: [
+    {
+      type: 'text' as const,
+      text: typeof value === 'string' ? (strip(value) as string) : canonicalJson(strip(value)),
+    },
+  ],
 })
-const failure = (message: string) => ({
-  isError: true,
-  content: [{ type: 'text' as const, text: message }],
-})
+const text = (value: unknown) => toModel(value)
+const failure = (message: string) => toModel(message, true)
 
 // a refusal as the model may see it: never the token, which only the person's answer may spend
 const withoutToken = (result: ExecutionResult) => {
@@ -155,6 +179,8 @@ export const createMcpServer = (options: McpServerOptions) => {
       manifest: options.manifest,
       resources: options.resources,
       handlers: options.handlers,
+      ...(options.approvalTtlMs !== undefined && { approvalTtlMs: options.approvalTtlMs }),
+      ...(options.now && { now: options.now }),
       approvalKeys: {
         current:
           options.approvalKey ??
