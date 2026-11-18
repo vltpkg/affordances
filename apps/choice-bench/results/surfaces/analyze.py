@@ -145,6 +145,20 @@ def contrast(rows, treated, control, key, rnd):
             'heterogeneity': heterogeneity(rows, treated, control, key, rnd)}
 
 
+def reading(c):
+    # a contrast's reading: its direction, and whether its 95% interval excludes 0 (there are no p-values, §5)
+    if not c.get('estimable'):
+        return None
+    lo, hi = c['mhRiskDifference95']
+    return ((c['mhRiskDifference'] > 0) - (c['mhRiskDifference'] < 0), lo > 0 or hi < 0)
+
+
+def disagrees(primary, sensitivity):
+    # the planner's rule (15:17Z): the README says so when the two differ in direction or in excluding 0
+    a, b = reading(primary), reading(sensitivity)
+    return None if a is None or b is None else a != b
+
+
 def per_cell(rows, surfaces, rnd):
     out = {}
     for s in surfaces:
@@ -229,7 +243,14 @@ def confirmatory(rows, faults, pilot_out):
         else:
             key, data = 'optimal', rows
         name = f'{treated} vs {control}'
-        out['contrasts'][name] = {'primary': contrast(data, treated, control, key, rnd),
+        # the sensitivity review recommended (15:17Z): each missing spec counted as not optimal, so a conclusion that
+        # missing trials could overturn shows. Secondary only: the primary never imputes
+        filled = data + [{'surface': s, 'model': m, key: False}
+                         for cell_name, k in missing(data, (treated, control), PER_CELL['confirmatory']).items()
+                         for s, m in [cell_name.split(' ', 1)] for _ in range(k)]
+        primary, sensitivity = contrast(data, treated, control, key, rnd), contrast(filled, treated, control, key, rnd)
+        out['contrasts'][name] = {'primary': primary, 'missingAsNotOptimal': sensitivity,
+                                  'sensitivityDisagrees': disagrees(primary, sensitivity),
                                   'completed': contrast(rows, treated, control, 'completedOptimal', rnd)}
     out['cells'] = per_cell(rows, CONFIRMATORY, rnd)
     out['faults'] = {'total': len(faults), 'byCell': faults_by_cell(faults)}
@@ -252,11 +273,22 @@ def readme(out):
             lines.append(f'| {name} | {p["outcome"]} | ' + (
                 f'{pct(p["mhRiskDifference"])} ({pct(ci[0])}, {pct(ci[1])})' if p['estimable'] else 'not estimable') + ' |')
         lines.append('')
-    lines += ['| cell | n | intended optimal | completed optimal | median tokens |', '| --- | --- | --- | --- | --- |']
+        for name, c in out['contrasts'].items():
+            if c.get('sensitivityDisagrees'):
+                s_ = c['missingAsNotOptimal']
+                lines += [f'**The sensitivity disagrees on {name}.** With each missing spec counted as not optimal, the '
+                          f'MH risk difference is {pct(s_["mhRiskDifference"])} '
+                          f'({pct(s_["mhRiskDifference95"][0])}, {pct(s_["mhRiskDifference95"][1])}): its direction, or '
+                          'whether its interval excludes 0, differs from the primary\'s.', '']
+    # each cell's missing count beside its fault count (PLAN.md §5): a spec still unscored after 3 harness faults is
+    # missing, never imputed
+    lines += ['| cell | n | intended optimal | completed optimal | median tokens | harness faults | missing |',
+              '| --- | --- | --- | --- | --- | --- | --- |']
     for name, c in out['cells'].items():
         t = c['tokens']
         lines.append(f'| {name} | {c["n"]} | {pct(c["intendedOptimal"]["rate"])} | '
-                     f'{pct(c["completedOptimal"]["rate"])} | {t["median"] if t else "n/a"} |')
+                     f'{pct(c["completedOptimal"]["rate"])} | {t["median"] if t else "n/a"} | '
+                     f'{out["faults"]["byCell"].get(name, 0)} | {out["missing"].get(name, 0)} |')
     lines += ['', f'Harness faults, excluded and rerun: {out["faults"]["total"]}.']
     return '\n'.join(lines) + '\n'
 
@@ -331,6 +363,28 @@ def selftest():
     assert out['contrasts']['full vs v0']['primary']['outcome'] == 'optimal'
     assert out['contrasts']['progressive vs full']['primary']['outcome'] == 'optimal'
     assert out['missing'] == {} and len(out['cells']) == 8
+    # with nothing missing, the sensitivity is the primary
+    c0 = out['contrasts']['full vs v0']
+    assert c0['missingAsNotOptimal']['mhRiskDifference'] == c0['primary']['mhRiskDifference']
+    # with 10 of full's optimal trials missing for one model, it fills them as not optimal: 50 per cell, lower
+    short = [r for r in conf if r['surface'] != 'full' or r['model'] != MODELS[0]] + \
+        [r for r in conf if r['surface'] == 'full' and r['model'] == MODELS[0]][:40]
+    o4 = confirmatory(short, [], p)['contrasts']['full vs v0']
+    assert o4['missingAsNotOptimal']['perModel'][MODELS[0]]['full'].endswith('/50')
+    assert o4['primary']['perModel'][MODELS[0]]['full'].endswith('/40')
+    assert o4['missingAsNotOptimal']['mhRiskDifference'] <= o4['primary']['mhRiskDifference'] + 1e-12
+    # a disagreement the README must state: full's sonnet cell holds only its 30 optimal trials, 20 missing. Excluded,
+    # full leads v0 clearly; counted as not optimal, the lead shrinks to an interval that holds 0
+    lean = [row('full', MODELS[0], True) for _ in range(30)] + \
+        [row('full', MODELS[1], i < 30) for i in range(50)] + \
+        [row('v0', m, i < 25) for m in MODELS for i in range(50)]
+    o5 = confirmatory(lean, [], p)
+    c5 = o5['contrasts']['full vs v0']
+    assert reading(c5['primary']) == (1, True), reading(c5['primary'])
+    assert reading(c5['missingAsNotOptimal'])[1] is False, c5['missingAsNotOptimal']['mhRiskDifference95']
+    assert c5['sensitivityDisagrees'] is True
+    assert '**The sensitivity disagrees on full vs v0.**' in readme(o5)
+    assert '**The sensitivity disagrees' not in readme(out)
     # under the confirm-click rule, the browser's intended outcome is optimalConfirmLoad
     conf2 = [dict(r, optimalConfirmLoad=(r['surface'] == 'browser')) for r in conf]
     out2 = confirmatory(conf2, [], {'decisions': decisions(pilot_rows(0, browsing=2))})
@@ -345,6 +399,11 @@ def selftest():
     # every README carries intake's sentence, verbatim, on its own line
     for o in (out, out3):
         assert APPROVAL_SENTENCE in readme(o).split('\n'), readme(o)[:200]
+    # each cell's row carries its fault and missing counts: browser's first model has 2 faults, and the pilot's rows
+    # are 5 per cell, so nothing's missing there
+    row_ = next(l for l in readme(out3).split('\n') if l.startswith(f'| browser {MODELS[0]} |'))
+    assert row_.endswith('| 2 | 0 |'), row_
+    assert next(l for l in readme(out3).split('\n') if l.startswith('| mcp ')).endswith('| 0 | 5 |')
 
     # the loader: a trace directory as the harness writes it, a scored trial and a set-aside fault
     import tempfile

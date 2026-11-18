@@ -12,15 +12,15 @@ Through which surface does an agent most often reach the user's optimal end stat
 
 Everything else is byte-identical across the six, and the preflight refuses a run otherwise:
 
-| held fixed                      | how the preflight checks it                                                                                                                                                           |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| the fixture                     | one pinned export, at a commit after M7a, named in every trace. It is never pooled with c81eeeb1                                                                                      |
-| the catalog and the manifest    | the manifest's digest, and the catalog's bytes, are the same in every cell                                                                                                            |
-| the task                        | T6, with the same prompt bytes in every cell (RFC 0003 §2.2), plus the instruction line naming the surface's tools. That line is the only prompt text that differs, and it's recorded |
-| the owner's claims              | the confirmatory claim edit (Business recommended), identical in the manifest every surface reads                                                                                     |
-| models, CLI, caps and isolation | RFC 0003 §5 and §8's pins, and the context canary, as in M5                                                                                                                           |
-| the simulated user              | approves on every surface, as §12 says: the four tools' approval token, v0's `confirm: true` resend, the browser's confirm click (§3's approval note)                                 |
-| the outcome                     | one rule per surface, from the trace and the session's `lab.endState`, cross-checked against `project.read` (§5), labelled by `tasks.ts`'s labeller                                   |
+| held fixed                      | how the preflight checks it                                                                                                                                                                                                                                                                                           |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the fixture                     | one pinned export, at a commit after M7a, named in every trace. It is never pooled with c81eeeb1                                                                                                                                                                                                                      |
+| the catalog and the manifest    | the manifest's digest, and the catalog's bytes, are the same in every cell                                                                                                                                                                                                                                            |
+| the task                        | T6, with the same prompt bytes in every cell (RFC 0003 §2.2): M5's paragraph, then the surface's instruction line naming its tools, on its own line, then `The user: <T6>`. That line is the only prompt text that differs, and it's recorded; a test holds every surface's prompt equal but for it (backend, 15:03Z) |
+| the owner's claims              | the confirmatory claim edit (Business recommended), identical in the manifest every surface reads                                                                                                                                                                                                                     |
+| models, CLI, caps and isolation | RFC 0003 §5 and §8's pins, and the context canary, as in M5                                                                                                                                                                                                                                                           |
+| the simulated user              | approves on every surface, as §12 says: the four tools' approval token, v0's `confirm: true` resend, the browser's confirm click (§3's approval note)                                                                                                                                                                 |
+| the outcome                     | one rule per surface, from the trace and the session's `lab.endState`, cross-checked against `project.read` (§5), labelled by `tasks.ts`'s labeller                                                                                                                                                                   |
 
 **Information parity, per surface.** Surfaces are expected to differ in what they show first, so that's measured, not refused. The deciding facts must still be _reachable_ on every surface: every plan's price and `bandwidthGb`, the add-ons' prices, and the bundle's price.
 
@@ -29,6 +29,9 @@ Everything else is byte-identical across the six, and the preflight refuses a ru
   - **`v0`:** open every route in the SiteIndex, and read each graph;
   - **MCP and WebMCP:** call every query tool, and read the tool schemas;
   - **`browser`:** visit every page reachable from the start by links, and read each snapshot. This check reads text, so it's weaker: a fact passes only when its value appears in the same element as its label ("Pro" and "100 GB").
+    - **"The same element," exactly** (agreed with backend, 15:03Z and 15:18Z): the snapshot is Playwright's accessibility snapshot in `ai` mode, the agent's own text, read as a tree, with its `[ref=…]` and `[cursor=…]` annotations skipped. A fact passes when, walking up from a node named exactly by the label, the smallest node that also holds a value node holds no other label of the same kind: plan, add-on or bundle. "Exactly" means "Pro" never matches "Pro Plus" or "Move to Pro". That's what stops Pro's "100 GB" being read off the "Extra bandwidth, 100 GB" add-on.
+    - **A value node** is one whose own text holds the rendered value as a whole phrase: not preceded by a word character, `$`, a dot or a comma, and not followed by a word character. So "$20 a month" never matches inside "$120 a month", while "100 GB" matches "100 GB bandwidth", and a price still matches when a state follows it ("$20 a month, included in your bundle"). The values are rendered from the resolver's numbers through the page's own formats: "Free", or "$<n> a month", and "<n> GB" with thousands separators.
+    - **The browser's `proAllowanceSeen`** uses the same matcher (§5).
   - The preflight prints each surface's found and missing facts, and for each fact found, the element or response it matched, so a near-miss can be audited.
 - **On failure:** a surface that can't reach a deciding fact is refused, because its result would measure the gap, not the surface. That's M5's F lesson.
 
@@ -127,6 +130,8 @@ Everything else is byte-identical across the six, and the preflight refuses a ru
     - the app answered with a 5xx status;
   - **an outcome disagreement:** the session's `lab.endState` and `project.read` disagree on plan or add-ons (§3).
   - **The pause:** if harness faults number more than 2% of the trials run, or more than 2 in the pilot, the run pauses and intake is told.
+    - **It's counted from disk,** from the set-aside fault records, so a resumed run counts exactly what the interrupted one did.
+  - **After 3 harness-faulted attempts,** a spec still unscored is REPORTED MISSING in its cell, never imputed and never scored as failed (backend, 208ea450). The reason: a harness fault says nothing about the model. A CLI failure is different, and is scored failed, under intent to treat. Each cell's table shows its missing count beside its fault count.
   - **A change from M5:** M5 fixed and reran its stalls without counting them. Here every exclusion is counted and reported (the planner, 14:39Z).
   - **Every other trial that ran counts.** A trial that capped or failed isn't optimal (intent to treat, as in M5). A trial still missing after reruns is reported per cell, never imputed.
 - **The three contrasts, fixed now:**
@@ -135,6 +140,7 @@ Everything else is byte-identical across the six, and the preflight refuses a ru
   3. `progressive` against `full`.
 - **For each contrast:**
   - the Mantel–Haenszel risk difference across the two models, with its 95% interval (Sato's variance), and per-model risk differences with Newcombe's intervals;
+  - a sensitivity, secondary: the same estimate with each missing spec counted as not optimal, so a conclusion that missing trials could overturn shows (review, 15:17Z). The primary never imputes;
   - heterogeneity between the models is an estimate, not a test: the difference of the two per-model risk differences, with a bootstrap percentile interval (10,000 resamples, a fixed seed). Per-model results lead when it's large.
 - **The precision target,** at 50 per cell and near a rate of 0.5:
   - about ±19.6 points for a per-model difference;
