@@ -362,7 +362,14 @@ The budget (§8) allows two confirmatory contrasts, sized to detect a 20-point s
 - **Missing outcomes:**
   - **A capped trial** counts as not optimal, and is reported, never dropped. That's the primary analysis, intent to treat. A sensitivity analysis excludes capped trials.
   - **The cap itself is checked in the pilot:** it reports the capped rate per condition. Above 5% in any condition, intake revisits the cap before the confirmatory run. The token-use distribution per condition is also reported, as a discovery-efficiency result.
-  - **A driver failure,** such as a CLI crash, is retried once, and both attempts are kept in the traces. Retries count against the budget.
+  - **Driver failures** (intake, 2026-11-18 12:05Z):
+    - **A cap is only the CLI's own signal:** claude's turn limit (`error_max_turns`), or the tool server's calls cap. Any other failure of the driver is classed by the CLI's error text.
+    - **A crash, or an overloaded API (529):**
+      - the trial is recorded failed, and its files kept in `interrupted/`;
+      - the resume reruns it once, with its pre-assigned spec;
+      - a second failure is scored failed, which counts as not optimal under intent to treat, and failures are reported per cell.
+    - **The budget:** retries count against it. A resume doesn't start while more than 5% of the specs await one, and the run still pauses at 35 failures, as the confirmatory plan sets.
+    - **An authentication failure** is never retried. It stops the run, both logins are checked read-only, and the planner, intake and the human are told: re-logging in is the human's.
 
 ### 7.3 Factors and confounds
 
