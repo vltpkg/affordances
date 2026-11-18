@@ -523,7 +523,7 @@ type Expansion = {
   - that only a request's `facts` limit cuts it, by named column, never cited or read attributes;
   - R3, since `facts` changes which columns show, never what's available;
   - that the runtime notes are consistent with §2.1, §5 and §7.
-- **The check against every safety rule** is below.
+- **Against every safety rule** (review, rule by rule, 2026-11-18): R1, R2, R3, R5 and R7 are confirmed, and R4 is strengthened. R7's revision half rests on §2.1's version rule. R6 is confirmed with one caveat, under Open. The check itself is below.
 - **Not implemented yet:** M7a implements it, with the RFC 0001 §9 `cites` field. Until then, no runtime does this, and no benchmark fixture: M5's runs measured the runtime without it.
 
 **The finding.** M5's confirmatory run met the disclosure invariant (§6.3) and still failed its purpose.
@@ -622,6 +622,7 @@ type Comparison = {
 **Open.**
 
 - **`alternativeTo` pairs,** such as the bundle against a plan with separate add-ons, compare instances of different types, so there are no common columns. Whether a shown pair carries each partner's target attributes is left open.
+- **Framing in attribute values** (review's R6 caveat). An attribute's value can carry framing text, and under this rule it shows on every view, under every policy, claims-omitted included, unattributed and unremovable. That isn't new exposure, since the plan list returned the same values, but it's now unconditional. A lint for preference-shaped attribute values is a candidate.
 - **The conformance kit can't see an undeclared attribute,** such as a query output that returns a fact the resource never declares. A check that each query's output fields are declared attributes of its target type would narrow that gap.
 
 ## 7. Revisions
