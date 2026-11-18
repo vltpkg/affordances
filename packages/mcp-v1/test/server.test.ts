@@ -10,6 +10,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { ElicitRequestSchema, type ElicitResult } from '@modelcontextprotocol/sdk/types.js'
 import { describe, expect, test, vi } from 'vitest'
 import plansJson from '../../ir/fixtures/valid/plans.json' with { type: 'json' }
+import { createRuntimeAdapter } from '@affordances/runtime/agent-runtime'
 import { createMcpServer, exportable } from '../src/index.ts'
 
 // M7c: RFC 0004 §4's MCP modes over the plans fixture. Generic tools carry the views exactly; confirmation goes to the
@@ -310,4 +311,56 @@ describe('the per-capability mode (RFC 0004 §4)', () => {
     expect((await accepted.call('hosting.plan.quote')).value).toMatchObject({ status: 'succeeded' })
     expect(ran).toEqual(['quote'])
   })
+})
+
+// the adapter option (the planner, 15:55Z): the same server over another adapter, as M7f's MCP pilot runs it over
+// protocol 1 to the trial's own server. Over an adapter equivalent to its in-process one, the tool list, a view and an
+// elicited execution are the same bytes
+const viaBoth = async (mode: 'generic' | 'per-capability') => {
+  const runs: string[][] = []
+  for (const via of ['in process', 'adapter'] as const) {
+    const options = {
+      manifest: manifestOf(),
+      resources,
+      handlers,
+      principal: member,
+      request: { start: { type: 'hosting.project' as const, key: 'p1' }, policy: 'exhaustive' },
+    }
+    const server =
+      via === 'adapter'
+        ? createMcpServer({
+            adapter: createRuntimeAdapter({ ...options, caller: 'test' }),
+            manifest: options.manifest,
+            mode,
+          })
+        : createMcpServer({ ...options, mode })
+    const [a, b] = InMemoryTransport.createLinkedPair()
+    await server.connect(a)
+    const client = new Client(
+      { name: 'adapter', version: '0' },
+      { capabilities: { elicitation: {} } },
+    )
+    client.setRequestHandler(ElicitRequestSchema, async () => ({ action: 'accept', content: {} }))
+    await client.connect(b)
+    const text = async (name: string, args: Record<string, unknown> = {}) =>
+      JSON.stringify(await client.callTool({ name, arguments: args }))
+    const out = [JSON.stringify(await client.listTools())]
+    if (mode === 'generic')
+      out.push(
+        await text('project'),
+        await text('execute', { offer: SUBSCRIBE, input: { projectId: 'p1', seats: [2] } }),
+      )
+    runs.push(out)
+    await client.close()
+  }
+  return runs
+}
+
+test('over the adapter option: the same tools, views and confirmed executions as in process', async () => {
+  const generic = await viaBoth('generic')
+  expect(generic[1]).toEqual(generic[0])
+  // and it's a real run, not two identical errors: the confirmed execution succeeded
+  expect(generic[0]!.at(-1)).toMatch(/succeeded/)
+  const perCapability = await viaBoth('per-capability')
+  expect(perCapability[1]).toEqual(perCapability[0])
 })

@@ -6,7 +6,7 @@ import type {
   ResourceResolver,
   TokenStore,
 } from '@affordances/runtime'
-import { createToolset, type Confirm } from '@affordances/runtime/agent'
+import { createToolset, type AgentAdapter, type Confirm } from '@affordances/runtime/agent'
 import { createRuntimeAdapter } from '@affordances/runtime/agent-runtime'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
@@ -38,14 +38,29 @@ export type McpServerOptions = {
   now?: () => number
 }
 
+/**
+ * @experimental The same server over another adapter: protocol 1 over HTTP to the app's own server, for example, in
+ * place of an in-process runtime. The tools, the boundary and the confirmation through elicitation are the same; the
+ * manifest gives the per-capability mode its tool list.
+ */
+export type McpAdapterOptions = {
+  adapter: AgentAdapter
+  manifest: CapabilityManifest
+  mode?: 'generic' | 'per-capability'
+  elicitTimeoutMs?: number
+}
+
 /** @experimental An MCP server for one connection over the app's capabilities (RFC 0004 §4). */
-export const createMcpServer = (options: McpServerOptions) => {
-  const { mode, elicitTimeoutMs, ...rest } = options
-  const toolset = createToolset({
-    adapter: createRuntimeAdapter({ ...rest, caller: 'createMcpServer' }),
-    mode,
-    manifest: options.manifest,
-  })
+export const createMcpServer = (options: McpServerOptions | McpAdapterOptions) => {
+  const { mode, elicitTimeoutMs } = options
+  const adapter =
+    'adapter' in options
+      ? options.adapter
+      : (() => {
+          const { mode: _m, elicitTimeoutMs: _e, ...rest } = options
+          return createRuntimeAdapter({ ...rest, caller: 'createMcpServer' })
+        })()
+  const toolset = createToolset({ adapter, mode, manifest: options.manifest })
   const server = new Server(
     { name: 'affordances-v1', version: '0.0.0' },
     // no instructions: they'd be prompt text outside every view (M7f's PLAN)

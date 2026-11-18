@@ -221,3 +221,73 @@ export const createToolset = (options: ToolsetOptions) => {
   }
   return { tools, call }
 }
+
+// protocol 1 over HTTP (RFC 0004 §2), moved here from @affordances/webmcp so any adapter host can use it: the page's
+// session rides on the browser's own cookie, and a host without one (Node's fetch keeps no cookies and sends no Origin)
+// passes a fetcher that adds its session
+type Start = Parameters<AgentAdapter['project']>[0]
+
+// a start in the query's form: a capability or resource type id, or type:key (the projection route's startOf)
+const startParam = (start: Start) =>
+  start === undefined ? undefined : typeof start === 'string' ? start : `${start.type}:${start.key}`
+
+// an execution's refusal is its result, whatever its status; anything else that isn't 2xx is a transport error
+const read = async (response: Response) => {
+  const body = (await response.json().catch(() => undefined)) as unknown
+  if (!response.ok && !(body && typeof body === 'object' && 'status' in body))
+    throw new Error(
+      `${response.status}${body && typeof body === 'object' && 'error' in body ? `: ${String((body as { error: unknown }).error)}` : ''}`,
+    )
+  return body
+}
+
+/**
+ * @experimental The page's view request, sent with every call: its policy, the app's choice (RFC 0002 §6). The route
+ * takes a budget only on expand, whose own arguments carry it.
+ */
+export type ViewRequest = { policy?: string }
+
+/**
+ * @experimental The browser's adapter: RFC 0004 §2's endpoints under `base`, with the person's own cookie session. A
+ * connection keeps the start its last view was made from, so expand, inspect and execute read the same projection,
+ * under the page's own view request.
+ */
+export const httpAdapter = (
+  base: string,
+  fetcher: typeof fetch = fetch,
+  view: ViewRequest = {},
+): AgentAdapter => {
+  let start: string | undefined
+  const withStart = <T extends Record<string, unknown>>(body: T) => ({
+    ...body,
+    ...(view.policy && { policy: view.policy }),
+    ...(start !== undefined && { start }),
+  })
+  const post = (op: string, body: Record<string, unknown>) =>
+    fetcher(`${base}/${op}`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(withStart(body)),
+    }).then(read)
+  const get = (op: string, params: Record<string, string>) => {
+    const query = new URLSearchParams(withStart(params) as Record<string, string>).toString()
+    return fetcher(`${base}/${op}${query ? `?${query}` : ''}`, { credentials: 'same-origin' }).then(
+      read,
+    )
+  }
+  return {
+    project: async (next) => {
+      start = startParam(next)
+      return (await get('view', {})) as Awaited<ReturnType<AgentAdapter['project']>>
+    },
+    expand: async (args) =>
+      (await post('expand', args)) as Awaited<ReturnType<AgentAdapter['expand']>>,
+    inspect: async (offer) =>
+      (await get('inspect', { offer })) as Awaited<ReturnType<AgentAdapter['inspect']>>,
+    execute: async (call) =>
+      (await post('execute', call as Record<string, unknown>)) as Awaited<
+        ReturnType<AgentAdapter['execute']>
+      >,
+  }
+}

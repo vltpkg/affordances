@@ -5,5 +5,6 @@ export {
   exportable,
   TOKEN,
   toModel,
+  type McpAdapterOptions,
   type McpServerOptions,
 } from './server.ts'
