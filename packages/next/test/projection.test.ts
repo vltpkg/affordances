@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { afterAll, beforeAll, expect, test, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
 import { compileSync } from '../src/compile.ts'
 import { createProjectionRoute, type ProjectionBinding } from '../src/projection.ts'
 
@@ -34,6 +34,17 @@ export const addToCart = defineAction({
   run: async (input, ctx) => {
     ;(globalThis as { projectionCalls?: unknown[] }).projectionCalls!.push({ input, via: ctx.via, session: ctx.session })
     return { added: input.quantity }
+  },
+})
+export const peek = defineAction({
+  name: 'peek',
+  id: 'shop.cart.peek',
+  description: 'See what a product costs in the cart',
+  input: z.object({ slug: z.string() }),
+  expose: 'session',
+  run: async () => {
+    ;(globalThis as { projectionCalls?: unknown[] }).projectionCalls!.push('peek')
+    return { total: 0 }
   },
 })
 `,
@@ -242,4 +253,41 @@ test('a token claimed through one instance’s shared store is refused when repl
     'confirmation_required',
   ])
   expect(calls.length - before).toBe(1)
+})
+
+// RFC 0004 §2's check (the planner, folded into M7b2): steps 1 to 7 without running, never a token
+describe('POST {base}/check', () => {
+  test('an allowed, a refused and a confirmation_required call, with no token anywhere and nothing run', async () => {
+    const before = calls.length
+    const offer = await offerOf()
+    // the action asks for confirmation: check says so, with the summary, and no approval
+    const asked = await post('check', { offer, input: { slug: 'tee', quantity: 2 } })
+    const askedBody = await asked.text()
+    expect([asked.status, JSON.parse(askedBody).code]).toEqual([409, 'confirmation_required'])
+    expect(JSON.parse(askedBody).confirmation).toEqual({ summary: expect.any(String) })
+    // the guard's opaque condition refuses a quantity over five
+    const refused = await post('check', { offer, input: { slug: 'tee', quantity: 9 } })
+    const refusedBody = await refused.text()
+    expect([refused.status, JSON.parse(refusedBody).code]).toEqual([409, 'precondition'])
+    // and a caller who isn't signed in is refused as unauthorized, with a challenge
+    const anonymous = await post('check', { offer, input: { slug: 'tee', quantity: 1 } }, {})
+    expect([anonymous.status, anonymous.headers.get('www-authenticate')]).toEqual([401, 'Bearer'])
+    for (const text of [askedBody, refusedBody, await anonymous.text()])
+      expect(text).not.toMatch(/approval/)
+    expect(calls.length).toBe(before)
+  })
+
+  test('a call that passes every check is ok, with its revision, runs nothing, and a token sent along is ignored', async () => {
+    const before = calls.length
+    const view = (await (await get('?policy=exhaustive')).json()) as View
+    const offer = view.offers.find((o) => o.capability === 'shop.cart.peek')!.id
+    const r = await post('check', { offer, input: { slug: 'tee' }, approval: 'forged' })
+    const body = await r.text()
+    expect([r.status, JSON.parse(body)]).toEqual([
+      200,
+      { status: 'ok', revision: expect.any(String) },
+    ])
+    expect(body).not.toMatch(/approval/)
+    expect(calls.length).toBe(before)
+  })
 })

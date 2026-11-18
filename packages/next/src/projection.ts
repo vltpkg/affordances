@@ -159,7 +159,7 @@ const startOf = (value: unknown): ProjectionRequest['start'] => {
   return at === -1 ? value : { type: value.slice(0, at), key: value.slice(at + 1) }
 }
 
-/** @experimental A Next route serving the app's views, inspections and executions (RFC 0005 §5; RFC 0004's surface). */
+/** @experimental A Next route serving the app's views, inspections, checks and executions (RFC 0005 §5; RFC 0004 §2). */
 export const createProjectionRoute = <Session = unknown>(
   options: ProjectionRouteOptions<Session>,
 ) => {
@@ -312,6 +312,29 @@ export const createProjectionRoute = <Session = unknown>(
         } as never)
         const { status, headers } = statusOf(result, principal)
         return json(result, status, headers)
+      }
+      // RFC 0004 §2's check: RFC 0002 §8.1's steps 1 to 7, without running. It never issues or accepts a token, and a v0
+      // client's confirmed flag isn't something a caller here can set (RFC 0001 §12.1)
+      if (op === 'check') {
+        const { offer, input, ifRevision } = body
+        if (typeof offer !== 'string' || !offer) return refuse(400, 'offer is an offer id')
+        if (ifRevision !== undefined && typeof ifRevision !== 'string')
+          return refuse(400, 'ifRevision is an offer revision')
+        const { principal } = p
+        const result = await rt.check({
+          principal,
+          offer,
+          input,
+          ifRevision: ifRevision as string | undefined,
+        } as never)
+        if (result.status === 'ok') return json(result)
+        // a refusal, with nothing of a token: check's confirmation is the summary alone
+        const { confirmation, ...refusal } = result
+        const shown = confirmation
+          ? { ...refusal, confirmation: { summary: confirmation.summary } }
+          : refusal
+        const { status, headers } = statusOf(result as never, principal)
+        return json(shown, status, headers)
       }
       return refuse(404, `No projection operation ${op}`)
     })
