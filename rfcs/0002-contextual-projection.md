@@ -1,6 +1,6 @@
 # RFC 0002: Contextual projection
 
-- **Status:** accepted (2026-11-17); amended 2026-11-17: §8.1 (how execution checks `targetAt`); §11 (a projection is runtime-internal, and only views are wire-visible); §8.1, §8.3 and §8.4 (an execution's fields, its changes read in the caller's view, and the caller's view request carried whole); §6.5 (what a `more` cursor describes and binds, what's refused, and cuts bounded by its sequence); §2 (references bound from the request, never a wider scope); amended 2026-11-18: §6.4 (an order basis may group by a manifest-derived attribute); §8.1 and §8.2 (a summary lists every charge, from the effective input); §6.3 and §6.6 (a choice set carries its comparison, the attributes a confirmation summary renders are never cut, and the runtime checks attributes against their schema); §2.1 and §6.3 (the resolver contract is normative, with the conformance kit)
+- **Status:** accepted (2026-11-17); amended 2026-11-17: §8.1 (how execution checks `targetAt`); §11 (a projection is runtime-internal, and only views are wire-visible); §8.1, §8.3 and §8.4 (an execution's fields, its changes read in the caller's view, and the caller's view request carried whole); §6.5 (what a `more` cursor describes and binds, what's refused, and cuts bounded by its sequence); §2 (references bound from the request, never a wider scope); amended 2026-11-18: §6.4 (an order basis may group by a manifest-derived attribute); §8.1 and §8.2 (a summary lists every charge, from the effective input); §6.3 and §6.6 (a choice set carries its comparison, the attributes a confirmation summary renders are never cut, and the runtime checks attributes against their schema); §2.1 and §6.3 (the resolver contract is normative, with the conformance kit); §8.1 and §8.3 (a handler's `HandlerRefusal` is a `precondition` refusal, not a failure)
 - **Package:** `@affordances/runtime` (private until published)
 - **Depends on:** [RFC 0001](./0001-semantic-capability-ir.md), [terminology](./research/terminology.md), [prior art](./research/prior-art.md), [dark patterns and web agents](./research/dark-patterns.md)
 
@@ -697,7 +697,7 @@ type ExecutionRequest = {
 6. **Preconditions:** evaluate every declarative precondition and run every guard, with the input and the references. `false` or `unknown` fails (RFC 0001, rule 5). Failure: `precondition`, with the condition.
 7. **Freshness:** if `ifRevision` was given and the offer revision recomputed now differs, the failure is `stale`. This check is optional, and never a substitute for 2-6.
 8. **Confirmation:** if the capability requires confirmation and no valid approval for this exact call is present, the failure is `confirmation_required`, with the summary and an approval token to use (§8.2).
-9. **Run** the registered handler.
+9. **Run** the registered handler. A handler that throws fails the call (`failed`, §8.3), with one exception, as built (a60bd872): a handler that throws the runtime's `HandlerRefusal` (`@experimental`) refuses it instead, `precondition`, with the error's message as the `detail` (cut at 280 characters, §8.3), at the offer's revision. That's for a call its state no longer allows, which the declared conditions can't express. The runtime then skips step 10, so a handler throws it only before it changes anything. Any other throw stays `failed`.
 10. **Observe:** reload the target and the resources the effects name, compare them with the declared effects (§8.4), and make the updated projection.
 
 - **Every execution runs steps 2-6** with the principal resolved for this request, whatever view or offer the caller holds (§9, rule R1).
@@ -755,7 +755,7 @@ type ExecutionResult =
       revision: OfferRevision // the offer revision the refusal was decided at
     }
   | {
-      status: 'failed' // the handler threw after the checks passed
+      status: 'failed' // the handler threw after the checks passed: anything but a HandlerRefusal (§8.1, step 9)
       message: string // safe to show; never internals
       observed: ObservedChange[] // what changed anyway, if anything did
       undeclared: ObservedChange[]
