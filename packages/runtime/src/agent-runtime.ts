@@ -79,11 +79,14 @@ export const createRuntimeAdapter = (options: RuntimeAdapterOptions): AgentAdapt
     principal: options.principal,
     ...(start !== undefined && { start }),
   })
-  // the projection the last project call made: expand and inspect read it, as the benchmark's tools do
+  // the projection the last project call made: expand and inspect read it, as the benchmark's tools do. Its start is
+  // the one an execution's changes are compared from, as httpAdapter sends it (code review of M8, #6)
   let latest: Promise<Projection> | undefined
+  let start: ProjectionRequest['start']
   const current = async () => (latest ??= (await runtime).project(request()))
   return {
-    project: async (start) => {
+    project: async (next) => {
+      start = next
       latest = (await runtime).project(request(start))
       return (await latest).view()
     },
@@ -95,7 +98,7 @@ export const createRuntimeAdapter = (options: RuntimeAdapterOptions): AgentAdapt
         offer,
         input,
         ...(approval !== undefined && { approval }),
-        view: { ...options.request },
+        view: { ...options.request, ...(start !== undefined && { start }) },
       } as never),
   }
 }
