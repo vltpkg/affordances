@@ -159,7 +159,9 @@ const ownOrigin = (request: Request) => {
 
 // RFC 0004 §2.3's one credential parser: a bearer header naming one token, else the cookie. A POST the cookie
 // authenticates must carry the site's Origin, compared exactly, or one the app allows; a bearer call is exempt. A
-// missing Origin, or 'null', is refused
+// missing Origin, or 'null', is refused. A cross-site page can forge neither Origin nor Host, so this is the standard
+// CSRF check. A DNS-rebound name matches itself, but the browser sends it no cookie scoped to the real host, so cookie
+// authentication isn't exposed; and a browser never sends a bearer on its own
 const crossSite = (request: Request, allowed: ReadonlySet<string>): Response | undefined => {
   if (/^Bearer \S+$/.test(request.headers.get('authorization') ?? '')) return
   if (!request.headers.get('cookie')) return
