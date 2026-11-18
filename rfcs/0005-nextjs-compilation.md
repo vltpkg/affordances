@@ -145,7 +145,7 @@ Each rule reads one fact, statically, and records its basis. Fields from a v0 `d
 
 **Literals only.** Each rule reads a literal. A value built at runtime, or spread from another object (codegen already ignores spreads, `:88`), is read as absent, with a warning on the rule that needed it. Extraction never guesses.
 
-**A capability-bound action extracts nothing from v0.** `defineAction({ capability, ... })` (RFC 0001 §12.1) takes its definition from the capability module. The compiler records only its binding (E1), checked against the capability's id. An action that sets both `capability` and a v0 field the capability also defines is `E_BOUND_REDEFINES`.
+**A capability-bound action extracts nothing from v0.** `defineAction({ capability, ... })` (RFC 0001 §12.1) takes its definition from the capability module. The compiler records only its binding (E1), checked against the capability's id. The capability resolves through the import that names it: by name, a rename, a namespace import's member, a tsconfig `paths` alias, or a re-export from another `capabilities.ts`; one that doesn't resolve to a capability exported from a `capabilities.ts` is `E_BOUND_UNRESOLVED`. An action that sets both `capability` and a v0 field the capability also defines is `E_BOUND_REDEFINES`.
 
 ### 2.2 Always explicit
 
@@ -203,6 +203,7 @@ These are never extracted, because code doesn't state them. Each one missing is 
 | `E_CAPABILITY_MANIFEST`         | a definition exported beside a `defineManifest` export that doesn't hold it                                                                       |
 | `E_CLAIMS_NO_OWNER`             | a capability module makes claims, and no owner is configured                                                                                      |
 | `E_BOUND_REDEFINES`             | a bound action also sets a v0 field its capability defines                                                                                        |
+| `E_BOUND_UNRESOLVED`            | a bound action's `capability` doesn't resolve to a capability exported from a `capabilities.ts`                                                   |
 
 ## 4. Output
 

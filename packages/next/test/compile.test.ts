@@ -238,3 +238,69 @@ test('compileSync never loads @affordances/ir in the process that calls it', () 
   })
   expect(existsSync(path.join(dir, '.affordances', 'manifest.json'))).toBe(true)
 }, 120_000)
+
+// a bound action's capability, however it's imported (the planner, 2026-11-18, from hosting-lab's real build): a
+// rename, a tsconfig alias, both, a namespace import, and a re-export through another capabilities.ts
+test('a bound action’s capability resolves through a rename, an alias, a namespace import and a re-export', async () => {
+  const forms: Record<string, string> = {
+    renamed:
+      "import { subscribe as sub } from '../capabilities'\nexport const a = defineAction({ capability: sub, name: 'a', run: async () => {} })",
+    aliased:
+      "import { subscribe } from '@/app/capabilities'\nexport const a = defineAction({ capability: subscribe, name: 'a', run: async () => {} })",
+    'aliased-renamed':
+      "import { subscribe as subscribeCapability } from '@/app/capabilities'\nexport const a = defineAction({ capability: subscribeCapability, name: 'a', run: async () => {} })",
+    namespace:
+      "import * as caps from '../capabilities'\nexport const a = defineAction({ capability: caps.subscribe, name: 'a', run: async () => {} })",
+    reexported:
+      "import { subscribe } from './capabilities'\nexport const a = defineAction({ capability: subscribe, name: 'a', run: async () => {} })",
+  }
+  for (const [form, body] of Object.entries(forms)) {
+    const dir = app({
+      'tsconfig.json': '{ "compilerOptions": { "paths": { "@/*": ["./*"] } } }',
+      'app/capabilities.ts': MODULE,
+      [`app/${form}/actions.ts`]: `${ACTIONS}${body}\n`,
+      // the re-export: a capabilities.ts of its own that passes another module's capability on
+      ...(form === 'reexported' && {
+        [`app/${form}/capabilities.ts`]: "export { subscribe } from '../capabilities'\n",
+      }),
+    })
+    const r = compileSync(dir, options)
+    expect({ form, errors: r.diagnostics.filter((d) => d.code.startsWith('E_')) }).toEqual({
+      form,
+      errors: [],
+    })
+    expect({ form, bound: r.bindings.map((b) => [b.capability, b.address.route]) }).toEqual({
+      form,
+      bound: [['shop.plan.subscribe', `/${form}`]],
+    })
+  }
+}, 300_000)
+
+test('a bound action whose capability isn’t a capabilities.ts export is E_BOUND_UNRESOLVED, not an import error', async () => {
+  const dir = app({
+    'app/capabilities.ts': MODULE,
+    'app/lib.ts': 'export const notACapability = {}\n',
+    'app/plans/actions.ts': `${ACTIONS}import { notACapability } from '../lib'\nexport const a = defineAction({ capability: notACapability, name: 'a', run: async () => {} })\n`,
+  })
+  const r = compileSync(dir, options)
+  expect(
+    r.diagnostics.filter((d) => d.code.startsWith('E_')).map((d) => [d.code, d.subject]),
+  ).toEqual([['E_BOUND_UNRESOLVED', 'a']])
+  expect(r.failed).toBe(true)
+}, 120_000)
+
+test('a bound action keeps v0’s effects, its delta keys, without redefining the capability’s effects', async () => {
+  // the capability declares effects of its own, so the old effects-to-effects rule would have fired here
+  const withEffects = MODULE.replace(
+    "authorization: { principal: 'authenticated' } })",
+    "authorization: { principal: 'authenticated' }, effects: [{ category: 'state', change: 'update', resource: plan, description: 'Subscribes', reversibility: 'reversible' }] })",
+  )
+  expect(withEffects).not.toBe(MODULE)
+  const dir = app({
+    'app/capabilities.ts': withEffects,
+    'app/plans/actions.ts': `${ACTIONS}import { subscribe } from '../capabilities'\nexport const a = defineAction({ capability: subscribe, name: 'a', effects: ['plans'], run: async () => {} })\n`,
+  })
+  const r = compileSync(dir, options)
+  expect(r.diagnostics.filter((d) => d.code.startsWith('E_'))).toEqual([])
+  expect(r.bindings.map((b) => b.capability)).toEqual(['shop.plan.subscribe'])
+}, 120_000)

@@ -93,8 +93,8 @@ export const compileSync = (
         action: a.action,
         export: a.export,
         ...(from &&
-          a.capability.local && {
-            target: { file: path.relative(root, from), name: a.capability.local },
+          a.capability.imported && {
+            target: { file: path.relative(root, from), name: a.capability.imported },
           }),
         describe: a.capability.local || 'an expression',
         alsoSets: a.alsoSets,

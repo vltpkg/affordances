@@ -70,28 +70,56 @@ export const findModules = (root: string): { modules: string[]; diagnostics: Dia
   return { modules: modules.toSorted(byCodeUnit), diagnostics }
 }
 
+// tsconfig's JSONC as JSON: comments and trailing commas go, outside strings only, since a string holds globs like
+// "**/*.ts" and URLs that a plain regex reads as comments (hosting-lab's real build, 2026-11-18)
+const jsonc = (text: string) => {
+  let out = ''
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]!
+    if (c === '"') {
+      const start = i
+      for (i++; i < text.length && text[i] !== '"'; i++) if (text[i] === '\\') i++
+      out += text.slice(start, i + 1)
+    } else if (c === '/' && text[i + 1] === '/') while (i < text.length && text[i + 1] !== '\n') i++
+    else if (c === '/' && text[i + 1] === '*') {
+      const end = text.indexOf('*/', i + 2)
+      i = end === -1 ? text.length : end + 1
+    } else if (c === ',' && /^\s*[}\]]/.test(text.slice(i + 1))) continue
+    else out += c
+  }
+  return JSON.parse(out) as unknown
+}
+
+type TsConfig = {
+  extends?: string
+  compilerOptions?: { baseUrl?: string; paths?: Record<string, string[]> }
+}
+
 // the app's tsconfig paths, for aliased imports (`@/x`), as Next resolves them
 export const aliasesOf = (root: string): { prefix: string; targets: string[] }[] => {
-  const file = path.join(root, 'tsconfig.json')
-  if (!existsSync(file)) return []
-  try {
-    // tsconfig allows comments and trailing commas; strip both before parsing
-    const text = readFileSync(file, 'utf8')
-      .replace(/\/\*[\s\S]*?\*\/|(^|[^:])\/\/.*$/gm, '$1')
-      .replace(/,(\s*[}\]])/g, '$1')
-    const options = (
-      JSON.parse(text) as {
-        compilerOptions?: { baseUrl?: string; paths?: Record<string, string[]> }
-      }
-    ).compilerOptions
-    const base = path.resolve(root, options?.baseUrl ?? '.')
-    return Object.entries(options?.paths ?? {}).map(([key, targets]) => ({
-      prefix: key.replace(/\*$/, ''),
-      targets: targets.map((t) => path.resolve(base, t.replace(/\*$/, ''))),
-    }))
-  } catch {
-    return []
+  // paths, from the app's tsconfig or the nearest config it extends by a relative path, resolved against the baseUrl
+  // of the config that sets it, else that config's own directory
+  let file = path.join(root, 'tsconfig.json')
+  for (let depth = 0; depth < 8 && existsSync(file); depth++) {
+    let config: TsConfig
+    try {
+      config = jsonc(readFileSync(file, 'utf8')) as TsConfig
+    } catch {
+      return []
+    }
+    const options = config.compilerOptions
+    if (options?.paths) {
+      const base = path.resolve(path.dirname(file), options.baseUrl ?? '.')
+      return Object.entries(options.paths).map(([key, targets]) => ({
+        prefix: key.replace(/\*$/, ''),
+        targets: targets.map((t) => path.resolve(base, t.replace(/\*$/, ''))),
+      }))
+    }
+    if (!config.extends?.startsWith('.')) return []
+    const next = path.resolve(path.dirname(file), config.extends)
+    file = next.endsWith('.json') ? next : `${next}.json`
   }
+  return []
 }
 
 // the files an import could name, in Node's and TypeScript's order of extensions

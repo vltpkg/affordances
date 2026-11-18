@@ -148,6 +148,12 @@ export const CATALOG = {
       "A capability module makes claims, and no owner is configured; a claim is the owner's assertion",
     fix: 'Pass `owner: { id, name }` to withAffordances',
   },
+  E_BOUND_UNRESOLVED: {
+    severity: 'error',
+    means:
+      "A capability-bound action's capability doesn't resolve to a capability exported from a capabilities.ts",
+    fix: 'Import the capability from a capabilities.ts export, by name, a rename, or a namespace import, and pass it as defineAction({ capability })',
+  },
   E_BOUND_REDEFINES: {
     severity: 'error',
     means: 'A capability-bound action also sets a v0 field its capability defines',

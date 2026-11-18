@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { afterAll, beforeAll, expect, test } from 'vitest'
-import { checkModule, findModules } from '../src/modules.ts'
+import { aliasesOf, checkModule, findModules, resolveImport } from '../src/modules.ts'
 
 // RFC 0005 §1's capability modules: found by the walk codegen does, and checked statically before anything is
 // evaluated. A module may import the authoring API, a schema library and other capability modules; it may not reach the
@@ -164,4 +164,45 @@ test('a module that doesn’t parse is one diagnostic, never a throw', () => {
   expect(codes('app/broken/capabilities.ts', 'export const = (\n')).toEqual([
     ['E_CAPABILITY_SYNTAX', 'parse'],
   ])
+})
+
+// a tsconfig shaped like hosting-lab's, with what broke the old stripper, and the paths given
+const tsconfigWith = (extra: string) => `{
+  // a comment, and /* a block one */
+  "compilerOptions": { ${extra} "plugins": [{ "name": "next" }], "x": "https://example.com/a,]" },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts",],
+}`
+
+// hosting-lab's real tsconfig broke a regex comment stripper: "@/*" in paths and "**/*.ts" in include read as one
+// /* … */ comment, so the parse failed and every alias silently went (2026-11-18)
+test('tsconfig paths survive globs, URLs, comments and trailing commas in strings, and come through extends', () => {
+  const dir = mkdtempSync(path.join(import.meta.dirname, '.aliases-'))
+  try {
+    mkdirSync(path.join(dir, 'app', 'src', 'app'), { recursive: true })
+    writeFileSync(path.join(dir, 'app', 'src', 'app', 'capabilities.ts'), 'export {}\n')
+    writeFileSync(
+      path.join(dir, 'app', 'tsconfig.json'),
+      tsconfigWith('"paths": { "@/*": ["./src/*"] },'),
+    )
+    const app = path.join(dir, 'app')
+    const target = path.join(app, 'src', 'app', 'capabilities.ts')
+    expect(aliasesOf(app)).toEqual([{ prefix: '@/', targets: [path.join(app, 'src')] }])
+    expect(
+      resolveImport(app, path.join(app, 'src', 'app', 'actions.ts'), '@/app/capabilities'),
+    ).toBe(target)
+    // the same paths, set by a config the app's extends, resolve against that config's directory
+    writeFileSync(
+      path.join(dir, 'tsconfig.base.json'),
+      tsconfigWith('"paths": { "@/*": ["./app/src/*"] },'),
+    )
+    writeFileSync(
+      path.join(app, 'tsconfig.json'),
+      '{ "extends": "../tsconfig.base.json", "include": ["**/*.ts"] }',
+    )
+    expect(
+      resolveImport(app, path.join(app, 'src', 'app', 'actions.ts'), '@/app/capabilities'),
+    ).toBe(target)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

@@ -183,7 +183,7 @@ test('a bound action extracts nothing but its binding, and lists the v0 fields i
       route: '/bound',
       action: 'sub',
       export: { file: 'app/bound/actions.ts', local: 'sub' },
-      capability: { local: 'subscribe', from: '../capabilities' },
+      capability: { local: 'subscribe', from: '../capabilities', imported: 'subscribe' },
       alsoSets: ['input'],
     },
   ])

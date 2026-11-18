@@ -44,7 +44,8 @@ export type Extraction = {
   diagnostics: Diagnostic[]
 }
 
-// a bound action's v0 field, and the capability field it would redefine (E_BOUND_REDEFINES)
+// a bound action's v0 field, and the capability field it would redefine (E_BOUND_REDEFINES). Not effects: v0's are
+// delta keys, the state the v0 response diffs, not consequences (RFC 0005 §2.2), so a bound action keeps them
 const REDEFINES: Record<string, string[]> = {
   description: ['description'],
   input: ['input'],
@@ -53,7 +54,6 @@ const REDEFINES: Record<string, string[]> = {
   requires: ['preconditions'],
   guard: ['preconditions'],
   readOnly: ['kind'],
-  effects: ['effects'],
   summary: ['confirmation'],
 }
 
@@ -105,7 +105,7 @@ export const merge = (
       : undefined
     if (!target) {
       diagnostics.push({
-        code: 'E_CAPABILITY_IMPORT',
+        code: 'E_BOUND_UNRESOLVED',
         file: a.export.file,
         subject: a.export.local,
         detail: `its capability, ${a.describe}, isn't a capability exported from a capabilities.ts`,

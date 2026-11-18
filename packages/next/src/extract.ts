@@ -50,7 +50,9 @@ export type BoundAction = {
   route: string
   action: string
   export: { file: string; local: string }
-  capability: { local: string; from?: string }
+  // the capability it's bound to: the local name it's written with, the module it's imported from, and the name that
+  // module exports it as (a rename, or a namespace import's member)
+  capability: { local: string; from?: string; imported?: string }
   // the v0 fields it also sets: M6c reports E_BOUND_REDEFINES for any its capability defines
   alsoSets: string[]
 }
@@ -99,12 +101,21 @@ const literal = (node: Node | undefined): unknown =>
 // each exported defineAction in an actions file, with its config's properties by name
 const actionsIn = (file: string, source: string) => {
   const { program } = parseSync(file, source)
-  const imports = new Map<string, string>()
+  // each import's local name: its module, and the name the module exports it as ('*' for a namespace import)
+  const imports = new Map<string, { from: string; imported: string }>()
   const found: { local: string; props: Map<string, Node>; at: number }[] = []
   for (const node of program.body as unknown as Node[]) {
     if (node.type === 'ImportDeclaration')
       for (const s of node.specifiers as Node[])
-        imports.set((s.local as Node).name as string, (node.source as Node).value as string)
+        imports.set((s.local as Node).name as string, {
+          from: (node.source as Node).value as string,
+          imported:
+            s.type === 'ImportNamespaceSpecifier'
+              ? '*'
+              : s.type === 'ImportDefaultSpecifier'
+                ? 'default'
+                : (((s.imported as Node).name ?? (s.imported as Node).value) as string),
+        })
     if (node.type !== 'ExportNamedDeclaration') continue
     const declaration = node.declaration as Node | null
     if (declaration?.type !== 'VariableDeclaration') continue
@@ -212,14 +223,33 @@ export const extract = (root: string, options: { strict?: boolean } = {}): Extra
       // a bound action: its binding, and nothing from v0 (RFC 0005 §2.1)
       const cap = props.get('capability')
       if (cap) {
-        const capLocal = cap.type === 'Identifier' ? (cap.name as string) : undefined
+        // the capability as written: an imported name, possibly renamed, or a namespace import's member (caps.cancel)
+        const member =
+          cap.type === 'MemberExpression' &&
+          !cap.computed &&
+          (cap.object as Node).type === 'Identifier'
+            ? {
+                object: (cap.object as Node).name as string,
+                property: (cap.property as Node).name as string,
+              }
+            : undefined
+        const capLocal =
+          cap.type === 'Identifier'
+            ? (cap.name as string)
+            : member && imports.get(member.object)?.imported === '*'
+              ? `${member.object}.${member.property}`
+              : undefined
+        const imp = capLocal ? imports.get(member?.object ?? capLocal) : undefined
         bound.push({
           route: entry.route,
           action: name,
           export: { file: relFile, local },
           capability: {
             local: capLocal ?? '',
-            ...(capLocal && imports.has(capLocal) && { from: imports.get(capLocal) }),
+            ...(imp && {
+              from: imp.from,
+              imported: imp.imported === '*' ? member!.property : imp.imported,
+            }),
           },
           alsoSets: V0_FIELDS.filter((f) => props.has(f)),
         })
