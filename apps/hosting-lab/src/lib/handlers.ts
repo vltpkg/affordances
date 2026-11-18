@@ -1,4 +1,4 @@
-import { HandlerRefusal, type Handler, type Principal, type TokenStore } from '@affordances/runtime'
+import { HandlerRefusal, type Handler, type Principal } from '@affordances/runtime'
 import { ownsDeployment, planHasRollback } from './guards.ts'
 import { accountOf, projectOf } from './resolvers.ts'
 import { messages } from './messages.ts'
@@ -87,15 +87,4 @@ export const handlers: Record<string, Handler> = Object.fromEntries(
 )
 
 // each approval token's nonce, so a token runs once (RFC 0002 §8.2). In memory, as the store is: one per process
-export const memoryTokens = (): TokenStore => {
-  const seen = new Map<string, number>()
-  return {
-    claim: async (nonce, expiresAt) => {
-      const now = Date.now()
-      for (const [n, at] of seen) if (at <= now) seen.delete(n)
-      if (seen.has(nonce)) return false
-      seen.set(nonce, expiresAt.getTime())
-      return true
-    },
-  }
-}
+export { memoryTokenStore as memoryTokens } from '@affordances/runtime'

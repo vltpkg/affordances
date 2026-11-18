@@ -1,5 +1,6 @@
 import type { CapabilityManifest } from '@affordances/ir'
 import type { AgentAdapter } from './agent.ts'
+import { approvalGate, devApprovalKey, memoryTokenStore } from './approval.ts'
 import { createRuntime } from './project.ts'
 import type {
   Handler,
@@ -34,21 +35,7 @@ export type RuntimeAdapterOptions = {
 
 /** @experimental The agent tools' adapter over an in-process runtime (RFC 0004 §4). */
 export const createRuntimeAdapter = (options: RuntimeAdapterOptions): AgentAdapter => {
-  // the same fail-closed gate as the projection route (review of b96dee48): per-process defaults are a replay across
-  // instances, so only development and test, named, get them
-  const env = process.env.NODE_ENV
-  if (env !== 'development' && env !== 'test') {
-    const missing = [
-      !options.approvalKey && 'approvalKey',
-      !options.seenTokens && 'seenTokens',
-    ].filter(Boolean)
-    if (missing.length)
-      throw new Error(
-        `${options.caller ?? 'createRuntimeAdapter'} needs ${missing.join(' and ')} unless NODE_ENV is development or test: an HMAC approvalKey ` +
-          'shared by every instance, and a seenTokens store every instance shares, whose claim(nonce, expiresAt) is single-use',
-      )
-  }
-  const seen = new Map<string, number>()
+  approvalGate(options.caller ?? 'createRuntimeAdapter', options)
   const runtime = (async () =>
     createRuntime({
       manifest: options.manifest,
@@ -56,23 +43,8 @@ export const createRuntimeAdapter = (options: RuntimeAdapterOptions): AgentAdapt
       handlers: options.handlers,
       ...(options.approvalTtlMs !== undefined && { approvalTtlMs: options.approvalTtlMs }),
       ...(options.now && { now: options.now }),
-      approvalKeys: {
-        current:
-          options.approvalKey ??
-          ((await crypto.subtle.generateKey({ name: 'HMAC', hash: 'SHA-256' }, false, [
-            'sign',
-            'verify',
-          ])) as CryptoKey),
-      },
-      seenTokens: options.seenTokens ?? {
-        claim: async (nonce, expiresAt) => {
-          const now = Date.now()
-          for (const [n, until] of seen) if (until <= now) seen.delete(n)
-          if (seen.has(nonce)) return false
-          seen.set(nonce, expiresAt.getTime())
-          return true
-        },
-      },
+      approvalKeys: { current: options.approvalKey ?? (await devApprovalKey()) },
+      seenTokens: options.seenTokens ?? memoryTokenStore(),
     }))()
   const request = (start?: ProjectionRequest['start']): ProjectionRequest => ({
     ...options.request,

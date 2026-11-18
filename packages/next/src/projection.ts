@@ -205,6 +205,21 @@ const startOf = (value: unknown): ProjectionRequest['start'] => {
   return at === -1 ? value : { type: value.slice(0, at), key: value.slice(at + 1) }
 }
 
+// the runtime's approval gate, word for word (see createProjectionRoute)
+const approvalGate = (caller: string, given: { approvalKey?: unknown; seenTokens?: unknown }) => {
+  const env = process.env.NODE_ENV
+  if (env === 'development' || env === 'test') return
+  const missing = [!given.approvalKey && 'approvalKey', !given.seenTokens && 'seenTokens'].filter(
+    Boolean,
+  )
+  if (missing.length)
+    throw new Error(
+      `${caller} needs ${missing.join(' and ')} unless NODE_ENV is development or test: an HMAC approvalKey ` +
+        'shared by every instance, and a seenTokens store every instance shares, whose claim(nonce, expiresAt) is ' +
+        'single-use, such as a database or KV with a TTL of at least the approval expiry',
+    )
+}
+
 /** @experimental A Next route serving the app's views, inspections, checks and executions (RFC 0005 §5; RFC 0004 §2). */
 export const createProjectionRoute = <Session = unknown>(
   options: ProjectionRouteOptions<Session>,
@@ -219,24 +234,9 @@ export const createProjectionRoute = <Session = unknown>(
       throw new TypeError(`allowedOrigins: ${o} isn't an origin, as in https://example.com`)
   }
   const allowedOrigins: ReadonlySet<string> = new Set(options.allowedOrigins)
-  // deployed, per-process defaults are a replay: each instance would run a token once (RFC 0002 R2), and a token signed
-  // by one would fail on another. So both are required, checked when the route is made (design, 2026-11-18), and the
-  // gate fails closed (review of b96dee48): only development and test, named, get the defaults; an unset NODE_ENV,
-  // as a plain node server has, doesn't
-  const env = process.env.NODE_ENV
-  if (env !== 'development' && env !== 'test') {
-    const missing = [
-      !options.approvalKey && 'approvalKey',
-      !options.seenTokens && 'seenTokens',
-    ].filter(Boolean)
-    if (missing.length)
-      throw new Error(
-        `createProjectionRoute needs ${missing.join(' and ')} unless NODE_ENV is development or test: an HMAC ` +
-          'approvalKey from the environment, ' +
-          'shared by every instance, and a seenTokens store every instance shares, whose claim(nonce, expiresAt) is ' +
-          'single-use, such as a database or KV with a TTL of at least the approval expiry',
-      )
-  }
+  // the runtime's approval gate (its approvalGate), kept here because the runtime is loaded only on the first request
+  // and the gate holds when the route is made. A test holds the two texts equal
+  approvalGate('createProjectionRoute', options)
   // made once, on the first request, as one promise, so concurrent first requests share one runtime and its approval
   // key: createRuntime finds the manifest's facts once (derive, edges, schemas)
   let made:
@@ -252,28 +252,14 @@ export const createProjectionRoute = <Session = unknown>(
       throw error
     }))
   const make = async () => {
-    const { createRuntime, statusOf, builtInPolicies } = await loadRuntime()
-    const key =
-      options.approvalKey ??
-      ((await crypto.subtle.generateKey({ name: 'HMAC', hash: 'SHA-256' }, false, [
-        'sign',
-        'verify',
-      ])) as CryptoKey)
-    // development's store: each nonce until its token expires, then dropped, so it never grows without bound
-    const seen = new Map<string, number>()
-    const claim = async (nonce: string, expiresAt: Date) => {
-      const now = Date.now()
-      for (const [n, until] of seen) if (until <= now) seen.delete(n)
-      if (seen.has(nonce)) return false
-      seen.set(nonce, expiresAt.getTime())
-      return true
-    }
+    const { createRuntime, statusOf, builtInPolicies, devApprovalKey, memoryTokenStore } =
+      await loadRuntime()
     const rt = createRuntime({
       manifest: options.manifest as never,
       resources: options.resources,
       handlers: options.handlers ?? handlersOf(options.bindings),
-      approvalKeys: { current: key },
-      seenTokens: options.seenTokens ?? { claim },
+      approvalKeys: { current: options.approvalKey ?? (await devApprovalKey()) },
+      seenTokens: options.seenTokens ?? memoryTokenStore(),
     })
     return { rt, statusOf, policies: new Set(builtInPolicies.map((p) => p.id)) }
   }

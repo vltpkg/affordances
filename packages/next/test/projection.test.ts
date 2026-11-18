@@ -282,6 +282,33 @@ test('outside development and test, a missing approvalKey or seenTokens throws w
   }
 })
 
+// the route keeps its own copy of the runtime's approval gate, since the runtime loads on the first request and the
+// gate holds when the route is made: the two say the same, for every case
+// what a call throws, as text
+const message = (f: () => unknown) => {
+  try {
+    f()
+  } catch (error) {
+    return (error as Error).message
+  }
+  return 'no error'
+}
+test("the route's approval gate is the runtime's, word for word", async () => {
+  const { approvalGate } = await import('@affordances/runtime')
+  const store = { claim: async () => true }
+  const key = {} as CryptoKey
+  try {
+    vi.stubEnv('NODE_ENV', 'production')
+    for (const given of [{}, { seenTokens: store }, { approvalKey: key }]) {
+      const theirs = message(() => approvalGate('createProjectionRoute', given))
+      expect(theirs).not.toBe('no error')
+      expect(message(() => createProjectionRoute({ ...routeOptions, ...given }))).toBe(theirs)
+    }
+  } finally {
+    vi.unstubAllEnvs()
+  }
+})
+
 test('a token claimed through one instance’s shared store is refused when replayed through another', async () => {
   const approvalKey = (await crypto.subtle.generateKey({ name: 'HMAC', hash: 'SHA-256' }, false, [
     'sign',

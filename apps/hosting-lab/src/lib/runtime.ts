@@ -1,8 +1,13 @@
 import type { CapabilityManifest } from '@affordances/ir'
-import { createRuntime, type TokenStore } from '@affordances/runtime'
+import {
+  createRuntime,
+  devApprovalKey,
+  memoryTokenStore,
+  type TokenStore,
+} from '@affordances/runtime'
 import { manifest } from '../app/capabilities.ts'
 import { forTrial } from './trial-env.ts'
-import { handlers, memoryTokens } from './handlers.ts'
+import { handlers } from './handlers.ts'
 import { principalFor, resolvers } from './resolvers.ts'
 
 // the app's projection runtime, over its in-memory store. Its approval key is made per process, as the store is,
@@ -11,11 +16,8 @@ import { principalFor, resolvers } from './resolvers.ts'
 
 const shared = globalThis as { hostingLabApprovals?: { key: CryptoKey; seen: TokenStore } }
 export const approvals = (shared.hostingLabApprovals ??= {
-  key: (await crypto.subtle.generateKey({ name: 'HMAC', hash: 'SHA-256' }, false, [
-    'sign',
-    'verify',
-  ])) as CryptoKey,
-  seen: memoryTokens(),
+  key: await devApprovalKey(),
+  seen: memoryTokenStore(),
 })
 
 // one runtime per manifest: createRuntime finds a manifest's facts once (derive, edges, schemas), so it's built once

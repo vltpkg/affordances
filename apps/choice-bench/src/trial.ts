@@ -3,6 +3,8 @@ import { canonicalJson } from '@affordances/ir'
 import {
   builtInPolicies,
   createRuntime,
+  devApprovalKey,
+  memoryTokenStore,
   type DiscoveryPolicy,
   type Principal,
   type ProjectionRequest,
@@ -55,17 +57,13 @@ export const setupTrial = async (
   const base = taskEdit ? taskEdit.apply(lab.manifest) : lab.manifest
   const manifest = condition.edit ? condition.edit.apply(base) : base
   const handlers = condition.handlers ? condition.handlers(lab.handlers) : lab.handlers
-  const key = (await crypto.subtle.generateKey({ name: 'HMAC', hash: 'SHA-256' }, false, [
-    'sign',
-    'verify',
-  ])) as CryptoKey
   const runtime = createRuntime({
     manifest,
     resources: lab.resolvers,
     handlers,
     policies: registered(condition.policy),
-    approvalKeys: { current: key },
-    seenTokens: lab.memoryTokens(),
+    approvalKeys: { current: await devApprovalKey() },
+    seenTokens: memoryTokenStore(),
   })
   // the user's project is the start, unless the condition starts elsewhere; then it's bound (RFC 0002 §2)
   const request: Omit<ProjectionRequest, 'principal'> = condition.start
