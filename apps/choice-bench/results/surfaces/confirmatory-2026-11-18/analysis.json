@@ -1,0 +1,906 @@
+{
+  "kind": "confirmatory",
+  "seed": 20261118,
+  "resamples": 10000,
+  "fromPilot": {
+    "fallback": true,
+    "confirmClickRule": false
+  },
+  "contrasts": {
+    "full vs v0": {
+      "primary": {
+        "treated": "full",
+        "control": "v0",
+        "outcome": "optimal",
+        "estimable": true,
+        "mhRiskDifference": 0.0,
+        "mhRiskDifference95": [
+          0.0,
+          0.0
+        ],
+        "perModel": {
+          "claude-sonnet-5-5": {
+            "full": "50/50",
+            "v0": "50/50",
+            "riskDifference": 0.0,
+            "newcombe95": [
+              -0.07134759913335864,
+              0.07134759913335864
+            ]
+          },
+          "claude-haiku-5-5": {
+            "full": "50/50",
+            "v0": "50/50",
+            "riskDifference": 0.0,
+            "newcombe95": [
+              -0.07134759913335864,
+              0.07134759913335864
+            ]
+          }
+        },
+        "heterogeneity": {
+          "difference": 0.0,
+          "of": "claude-sonnet-5-5 minus claude-haiku-5-5",
+          "bootstrap95": [
+            0.0,
+            0.0
+          ]
+        }
+      },
+      "missingAsNotOptimal": {
+        "treated": "full",
+        "control": "v0",
+        "outcome": "optimal",
+        "estimable": true,
+        "mhRiskDifference": 0.0,
+        "mhRiskDifference95": [
+          0.0,
+          0.0
+        ],
+        "perModel": {
+          "claude-sonnet-5-5": {
+            "full": "50/50",
+            "v0": "50/50",
+            "riskDifference": 0.0,
+            "newcombe95": [
+              -0.07134759913335864,
+              0.07134759913335864
+            ]
+          },
+          "claude-haiku-5-5": {
+            "full": "50/50",
+            "v0": "50/50",
+            "riskDifference": 0.0,
+            "newcombe95": [
+              -0.07134759913335864,
+              0.07134759913335864
+            ]
+          }
+        },
+        "heterogeneity": {
+          "difference": 0.0,
+          "of": "claude-sonnet-5-5 minus claude-haiku-5-5",
+          "bootstrap95": [
+            0.0,
+            0.0
+          ]
+        }
+      },
+      "sensitivityDisagrees": false,
+      "completed": {
+        "treated": "full",
+        "control": "v0",
+        "outcome": "completedOptimal",
+        "estimable": true,
+        "mhRiskDifference": 0.0,
+        "mhRiskDifference95": [
+          0.0,
+          0.0
+        ],
+        "perModel": {
+          "claude-sonnet-5-5": {
+            "full": "50/50",
+            "v0": "50/50",
+            "riskDifference": 0.0,
+            "newcombe95": [
+              -0.07134759913335864,
+              0.07134759913335864
+            ]
+          },
+          "claude-haiku-5-5": {
+            "full": "50/50",
+            "v0": "50/50",
+            "riskDifference": 0.0,
+            "newcombe95": [
+              -0.07134759913335864,
+              0.07134759913335864
+            ]
+          }
+        },
+        "heterogeneity": {
+          "difference": 0.0,
+          "of": "claude-sonnet-5-5 minus claude-haiku-5-5",
+          "bootstrap95": [
+            0.0,
+            0.0
+          ]
+        }
+      }
+    },
+    "full vs browser": {
+      "primary": {
+        "treated": "full",
+        "control": "browser",
+        "outcome": "completedOptimal",
+        "estimable": true,
+        "mhRiskDifference": 0.0,
+        "mhRiskDifference95": [
+          0.0,
+          0.0
+        ],
+        "perModel": {
+          "claude-sonnet-5-5": {
+            "full": "50/50",
+            "browser": "50/50",
+            "riskDifference": 0.0,
+            "newcombe95": [
+              -0.07134759913335864,
+              0.07134759913335864
+            ]
+          },
+          "claude-haiku-5-5": {
+            "full": "50/50",
+            "browser": "50/50",
+            "riskDifference": 0.0,
+            "newcombe95": [
+              -0.07134759913335864,
+              0.07134759913335864
+            ]
+          }
+        },
+        "heterogeneity": {
+          "difference": 0.0,
+          "of": "claude-sonnet-5-5 minus claude-haiku-5-5",
+          "bootstrap95": [
+            0.0,
+            0.0
+          ]
+        }
+      },
+      "missingAsNotOptimal": {
+        "treated": "full",
+        "control": "browser",
+        "outcome": "completedOptimal",
+        "estimable": true,
+        "mhRiskDifference": 0.0,
+        "mhRiskDifference95": [
+          0.0,
+          0.0
+        ],
+        "perModel": {
+          "claude-sonnet-5-5": {
+            "full": "50/50",
+            "browser": "50/50",
+            "riskDifference": 0.0,
+            "newcombe95": [
+              -0.07134759913335864,
+              0.07134759913335864
+            ]
+          },
+          "claude-haiku-5-5": {
+            "full": "50/50",
+            "browser": "50/50",
+            "riskDifference": 0.0,
+            "newcombe95": [
+              -0.07134759913335864,
+              0.07134759913335864
+            ]
+          }
+        },
+        "heterogeneity": {
+          "difference": 0.0,
+          "of": "claude-sonnet-5-5 minus claude-haiku-5-5",
+          "bootstrap95": [
+            0.0,
+            0.0
+          ]
+        }
+      },
+      "sensitivityDisagrees": false,
+      "completed": {
+        "treated": "full",
+        "control": "browser",
+        "outcome": "completedOptimal",
+        "estimable": true,
+        "mhRiskDifference": 0.0,
+        "mhRiskDifference95": [
+          0.0,
+          0.0
+        ],
+        "perModel": {
+          "claude-sonnet-5-5": {
+            "full": "50/50",
+            "browser": "50/50",
+            "riskDifference": 0.0,
+            "newcombe95": [
+              -0.07134759913335864,
+              0.07134759913335864
+            ]
+          },
+          "claude-haiku-5-5": {
+            "full": "50/50",
+            "browser": "50/50",
+            "riskDifference": 0.0,
+            "newcombe95": [
+              -0.07134759913335864,
+              0.07134759913335864
+            ]
+          }
+        },
+        "heterogeneity": {
+          "difference": 0.0,
+          "of": "claude-sonnet-5-5 minus claude-haiku-5-5",
+          "bootstrap95": [
+            0.0,
+            0.0
+          ]
+        }
+      }
+    },
+    "progressive vs full": {
+      "primary": {
+        "treated": "progressive",
+        "control": "full",
+        "outcome": "optimal",
+        "estimable": true,
+        "mhRiskDifference": 0.0,
+        "mhRiskDifference95": [
+          0.0,
+          0.0
+        ],
+        "perModel": {
+          "claude-sonnet-5-5": {
+            "progressive": "50/50",
+            "full": "50/50",
+            "riskDifference": 0.0,
+            "newcombe95": [
+              -0.07134759913335864,
+              0.07134759913335864
+            ]
+          },
+          "claude-haiku-5-5": {
+            "progressive": "50/50",
+            "full": "50/50",
+            "riskDifference": 0.0,
+            "newcombe95": [
+              -0.07134759913335864,
+              0.07134759913335864
+            ]
+          }
+        },
+        "heterogeneity": {
+          "difference": 0.0,
+          "of": "claude-sonnet-5-5 minus claude-haiku-5-5",
+          "bootstrap95": [
+            0.0,
+            0.0
+          ]
+        }
+      },
+      "missingAsNotOptimal": {
+        "treated": "progressive",
+        "control": "full",
+        "outcome": "optimal",
+        "estimable": true,
+        "mhRiskDifference": 0.0,
+        "mhRiskDifference95": [
+          0.0,
+          0.0
+        ],
+        "perModel": {
+          "claude-sonnet-5-5": {
+            "progressive": "50/50",
+            "full": "50/50",
+            "riskDifference": 0.0,
+            "newcombe95": [
+              -0.07134759913335864,
+              0.07134759913335864
+            ]
+          },
+          "claude-haiku-5-5": {
+            "progressive": "50/50",
+            "full": "50/50",
+            "riskDifference": 0.0,
+            "newcombe95": [
+              -0.07134759913335864,
+              0.07134759913335864
+            ]
+          }
+        },
+        "heterogeneity": {
+          "difference": 0.0,
+          "of": "claude-sonnet-5-5 minus claude-haiku-5-5",
+          "bootstrap95": [
+            0.0,
+            0.0
+          ]
+        }
+      },
+      "sensitivityDisagrees": false,
+      "completed": {
+        "treated": "progressive",
+        "control": "full",
+        "outcome": "completedOptimal",
+        "estimable": true,
+        "mhRiskDifference": 0.0,
+        "mhRiskDifference95": [
+          0.0,
+          0.0
+        ],
+        "perModel": {
+          "claude-sonnet-5-5": {
+            "progressive": "50/50",
+            "full": "50/50",
+            "riskDifference": 0.0,
+            "newcombe95": [
+              -0.07134759913335864,
+              0.07134759913335864
+            ]
+          },
+          "claude-haiku-5-5": {
+            "progressive": "50/50",
+            "full": "50/50",
+            "riskDifference": 0.0,
+            "newcombe95": [
+              -0.07134759913335864,
+              0.07134759913335864
+            ]
+          }
+        },
+        "heterogeneity": {
+          "difference": 0.0,
+          "of": "claude-sonnet-5-5 minus claude-haiku-5-5",
+          "bootstrap95": [
+            0.0,
+            0.0
+          ]
+        }
+      }
+    }
+  },
+  "cells": {
+    "full claude-sonnet-5-5": {
+      "n": 50,
+      "intendedOptimal": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "completedOptimal": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "consequentialError": {
+        "x": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          6.938893903907228e-18,
+          0.07134759913335872
+        ]
+      },
+      "proAllowanceSeen": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "tokens": {
+        "median": 11027.5,
+        "bootstrap95": [
+          10989.0,
+          11159.5
+        ],
+        "n": 50
+      },
+      "calls": {
+        "median": 5.0,
+        "bootstrap95": [
+          5.0,
+          5.0
+        ],
+        "n": 50
+      },
+      "durationMs": {
+        "median": 13158.641007500119,
+        "bootstrap95": [
+          12293.206035999581,
+          13628.401992499945
+        ],
+        "n": 50
+      },
+      "ends": {
+        "final": 50
+      }
+    },
+    "full claude-haiku-5-5": {
+      "n": 50,
+      "intendedOptimal": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "completedOptimal": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "consequentialError": {
+        "x": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          6.938893903907228e-18,
+          0.07134759913335872
+        ]
+      },
+      "proAllowanceSeen": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "tokens": {
+        "median": 16415.5,
+        "bootstrap95": [
+          16094.0,
+          17797.5
+        ],
+        "n": 50
+      },
+      "calls": {
+        "median": 7.0,
+        "bootstrap95": [
+          7.0,
+          8.0
+        ],
+        "n": 50
+      },
+      "durationMs": {
+        "median": 17690.87290149986,
+        "bootstrap95": [
+          16782.254052000004,
+          18321.479087500134
+        ],
+        "n": 50
+      },
+      "ends": {
+        "final": 50
+      }
+    },
+    "progressive claude-sonnet-5-5": {
+      "n": 50,
+      "intendedOptimal": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "completedOptimal": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "consequentialError": {
+        "x": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          6.938893903907228e-18,
+          0.07134759913335872
+        ]
+      },
+      "proAllowanceSeen": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "tokens": {
+        "median": 13552.0,
+        "bootstrap95": [
+          13396.5,
+          13710.5
+        ],
+        "n": 50
+      },
+      "calls": {
+        "median": 6.0,
+        "bootstrap95": [
+          6.0,
+          6.0
+        ],
+        "n": 50
+      },
+      "durationMs": {
+        "median": 15165.06382400007,
+        "bootstrap95": [
+          14820.629875999992,
+          15662.948195999983
+        ],
+        "n": 50
+      },
+      "ends": {
+        "final": 50
+      }
+    },
+    "progressive claude-haiku-5-5": {
+      "n": 50,
+      "intendedOptimal": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "completedOptimal": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "consequentialError": {
+        "x": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          6.938893903907228e-18,
+          0.07134759913335872
+        ]
+      },
+      "proAllowanceSeen": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "tokens": {
+        "median": 17259.5,
+        "bootstrap95": [
+          16955.0,
+          17692.0
+        ],
+        "n": 50
+      },
+      "calls": {
+        "median": 7.0,
+        "bootstrap95": [
+          7.0,
+          8.0
+        ],
+        "n": 50
+      },
+      "durationMs": {
+        "median": 18470.517266499926,
+        "bootstrap95": [
+          17977.125793999992,
+          18821.64393400005
+        ],
+        "n": 50
+      },
+      "ends": {
+        "final": 50
+      }
+    },
+    "v0 claude-sonnet-5-5": {
+      "n": 50,
+      "intendedOptimal": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "completedOptimal": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "consequentialError": {
+        "x": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          6.938893903907228e-18,
+          0.07134759913335872
+        ]
+      },
+      "proAllowanceSeen": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "tokens": {
+        "median": 5471.0,
+        "bootstrap95": [
+          5435.0,
+          5497.5
+        ],
+        "n": 50
+      },
+      "calls": {
+        "median": 6.0,
+        "bootstrap95": [
+          6.0,
+          6.0
+        ],
+        "n": 50
+      },
+      "durationMs": {
+        "median": 12648.211540000062,
+        "bootstrap95": [
+          12425.343396499957,
+          12931.246734500048
+        ],
+        "n": 50
+      },
+      "ends": {
+        "final": 50
+      }
+    },
+    "v0 claude-haiku-5-5": {
+      "n": 50,
+      "intendedOptimal": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "completedOptimal": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "consequentialError": {
+        "x": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          6.938893903907228e-18,
+          0.07134759913335872
+        ]
+      },
+      "proAllowanceSeen": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "tokens": {
+        "median": 7610.0,
+        "bootstrap95": [
+          7578.0,
+          7710.0
+        ],
+        "n": 50
+      },
+      "calls": {
+        "median": 7.0,
+        "bootstrap95": [
+          7.0,
+          7.0
+        ],
+        "n": 50
+      },
+      "durationMs": {
+        "median": 14825.380826000008,
+        "bootstrap95": [
+          14652.730738500133,
+          15008.103025499848
+        ],
+        "n": 50
+      },
+      "ends": {
+        "final": 50
+      }
+    },
+    "browser claude-sonnet-5-5": {
+      "n": 50,
+      "intendedOptimal": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "completedOptimal": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "consequentialError": {
+        "x": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          6.938893903907228e-18,
+          0.07134759913335872
+        ]
+      },
+      "proAllowanceSeen": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "tokens": {
+        "median": 9094.0,
+        "bootstrap95": [
+          8988.0,
+          9126.0
+        ],
+        "n": 50
+      },
+      "calls": {
+        "median": 9.0,
+        "bootstrap95": [
+          9.0,
+          9.0
+        ],
+        "n": 50
+      },
+      "durationMs": {
+        "median": 20918.39658400009,
+        "bootstrap95": [
+          20370.304286999977,
+          21582.843316499842
+        ],
+        "n": 50
+      },
+      "ends": {
+        "final": 50
+      }
+    },
+    "browser claude-haiku-5-5": {
+      "n": 50,
+      "intendedOptimal": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "completedOptimal": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "consequentialError": {
+        "x": 0,
+        "n": 50,
+        "rate": 0.0,
+        "wilson95": [
+          6.938893903907228e-18,
+          0.07134759913335872
+        ]
+      },
+      "proAllowanceSeen": {
+        "x": 50,
+        "n": 50,
+        "rate": 1.0,
+        "wilson95": [
+          0.9286524008666414,
+          1.0
+        ]
+      },
+      "tokens": {
+        "median": 11923.0,
+        "bootstrap95": [
+          11469.0,
+          12609.0
+        ],
+        "n": 50
+      },
+      "calls": {
+        "median": 12.0,
+        "bootstrap95": [
+          12.0,
+          12.0
+        ],
+        "n": 50
+      },
+      "durationMs": {
+        "median": 24669.87546999997,
+        "bootstrap95": [
+          23860.355353999883,
+          25754.371026000008
+        ],
+        "n": 50
+      },
+      "ends": {
+        "final": 50
+      }
+    }
+  },
+  "faults": {
+    "total": 0,
+    "byCell": {}
+  },
+  "missing": {}
+}
