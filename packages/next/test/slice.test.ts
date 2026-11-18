@@ -193,6 +193,41 @@ test('the language’s machinery is out of reach: constructor, __proto__, protot
   expect(summary(slice(Z, "z['object']({ a: z['string']() })"))).toMatchObject(CONVERTED)
 })
 
+// code review of M8 (#3): a destructuring pattern's key reads the member it names, so it's held to the same rule
+test.each([
+  ['const { constructor: F } = Object', /the constructor property/],
+  ['const { getOwnPropertyDescriptor: F } = Object', /the getOwnPropertyDescriptor property/],
+  ["const { 'constructor': F } = Object", /the constructor property/],
+  ['const { a: { constructor: F } } = { a: Object }', /the constructor property/],
+  ['const { constructor: F = 1 } = Object', /the constructor property/],
+  ['const [...[{ constructor: F }]] = [Object]', /the constructor property/],
+] as [string, RegExp][])(
+  'a destructuring key can’t name the language’s machinery: %s',
+  (pattern, reason) => {
+    expect(summary(slice(`${Z}\n${pattern}`, 'z.string().default(String(F))'))).toMatchObject(
+      opaque(reason),
+    )
+  },
+)
+
+test.each([
+  ['a parameter', 'z.string().default((({ constructor: F }) => String(F))(Object))'],
+  [
+    'a catch clause',
+    'z.string().default((() => { try { throw Object } catch ({ constructor: F }) { return String(F) } })())',
+  ],
+  [
+    'an assignment',
+    'z.string().default((() => { let F; ({ constructor: F } = Object); return String(F) })())',
+  ],
+  [
+    'a for-of',
+    "z.string().default((() => { for (const { constructor: F } of [Object]) return String(F); return '' })())",
+  ],
+])('a destructuring key can’t name the language’s machinery in %s', (_, input) => {
+  expect(summary(slice(Z, input))).toMatchObject(opaque(/the constructor property/))
+})
+
 test('the child runs under Node’s permission model: it reads only the slice dir and node_modules, and can’t write or fetch', () => {
   const dir = path.join(root, 'app', 'sandbox')
   mkdirSync(dir, { recursive: true })

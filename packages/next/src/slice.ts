@@ -252,18 +252,30 @@ export const freeIdentifiers = (root: Node, outer: Set<string>[] = []) => {
     else if (p.type === 'AssignmentPattern') patternNames(p.left as Node, into)
     else if (p.type === 'RestElement') patternNames(p.argument as Node, into)
   }
+  // a destructuring key reads the member it names, as `.name` does, so it's held to the same rule (code review of
+  // M8, #3): `const { constructor: F } = Object` is Object.constructor
+  const patternKeys = (p: Node) => {
+    for (const q of p.properties as Node[]) {
+      if (q.type === 'RestElement' || q.computed) continue
+      const k = q.key as Node
+      const name = k.type === 'Identifier' ? (k.name as string) : String(k.value)
+      if (BANNED_MEMBERS.has(name)) banned.push(`the ${name} property`)
+    }
+  }
   // the expressions inside a binding pattern: each default, and each computed key, at any depth. They run when the
   // binding does, so they're read as the initializer is (review of aef81dc1)
   const patternExpressions = (p: Node | null | undefined): Node[] => {
     if (!p) return []
     if (p.type === 'AssignmentPattern')
       return [p.right as Node, ...patternExpressions(p.left as Node)]
-    if (p.type === 'ObjectPattern')
+    if (p.type === 'ObjectPattern') {
+      patternKeys(p)
       return (p.properties as Node[]).flatMap((q) =>
         q.type === 'RestElement'
           ? patternExpressions(q.argument as Node)
           : [...(q.computed ? [q.key as Node] : []), ...patternExpressions(q.value as Node)],
       )
+    }
     if (p.type === 'ArrayPattern')
       return (p.elements as (Node | null)[]).flatMap((e) => patternExpressions(e))
     if (p.type === 'RestElement') return patternExpressions(p.argument as Node)
@@ -318,6 +330,10 @@ export const freeIdentifiers = (root: Node, outer: Set<string>[] = []) => {
         }
         visit(node.value, scope)
         return
+      // an assignment's target pattern, which no declaration reads: its properties are visited below
+      case 'ObjectPattern':
+        patternKeys(node)
+        break
       case 'MethodDefinition':
       case 'PropertyDefinition':
         if (node.computed) visit(node.key, scope)
