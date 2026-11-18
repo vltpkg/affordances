@@ -61,11 +61,15 @@ export const parse = (
   const trace: DriverResult['trace'] = []
   const open = new Map<string, { index: number; at: number }>()
   let finalText = ''
+  let resolvedModel: string | undefined
   const usage: DriverResult['usage'] = { inputTokens: 0, outputTokens: 0 }
   for (const { at, text } of ran.lines) {
     const event = json(text)
     if (!event) continue
     const message = event.message as { content?: unknown[] } | undefined
+    // the session's init names the model the alias resolved to
+    if (event.type === 'system' && event.subtype === 'init' && typeof event.model === 'string')
+      resolvedModel = event.model
     if (event.type === 'assistant')
       for (const part of (message?.content ?? []) as Record<string, unknown>[]) {
         if (part.type !== 'tool_use') continue
@@ -110,6 +114,7 @@ export const parse = (
     durationMs: ran.durationMs,
     exitCode: ran.timedOut ? 124 : ran.exitCode,
     cli: { name: 'claude', version },
+    ...(resolvedModel && { resolvedModel }),
     raw: ran.raw,
   }
 }

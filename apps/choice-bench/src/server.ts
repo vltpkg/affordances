@@ -16,6 +16,7 @@ export type ServerRecord = {
   task: string
   index: number
   plans: readonly string[]
+  project: string // the trial's project key, which offer ids carry
   manifestDigest: string
   calls: ReturnType<typeof createTools>['calls']
   exposures: ReturnType<typeof createTools>['exposures']
@@ -40,6 +41,7 @@ const save = () => {
     task: config.task,
     index: config.index,
     plans: trial.plans,
+    project: trial.project.key,
     manifestDigest,
     calls: tools.calls,
     exposures: tools.exposures,

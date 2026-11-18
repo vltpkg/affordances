@@ -20,6 +20,7 @@ export type DriverResult = {
   durationMs: number
   exitCode: number
   cli: { name: string; version: string }
+  resolvedModel?: string // the model the CLI says it ran, when it says
   raw: string // the path of the stored stdout
 }
 

@@ -12,8 +12,8 @@ import { pilotReport } from './report.ts'
 //                                                 trace per condition, and the report
 // node src/run.ts trial <driver> <model> <condition> <task> <out dir>
 //                                                 one trial, outside the pilot: a driver's smoke trial
-// node src/run.ts plan <codex model>              the pilot's 110 trials, listed, not run
-// node src/run.ts pilot <codex model> <out dir>   runs them, two at a time. Only in the planner's announced window
+// node src/run.ts plan                            the pilot's 110 trials, listed, not run
+// node src/run.ts pilot <out dir>                 runs them, two at a time. Only in the planner's announced window
 const [mode, ...rest] = process.argv.slice(2)
 
 const pool = async <T, R>(items: T[], width: number, f: (t: T) => Promise<R>) => {
@@ -31,10 +31,10 @@ const pool = async <T, R>(items: T[], width: number, f: (t: T) => Promise<R>) =>
 }
 
 if (mode === 'plan') {
-  const plan = pilotPlan(rest[0] ?? '<codex model>')
+  const plan = pilotPlan()
   console.log(JSON.stringify({ trials: plan.length, plan }, null, 2))
 } else if (mode === 'dry' || mode === 'pilot' || mode === 'trial') {
-  const out = path.resolve(rest[mode === 'dry' ? 0 : mode === 'pilot' ? 1 : 4] ?? 'results')
+  const out = path.resolve(rest[mode === 'trial' ? 4 : 0] ?? 'results')
   mkdirSync(out, { recursive: true })
   const specs: TrialSpec[] =
     mode === 'dry'
@@ -57,7 +57,7 @@ if (mode === 'plan') {
               index: 0,
             },
           ]
-        : pilotPlan(rest[0]!)
+        : pilotPlan()
   const driverFor = (spec: TrialSpec): Driver =>
     spec.driver === 'fake'
       ? fakeDriver(spec.index, path.join(out, `${spec.id}.raw.json`))
@@ -71,7 +71,7 @@ if (mode === 'plan') {
   console.log(JSON.stringify(report, null, 2))
 } else {
   console.error(
-    'usage: node src/run.ts dry <out> | trial <driver> <model> <condition> <task> <out> | plan <codex model> | pilot <codex model> <out>',
+    'usage: node src/run.ts dry <out> | trial <driver> <model> <condition> <task> <out> | plan | pilot <out>',
   )
   process.exit(2)
 }

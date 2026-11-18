@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { conditions, type ConditionId } from './conditions.ts'
 import type { Driver, DriverResult } from './drivers/types.ts'
+import { intendedEndState } from './intended.ts'
 import { computeMetrics, type EndReason } from './metrics.ts'
 import type { ServerConfig, ServerRecord } from './server.ts'
 import { MAX_CALLS, TOOLS } from './tools.ts'
@@ -28,6 +29,22 @@ export type TrialSpec = {
 }
 
 const SERVER = path.resolve(import.meta.dirname, 'server.ts')
+
+// codex's default: the first listed model in its cache, as codex exec with no -m takes it
+const codexDefault = () => {
+  try {
+    const cache = JSON.parse(
+      readFileSync(path.join(process.env.HOME ?? '', '.codex/models_cache.json'), 'utf8'),
+    ) as { models: { slug: string; priority: number; visibility: string }[] }
+    return (
+      cache.models
+        .filter((m) => m.visibility === 'list')
+        .toSorted((a, b) => a.priority - b.priority)[0]?.slug ?? null
+    )
+  } catch {
+    return null
+  }
+}
 
 export const runTrial = async (spec: TrialSpec, driver: Driver, dir: string) => {
   mkdirSync(dir, { recursive: true })
@@ -61,13 +78,9 @@ export const runTrial = async (spec: TrialSpec, driver: Driver, dir: string) => 
     throw new Error(`trial ${spec.id}: the tool server never started (${failure ?? 'no error'})`)
   const record = JSON.parse(readFileSync(out, 'utf8')) as ServerRecord
   const usage = result?.usage ?? { inputTokens: 0, outputTokens: 0 }
-  // the cap counts everything the trial consumed, cache reads and writes included: Claude reports most of its input
-  // as cache (§6's tokens metric stays input plus output, with the cache apart)
-  const tokens =
-    usage.inputTokens +
-    usage.outputTokens +
-    (usage.cacheReadTokens ?? 0) +
-    (usage.cacheWriteTokens ?? 0)
+  // the cap (intake, 2026-11-18): input plus output, with cache writes counted as input and cache reads excluded.
+  // The turn cap is the main runaway guard. Cache reads and writes are recorded apart
+  const tokens = usage.inputTokens + usage.outputTokens + (usage.cacheWriteTokens ?? 0)
   const capHits = [
     record.capped && 'calls',
     tokens > CAPS.tokens && 'tokens',
@@ -84,13 +97,21 @@ export const runTrial = async (spec: TrialSpec, driver: Driver, dir: string) => 
   const spawned = otherTools.some((n) => /spawn/i.test(n))
   const traceMismatch =
     canonicalJson(driverCalls) !== canonicalJson(record.calls.map((c) => c.tool))
-  const metrics = computeMetrics(record, result ?? { usage, durationMs: 0 }, end)
+  const intended = await intendedEndState(out)
+  const metrics = computeMetrics(record, result ?? { usage, durationMs: 0 }, end, intended)
   const policy = conditions[spec.condition].policy
   const lines = [
     {
       kind: 'trial',
       ...spec,
       cli: result?.cli ?? null,
+      // what the CLI ran: claude names it at init; codex runs exactly its -m id, beside what its default would be
+      model: {
+        requested: spec.model,
+        resolved: result?.resolvedModel ?? (spec.driver === 'codex-cli' ? spec.model : null),
+        ...(spec.driver === 'codex-cli' && { cliDefault: codexDefault() }),
+      },
+      caps: { ...CAPS, tokensCount: 'input + output + cache writes; cache reads excluded' },
       plans: record.plans,
       startedAt,
       fixture: { manifestDigest: record.manifestDigest, policy },
@@ -127,11 +148,13 @@ export const runTrial = async (spec: TrialSpec, driver: Driver, dir: string) => 
 
 // the pilot (§8, as the planner sized it): 110 trials, five per cell
 export const PILOT_MODELS = {
+  // Codex's default model, pinned by exact id with -m (the planner, 2026-11-18)
+  codex: 'gpt-6.1-terra',
   sonnet: 'claude-sonnet-5-5',
   haiku: 'claude-haiku-5-5',
   opus: 'claude-opus-5-5',
 }
-export const pilotPlan = (codexModel: string): TrialSpec[] => {
+export const pilotPlan = (codexModel = PILOT_MODELS.codex): TrialSpec[] => {
   const cells: { condition: ConditionId; task: string; model: string; driver: string }[] = []
   for (const model of [PILOT_MODELS.sonnet, PILOT_MODELS.haiku]) {
     for (const condition of ['A', 'C', 'D', 'E', 'S', 'B'] as const)

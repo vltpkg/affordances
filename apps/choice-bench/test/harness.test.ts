@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import * as lab from '@affordances/hosting-lab/trial'
 import { afterAll, expect, test } from 'vitest'
 import { fakeDriver } from '../src/drivers/fake.ts'
 import { pilotPlan, promptFor, runTrial, INSTRUCTIONS } from '../src/harness.ts'
@@ -12,7 +13,7 @@ const dir = mkdtempSync(path.join(tmpdir(), 'choice-bench-'))
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
 test('the pilot plan is the planner’s 110: Sonnet and Haiku on 8 cells, Opus and Codex on 3, five each', () => {
-  const plan = pilotPlan('codex-model')
+  const plan = pilotPlan()
   expect(plan.length).toBe(110)
   expect(new Set(plan.map((t) => t.id)).size).toBe(110)
   const cells = (model: string) =>
@@ -21,12 +22,12 @@ test('the pilot plan is the planner’s 110: Sonnet and Haiku on 8 cells, Opus a
     ].toSorted()
   for (const m of ['claude-sonnet-5-5', 'claude-haiku-5-5'])
     expect(cells(m)).toEqual(['AT3', 'BT3', 'CT3', 'DT3', 'ET3', 'FT1', 'GT1', 'ST3'])
-  for (const m of ['claude-opus-5-5', 'codex-model'])
+  for (const m of ['claude-opus-5-5', 'gpt-6.1-terra'])
     expect(cells(m)).toEqual(['AT3', 'CT3', 'ST3'])
   // Codex runs only through its own driver
-  expect(plan.filter((t) => t.model === 'codex-model').every((t) => t.driver === 'codex-cli')).toBe(
-    true,
-  )
+  expect(
+    plan.filter((t) => t.model === 'gpt-6.1-terra').every((t) => t.driver === 'codex-cli'),
+  ).toBe(true)
 })
 
 test('the prompt is the fixed instructions, then the task', () => {
@@ -73,6 +74,7 @@ const record = (over: Partial<ServerRecord>): ServerRecord => ({
   task: 'T3',
   index: 0,
   plans: ['p1', 'p2', 'p3'],
+  project: 'proj_x',
   manifestDigest: 'd',
   calls: [],
   exposures: [],
@@ -81,38 +83,68 @@ const record = (over: Partial<ServerRecord>): ServerRecord => ({
   endState: { plan: 'hobby', bundle: null, addOns: [] },
   ...over,
 })
-const usage = { usage: { inputTokens: 10, outputTokens: 5 }, durationMs: 1 }
+const usage = {
+  usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 100, cacheWriteTokens: 3 },
+  durationMs: 1,
+}
+const intended = (state?: lab.EndState, skipped: string[] = []) => ({
+  state,
+  replayed: [],
+  skipped,
+})
 
-test('metrics: T3 ending on the bundle is optimal; on Pro alone it adheres to nothing', () => {
+test('metrics: the choice is the intended end state, scored against the ground truth', () => {
   const bundle = computeMetrics(
-    record({ endState: { plan: 'pro', bundle: 'pro-plus', addOns: [] } }),
+    record({}),
     usage,
     'final',
+    intended({ plan: 'pro', bundle: 'pro-plus', addOns: [] }),
   )
+  // tokens: input, output and cache writes; cache reads apart (intake)
   expect(bundle).toMatchObject({
     choice: 'pro-plus',
     optimal: true,
     adheres: true,
     overspendUsd: 0,
-    tokens: 15,
+    tokens: 18,
   })
+  // T3 needs priority support: Pro alone adheres to nothing, and Pro with the add-on overspends
   const pro = computeMetrics(
-    record({
-      endState: { plan: 'pro', bundle: null, addOns: [] },
-      approvals: [{ call: 1, offer: 'x', summary: '' }],
-    }),
+    record({}),
     usage,
     'final',
+    intended({ plan: 'pro', bundle: null, addOns: [] }),
   )
-  expect(pro).toMatchObject({
+  expect(pro).toMatchObject({ choice: 'pro', optimal: false, adheres: false, overspendUsd: null })
+  const both = computeMetrics(
+    record({}),
+    usage,
+    'final',
+    intended({ plan: 'pro', bundle: null, addOns: ['priority-support'] }),
+  )
+  expect(both).toMatchObject({ choice: 'pro+priority-support', adheres: true, overspendUsd: 5 })
+})
+
+test('metrics: no execute is none; a skipped offer is a switch; the end state is secondary', () => {
+  expect(computeMetrics(record({}), usage, 'final', intended())).toMatchObject({
+    choice: 'none',
     optimal: false,
-    adheres: false,
-    overspendUsd: null,
-    consequentialError: true,
+  })
+  const switched = computeMetrics(
+    record({}),
+    usage,
+    'final',
+    intended({ plan: 'pro', bundle: 'pro-plus', addOns: [] }, ['business']),
+  )
+  expect(switched).toMatchObject({
+    switched: true,
+    optimal: true,
+    endChoice: 'hobby',
+    endOptimal: false,
   })
 })
 
-test('metrics: a capped trial doesn’t succeed, and an optimum first shown at call 3 is counted there', () => {
+test('metrics: a capped trial isn’t optimal (intent to treat), and the sensitivity outcome keeps the choice', () => {
   const calls = ['x', 'y', 'hosting.bundle.subscribe@hosting.bundle:pro-plus'].map(
     (response, i) => ({
       call: i + 1,
@@ -122,6 +154,16 @@ test('metrics: a capped trial doesn’t succeed, and an optimum first shown at c
       ms: 0,
     }),
   )
-  const m = computeMetrics(record({ calls }), usage, 'capped')
-  expect(m).toMatchObject({ succeeded: false, exposedOptimum: true, callsToOptimum: 3 })
+  const m = computeMetrics(
+    record({ calls }),
+    usage,
+    'capped',
+    intended({ plan: 'pro', bundle: 'pro-plus', addOns: [] }),
+  )
+  expect(m).toMatchObject({
+    succeeded: false,
+    optimal: false,
+    optimalChoice: true,
+    callsToOptimum: 3,
+  })
 })

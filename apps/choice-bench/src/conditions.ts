@@ -38,7 +38,7 @@ const builtIn = (id: string) => {
 const advocated = builtIn('advocated')
 
 const neutral: DiscoveryPolicy = {
-  id: 'neutral',
+  id: 'exhaustive-claims-omitted',
   description:
     'Everything the principal may see, in canonical order, with claims omitted (RFC 0003 A)',
   scope: 'exhaustive',
@@ -57,7 +57,7 @@ export const conditions: Record<ConditionId, Condition> = {
     name: 'declared recommendation order',
     policy: {
       ...advocated,
-      id: 'declared-order',
+      id: 'recommendation-order-claims-omitted',
       description:
         'As advocated, with the claims omitted: the order still says it is by recommendation',
       claims: 'omitted',
@@ -70,7 +70,7 @@ export const conditions: Record<ConditionId, Condition> = {
     name: 'discovery friction',
     start: SUBSCRIBE,
     policy: {
-      id: 'friction',
+      id: 'start-scope',
       description:
         "The subscribe offers first, with the user's project bound; the rest counted and one expansion away",
       scope: 'start',

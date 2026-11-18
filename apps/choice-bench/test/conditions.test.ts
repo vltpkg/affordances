@@ -60,6 +60,6 @@ test('E: the bundle is exactly one counted expansion away, along alternatives', 
 
 test('A starts from the user’s project, with no bind, and the bundle is in its first view', async () => {
   const { trial, view } = await firstView('A')
-  expect(trial.request).toEqual({ start: trial.project, policy: 'neutral' })
+  expect(trial.request).toEqual({ start: trial.project, policy: 'exhaustive-claims-omitted' })
   expect(view.offers.some((o) => o.capability === BUNDLE)).toBe(true)
 })
