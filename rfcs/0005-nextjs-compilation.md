@@ -49,6 +49,9 @@ What's needed is a build step that reads what's already written, asks for only w
   - The compiler checks the import graph statically with oxc, which codegen already depends on, before it evaluates anything.
   - An import of application code is the error `E_CAPABILITY_IMPORT`, naming the import.
   - That keeps G2: building the manifest runs the capability modules alone (RFC 0001 §12.1), never the app.
+- **What they may not reach at all,** since a static import list doesn't see it:
+  - **Rejected statically:** the compiler rejects, with oxc, any dynamic `import()`, any `require`, and any reference to `process`, `Date`, `Math.random`, `crypto`, `fetch` or a timer (`setTimeout`, `setInterval`, `setImmediate`), as `E_CAPABILITY_AMBIENT`, naming the construct. A capability module is data, so it needs none of them. Reaching the app, the environment, the network or the clock would make the manifest depend on the machine or the moment it was built on.
+  - **Evaluated twice:** to catch what that check misses, the compiler evaluates the modules twice, each time in a fresh process with an empty environment. If the two manifests differ by a byte, it refuses with `E_CAPABILITY_NONDETERMINISTIC`, showing the first difference.
 - **How they're evaluated:** in a separate Node process, with Node's own type stripping, so there's no new dependency. Two ordinary things break that, and the compiler handles both:
   - **Imports without extensions, and tsconfig path aliases** (`./dep`, `@/schemas`), which Next apps use everywhere and Node won't resolve. The evaluator registers a small resolve hook (`node:module`'s `register`) that resolves them to `.ts`, from the app's tsconfig.
   - **Syntax that can't be erased** (an `enum`, a `namespace`, parameter properties, `import =`), which Node refuses with `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`. The compiler checks every module and slice with oxc first, and reports `E_CAPABILITY_SYNTAX`, with the construct and its location, instead of a Node crash. A TS `enum` reaching a schema (`z.nativeEnum(Status)`) is the common case. The fix is a `const` object and `z.enum`.
@@ -134,20 +137,22 @@ These are never extracted, because code doesn't state them. Each one missing is 
   - is collected in `.affordances/diagnostics.json`, and printed once per build.
   - In strict mode (`withAffordances({ strict: true })`), `W_NO_ID`, `W_INPUT_OPAQUE` and `W_INPUT_LOSSY` are errors.
 
-| Code                   | When                                                                                 |
-| ---------------------- | ------------------------------------------------------------------------------------ |
-| `W_NO_ID`              | an action without an `id` literal or a capability                                    |
-| `W_INPUT_OPAQUE`       | E3's slice reaches beyond schemas                                                    |
-| `W_SUMMARY_GENERIC`    | a confirm action whose summary is v0's function                                      |
-| `W_OPAQUE`             | a v0 guard, which can't be evaluated outside the app                                 |
-| `W_EFFECTS_UNKNOWN`    | no effects declared                                                                  |
-| `W_AMOUNT_MISSING`     | a financial effect with no amount                                                    |
-| `W_ATTRIBUTES_UNKNOWN` | a resource type inferred from a segment, with no `defineResource`                    |
-| `W_NO_OWNER`           | no owner configured                                                                  |
-| `W_INPUT_LOSSY`        | E3's slice converts, but drops a refinement or transform; each is named              |
-| `E_CAPABILITY_IMPORT`  | a capability module imports application code                                         |
-| `E_CAPABILITY_SYNTAX`  | a capability module or slice uses syntax Node can't erase (an `enum`, a `namespace`) |
-| `E_BOUND_REDEFINES`    | a bound action also sets a v0 field its capability defines                           |
+| Code                            | When                                                                                                                     |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `W_NO_ID`                       | an action without an `id` literal or a capability                                                                        |
+| `W_INPUT_OPAQUE`                | E3's slice reaches beyond schemas                                                                                        |
+| `W_SUMMARY_GENERIC`             | a confirm action whose summary is v0's function                                                                          |
+| `W_OPAQUE`                      | a v0 guard, which can't be evaluated outside the app                                                                     |
+| `W_EFFECTS_UNKNOWN`             | no effects declared                                                                                                      |
+| `W_AMOUNT_MISSING`              | a financial effect with no amount                                                                                        |
+| `W_ATTRIBUTES_UNKNOWN`          | a resource type inferred from a segment, with no `defineResource`                                                        |
+| `W_NO_OWNER`                    | no owner configured                                                                                                      |
+| `W_INPUT_LOSSY`                 | E3's slice converts, but drops a refinement or transform; each is named                                                  |
+| `E_CAPABILITY_IMPORT`           | a capability module imports application code                                                                             |
+| `E_CAPABILITY_SYNTAX`           | a capability module or slice uses syntax Node can't erase (an `enum`, a `namespace`)                                     |
+| `E_CAPABILITY_AMBIENT`          | a capability module uses a dynamic `import()`, `require`, `process`, `Date`, `Math.random`, `crypto`, `fetch` or a timer |
+| `E_CAPABILITY_NONDETERMINISTIC` | two evaluations, in fresh processes with an empty environment, give different manifests                                  |
+| `E_BOUND_REDEFINES`             | a bound action also sets a v0 field its capability defines                                                               |
 
 ## 4. Output
 
@@ -179,7 +184,7 @@ These are never extracted, because code doesn't state them. Each one missing is 
   - `principal` maps the request to a principal, as `apps/hosting-lab/src/lib/principal.ts` does;
   - it serves views and inspections, never a projection.
 - **What it fixes:** only where the parts come from, and the rules RFC 0002 already sets. Those are views only, an Origin check for cookie calls, and per-caller caching.
-- **What it defers:** the URLs, the request and response shapes, and paging are RFC 0004's. Until then, the route's surface is hosting-lab's (`apps/hosting-lab/src/lib/serve.ts`), marked `@experimental`, so RFC 0004 can replace it.
+- **What it defers:** the URLs, the request and response shapes, and paging are RFC 0004's. Until then, the route's surface is hosting-lab's (`apps/hosting-lab/src/lib/serve.ts`), marked `@experimental`, so RFC 0004 can replace it. The route is versioned with RFC 0004: it declares the wire-format version it serves, and moves only when RFC 0004 does, so the two can't drift.
 
 ## 6. Ownership and sequencing
 
@@ -209,6 +214,13 @@ These are never extracted, because code doesn't state them. Each one missing is 
   The spike reports what it finds. A precision below 1 on any extracted field is a defect in a rule, not an expected loss.
 
 - **What can't be inferred:** effects, declarative preconditions, claims and relations, and an input schema built from application values.
+
+**The compiler's own tests,** alongside the measurement:
+
+- **Isolation:** a capability module importing app code, statically or through a dynamic `import()` or `require`, fails, with `E_CAPABILITY_IMPORT` or `E_CAPABILITY_AMBIENT`.
+- **Ambient values:** one reading `process.env`, `Date.now()`, `Math.random()` or `crypto.randomUUID()` fails `E_CAPABILITY_AMBIENT`.
+- **Nondeterminism:** one that varies between evaluations by a route the static check misses fails `E_CAPABILITY_NONDETERMINISTIC`.
+- **Determinism:** the same sources give a byte-identical `manifest.json` and digest across two clean builds.
 
 ## 8. Alternatives considered for the whole approach
 
