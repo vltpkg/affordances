@@ -123,7 +123,7 @@ Everything else is byte-identical across the six, and the preflight refuses a ru
 - **One rule everywhere** (intake, 09:26Z):
   - **the primary outcome:** the intended end state is optimal;
   - **beside it, on every surface:** completed, the session's `lab.endState` (cross-checked, §3) is optimal.
-- **Completion is one store rule, on all five surfaces** (backend's 4c915b2a; the planner, 16:10Z): `completed = purchaseMade(start, end)`. It holds when the task's purchase was made, read from the session's end state, which is cross-checked against `project.read`, with `start` as the trial's fresh store.
+- **Completion is one store rule, on all six surfaces** (backend's 4c915b2a; the planner, 16:10Z): `completed = purchaseMade(start, end)`. It holds when the task's purchase was made, read from the session's end state, which is cross-checked against `project.read`, with `start` as the trial's fresh store.
   - **What counts:** a plan, bundle or add-on bought. A cancel, a removal, a downgrade or a deploy doesn't.
   - **It's new.** M5's "completed" was an approved re-execution, read from the trace. Here it's read from the store, so every surface is measured the same way.
   - **A refused Confirm** is the agent's outcome, and is scored. The review page answers it as an ordinary page (§3).
