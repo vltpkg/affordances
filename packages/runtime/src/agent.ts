@@ -243,9 +243,12 @@ const read = async (response: Response) => {
 
 /**
  * @experimental The page's view request, sent with every call: its policy, the app's choice (RFC 0002 §6). The route
- * takes a budget only on expand, whose own arguments carry it.
+ * takes a budget only on expand, whose own arguments carry it. `start` is the connection's own start, the host's
+ * choice (intake, 2026-11-18 16:27Z): a project() that names none starts there, as an in-process connection's
+ * request.start does. It's a view parameter only, and grants nothing: every call is still authorized as the caller's.
+ * Without it, a view is site-wide.
  */
-export type ViewRequest = { policy?: string }
+export type ViewRequest = { policy?: string; start?: Start }
 
 /**
  * @experimental The browser's adapter: RFC 0004 §2's endpoints under `base`, with the person's own cookie session. A
@@ -257,7 +260,8 @@ export const httpAdapter = (
   fetcher: typeof fetch = fetch,
   view: ViewRequest = {},
 ): AgentAdapter => {
-  let start: string | undefined
+  // the connection's own start until a project() names another, so every call reads the same projection from the first
+  let start: string | undefined = startParam(view.start)
   const withStart = <T extends Record<string, unknown>>(body: T) => ({
     ...body,
     ...(view.policy && { policy: view.policy }),
@@ -278,7 +282,7 @@ export const httpAdapter = (
   }
   return {
     project: async (next) => {
-      start = startParam(next)
+      start = startParam(next ?? view.start)
       return (await get('view', {})) as Awaited<ReturnType<AgentAdapter['project']>>
     },
     expand: async (args) =>

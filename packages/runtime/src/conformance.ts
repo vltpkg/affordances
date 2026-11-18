@@ -12,7 +12,7 @@ import {
 } from '@affordances/ir'
 import { offerId } from './offer-id.ts'
 import { createRuntime, type RuntimeOptions } from './project.ts'
-import type { ExecutionResult, GuardImpl, Handler, Principal } from './types.ts'
+import type { ExecutionResult, GuardImpl, Handler, Principal, ResourceResolver } from './types.ts'
 
 // RFC 0002 §9, R5: rule 5's conformance kit. For each declarative precondition and authorization condition, ir
 // derives a state in which it alone is false (conformanceCases); for each guard, the kit forces it to false with
@@ -243,6 +243,96 @@ export const conformance = async (fixture: ConformanceFixture): Promise<Conforma
         pass: named,
         got,
       })
+    }
+  }
+  return results
+}
+
+// RFC 0002 §2.1 (intake, 2026-11-18 16:33Z): a resolver MUST scope its reads to the principal, since the runtime
+// evaluates conditions on whatever it returns and a host-set start can name any resource. The kit can't know an
+// application's access policy, so the application states it: two principals, each with the private resources it may
+// read. The kit checks every one of them under its owner, the other principal and an anonymous one
+
+/** @experimental One principal, and the private resources it may read, by resolver type. */
+export type ResolverOwner = { principal: Principal; reads: Record<Id, string[]> }
+
+/** @experimental What resolverConformance takes: the application's resolvers, and its two principals. */
+export type ResolverFixture = {
+  resources: Record<Id, ResourceResolver>
+  principals: [ResolverOwner, ResolverOwner]
+}
+
+/** @experimental One check of one resource: its resolver, key, the principal tried, and what failed, if anything. */
+export type ResolverResult = {
+  resolver: Id
+  resource: string
+  principal: 'owner' | 'other' | 'anonymous'
+  check: 'load' | 'list'
+  pass: boolean
+  reason?: string
+}
+
+const ANONYMOUS: Principal = { authenticated: false, attributes: {} }
+
+/**
+ * @experimental The resolver contract's check: each listed resource loads for its owner, and loads as null, and is
+ * left out of list(), for the other principal and for an anonymous one.
+ */
+export const resolverConformance = async (fixture: ResolverFixture): Promise<ResolverResult[]> => {
+  const results: ResolverResult[] = []
+  const [a, b] = fixture.principals
+  for (const [owner, other] of [
+    [a, b],
+    [b, a],
+  ] as const) {
+    for (const [type, keys] of Object.entries(owner.reads)) {
+      const resolver = fixture.resources[type]
+      for (const key of keys) {
+        if (!resolver) {
+          results.push({
+            resolver: type,
+            resource: key,
+            principal: 'owner',
+            check: 'load',
+            pass: false,
+            reason: 'no resolver for this type',
+          })
+          continue
+        }
+        const own = await resolver.load(key, owner.principal)
+        results.push({
+          resolver: type,
+          resource: key,
+          principal: 'owner',
+          check: 'load',
+          pass: own !== null,
+          ...(own === null && { reason: 'its owner can’t read it, so the check proves nothing' }),
+        })
+        for (const [name, p] of [
+          ['other', other.principal],
+          ['anonymous', ANONYMOUS],
+        ] as const) {
+          const got = await resolver.load(key, p)
+          results.push({
+            resolver: type,
+            resource: key,
+            principal: name,
+            check: 'load',
+            pass: got === null,
+            ...(got !== null && { reason: `the ${name} principal can read it` }),
+          })
+          // a list may need a capability's scope; the kit lists without one, as an unscoped list must still be safe
+          const listed = (await resolver.list?.(p, { capability: '' })) ?? []
+          results.push({
+            resolver: type,
+            resource: key,
+            principal: name,
+            check: 'list',
+            pass: !listed.includes(key),
+            ...(listed.includes(key) && { reason: `the ${name} principal's list() includes it` }),
+          })
+        }
+      }
     }
   }
   return results

@@ -10,6 +10,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { ElicitRequestSchema, type ElicitResult } from '@modelcontextprotocol/sdk/types.js'
 import { describe, expect, test, vi } from 'vitest'
 import plansJson from '../../ir/fixtures/valid/plans.json' with { type: 'json' }
+import { resolverConformance } from '@affordances/runtime'
 import { createRuntimeAdapter } from '@affordances/runtime/agent-runtime'
 import { createMcpServer, exportable } from '../src/index.ts'
 
@@ -38,12 +39,25 @@ const rows: Record<string, Record<string, unknown>> = {
 }
 const projects: Record<string, Record<string, unknown>> = {
   p1: { id: 'p1', orgId: 'o1', domains: ['a.example'] },
+  // another organization's, which no one in o1 may read
+  p2: { id: 'p2', orgId: 'o2', domains: ['b.example'] },
 }
 const table = (r: Record<string, Record<string, unknown>>): ResourceResolver => ({
   load: async (key) => (r[key] ? { attributes: r[key] } : null),
   list: async () => Object.keys(r),
 })
-const resources = { 'hosting.plan': table(rows), 'hosting.project': table(projects) }
+// a project loads, and is listed, only for a member of its organization: the resolver contract (RFC 0002 §2.1), as an
+// example teaches it. Plans are public
+const orgsOf = (p: Principal) => ((p.attributes as { orgIds?: string[] }).orgIds ?? []) as string[]
+const scopedProjects: ResourceResolver = {
+  load: async (key, p) =>
+    projects[key] && orgsOf(p).includes(String(projects[key]!.orgId))
+      ? { attributes: projects[key]! }
+      : null,
+  list: async (p) =>
+    Object.keys(projects).filter((k) => orgsOf(p).includes(String(projects[k]!.orgId))),
+}
+const resources = { 'hosting.plan': table(rows), 'hosting.project': scopedProjects }
 const member: Principal = {
   authenticated: true,
   subject: 'u1',
@@ -363,4 +377,84 @@ test('over the adapter option: the same tools, views and confirmed executions as
   expect(generic[0]!.at(-1)).toMatch(/succeeded/)
   const perCapability = await viaBoth('per-capability')
   expect(perCapability[1]).toEqual(perCapability[0])
+})
+
+// a view's offer ids
+const ids = (v: { offers: { id: string }[] }) => new Set(v.offers.map((o) => o.id))
+
+// intake's (b) (16:27Z), condition 1: a connection's start is a view parameter only and grants nothing. A start naming
+// ANOTHER user's project yields no offer the principal couldn't get without it, and execution there is still refused
+test('a start naming another user’s project grants nothing: no new offer, and execution refused', async () => {
+  // the runtime leaves read access to the resolvers (RFC 0002): a project loads only for a member of its organization,
+  // as hosting-lab's resolver loads only the caller's own project
+  const others: Record<string, Record<string, unknown>> = {
+    ...projects,
+    p2: { id: 'p2', orgId: 'o2', domains: ['b.example'] },
+  }
+  const memberOnly: ResourceResolver = {
+    load: async (key, principal) => {
+      const p = others[key]
+      const orgs = (principal.attributes as { orgIds?: string[] }).orgIds ?? []
+      return p && orgs.includes(String(p.orgId)) ? { attributes: p } : null
+    },
+    list: async (principal) =>
+      Object.keys(others).filter((k) =>
+        ((principal.attributes as { orgIds?: string[] }).orgIds ?? []).includes(
+          String(others[k]!.orgId),
+        ),
+      ),
+  }
+  const viewFrom = async (start?: { type: 'hosting.project'; key: string }) => {
+    const server = createMcpServer({
+      manifest: manifestOf(),
+      resources: { ...resources, 'hosting.project': memberOnly },
+      handlers,
+      principal: member,
+      request: { ...(start && { start }), policy: 'exhaustive' },
+    })
+    const [a, b] = InMemoryTransport.createLinkedPair()
+    await server.connect(a)
+    const client = new Client({ name: 'start', version: '0' })
+    await client.connect(b)
+    const text = async (name: string, args: Record<string, unknown> = {}) =>
+      JSON.parse(
+        ((await client.callTool({ name, arguments: args })) as { content: { text: string }[] })
+          .content[0]!.text,
+      )
+    const view = (await text('project')) as {
+      offers: { id: string; availability: { status: string } }[]
+    }
+    return { view, text, close: () => client.close() }
+  }
+  const siteWide = await viewFrom()
+  const own = await viewFrom({ type: 'hosting.project', key: 'p1' })
+  const foreign = await viewFrom({ type: 'hosting.project', key: 'p2' })
+  const allowed = new Set([...ids(siteWide.view), ...ids(own.view)])
+  expect([...ids(foreign.view)].filter((id) => !allowed.has(id))).toEqual([])
+  // nothing about the other user's project is available to this principal from it
+  expect(
+    foreign.view.offers.filter((o) => o.id.includes('p2') && o.availability.status === 'available'),
+  ).toEqual([])
+  // and executing against it is refused, start or not
+  const ranBefore = ran.length
+  const r = (await foreign.text('execute', {
+    offer: 'hosting.plan.subscribe@hosting.plan:pro?project=p2',
+    input: { projectId: 'p2', seats: [2] },
+  })) as { status: string }
+  expect(r.status).toBe('refused')
+  expect(ran.length).toBe(ranBefore)
+  await Promise.all([siteWide.close(), own.close(), foreign.close()])
+})
+
+// the resolver contract, checked by the kit (intake, 16:33Z): this example's resolvers pass it
+test('the example’s resolvers pass the conformance kit’s resolver check', async () => {
+  const outsider: Principal = { authenticated: true, subject: 'u2', attributes: { orgIds: ['o2'] } }
+  const results = await resolverConformance({
+    resources,
+    principals: [
+      { principal: member, reads: { 'hosting.project': ['p1'] } },
+      { principal: outsider, reads: { 'hosting.project': ['p2'] } },
+    ],
+  })
+  expect(results.filter((r) => !r.pass)).toEqual([])
 })

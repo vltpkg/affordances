@@ -78,3 +78,27 @@ test('its requests: GET view with the start and policy, POST execute with the sa
     ],
   ])
 })
+
+// the connection's own start (intake, 16:27Z): a view parameter the host sets, used when the agent names none
+test('a configured start is the connection’s own: every call carries it until the agent names another', async () => {
+  const { seen, fetcher } = recorder()
+  const a = httpAdapter('http://h/api/projection', fetcher, {
+    policy: 'exhaustive',
+    start: { type: 'hosting.project', key: 'j1' },
+  })
+  // before any project(), an execute already reads the connection's projection
+  await a.execute({ offer: 'o1' })
+  await a.project()
+  await a.project({ type: 'hosting.plan', key: 'p2' })
+  await a.inspect('o1')
+  expect(seen.map((r) => r.body ?? r.url)).toEqual([
+    JSON.stringify({ offer: 'o1', policy: 'exhaustive', start: 'hosting.project:j1' }),
+    'http://h/api/projection/view?policy=exhaustive&start=hosting.project%3Aj1',
+    'http://h/api/projection/view?policy=exhaustive&start=hosting.plan%3Ap2',
+    'http://h/api/projection/inspect?offer=o1&policy=exhaustive&start=hosting.plan%3Ap2',
+  ])
+  // without one, a view is site-wide, as before
+  const plain = recorder()
+  await httpAdapter('http://h/api/projection', plain.fetcher).project()
+  expect(plain.seen[0]!.url).toBe('http://h/api/projection/view')
+})

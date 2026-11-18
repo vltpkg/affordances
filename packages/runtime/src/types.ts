@@ -34,6 +34,11 @@ export type Principal = {
 }
 
 // §2.1: how the runtime learns what the application knows
+/**
+ * A resolver MUST return null for a resource its principal can't read. The runtime evaluates conditions on whatever a
+ * resolver returns, so a resolver that ignores the principal leaks condition values (e.g. through a start naming
+ * another user's resource). resolverConformance checks it (RFC 0002 §2.1).
+ */
 export type ResourceResolver = {
   load(
     key: string,
