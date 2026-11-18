@@ -41,6 +41,10 @@
     "./author": {
       "types": "./dist/author.d.ts",
       "default": "./dist/author.js"
+    },
+    "./projection": {
+      "types": "./dist/projection.d.ts",
+      "default": "./dist/projection.js"
     }
   },
   "scripts": {
@@ -55,6 +59,7 @@
   },
   "devDependencies": {
     "@affordances/ir": "workspace:*",
+    "@affordances/runtime": "workspace:*",
     "next": "^16.4.6",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
@@ -62,11 +67,15 @@
   },
   "peerDependencies": {
     "@affordances/ir": "workspace:*",
+    "@affordances/runtime": "workspace:*",
     "next": ">=16",
     "react": ">=19"
   },
   "peerDependenciesMeta": {
     "@affordances/ir": {
+      "optional": true
+    },
+    "@affordances/runtime": {
       "optional": true
     }
   }

@@ -1,0 +1,314 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
+import type {
+  Budget,
+  Expansion,
+  Handler,
+  Principal,
+  ProjectionRequest,
+  ResourceResolver,
+  TokenStore,
+} from '@affordances/runtime'
+
+// RFC 0005 §5's projection route: serves RFC 0002's views from the compiled manifest, with the app's resolvers and the
+// handlers bindings.ts names. @affordances/runtime is next's optional peer (intake, 2026-11-18), and only this entry
+// imports it, as a bare import the app resolves. The surface is hosting-lab's (apps/hosting-lab/src/lib/serve.ts),
+// @experimental until RFC 0004 fixes the wire: views only, never a projection; an Origin check for cookie calls; per-
+// caller caching; and RFC 0004 §2.3's statuses, from the runtime's statusOf
+
+/** @experimental One entry of bindings.ts: the v0 action that implements a capability, and how to call it. */
+export type ProjectionBinding = {
+  action: unknown
+  route: string
+  name: string
+  params: Record<string, { from: 'target' }>
+  guards: Record<string, unknown>
+}
+
+/** @experimental What createProjectionRoute takes. */
+export type ProjectionRouteOptions<Session = unknown> = {
+  // .affordances/manifest.json and .affordances/bindings.ts, as the app imports them
+  manifest: unknown
+  bindings: Record<string, ProjectionBinding>
+  resources: Record<string, ResourceResolver>
+  // the caller, from the request's one credential (RFC 0004 §2.3)
+  principal: (request: Request) => Principal | Promise<Principal>
+  // v0's session, for the actions' own run and guard, which take v0's context
+  session?: (request: Request) => Session | null | Promise<Session | null>
+  // approval tokens (RFC 0002 §8.2): an HMAC key and a single-use store of the nonces spent, shared by every instance.
+  // Required in production; elsewhere they default to a key per process and an in-memory store
+  approvalKey?: CryptoKey
+  seenTokens?: TokenStore
+}
+
+// @affordances/runtime, next's optional peer: imported on the first request, so a missing peer is one error that
+// names it. Next's bundler resolves the import at build time, and its own error names the package too
+type Runtime = typeof import('@affordances/runtime')
+let loaded: Promise<Runtime> | undefined
+const loadRuntime = () =>
+  (loaded ??= import('@affordances/runtime').catch((error: unknown) => {
+    loaded = undefined
+    if (
+      (error as { code?: string }).code === 'ERR_MODULE_NOT_FOUND' &&
+      String(error).includes('@affordances/runtime')
+    )
+      throw new Error(
+        "@affordances/next/projection needs @affordances/runtime, next's optional peer: install it beside @affordances/next",
+        { cause: error },
+      )
+    throw error
+  }))
+
+// what a request's handlers need, which the runtime's handler signature doesn't carry
+const current = new AsyncLocalStorage<{ request: Request; session: unknown }>()
+
+// v0's context for an action the runtime runs: the request's session, on the agent path
+const v0Context = () => {
+  const c = current.getStore()
+  return { session: c?.session ?? null, request: c?.request, via: 'agent' as const }
+}
+
+// the projection operation a request names: the route's last path segment (inspect, expand, execute), else the view
+const operation = (request: Request) =>
+  new URL(request.url).pathname.split('/').filter(Boolean).at(-1)
+
+// v0's definition on a defineAction export, by core's own symbol
+type V0 = {
+  run: (input: unknown, ctx: unknown) => unknown
+  guard?: (args: unknown) => unknown
+  state?: { load: (args: unknown) => unknown }
+}
+const v0Of = (action: unknown): V0 | undefined =>
+  (action as Record<symbol, V0> | undefined)?.[Symbol.for('affordances.action')]
+
+// the route's params as v0's page would have them: each from the call's target (RFC 0005 §4)
+const paramsOf = (b: ProjectionBinding, target?: { key: string }) =>
+  Object.fromEntries(
+    Object.entries(b.params).flatMap(([name, p]) =>
+      p.from === 'target' && target ? [[name, target.key]] : [],
+    ),
+  )
+
+/** @experimental The runtime handlers a bindings.ts names: each runs its v0 action, with v0's context (RFC 0005 §4). */
+export const handlersOf = (bindings: Record<string, ProjectionBinding>): Record<string, Handler> =>
+  Object.fromEntries(
+    Object.entries(bindings).flatMap(([id, b]) => {
+      const meta = v0Of(b.action)
+      if (!meta) return []
+      const handler: Handler = { run: (input) => meta.run(input, v0Context()) }
+      // E7's opaque guard condition, by the action's own guard, against its route's state
+      if (Object.keys(b.guards).length && meta.guard)
+        handler.guards = {
+          guard: async ({ input, target }) => {
+            const params = paramsOf(b, target)
+            const state = meta.state
+              ? await meta.state.load({
+                  params,
+                  searchParams: new URLSearchParams(),
+                  ctx: v0Context(),
+                })
+              : {}
+            const result = await meta.guard!({ input, state, ctx: v0Context() })
+            return result === true ? true : typeof result === 'string' ? result : false
+          },
+        }
+      return [[id, handler]]
+    }),
+  )
+
+const json = (body: unknown, status = 200, extra: Record<string, string> = {}) =>
+  new Response(JSON.stringify(body), {
+    status,
+    // per caller, and never cached by anything shared
+    headers: {
+      'content-type': 'application/json',
+      'cache-control': 'private, no-store',
+      vary: 'Authorization, Cookie',
+      ...extra,
+    },
+  })
+const refuse = (status: number, message: string) => json({ error: message }, status)
+
+// RFC 0004 §2.3's one credential parser: a bearer header naming one token, else the cookie. A POST the cookie
+// authenticates must carry the site's Origin; a bearer call is exempt
+const crossSite = (request: Request): Response | undefined => {
+  if (/^Bearer \S+$/.test(request.headers.get('authorization') ?? '')) return
+  if (!request.headers.get('cookie')) return
+  const origin = request.headers.get('origin')
+  if (origin && origin === new URL(request.url).origin) return
+  return refuse(
+    403,
+    'Cookie-authenticated calls need a matching Origin header, or use a bearer token',
+  )
+}
+
+const ALONG = new Set<string>([
+  'alternatives',
+  'members',
+  'relations',
+  'contains',
+  'enables',
+  'more',
+])
+
+type Params = Record<string, unknown>
+const startOf = (value: unknown): ProjectionRequest['start'] => {
+  if (typeof value !== 'string' || !value) return undefined
+  const at = value.indexOf(':')
+  return at === -1 ? value : { type: value.slice(0, at), key: value.slice(at + 1) }
+}
+
+/** @experimental A Next route serving the app's views, inspections and executions (RFC 0005 §5; RFC 0004's surface). */
+export const createProjectionRoute = <Session = unknown>(
+  options: ProjectionRouteOptions<Session>,
+) => {
+  // in production, per-process defaults are a replay: each instance would run a token once (RFC 0002 R2), and a token
+  // signed by one would fail on another. So both are required there, checked when the route is made (design, 2026-11-18)
+  if (process.env.NODE_ENV === 'production') {
+    const missing = [
+      !options.approvalKey && 'approvalKey',
+      !options.seenTokens && 'seenTokens',
+    ].filter(Boolean)
+    if (missing.length)
+      throw new Error(
+        `createProjectionRoute needs ${missing.join(' and ')} in production: an HMAC approvalKey from the environment, ` +
+          'shared by every instance, and a seenTokens store every instance shares, whose claim(nonce, expiresAt) is ' +
+          'single-use, such as a database or KV with a TTL of at least the approval expiry',
+      )
+  }
+  // made once, on the first request, as one promise, so concurrent first requests share one runtime and its approval
+  // key: createRuntime finds the manifest's facts once (derive, edges, schemas)
+  let made:
+    | Promise<{
+        rt: ReturnType<Runtime['createRuntime']>
+        statusOf: Runtime['statusOf']
+        policies: Set<string>
+      }>
+    | undefined
+  const runtime = () =>
+    (made ??= make().catch((error: unknown) => {
+      made = undefined
+      throw error
+    }))
+  const make = async () => {
+    const { createRuntime, statusOf, builtInPolicies } = await loadRuntime()
+    const key =
+      options.approvalKey ??
+      ((await crypto.subtle.generateKey({ name: 'HMAC', hash: 'SHA-256' }, false, [
+        'sign',
+        'verify',
+      ])) as CryptoKey)
+    // development's store: each nonce until its token expires, then dropped, so it never grows without bound
+    const seen = new Map<string, number>()
+    const claim = async (nonce: string, expiresAt: Date) => {
+      const now = Date.now()
+      for (const [n, until] of seen) if (until <= now) seen.delete(n)
+      if (seen.has(nonce)) return false
+      seen.set(nonce, expiresAt.getTime())
+      return true
+    }
+    const rt = createRuntime({
+      manifest: options.manifest as never,
+      resources: options.resources,
+      handlers: handlersOf(options.bindings),
+      approvalKeys: { current: key },
+      seenTokens: options.seenTokens ?? { claim },
+    })
+    return { rt, statusOf, policies: new Set(builtInPolicies.map((p) => p.id)) }
+  }
+
+  const projectionOf = async (request: Request, p: Params): Promise<ProjectionRequest | string> => {
+    const policy = typeof p.policy === 'string' && p.policy ? p.policy : undefined
+    const { policies } = await runtime()
+    if (policy && !policies.has(policy))
+      return `No policy ${policy}: one of ${[...policies].join(', ')}`
+    const offers = p.offers === undefined || p.offers === '' ? undefined : Number(p.offers)
+    if (offers !== undefined && !(Number.isInteger(offers) && offers > 0))
+      return 'offers is a positive whole number'
+    return {
+      principal: await options.principal(request),
+      start: startOf(p.start),
+      policy,
+      seen: typeof p.seen === 'string' && p.seen ? p.seen : undefined,
+      task: typeof p.task === 'string' && p.task ? { statement: p.task } : undefined,
+      budget: offers === undefined ? undefined : { offers },
+    }
+  }
+  // every call runs with its request and v0 session at hand, for the handlers
+  const within = async <T>(request: Request, f: () => Promise<T>) =>
+    current.run({ request, session: (await options.session?.(request)) ?? null }, f)
+
+  const GET = (request: Request): Promise<Response> =>
+    within(request, async () => {
+      const params = Object.fromEntries(new URL(request.url).searchParams) as Params
+      const p = await projectionOf(request, params)
+      if (typeof p === 'string') return refuse(400, p)
+      const projection = await (await runtime()).rt.project(p)
+      if (operation(request) !== 'inspect') return json(projection.view())
+      const offer = params.offer
+      if (typeof offer !== 'string' || !offer) return refuse(400, 'offer is an offer id')
+      try {
+        return json(await projection.inspect(offer))
+      } catch {
+        // an offer the principal may not see answers as one that doesn't exist
+        return refuse(404, `No offer ${offer}`)
+      }
+    })
+
+  const POST = (request: Request): Promise<Response> =>
+    within(request, async () => {
+      const refused = crossSite(request)
+      if (refused) return refused
+      const body = (await request.json().catch(() => undefined)) as Params | undefined
+      if (!body || typeof body !== 'object' || Array.isArray(body))
+        return refuse(400, 'The body is a JSON object')
+      const p = await projectionOf(request, body)
+      if (typeof p === 'string') return refuse(400, p)
+      const { rt, statusOf } = await runtime()
+      const op = operation(request)
+      if (op === 'expand') {
+        const { from, along, budget } = body
+        const fromOk =
+          typeof from === 'string' ||
+          (from !== null && typeof from === 'object' && 'type' in from && 'key' in from)
+        if (!fromOk)
+          return refuse(
+            400,
+            'from is an offer id, a choice set id, a more cursor, or { type, key }',
+          )
+        if (typeof along !== 'string' || !ALONG.has(along))
+          return refuse(400, `along is one of ${[...ALONG].join(', ')}`)
+        if (budget !== undefined && (budget === null || typeof budget !== 'object'))
+          return refuse(400, 'budget is { offers? }')
+        try {
+          const step = { from: from as Expansion['from'], along: along as Expansion['along'] }
+          return json(
+            await (await rt.project(p)).expand(step, { budget: budget as Budget | undefined }),
+          )
+        } catch (error) {
+          return refuse(400, (error as Error).message)
+        }
+      }
+      if (op === 'execute') {
+        const { offer, input, approval, ifRevision } = body
+        if (typeof offer !== 'string' || !offer) return refuse(400, 'offer is an offer id')
+        if (approval !== undefined && typeof approval !== 'string')
+          return refuse(400, 'approval is a token')
+        if (ifRevision !== undefined && typeof ifRevision !== 'string')
+          return refuse(400, 'ifRevision is an offer revision')
+        const { principal, ...view } = p
+        const result = await rt.execute({
+          principal,
+          offer,
+          input,
+          approval: approval as string | undefined,
+          ifRevision: ifRevision as string | undefined,
+          view,
+        } as never)
+        const { status, headers } = statusOf(result, principal)
+        return json(result, status, headers)
+      }
+      return refuse(404, `No projection operation ${op}`)
+    })
+
+  return { GET, POST }
+}

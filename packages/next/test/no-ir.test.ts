@@ -14,9 +14,10 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, expect, test } from 'vitest'
 
-// intake's ruling (2026-11-18 10:10Z): @affordances/ir is next's optional peer, so an app that never installs it
-// typechecks with skipLibCheck: false and builds against next's main entry, exactly as a v0 app did. The app sits
-// outside this repo, with next as a published copy of a fresh build and next's own dependencies linked in, but no ir.
+// intake's rulings (2026-11-18 10:10Z and 10:40Z): @affordances/ir and @affordances/runtime are next's optional peers,
+// so an app that never installs them typechecks with skipLibCheck: false and builds against next's main entry,
+// exactly as a v0 app did. The app sits outside this repo, with next as a published copy of a fresh build and next's
+// own dependencies linked in, but neither peer.
 // Written by backend, for design's /author packet
 
 const pkg = path.join(import.meta.dirname, '..')
@@ -81,11 +82,33 @@ afterAll(() => {
   rmSync(built, { recursive: true, force: true })
 })
 
-test('the app really has no @affordances/ir: it doesn’t resolve from the app’s root', () => {
-  expect(() => createRequire(path.join(app, 'package.json')).resolve('@affordances/ir')).toThrow(
-    /Cannot find module/,
-  )
+test('the app really has no @affordances/ir and no @affordances/runtime: neither resolves from the app’s root', () => {
+  for (const peer of ['@affordances/ir', '@affordances/runtime'])
+    expect(() => createRequire(path.join(app, 'package.json')).resolve(peer)).toThrow(
+      /Cannot find module/,
+    )
 })
+
+// the second optional peer (intake, 2026-11-18): an app that uses /projection without runtime gets one error naming it
+test('without runtime, /projection loads, and its first request fails with one error naming the peer', () => {
+  const run = spawnSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      [
+        "const { createProjectionRoute } = await import('@affordances/next/projection')",
+        'const route = createProjectionRoute({ manifest: {}, bindings: {}, resources: {}, principal: () => ({ authenticated: false, attributes: {} }) })',
+        "await route.GET(new Request('https://app.test/api/projection')).catch((e) => { console.log(e.message); process.exit(3) })",
+      ].join('\n'),
+    ],
+    { cwd: app, encoding: 'utf8' },
+  )
+  expect({ status: run.status, out: run.stdout.trim() }).toEqual({
+    status: 3,
+    out: "@affordances/next/projection needs @affordances/runtime, next's optional peer: install it beside @affordances/next",
+  })
+}, 60_000)
 
 test('an app without ir typechecks against next’s main entry with skipLibCheck: false, and builds', () => {
   const tsc = spawnSync(path.join(repo, 'node_modules', '.bin', 'tsc'), ['-p', app], {

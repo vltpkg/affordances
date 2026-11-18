@@ -50,6 +50,21 @@ test('the evaluator reaches ir by a bare import, which the app resolves, and not
 // an import or import type, or an inline import() type; prose naming the package (a diagnostic's text) isn't one
 const refersToIr = /from ["']@affordances\/ir["'/]|import\(["']@affordances\/ir["'/]/
 
+const refersToRuntime = /from ["']@affordances\/runtime["'/]|import\(["']@affordances\/runtime["'/]/
+
+test('only /projection refers to runtime, the second optional peer, by import, never bundling it; no other entry at all', () => {
+  // intake (2026-11-18): @affordances/runtime is next's second optional peer, imported only by /projection as a bare
+  // import the app resolves; its values on the first request, its types in the declarations
+  expect(read('projection.js')).toMatch(/import\(["']@affordances\/runtime["']\)/)
+  expect(read('projection.js')).not.toMatch(
+    /(const|function) createRuntime\b|(const|function) statusOf\b/,
+  )
+  expect(read('projection.d.ts')).toMatch(refersToRuntime)
+  const others = [...js, ...dts].filter((f) => !['projection.js', 'projection.d.ts'].includes(f))
+  expect(others.length).toBeGreaterThan(5)
+  expect(others.filter((f) => refersToRuntime.test(read(f)))).toEqual([])
+})
+
 test('only /author refers to ir, in code and declarations; the evaluator only by its bare import; no other entry at all', () => {
   // intake (2026-11-18): next/author re-exports the authoring API from the optional peer, the one entry that may
   // reference ir
@@ -73,7 +88,7 @@ test("/author is a re-export only: it holds none of ir's code, and names only th
   expect(text).toContain('defineCapability')
 })
 
-test('package.json: ir is an optional peer and no dependency; zod is in no dependency, peer or optional field', () => {
+test('package.json: ir and runtime are optional peers and no dependency; zod is in no dependency, peer or optional field', () => {
   const p = JSON.parse(readFileSync(path.join(pkg, 'package.json'), 'utf8')) as Record<
     string,
     Record<string, unknown> | undefined
@@ -81,6 +96,10 @@ test('package.json: ir is an optional peer and no dependency; zod is in no depen
   expect(p.peerDependencies?.['@affordances/ir']).toBeDefined()
   expect(p.peerDependenciesMeta?.['@affordances/ir']).toEqual({ optional: true })
   expect(p.dependencies?.['@affordances/ir']).toBeUndefined()
+  // runtime, likewise: an optional peer, never a dependency
+  expect(p.peerDependencies?.['@affordances/runtime']).toBeDefined()
+  expect(p.peerDependenciesMeta?.['@affordances/runtime']).toEqual({ optional: true })
+  expect(p.dependencies?.['@affordances/runtime']).toBeUndefined()
   for (const field of ['dependencies', 'peerDependencies', 'optionalDependencies'])
     expect({ field, zod: p[field]?.zod }).toEqual({ field, zod: undefined })
 })
