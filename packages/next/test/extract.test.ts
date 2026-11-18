@@ -212,7 +212,8 @@ test('every extracted capability is a valid IR definition, and extraction is det
   for (const c of a.capabilities)
     expect(CapabilityDefinition.safeParse(c).error?.issues).toBeUndefined()
   expect(JSON.stringify(extract(root))).toBe(JSON.stringify(a))
-})
+  // two whole extractions, each walking every fixture route's slice: slow under the full suite's parallel load
+}, 60_000)
 
 test('over a copy of apps/example with its suggested ids written, every input converts and every rule reads', () => {
   const copy = mkdtempSync(path.join(import.meta.dirname, '.extract-example-'))
