@@ -141,7 +141,12 @@ Everything else is byte-identical across the six, and the preflight refuses a ru
   - **an outcome disagreement:** the session's `lab.endState` and `project.read` disagree on plan or add-ons (§3).
   - **The pause:** if harness faults number more than 2% of the trials run, or more than 2 in the pilot, the run pauses and intake is told.
     - **It's counted from disk,** from the set-aside fault records, so a resumed run counts exactly what the interrupted one did.
-  - **After 3 harness-faulted attempts,** a spec still unscored is REPORTED MISSING in its cell, never imputed and never scored as failed (backend, 208ea450). The reason: a harness fault says nothing about the model. A CLI failure is different, and is scored failed, under intent to treat. Each cell's table shows its missing count beside its fault count.
+  - **At most two attempts per spec,** one retry, whatever the cause, as §4's budget caps it. The final attempt's class decides:
+    - **a harness fault:** the spec is REPORTED MISSING in its cell, never imputed and never scored as failed. The reason: a harness fault says nothing about the model;
+    - **a CLI crash or a 529:** it's scored failed, under intent to treat;
+    - **an authentication failure:** the run stops.
+  - **Each cell's table** shows its missing count beside its fault count.
+  - **A consistency correction, made before the pin** (the planner, 17:40Z): this said "after 3 harness-faulted attempts" (backend, 208ea450), against §4's cap of 1 retry per trial.
   - **A change from M5:** M5 fixed and reran its stalls without counting them. Here every exclusion is counted and reported (the planner, 14:39Z).
   - **Every other trial that ran counts.** A trial that capped or failed isn't optimal (intent to treat, as in M5). A trial still missing after reruns is reported per cell, never imputed.
 - **The three contrasts, fixed now:**

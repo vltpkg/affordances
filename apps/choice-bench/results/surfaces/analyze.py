@@ -280,8 +280,8 @@ def readme(out):
                           f'MH risk difference is {pct(s_["mhRiskDifference"])} '
                           f'({pct(s_["mhRiskDifference95"][0])}, {pct(s_["mhRiskDifference95"][1])}): its direction, or '
                           'whether its interval excludes 0, differs from the primary\'s.', '']
-    # each cell's missing count beside its fault count (PLAN.md §5): a spec still unscored after 3 harness faults is
-    # missing, never imputed
+    # each cell's missing count beside its fault count (PLAN.md §5): a spec whose final attempt, of at most two, was a
+    # harness fault is missing, never imputed
     lines += ['| cell | n | intended optimal | completed optimal | median tokens | harness faults | missing |',
               '| --- | --- | --- | --- | --- | --- | --- |']
     for name, c in out['cells'].items():
