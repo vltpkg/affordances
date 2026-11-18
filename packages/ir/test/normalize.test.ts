@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, test } from 'vitest'
 import { canonicalJson } from '../src/canonical.ts'
 import { normalize } from '../src/normalize.ts'
-import type { CapabilityManifest } from '../src/schema.ts'
+import type { CapabilityDefinition, CapabilityManifest, Expr } from '../src/schema.ts'
 import { validate } from '../src/validate.ts'
 
 const fixture = (file: string): CapabilityManifest =>
@@ -72,6 +72,15 @@ const scramble = (value: unknown, seed: number, key = ''): unknown => {
   return value
 }
 
+// hosting.plan.subscribe, edited
+const subscribe = (
+  manifest: CapabilityManifest,
+  edit: (c: CapabilityDefinition) => CapabilityDefinition,
+): CapabilityManifest => ({
+  ...manifest,
+  capabilities: manifest.capabilities.map((c) => (c.id === 'hosting.plan.subscribe' ? edit(c) : c)),
+})
+
 describe('order never matters', () => {
   test.each(files)('%s gives the same bytes in any order', (file) => {
     const m = fixture(file)
@@ -90,6 +99,70 @@ describe('order never matters', () => {
     const other = bytes({ ...m, relations: [{ ...edge, from: edge.to, to: edge.from }] })
     expect(one).toBe(other)
     expect(normalize({ ...m, relations: [edge] }).relations![0]!.from).toBe('hosting.plan.cancel')
+  })
+
+  // §7.2 step 4: all and any arguments are sets wherever an expression sits, so each site is checked on its own
+  describe('all and any arguments, at every expression site', () => {
+    const m = fixture('plans.json')
+    const written = {
+      all: [
+        { eq: [{ path: 'target.slug' }, { value: 'pro' }] },
+        {
+          any: [{ gt: [{ path: 'target.priceUsd' }, { value: 10 }] }, { exists: 'target.regions' }],
+        },
+      ],
+    } as Expr
+    const reversed = {
+      all: [
+        {
+          any: [{ exists: 'target.regions' }, { gt: [{ path: 'target.priceUsd' }, { value: 10 }] }],
+        },
+        { eq: [{ path: 'target.slug' }, { value: 'pro' }] },
+      ],
+    } as Expr
+    const sites: Record<string, (e: Expr) => CapabilityManifest> = {
+      'a precondition': (e) =>
+        subscribe(m, (c) => ({
+          ...c,
+          preconditions: [...(c.preconditions ?? []), { id: 'site', description: 'site', expr: e }],
+        })),
+      'an authorization condition': (e) =>
+        subscribe(m, (c) => ({
+          ...c,
+          authorization: {
+            ...c.authorization!,
+            conditions: [{ id: 'site', description: 'site', expr: e }],
+          },
+        })),
+      "a state effect's establishes": (e) =>
+        subscribe(m, (c) => ({
+          ...c,
+          effects: [
+            ...c.effects!,
+            {
+              category: 'state',
+              description: 'site',
+              change: 'update',
+              resource: 'hosting.plan',
+              establishes: e,
+            },
+          ],
+        })),
+      "a charge's applies": (e) =>
+        subscribe(m, (c) => ({
+          ...c,
+          effects: c.effects!.map((x) => (x.category === 'financial' ? { ...x, applies: e } : x)),
+        })),
+      "a claim's applies": (e) => ({
+        ...m,
+        claims: m.claims!.map((c, i) => (i === 0 ? { ...c, applies: e } : c)),
+      }),
+    }
+    test.each(Object.keys(sites))('in %s', (site) => {
+      const make = sites[site]!
+      expect(validate(make(written)).ok).toBe(true)
+      expect(bytes(make(reversed))).toBe(bytes(make(written)))
+    })
   })
 
   test('relations that tie on their key are ordered by their bytes', () => {

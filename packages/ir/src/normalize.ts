@@ -133,7 +133,9 @@ export const normalize = (input: CapabilityManifest): CapabilityManifest => {
             c.effects.map((e) =>
               e.category === 'state' && e.establishes
                 ? { ...e, establishes: expr(e.establishes) }
-                : e,
+                : e.category === 'financial' && e.applies
+                  ? { ...e, applies: expr(e.applies) }
+                  : e,
             ),
           ),
     })
