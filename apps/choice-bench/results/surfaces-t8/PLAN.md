@@ -67,7 +67,7 @@ Plus:
 - **Measured before approval,** on the real runtime with hosting-lab's resolvers, from the project start a trial uses (`apps/hosting-lab/test/t8-fixture-depth.test.ts`, which adds the region to a copy of the compiled manifest and changes nothing in the app):
   - with `relatedTo` from `hosting.plan.list`: `full`'s first view has both region offers and both regions' `plans` (EU West: Business; US East: Hobby, Pro and Business). Progressive's has neither, and lists one expansion from the start along `relations`, which returns both, with the same `plans`;
   - with `relatedTo` from `hosting.plan.subscribe`, rejected: progressive's first view already has both;
-  - without `alternatives: true`, both views have the region offers, but no view has their `plans`;
+  - without `alternatives: true`, both views have the region offers, but no view has their `plans`, nor any region attribute;
   - a trial's request carries no budget (`apps/choice-bench/src/trial.ts`, the start and the policy only), and `full`'s measured view omits nothing, so no budget or facts limit cuts the regions from it.
 - **Information parity:** M7f's walk, extended with the regions, by the same matchers. On `full` and `progressive`, a region's fact is found when one region object holds its slug and its whole `plans` list. On `v0` and `browser`, it's found when each plan's detail page lists exactly its regions, by the browser's label-and-value rule. So that Pro isn't served from `eu-west` is reachable as a complete list, not as an absence. A surface that can't reach a deciding fact is refused.
 - **The ground-truth test:** `groundTruth(T8)` derives exactly the table above.

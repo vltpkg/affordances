@@ -21,47 +21,50 @@ const owner = definePrincipal({
   description: 'A signed-in account',
   attributes: z.object({ id: z.string() }),
 })
-const region = defineResource({
-  id: 'hosting.region',
-  description: 'A region a project can be served from, and the plans that serve it',
-  key: 'slug',
-  attributes: z.object({
-    slug: z.string(),
-    name: z.string(),
-    jurisdiction: z.string(),
-    plans: z.array(z.string()),
-  }),
-  // so the region offers are a choice set, which carries its comparison: a view's offers carry their target only as
-  // a reference, so without one the regions' attributes are in no view at all (measured)
-  alternatives: true,
-})
-const readRegion = defineCapability({
-  id: 'hosting.region.read',
-  kind: 'query',
-  description: 'Read a region: where it is, and which plans serve it',
-  target: region,
-  input: z.object({ region: z.string() }),
-  targetAt: 'region',
-  principal: owner,
-  authorization: { principal: 'authenticated' },
-})
 const REGIONS = [
   { slug: 'us-east', name: 'US East', jurisdiction: 'US', plans: ['hobby', 'pro', 'business'] },
   { slug: 'eu-west', name: 'EU West', jurisdiction: 'EU', plans: ['business'] },
 ]
-const regions = defineManifest({
-  namespace: lab.manifest.namespace,
-  title: 'regions',
-  owner: { id: 'hosting-lab', name: 'Hosting Lab (fictional)' },
-  principal: owner,
-  resources: [region],
-  capabilities: [readRegion],
-})
+// the region's definitions, compiled on their own: with `alternatives`, the region offers are a choice set, which
+// carries its comparison; a view's offers carry their target only by reference, so without it the regions' attributes
+// reach no view at all (asserted below)
+const regionsWith = (alternatives: boolean) => {
+  const region = defineResource({
+    id: 'hosting.region',
+    description: 'A region a project can be served from, and the plans that serve it',
+    key: 'slug',
+    attributes: z.object({
+      slug: z.string(),
+      name: z.string(),
+      jurisdiction: z.string(),
+      plans: z.array(z.string()),
+    }),
+    ...(alternatives && { alternatives: true as const }),
+  })
+  const readRegion = defineCapability({
+    id: 'hosting.region.read',
+    kind: 'query',
+    description: 'Read a region: where it is, and which plans serve it',
+    target: region,
+    input: z.object({ region: z.string() }),
+    targetAt: 'region',
+    principal: owner,
+    authorization: { principal: 'authenticated' },
+  })
+  return defineManifest({
+    namespace: lab.manifest.namespace,
+    title: 'regions',
+    owner: { id: 'hosting-lab', name: 'Hosting Lab (fictional)' },
+    principal: owner,
+    resources: [region],
+    capabilities: [readRegion],
+  })
+}
 
 type Compiled = { resources: unknown[]; capabilities: unknown[]; relations?: unknown[] }
-const withRegions = (from: string) => {
+const withRegions = (from: string, alternatives: boolean) => {
   const m = structuredClone(lab.manifest) as unknown as Compiled
-  const r = regions as unknown as Compiled
+  const r = regionsWith(alternatives) as unknown as Compiled
   m.resources.push(...r.resources)
   m.capabilities.push(...r.capabilities)
   m.relations = [
@@ -89,8 +92,8 @@ const regionsIn = (v: {
   )?.rows.map((r) => [r.name, r.plans]),
 })
 
-const firstViews = async (from: string) => {
-  const m = withRegions(from)
+const firstViews = async (from: string, alternatives = true) => {
+  const m = withRegions(from, alternatives)
   expect(validate(m as never)).toMatchObject({ ok: true })
   const runtime = createRuntime({
     manifest: m as never,
@@ -125,6 +128,8 @@ const firstViews = async (from: string) => {
     ? await projection.expand({ from: step.from, along: step.along })
     : undefined
   return {
+    // whether any region attribute appears anywhere in full's first view, as text
+    fullHasAttributes: JSON.stringify(full).includes('jurisdiction'),
     full: regionsIn(full),
     progressive: regionsIn(progressive),
     expanded: expanded && regionsIn(expanded as never),
@@ -141,10 +146,18 @@ describe("T8's deciding fact, one step out (measured)", () => {
   test('related from hosting.plan.list: full shows it first, progressive one listed expansion from the start', async () => {
     const m = await firstViews('hosting.plan.list')
     expect(m.full).toEqual({ offers: 2, plans: both })
+    expect(m.fullHasAttributes).toBe(true)
     expect(m.progressive).toEqual({ offers: 0, plans: undefined })
     // the expansion progressive's own view lists: from the start, along relations
     expect(m.step?.from).toMatchObject({ type: 'hosting.project' })
     expect(m.expanded).toEqual({ offers: 2, plans: both })
+  })
+
+  test('without alternatives, the region offers are in full and progressive views, but their plans are in no view', async () => {
+    const m = await firstViews('hosting.plan.list', false)
+    expect(m.full).toEqual({ offers: 2, plans: undefined })
+    expect(m.fullHasAttributes).toBe(false)
+    expect(m.expanded).toEqual({ offers: 2, plans: undefined })
   })
 
   test('related from hosting.plan.subscribe, rejected: it binds the project, so progressive shows the regions first', async () => {
