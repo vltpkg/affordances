@@ -53,7 +53,11 @@ M7f's question, on a task built so that the surfaces differ where they're design
 
 ## 4. Checked before any trial
 
-Everything M7f's preflight checks (`../surfaces/PLAN.md` §2) holds, with T8's prompt and fixture. Plus:
+Everything M7f's preflight checks (`../surfaces/PLAN.md` §2) holds, with T8's prompt and fixture.
+
+**What's held fixed, and what differs from M7f's pin.** M8e's pin includes the version 1 wire changes made since M7f's: the protocol-1 media type; the refusal shape on the route's refusals before the runtime, so a malformed `execute` reaches the agent as a refusal, not a transport error (§5); store refusals as 409, through `HandlerRefusal`; expansion along `comparison`; and the browser's settle-wait. They're the same in every T8 cell, so they're held fixed within M8e. They differ from M7f's pin, so T8's results are never pooled with M7f's.
+
+Plus:
 
 - **The depth check,** per surface, mechanical, recorded, and refusing the run on failure:
   - `full`: both region offers, and the region choice set with each region's `plans` in its comparison, are in the first view, with nothing omitted;
@@ -71,6 +75,7 @@ Everything M7f's preflight checks (`../surfaces/PLAN.md` §2) holds, with T8's p
 ## 5. Surfaces, models and contrasts
 
 - **The surfaces:** M7f's confirmatory four, `full`, `progressive`, `v0` and `browser`, built as in M7f's §3. MCP and WebMCP stay out.
+  - **One change in what `full` and `progressive` return** (ec7e80d1): a malformed `execute`, refused with a 400 before the runtime, reaches the agent as a refusal result, `{ status: 'refused', code: 'invalid_input', detail }`, not a transport error. A refused view, expansion or inspection still fails as a transport error, as in M7f.
 - **The models:** `claude-sonnet-5-5` and `claude-haiku-5-5`, pinned, with the CLI pinned.
 - **The three contrasts, fixed now:** `full` against `v0`, `full` against `browser`, and `progressive` against `full`, each estimated as M7f's §5 estimates it: the Mantel–Haenszel risk difference across the two models (Sato's variance), per-model Newcombe intervals, heterogeneity by bootstrap (10,000 resamples, a fixed seed), and the missing-as-not-optimal sensitivity. Estimation only, with no p-values and no multiplicity correction, as in M7f.
 - **The primary outcome:** the intended end state is optimal, on every contrast. Completed is beside it, by M7f's one store rule (`purchaseMade`).
