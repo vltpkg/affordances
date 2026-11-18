@@ -9,14 +9,7 @@ import { codexCli } from './drivers/codex-cli.ts'
 import { fakeDriver } from './drivers/fake.ts'
 import type { Driver } from './drivers/types.ts'
 import { calibrationPlan, pilotPlan, runTrial, type TrialSpec } from './harness.ts'
-import {
-  type Baseline,
-  baselineDiffers,
-  baselineOf,
-  type CanaryRecord,
-  readCanary,
-  runCanary,
-} from './canary.ts'
+import { baselineOf, checkBaseline, type CanaryRecord, readCanary, runCanary } from './canary.ts'
 import {
   configRoots,
   contextLeaks,
@@ -253,15 +246,18 @@ if (mode === 'plan') {
       resolvedModel: trial.model.resolved,
     }
   }
-  // against an earlier run's baseline, when one is given (CANARY_BASELINE): a difference refuses, flagged first
+  // the baseline, mandatory: checked when it exists, written when it doesn't, never skipped. A difference refuses,
+  // flagged first (intake and the planner, 2026-11-18)
   const baseline = baselineOf(canaries)
-  if (real) writeFileSync(path.join(out, 'canary-baseline.json'), JSON.stringify(baseline, null, 2))
-  if (real && process.env.CANARY_BASELINE) {
-    const then = JSON.parse(readFileSync(process.env.CANARY_BASELINE, 'utf8')) as Baseline
-    const differs = baselineDiffers(baseline, then)
-    if (differs.length) {
+  const baselineCheck = real ? checkBaseline(baseline) : { written: [], differs: [] }
+  if (real) {
+    writeFileSync(
+      path.join(out, 'canary-baseline.json'),
+      JSON.stringify({ baseline, ...baselineCheck }, null, 2),
+    )
+    if (baselineCheck.differs.length) {
       console.error(
-        `the canary differs from its baseline; flag it to the planner and intake: ${differs.join('; ')}`,
+        `the canary differs from its baseline; flag it to the planner and intake: ${baselineCheck.differs.join('; ')}`,
       )
       process.exit(3)
     }

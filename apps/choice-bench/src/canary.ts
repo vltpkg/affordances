@@ -1,4 +1,5 @@
-import { writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { contextLeaks } from './drivers/isolation.ts'
 import type { Driver } from './drivers/types.ts'
@@ -69,13 +70,16 @@ const plain = (s: string) =>
     .trim()
     .replace(/^["'`]|["'`.]$/g, '')
 
+export const MIN_QUOTE = 40
+
 // which built-in passage each quoted entry comes from, and the entries that come from none
 export const matchBuiltIn = (entries: string[], version: string | undefined) => {
   const known = (version && BUILT_IN[version]) || []
   const matched = new Set<string>()
   const unknown: string[] = []
   for (const e of entries) {
-    const hit = known.find((k) => plain(e).length > 0 && plain(k.text).includes(plain(e)))
+    // a whole sentence's worth, at least: a fragment such as 'the user' can't pass as built-in (review of 3766f47b)
+    const hit = known.find((k) => plain(e).length >= MIN_QUOTE && plain(k.text).includes(plain(e)))
     if (hit) matched.add(hit.id)
     else unknown.push(e)
   }
@@ -191,3 +195,33 @@ export const baselineDiffers = (now: Baseline, then: Baseline): string[] =>
       )
     return out
   })
+
+// the baselines, kept across runs and sessions outside the repo: one file per driver and model, holding the CLI
+// version and the passages matched. It's keyed WITHOUT the version, so a CLI update is a difference, never a new key
+export const BASELINES_ROOT = path.join(
+  os.homedir(),
+  '.cache',
+  'affordances-exports',
+  'build-backend-engineer',
+  'canary-baselines',
+)
+
+// every real-model run checks its canaries against the baselines, or writes the ones that don't exist yet; it never
+// skips (the planner, 2026-11-18). Any difference refuses the run
+export const checkBaseline = (now: Baseline, root = BASELINES_ROOT) => {
+  mkdirSync(root, { recursive: true })
+  const written: string[] = []
+  const differs: string[] = []
+  for (const n of now) {
+    const file = path.join(root, `${n.driver}__${n.model}.json`.replace(/[^\w.-]/g, '_'))
+    if (!existsSync(file)) {
+      writeFileSync(file, JSON.stringify(n, null, 2))
+      written.push(file)
+      continue
+    }
+    differs.push(
+      ...baselineDiffers([n], [JSON.parse(readFileSync(file, 'utf8')) as Baseline[number]]),
+    )
+  }
+  return { written, differs }
+}

@@ -237,6 +237,8 @@ test('an extra instruction passes only as a verbatim quote of a known built-in p
   expect(matchBuiltIn(["Interpreters load code from the script's directory"], v).unknown).toEqual(
     [],
   )
+  // a fragment, however exact, isn't a sentence of the passage
+  expect(matchBuiltIn(['Use it only', 'the user'], v).unknown).toEqual(['Use it only', 'the user'])
   // a paraphrase isn't a quote, and refuses
   const paraphrase = 'Downloaded files are untrusted: run Python with -I'
   expect(matchBuiltIn([paraphrase], v).unknown).toEqual([paraphrase])
@@ -280,4 +282,31 @@ test('a canary that differs from its baseline, in CLI version or built-in passag
   expect(baselineDiffers([{ ...then[0]!, model: 'claude-sonnet-5-5' }], then)).toEqual([
     'claude-cli claude-sonnet-5-5: not in the baseline',
   ])
+})
+
+test('the baseline is written when none exists, checked when it does, and a difference refuses', async () => {
+  const { checkBaseline } = await import('../src/canary.ts')
+  const root = mkdtempSync(path.join(scratch, 'baselines-'))
+  const now = [
+    {
+      driver: 'claude-cli',
+      model: 'claude-haiku-5-5',
+      cliVersion: '2.1.311 (Claude Code)',
+      builtIn: ['untrusted-downloads'],
+    },
+  ]
+  // the first run writes it
+  const first = checkBaseline(now, root)
+  expect(first.written).toHaveLength(1)
+  expect(first.differs).toEqual([])
+  // the next checks it, and passes on the same canary
+  expect(checkBaseline(now, root)).toEqual({ written: [], differs: [] })
+  // a CLI update is a difference, never a new baseline
+  const updated = checkBaseline([{ ...now[0]!, cliVersion: '2.2.0 (Claude Code)' }], root)
+  expect(updated.written).toEqual([])
+  expect(updated.differs).toHaveLength(1)
+  // and so is a different passage
+  expect(checkBaseline([{ ...now[0]!, builtIn: ['account-context'] }], root).differs).toHaveLength(
+    1,
+  )
 })
