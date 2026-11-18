@@ -26,7 +26,16 @@ export const SCHEMA_LIBRARIES = [
 // library's own methods (boundary review #4), checked against the libraries the slice imports, so an Array's filter
 // isn't Effect's
 export const LOSSY: Record<string, readonly string[]> = {
-  zod: ['refine', 'superRefine', 'transform', 'preprocess', 'custom', 'check', 'overwrite'],
+  zod: [
+    'refine',
+    'superRefine',
+    'transform',
+    'preprocess',
+    'custom',
+    'check',
+    'overwrite',
+    'codec',
+  ],
   valibot: [
     'check',
     'checkItems',
@@ -35,12 +44,15 @@ export const LOSSY: Record<string, readonly string[]> = {
     'rawTransform',
     'transform',
     'custom',
+    'forward',
+    'everyItem',
+    'someItem',
   ],
   arktype: ['narrow', 'morph', 'filter'],
   '@sinclair/typebox': ['Transform', 'Decode', 'Encode'],
   typebox: ['Transform', 'Decode', 'Encode'],
-  effect: ['filter', 'transform', 'transformOrFail', 'declare'],
-  '@effect/schema': ['filter', 'transform', 'transformOrFail', 'declare'],
+  effect: ['filter', 'filterEffect', 'transform', 'transformOrFail', 'declare'],
+  '@effect/schema': ['filter', 'filterEffect', 'transform', 'transformOrFail', 'declare'],
 }
 // the library an import names, by its package, so a subpath (zod/v4, effect/Schema) counts as its library
 const libraryOf = (source: string) =>

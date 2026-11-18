@@ -347,6 +347,18 @@ test('the sentinel was never imported, by any test above', () => {
 
 // boundary review #4: a literal computed member is the method it names, and each library's own lossy methods count,
 // checked against the libraries the slice imports
+// review of a8fd2bfc, on the installed zod: a codec converts to its input's schema while its decode can reject what
+// that schema accepts
+test('a zod codec converts lossy, and is opaque in strict mode', () => {
+  // a decode that rejects '' though z.string() accepts it, without ambient globals, which the slice refuses
+  const codec =
+    "z.object({ when: z.codec(z.string(), z.number(), { decode: (s, ctx) => { if (s === '') ctx.issues.push({ code: 'custom', message: 'empty', input: s }); return s.length }, encode: (n) => 'x'.repeat(n) }) })"
+  expect(summary(slice(Z, codec))).toMatchObject({ status: 'converted', lossy: ['codec'] })
+  expect(summary(slice(Z, codec, {}, true))).toMatchObject(
+    opaque(/strict mode: the schema uses codec/),
+  )
+})
+
 test('a computed literal member is read as its method: z.string()[‘refine’](…) is lossy, and opaque in strict mode', () => {
   expect(summary(slice(Z, "z.string()['refine']((s) => s.length > 1)"))).toMatchObject({
     status: 'converted',
@@ -388,6 +400,18 @@ test.each([
     "import { type } from 'arktype'",
     "type('string').narrow((s) => s.length > 1).morph((s) => s.length)",
     ['morph', 'narrow'],
+  ],
+  [
+    'effect, filterEffect',
+    "import { Schema } from 'effect'",
+    'Schema.String.pipe(Schema.filterEffect(() => true))',
+    ['filterEffect'],
+  ],
+  [
+    'valibot, item actions',
+    "import * as v from 'valibot'",
+    "v.pipe(v.array(v.string()), v.everyItem((s) => s.length > 1), v.someItem((s) => s === 'a'))",
+    ['everyItem', 'someItem'],
   ],
   [
     'effect',
