@@ -10,6 +10,7 @@ import {
   type Effect,
   type Id,
 } from '@affordances/ir'
+import { readsOf } from './comparison.ts'
 
 // words of a task or a definition, for the basic relevance method (§4.4): letters and digits, lowercased, three or
 // more long, and not the commonest English words, which match everything
@@ -97,6 +98,8 @@ export const factsOf = (manifest: CapabilityManifest) => {
   const normalized = normalize(manifest)
   const effects = new Map<Id, Effect[]>(normalized.capabilities.map((c) => [c.id, c.effects ?? []]))
   const manifestDigest = digest(manifest)
+  // each capability's kept comparison columns that the manifest alone decides (comparison.ts, readsOf)
+  const reads = new Map(manifest.capabilities.map((c) => [c.id, readsOf(c)]))
 
   return {
     capability: (id: Id): CapabilityDefinition | undefined => capabilities.get(id),
@@ -110,6 +113,7 @@ export const factsOf = (manifest: CapabilityManifest) => {
     claims: (id: Id) => claims.get(id) ?? [],
     declared: (type: Id) => declared.get(type),
     effects: (id: Id) => effects.get(id) ?? [],
+    reads: (id: Id) => reads.get(id) ?? new Set<string>(),
     manifestDigest,
   }
 }

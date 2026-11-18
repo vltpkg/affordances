@@ -1,5 +1,5 @@
 import { base64url, canonicalJson, type CapabilityManifest, type Id } from '@affordances/ir'
-import { columnsOf, comparisonOf, keptColumns } from './comparison.ts'
+import { citedBy, columnsOf, comparisonOf } from './comparison.ts'
 import { words, type Facts } from './facts.ts'
 import type {
   Budget,
@@ -233,10 +233,11 @@ export const views = (args: {
     const declared = Object.keys(properties ?? {}).filter((a) => a !== resource?.key)
     // what a claim shown on the members cites (none when the policy omits claims), and what the capability's
     // conditions and effects read and its confirmation summary renders: never cut
-    const { cited, read } = keptColumns(
-      args.facts.capability(s.capability),
+    // keptColumns, with the capability's half found once per manifest
+    const cited = citedBy(
       policy.claims === 'omitted' ? [] : s.members.flatMap((m) => byId.get(m)!.claims),
     )
+    const read = args.facts.reads(s.capability)
     return comparisonOf(
       s.members.map((id) => ({ id, attributes: args.memberAttributes.get(id) })),
       columnsOf(declared, cited, read),

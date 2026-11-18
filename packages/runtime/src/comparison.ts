@@ -37,14 +37,17 @@ export const comparisonOf = (
 ): Comparison => {
   const supplied = (m: Members[number], c: string) =>
     m.attributes !== undefined && Object.hasOwn(m.attributes, c)
-  // a column is shared when every member supplied it with one value: one cell. Otherwise one cell per member
-  const sharedValue = (c: string): { value: unknown } | undefined => {
+  // a column is shared when every member supplied it with one value: one cell. Otherwise one cell per member. Each
+  // column's is found once, since both the cut and the table read it
+  const sharedOf = (c: string): { value: unknown } | undefined => {
     if (!members.length || !members.every((m) => supplied(m, c))) return
     const first = bytes(members[0]!.attributes![c])
     return members.every((m) => bytes(m.attributes![c]) === first)
       ? { value: members[0]!.attributes![c] }
       : undefined
   }
+  const sharedByColumn = new Map(order.columns.map((c) => [c, sharedOf(c)]))
+  const sharedValue = (c: string) => sharedByColumn.get(c)
   const cells = (c: string) => (sharedValue(c) ? 1 : members.length)
 
   const shown: string[] = []
@@ -113,13 +116,22 @@ export const keptColumns = (
   capability: CapabilityDefinition | undefined,
   shownClaims: readonly { cites?: readonly string[] }[],
 ): { cited: Set<string>; read: Set<string> } => ({
-  cited: new Set(shownClaims.flatMap((k) => k.cites ?? [])),
-  read: new Set([
+  cited: citedBy(shownClaims),
+  read: readsOf(capability),
+})
+
+// what shown claims cite
+export const citedBy = (shownClaims: readonly { cites?: readonly string[] }[]) =>
+  new Set(shownClaims.flatMap((k) => k.cites ?? []))
+
+// what a capability's conditions and effects read, and its confirmation summary renders: the manifest's alone, so
+// the runtime's facts find it once per capability
+export const readsOf = (capability: CapabilityDefinition | undefined) =>
+  new Set([
     ...targetReads([
       capability?.preconditions,
       capability?.authorization?.conditions,
       capability?.effects,
     ]),
     ...summaryReads(capability?.confirmation?.summary),
-  ]),
-})
+  ])
