@@ -1,0 +1,224 @@
+{
+  "browser": {
+    "name": "chromium",
+    "version": "156.0.8078.4",
+    "flags": ["--enable-features=WebMCP"],
+    "headless": true
+  },
+  "policy": "exhaustive",
+  "tools": {
+    "project": {
+      "listed": true,
+      "keys": ["annotations", "description", "inputSchema", "name", "origin", "title"],
+      "name": true,
+      "description": true,
+      "inputSchema": true,
+      "hints": {
+        "readOnlyHint": "kept"
+      },
+      "browserHints": ["consequentialHint", "debugging", "untrustedContentHint"]
+    },
+    "expand": {
+      "listed": true,
+      "keys": ["annotations", "description", "inputSchema", "name", "origin", "title"],
+      "name": true,
+      "description": true,
+      "inputSchema": true,
+      "hints": {
+        "readOnlyHint": "kept"
+      },
+      "browserHints": ["consequentialHint", "debugging", "untrustedContentHint"]
+    },
+    "inspect": {
+      "listed": true,
+      "keys": ["annotations", "description", "inputSchema", "name", "origin", "title"],
+      "name": true,
+      "description": true,
+      "inputSchema": true,
+      "hints": {
+        "readOnlyHint": "kept"
+      },
+      "browserHints": ["consequentialHint", "debugging", "untrustedContentHint"]
+    },
+    "execute": {
+      "listed": true,
+      "keys": ["description", "inputSchema", "name", "origin", "title"],
+      "name": true,
+      "description": true,
+      "inputSchema": true,
+      "hints": {},
+      "browserHints": []
+    }
+  },
+  "generic": {
+    "calls": 135,
+    "sameAsProtocol1": 135,
+    "differ": [],
+    "execute": {
+      "code": "confirmation_required",
+      "differsFromProtocol1At": ["confirmation.expiresAt", "confirmation.approval"],
+      "approvalInTool": false
+    }
+  },
+  "perCapability": {
+    "capabilities": 9,
+    "exportedByTheCore": 1,
+    "listed": 9,
+    "descriptionKept": 9,
+    "inputSchemaKept": 9,
+    "hints": {
+      "readOnlyHint": {
+        "kept": 9
+      },
+      "destructiveHint": {
+        "dropped": 9
+      },
+      "openWorldHint": {
+        "dropped": 9
+      },
+      "idempotentHint": {
+        "dropped": 3
+      }
+    },
+    "rows": [
+      {
+        "capability": "hosting.addOn.add",
+        "exportedByTheCore": false,
+        "listed": true,
+        "keys": ["annotations", "description", "inputSchema", "name", "origin", "title"],
+        "name": true,
+        "description": true,
+        "inputSchema": true,
+        "hints": {
+          "readOnlyHint": "kept",
+          "destructiveHint": "dropped",
+          "openWorldHint": "dropped"
+        },
+        "browserHints": ["consequentialHint", "debugging", "untrustedContentHint"]
+      },
+      {
+        "capability": "hosting.addOn.remove",
+        "exportedByTheCore": false,
+        "listed": true,
+        "keys": ["annotations", "description", "inputSchema", "name", "origin", "title"],
+        "name": true,
+        "description": true,
+        "inputSchema": true,
+        "hints": {
+          "readOnlyHint": "kept",
+          "idempotentHint": "dropped",
+          "destructiveHint": "dropped",
+          "openWorldHint": "dropped"
+        },
+        "browserHints": ["consequentialHint", "debugging", "untrustedContentHint"]
+      },
+      {
+        "capability": "hosting.bundle.subscribe",
+        "exportedByTheCore": false,
+        "listed": true,
+        "keys": ["annotations", "description", "inputSchema", "name", "origin", "title"],
+        "name": true,
+        "description": true,
+        "inputSchema": true,
+        "hints": {
+          "readOnlyHint": "kept",
+          "destructiveHint": "dropped",
+          "openWorldHint": "dropped"
+        },
+        "browserHints": ["consequentialHint", "debugging", "untrustedContentHint"]
+      },
+      {
+        "capability": "hosting.deployment.create",
+        "exportedByTheCore": false,
+        "listed": true,
+        "keys": ["annotations", "description", "inputSchema", "name", "origin", "title"],
+        "name": true,
+        "description": true,
+        "inputSchema": true,
+        "hints": {
+          "readOnlyHint": "kept",
+          "destructiveHint": "dropped",
+          "openWorldHint": "dropped"
+        },
+        "browserHints": ["consequentialHint", "debugging", "untrustedContentHint"]
+      },
+      {
+        "capability": "hosting.deployment.rollback",
+        "exportedByTheCore": false,
+        "listed": true,
+        "keys": ["annotations", "description", "inputSchema", "name", "origin", "title"],
+        "name": true,
+        "description": true,
+        "inputSchema": true,
+        "hints": {
+          "readOnlyHint": "kept",
+          "idempotentHint": "dropped",
+          "destructiveHint": "dropped",
+          "openWorldHint": "dropped"
+        },
+        "browserHints": ["consequentialHint", "debugging", "untrustedContentHint"]
+      },
+      {
+        "capability": "hosting.plan.list",
+        "exportedByTheCore": true,
+        "listed": true,
+        "keys": ["annotations", "description", "inputSchema", "name", "origin", "title"],
+        "name": true,
+        "description": true,
+        "inputSchema": true,
+        "hints": {
+          "readOnlyHint": "kept",
+          "destructiveHint": "dropped",
+          "openWorldHint": "dropped"
+        },
+        "browserHints": ["consequentialHint", "debugging", "untrustedContentHint"]
+      },
+      {
+        "capability": "hosting.plan.subscribe",
+        "exportedByTheCore": false,
+        "listed": true,
+        "keys": ["annotations", "description", "inputSchema", "name", "origin", "title"],
+        "name": true,
+        "description": true,
+        "inputSchema": true,
+        "hints": {
+          "readOnlyHint": "kept",
+          "destructiveHint": "dropped",
+          "openWorldHint": "dropped"
+        },
+        "browserHints": ["consequentialHint", "debugging", "untrustedContentHint"]
+      },
+      {
+        "capability": "hosting.project.read",
+        "exportedByTheCore": false,
+        "listed": true,
+        "keys": ["annotations", "description", "inputSchema", "name", "origin", "title"],
+        "name": true,
+        "description": true,
+        "inputSchema": true,
+        "hints": {
+          "readOnlyHint": "kept",
+          "destructiveHint": "dropped",
+          "openWorldHint": "dropped"
+        },
+        "browserHints": ["consequentialHint", "debugging", "untrustedContentHint"]
+      },
+      {
+        "capability": "hosting.subscription.cancel",
+        "exportedByTheCore": false,
+        "listed": true,
+        "keys": ["annotations", "description", "inputSchema", "name", "origin", "title"],
+        "name": true,
+        "description": true,
+        "inputSchema": true,
+        "hints": {
+          "readOnlyHint": "kept",
+          "idempotentHint": "dropped",
+          "destructiveHint": "dropped",
+          "openWorldHint": "dropped"
+        },
+        "browserHints": ["consequentialHint", "debugging", "untrustedContentHint"]
+      }
+    ]
+  }
+}
