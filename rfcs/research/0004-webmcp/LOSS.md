@@ -42,4 +42,4 @@ All 9 of hosting-lab's capability tools were registered, with a no-op execute, t
 
 1. **Generic carries the whole of version 1.** That supports intake's default, generic, by measurement.
 2. **Per-capability on WebMCP loses more than on MCP:** the irreversibility and external-effect hints are dropped by the browser.
-3. **The generic `execute` tool's description is wrong for WebMCP.** It says "the server asks them directly and runs it only if they accept". On WebMCP, no current browser lets a tool ask (no `requestUserInteraction`), so the call returns the refusal, and the person confirms in the app. The text is the shared core's, and it's raised with its owner.
+3. **The generic `execute` tool's description, as measured, was wrong for WebMCP.** It said "the server asks them directly and runs it only if they accept". On WebMCP, no current browser lets a tool ask (no `requestUserInteraction`), so the call returns the refusal, and the person confirms in the app. Since fixed in e2a9bd77, which makes it transport-neutral: "If it needs the user’s approval, it runs only once they approve it; otherwise this returns the refusal, with its summary for them."
