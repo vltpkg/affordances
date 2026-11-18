@@ -3,6 +3,9 @@ import type { OrderBasis } from './types.ts'
 // §6.4: whether a value is an order basis the runtime can state truthfully. A group's key must be one of the closed
 // set of manifest-derived attributes, and a group's order within never names a claim (intake, 2026-11-18)
 const GROUP_KEYS = new Set(['targetType'])
+// the relevance methods the runtime implements: a method is named, never free text, so it can't carry framing either
+// (review of 1615e7f3)
+export const RELEVANCE_METHODS = new Set(['basic'])
 const fail = (problem: string) => ({ ok: false as const, problem })
 
 export const checkOrderBasis = (
@@ -15,7 +18,10 @@ export const checkOrderBasis = (
   if (b.by === 'canonical') {
     if (extra(['by']).length) return fail(`canonical takes no ${extra(['by']).join(', ')}`)
   } else if (b.by === 'relevance') {
-    if (typeof b.method !== 'string' || !b.method) return fail('relevance names its method')
+    if (typeof b.method !== 'string' || !RELEVANCE_METHODS.has(b.method))
+      return fail(
+        `relevance's method is one of ${[...RELEVANCE_METHODS].join(', ')}, not ${JSON.stringify(b.method)}`,
+      )
     if (extra(['by', 'method']).length)
       return fail(`relevance takes no ${extra(['by', 'method']).join(', ')}`)
   } else if (b.by === 'claim') {

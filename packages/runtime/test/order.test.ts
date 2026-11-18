@@ -49,6 +49,11 @@ test.for([
   ],
   ['an extra field on canonical', { by: 'canonical', label: 'best' }],
   ['an unknown by', { by: 'popularity' }],
+  ['a free-text relevance method', { by: 'relevance', method: 'best value first' }],
+  [
+    'a free-text method within a group',
+    { by: 'group', key: 'targetType', within: { by: 'relevance', method: 'our picks' } },
+  ],
   ['not an object', 'canonical'],
 ] as [string, unknown][])('%s is rejected', ([, basis]) => {
   expect(checkOrderBasis(basis).ok).toBe(false)
