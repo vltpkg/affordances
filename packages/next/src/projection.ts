@@ -5,9 +5,11 @@ import type {
   Handler,
   Principal,
   ProjectionRequest,
+  RefusalCode,
   ResourceResolver,
   TokenStore,
 } from '@affordances/runtime'
+import { PROTOCOL_1_MEDIA_TYPE } from './constants.ts'
 
 // RFC 0005 §5's projection route: serves RFC 0002's views from the compiled manifest, with the app's resolvers and the
 // handlers bindings.ts names. @affordances/runtime is next's optional peer (intake, 2026-11-18), and only this entry
@@ -133,13 +135,22 @@ const json = (body: unknown, status = 200, extra: Record<string, string> = {}) =
     status,
     // per caller, and never cached by anything shared
     headers: {
-      'content-type': 'application/json',
+      'content-type': PROTOCOL_1_MEDIA_TYPE,
       'cache-control': 'private, no-store',
       vary: 'Authorization, Cookie',
       ...extra,
     },
   })
-const refuse = (status: number, message: string) => json({ error: message }, status)
+// a refusal made before the runtime, in the runtime's shape (RFC 0004 §2.3; code review of M8): the Origin's 403 is
+// unauthorized, a malformed body's 400 is invalid_input (the schema's own is 422), and a missing offer or operation's
+// 404 is not_found
+const REFUSED_AS: Record<number, RefusalCode> = {
+  400: 'invalid_input',
+  403: 'unauthorized',
+  404: 'not_found',
+}
+const refuse = (status: 400 | 403 | 404, detail: string) =>
+  json({ status: 'refused', code: REFUSED_AS[status], detail }, status)
 
 // the request's own origin: the scheme the server received it on, and the host and port the client addressed, from
 // its Host header as Next receives it. request.url's host is the server's own idea of its name (under next start,

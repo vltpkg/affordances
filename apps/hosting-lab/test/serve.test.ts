@@ -184,7 +184,11 @@ test('a budget that is not a positive whole number is refused', async () => {
 test('an unknown policy is refused, not defaulted', async () => {
   const response = await get('?policy=secret')
   expect(response.status).toBe(400)
-  expect((await response.json()).error).toContain('No policy secret')
+  expect(await response.json()).toMatchObject({
+    status: 'refused',
+    code: 'invalid_input',
+    detail: expect.stringContaining('No policy secret'),
+  })
 })
 
 test("paging inside an expansion: each page's cursor resolves on a fresh projection, with nothing shown twice", async () => {

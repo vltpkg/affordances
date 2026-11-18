@@ -102,3 +102,17 @@ test('a configured start is the connection’s own: every call carries it until 
   await httpAdapter('http://h/api/projection', plain.fetcher).project()
   expect(plain.seen[0]!.url).toBe('http://h/api/projection/view')
 })
+
+// code review of M8 (the v1 wire): the route's refusal before the runtime has the runtime's shape (RFC 0004 §2.3).
+// On a view, an expansion or an inspection it's thrown with its detail, never read as a view; on an execution it's
+// the result, as the runtime's own refusals are
+test("the route's refusal: thrown with its detail for a view, the result for an execution", async () => {
+  const refusal = { status: 'refused', code: 'invalid_input', detail: 'start is type:key or an id' }
+  const fetcher = (async () =>
+    new Response(JSON.stringify(refusal), { status: 400 })) as typeof fetch
+  const a = httpAdapter('http://h/api/projection', fetcher)
+  await expect(a.project()).rejects.toThrow('400: start is type:key or an id')
+  await expect(a.expand({ from: 'o1', along: 'more' })).rejects.toThrow('400: start is type:key')
+  await expect(a.inspect('o1')).rejects.toThrow('400: start is type:key')
+  expect(await a.execute({ offer: 'o1' })).toEqual(refusal)
+})

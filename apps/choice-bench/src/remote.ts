@@ -51,8 +51,9 @@ export const remoteRuntime = (options: {
     const response = await fetcher(`${options.base}${path}?${new URLSearchParams(params)}`, {
       headers,
     })
-    const body = (await response.json()) as T & { error?: string }
-    if (!response.ok && body.error) throw new Error(body.error)
+    const body = (await response.json()) as T & { detail?: string }
+    // a view or an inspection that isn't ok is the route's refusal (RFC 0004 §2.3), never a view
+    if (!response.ok) throw new Error(body.detail ?? `${response.status}`)
     return body
   }
   const post = async <T>(path: string, body: unknown) => {
@@ -61,9 +62,10 @@ export const remoteRuntime = (options: {
       body: JSON.stringify(body),
       headers: { ...headers, 'content-type': 'application/json' },
     })
-    const out = (await response.json()) as T & { error?: string }
-    // a runtime refusal is a result with a status; anything else that isn't ok is the route's own error
-    if (!response.ok && out.error && !('status' in (out as object))) throw new Error(out.error)
+    const out = (await response.json()) as T & { detail?: string }
+    // an expansion that isn't ok is the route's refusal, never a view; an execution's refusal, the route's before the
+    // runtime or the runtime's own, is its result (RFC 0004 §2.3)
+    if (!response.ok && path !== '/execute') throw new Error(out.detail ?? `${response.status}`)
     return out
   }
   return {

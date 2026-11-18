@@ -231,12 +231,14 @@ type Start = Parameters<AgentAdapter['project']>[0]
 const startParam = (start: Start) =>
   start === undefined ? undefined : typeof start === 'string' ? start : `${start.type}:${start.key}`
 
-// an execution's refusal is its result, whatever its status; anything else that isn't 2xx is a transport error
-const read = async (response: Response) => {
+// an execution's refusal is its result, whatever its status; a view, an expansion or an inspection that isn't 2xx is
+// the route's refusal (RFC 0004 §2.3), never a view, and anything else that isn't 2xx is a transport error
+const read = (op: string) => async (response: Response) => {
   const body = (await response.json().catch(() => undefined)) as unknown
-  if (!response.ok && !(body && typeof body === 'object' && 'status' in body))
+  const refusal = !!body && typeof body === 'object' && 'status' in body
+  if (!response.ok && (op !== 'execute' || !refusal))
     throw new Error(
-      `${response.status}${body && typeof body === 'object' && 'error' in body ? `: ${String((body as { error: unknown }).error)}` : ''}`,
+      `${response.status}${body && typeof body === 'object' && 'detail' in body ? `: ${String((body as { detail: unknown }).detail)}` : ''}`,
     )
   return body
 }
@@ -273,11 +275,11 @@ export const httpAdapter = (
       credentials: 'same-origin',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(withStart(body)),
-    }).then(read)
+    }).then(read(op))
   const get = (op: string, params: Record<string, string>) => {
     const query = new URLSearchParams(withStart(params) as Record<string, string>).toString()
     return fetcher(`${base}/${op}${query ? `?${query}` : ''}`, { credentials: 'same-origin' }).then(
-      read,
+      read(op),
     )
   }
   return {

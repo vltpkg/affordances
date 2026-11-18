@@ -365,3 +365,36 @@ test('a start that isn’t type:key or an id is a 400, never read as no start', 
       ).status,
     ).toBe(400)
 })
+
+// code review of M8 (the v1 wire, RFC 0004 §1 and §2.3): every protocol-1 response names version 1's media type, and
+// every refusal the route makes before the runtime has the runtime's refusal shape, a code and a detail
+const V1 = 'application/vnd.affordances+json; version=1'
+test('protocol 1 answers with its own media type: views, executions and refusals', async () => {
+  expect((await get('?policy=exhaustive')).headers.get('content-type')).toBe(V1)
+  expect((await post('execute', { offer: 'x' })).headers.get('content-type')).toBe(V1)
+  expect((await post('execute', 'not an object')).headers.get('content-type')).toBe(V1)
+})
+
+test('a refusal before the runtime is a refusal: the Origin as unauthorized, a malformed body as invalid_input, an unknown operation as not_found', async () => {
+  const origin = await post('execute', { offer: 'x' }, { cookie: 'sid=u1' })
+  expect(origin.status).toBe(403)
+  expect(await origin.json()).toEqual({
+    status: 'refused',
+    code: 'unauthorized',
+    detail: expect.stringMatching(/Origin/),
+  })
+  const malformed = await post('execute', 'not an object')
+  expect(malformed.status).toBe(400)
+  expect(await malformed.json()).toEqual({
+    status: 'refused',
+    code: 'invalid_input',
+    detail: 'The body is a JSON object',
+  })
+  const unknown = await post('nothing', {})
+  expect(unknown.status).toBe(404)
+  expect(await unknown.json()).toEqual({
+    status: 'refused',
+    code: 'not_found',
+    detail: 'No projection operation nothing',
+  })
+})
