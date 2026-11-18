@@ -50,7 +50,9 @@ const Page = async ({
               {Object.entries(r.input).map(([name, value]) => (
                 <input key={name} type="hidden" name={name} value={value} />
               ))}
-              <Button type="submit">Confirm</Button>
+              <Button type="submit" data-confirm>
+                Confirm
+              </Button>
             </form>
             <Link href={back} className="text-sm underline">
               Back

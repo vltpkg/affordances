@@ -1111,6 +1111,7 @@
     "workspace~apps+hosting-lab @affordances/next": "prod workspace:* workspace~packages+next",
     "workspace~apps+hosting-lab @affordances/runtime": "prod workspace:* workspace~packages+runtime",
     "workspace~apps+hosting-lab @affordances/ui": "prod workspace:* workspace~packages+ui",
+    "workspace~apps+hosting-lab @affordances/webmcp": "prod workspace:* workspace~packages+webmcp",
     "workspace~packages+cli @effect/platform-node": "dev 4.1.0 ~npm~@effect+platform-node@4.1.0~peer.ef00b57fff5a53f1",
     "workspace~packages+cli effect": "dev 4.1.0 ~npm~effect@4.1.0",
     "workspace~packages+cli @affordances/mcp": "prod workspace:* workspace~packages+mcp",

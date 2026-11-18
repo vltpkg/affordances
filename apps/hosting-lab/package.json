@@ -23,6 +23,7 @@
     "@affordances/next": "workspace:*",
     "@affordances/runtime": "workspace:*",
     "@affordances/ui": "workspace:*",
+    "@affordances/webmcp": "workspace:*",
     "next": "^16.4.6",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

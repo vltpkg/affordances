@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { fontVariables } from '@affordances/ui/lib/fonts'
 import '@affordances/ui/globals.css'
+import { WebMcp } from '@/components/webmcp'
 
 export const metadata: Metadata = {
   title: { default: 'Hosting Lab', template: '%s · Hosting Lab' },
@@ -34,6 +35,7 @@ const RootLayout = ({ children }: LayoutProps<'/'>) => (
         </div>
       </header>
       <main className="mx-auto w-full max-w-4xl flex-1 px-4 pt-6 pb-20 sm:px-6">{children}</main>
+      <WebMcp />
       <footer className="border-t px-4 py-4 text-center text-xs text-muted-foreground">
         A fictional provider with invented prices. Nothing is charged.
       </footer>

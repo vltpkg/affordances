@@ -3,7 +3,7 @@ import { beforeEach, expect, test } from 'vitest'
 import { addOns, bundles } from '../src/catalog.ts'
 import { ConfirmationSummary } from '../src/components/confirmation.tsx'
 import { principalFor } from '../src/lib/resolvers.ts'
-import { REVIEWED, review, type ReviewedAction } from '../src/lib/review.ts'
+import { REVIEWED, review, reviewUrl, type ReviewedAction } from '../src/lib/review.ts'
 import { runtime } from '../src/lib/runtime.ts'
 import * as store from '../src/lib/store.ts'
 
@@ -91,4 +91,21 @@ test('a reviewed call nothing would confirm says why, and never shows a summary 
   })
   expect(r.summary).toBeUndefined()
   expect(r.refused).toBeTruthy()
+})
+
+test("a refused call's review URL names its action and fields, from its offer id or capability id", () => {
+  expect(
+    reviewUrl('hosting.plan.subscribe@hosting.plan:p2?project=proj_1', {
+      plan: 'p2',
+      projectId: 'proj_1',
+    }),
+  ).toBe('/review?action=subscribe&plan=p2&projectId=proj_1')
+  expect(reviewUrl('hosting.addOn.add', { projectId: 'proj_1', addOn: 'extra-bandwidth' })).toBe(
+    '/review?action=addAddOn&projectId=proj_1&addOn=extra-bandwidth',
+  )
+  // a capability with no review step has no URL
+  expect(reviewUrl('hosting.addOn.remove@hosting.addOn:x', {})).toBeUndefined()
+  // every reviewed action is reachable from its capability
+  for (const [action, spec] of Object.entries(REVIEWED))
+    expect(reviewUrl(spec.capability, {})).toBe(`/review?action=${action}`)
 })
