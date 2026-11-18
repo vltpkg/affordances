@@ -164,6 +164,67 @@ test('a cookie POST without the site’s Origin is refused, and an unknown opera
   expect((await post('execute', 'not an object')).status).toBe(400)
 })
 
+// review's 0324d2ae and the planner (14:40Z): same-origin is the request's own origin, its scheme and the host it was
+// addressed by (its Host), compared exactly; allowedOrigins adds exactly what it lists; forwarded headers are never read
+const cookiePost = (url: string, headers: Record<string, string>, r = route) =>
+  r.POST(
+    new Request(url, {
+      method: 'POST',
+      body: JSON.stringify({ offer: 'x' }),
+      headers: { 'content-type': 'application/json', cookie: 'sid=u1', ...headers },
+    }),
+  )
+// under next start, request.url names localhost whatever host the browser used
+const local = 'http://localhost:3000/api/projection/execute'
+// 403 is the Origin refusal; past it, the call reaches the route (here a 401, since the cookie authenticates no one)
+const passes = async (res: Promise<Response>) => (await res).status !== 403
+const originStatus = async (headers: Record<string, string>) =>
+  (await cookiePost(local, headers)).status
+
+describe('a cookie POST’s Origin', () => {
+  test('127.0.0.1 and localhost each pass as same-origin', async () => {
+    expect(
+      await passes(cookiePost(local, { host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3000' })),
+    ).toBe(true)
+    expect(
+      await passes(cookiePost(local, { host: 'localhost:3000', origin: 'http://localhost:3000' })),
+    ).toBe(true)
+  })
+  test('a cross-origin call, a port or scheme mismatch, a forged X-Forwarded-Host, and no or null Origin are refused', async () => {
+    expect(await originStatus({ host: '127.0.0.1:3000', origin: 'https://evil.test' })).toBe(403)
+    expect(await originStatus({ host: '127.0.0.1:3000', origin: 'http://127.0.0.1:3001' })).toBe(
+      403,
+    )
+    expect(await originStatus({ host: '127.0.0.1:3000', origin: 'https://127.0.0.1:3000' })).toBe(
+      403,
+    )
+    expect(
+      await originStatus({
+        host: '127.0.0.1:3000',
+        'x-forwarded-host': 'evil.test',
+        'x-forwarded-proto': 'https',
+        origin: 'https://evil.test',
+      }),
+    ).toBe(403)
+    expect(await originStatus({ host: '127.0.0.1:3000' })).toBe(403)
+    expect(await originStatus({ host: '127.0.0.1:3000', origin: 'null' })).toBe(403)
+  })
+  test('allowedOrigins admits exactly what it lists, and must list origins', async () => {
+    const proxied = createProjectionRoute({
+      ...routeOptions,
+      allowedOrigins: ['https://shop.example'],
+    })
+    const via = (origin: string) => cookiePost(local, { host: 'localhost:3000', origin }, proxied)
+    expect(await passes(via('https://shop.example'))).toBe(true)
+    expect(await passes(via('https://shop.example:8443'))).toBe(false)
+    expect(await passes(via('http://shop.example'))).toBe(false)
+    expect(await passes(via('https://www.shop.example'))).toBe(false)
+    expect(() =>
+      createProjectionRoute({ ...routeOptions, allowedOrigins: ['https://shop.example/'] }),
+    ).toThrow(/isn't an origin/)
+  })
+})
+
 test('concurrent first requests share one runtime, so a token one signs runs through the other', async () => {
   const fresh = createProjectionRoute(routeOptions)
   const offer = await offerOf()

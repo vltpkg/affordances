@@ -43,6 +43,12 @@ export type ProjectionRouteOptions<Session = unknown> = {
   // Required unless NODE_ENV is development or test, where they default to a key per process and an in-memory store
   approvalKey?: CryptoKey
   seenTokens?: TokenStore
+  /**
+   * Origins a cookie-authenticated POST may also come from, each compared exactly (scheme, host and port): for a
+   * reverse proxy, or another host name the site is reached by. The request's own origin always counts. Forwarded
+   * headers (X-Forwarded-Host, X-Forwarded-Proto) are never read, so a proxy's public origin is listed here
+   */
+  allowedOrigins?: readonly string[]
 }
 
 // @affordances/runtime, next's optional peer: imported on the first request, so a missing peer is one error that
@@ -135,13 +141,30 @@ const json = (body: unknown, status = 200, extra: Record<string, string> = {}) =
   })
 const refuse = (status: number, message: string) => json({ error: message }, status)
 
+// the request's own origin: the scheme the server received it on, and the host and port the client addressed, from
+// its Host header as Next receives it. request.url's host is the server's own idea of its name (under next start,
+// localhost), so a same-origin call through 127.0.0.1 or any other name wouldn't match it. Without a Host header, as
+// in a direct handler call, request.url's host stands in
+const ownOrigin = (request: Request) => {
+  const url = new URL(request.url)
+  const host = request.headers.get('host')
+  if (!host) return url.origin
+  try {
+    return new URL(`${url.protocol}//${host}`).origin
+  } catch {
+    // a Host that isn't a host is no origin at all
+    return undefined
+  }
+}
+
 // RFC 0004 §2.3's one credential parser: a bearer header naming one token, else the cookie. A POST the cookie
-// authenticates must carry the site's Origin; a bearer call is exempt
-const crossSite = (request: Request): Response | undefined => {
+// authenticates must carry the site's Origin, compared exactly, or one the app allows; a bearer call is exempt. A
+// missing Origin, or 'null', is refused
+const crossSite = (request: Request, allowed: ReadonlySet<string>): Response | undefined => {
   if (/^Bearer \S+$/.test(request.headers.get('authorization') ?? '')) return
   if (!request.headers.get('cookie')) return
   const origin = request.headers.get('origin')
-  if (origin && origin === new URL(request.url).origin) return
+  if (origin && origin !== 'null' && (origin === ownOrigin(request) || allowed.has(origin))) return
   return refuse(
     403,
     'Cookie-authenticated calls need a matching Origin header, or use a bearer token',
@@ -168,6 +191,16 @@ const startOf = (value: unknown): ProjectionRequest['start'] => {
 export const createProjectionRoute = <Session = unknown>(
   options: ProjectionRouteOptions<Session>,
 ) => {
+  // each an origin as the browser sends it, so the comparison stays exact: no path, no trailing slash
+  for (const o of options.allowedOrigins ?? []) {
+    let origin: string | undefined
+    try {
+      origin = new URL(o).origin
+    } catch {}
+    if (origin !== o)
+      throw new TypeError(`allowedOrigins: ${o} isn't an origin, as in https://example.com`)
+  }
+  const allowedOrigins: ReadonlySet<string> = new Set(options.allowedOrigins)
   // deployed, per-process defaults are a replay: each instance would run a token once (RFC 0002 R2), and a token signed
   // by one would fail on another. So both are required, checked when the route is made (design, 2026-11-18), and the
   // gate fails closed (review of b96dee48): only development and test, named, get the defaults; an unset NODE_ENV,
@@ -270,7 +303,7 @@ export const createProjectionRoute = <Session = unknown>(
 
   const POST = (request: Request): Promise<Response> =>
     within(request, async () => {
-      const refused = crossSite(request)
+      const refused = crossSite(request, allowedOrigins)
       if (refused) return refused
       const body = (await request.json().catch(() => undefined)) as Params | undefined
       if (!body || typeof body !== 'object' || Array.isArray(body))
