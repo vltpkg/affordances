@@ -1,0 +1,269 @@
+{
+  "label": "EXPLORATORY: estimates with 95% intervals, no p-values",
+  "cells": {
+    "conf A claude-haiku-5-5": {
+      "optimal": "43/114",
+      "textOptimal": "112/114",
+      "sawAllowance": "100/114",
+      "failed": 0
+    },
+    "conf A claude-sonnet-5-5": {
+      "optimal": "101/114",
+      "textOptimal": "114/114",
+      "sawAllowance": "114/114",
+      "failed": 0
+    },
+    "conf C claude-haiku-5-5": {
+      "optimal": "34/114",
+      "textOptimal": "112/114",
+      "sawAllowance": "96/114",
+      "failed": 0
+    },
+    "conf C claude-sonnet-5-5": {
+      "optimal": "17/114",
+      "textOptimal": "50/114",
+      "sawAllowance": "19/114",
+      "failed": 0
+    },
+    "conf S claude-haiku-5-5": {
+      "optimal": "46/114",
+      "textOptimal": "114/114",
+      "sawAllowance": "114/114",
+      "failed": 0
+    },
+    "conf S claude-sonnet-5-5": {
+      "optimal": "101/114",
+      "textOptimal": "112/114",
+      "sawAllowance": "114/114",
+      "failed": 0
+    },
+    "expl A claude-opus-5-5": {
+      "optimal": "14/25",
+      "textOptimal": "25/25",
+      "sawAllowance": "25/25",
+      "failed": 0
+    },
+    "expl A-scope claude-haiku-5-5": {
+      "optimal": "17/50",
+      "textOptimal": "50/50",
+      "sawAllowance": "46/50",
+      "failed": 0
+    },
+    "expl A-scope claude-sonnet-5-5": {
+      "optimal": "25/50",
+      "textOptimal": "47/50",
+      "sawAllowance": "49/50",
+      "failed": 0
+    },
+    "expl C-full-scope claude-haiku-5-5": {
+      "optimal": "23/50",
+      "textOptimal": "50/50",
+      "sawAllowance": "45/50",
+      "failed": 0
+    },
+    "expl C-full-scope claude-opus-5-5": {
+      "optimal": "18/25",
+      "textOptimal": "25/25",
+      "sawAllowance": "25/25",
+      "failed": 0
+    },
+    "expl C-full-scope claude-sonnet-5-5": {
+      "optimal": "42/50",
+      "textOptimal": "49/50",
+      "sawAllowance": "50/50",
+      "failed": 0
+    }
+  },
+  "contrasts": {
+    "E1: the advocacy package over A's scope (C-full-scope vs A)": {
+      "claude-sonnet-5-5": {
+        "optimal": {
+          "treated": "42/50",
+          "control": "101/114",
+          "riskDifference": -0.045964912280701764,
+          "newcombe95": [
+            -0.17935238252248778,
+            0.05872511516267395
+          ]
+        },
+        "textOptimal": {
+          "treated": "49/50",
+          "control": "114/114",
+          "riskDifference": -0.020000000000000018,
+          "newcombe95": [
+            -0.1049544358963781,
+            0.01651876797800337
+          ]
+        }
+      },
+      "claude-haiku-5-5": {
+        "optimal": {
+          "treated": "23/50",
+          "control": "43/114",
+          "riskDifference": 0.08280701754385966,
+          "newcombe95": [
+            -0.07647399698046048,
+            0.24245577152348283
+          ]
+        },
+        "textOptimal": {
+          "treated": "50/50",
+          "control": "112/114",
+          "riskDifference": 0.01754385964912286,
+          "newcombe95": [
+            -0.05492864602089216,
+            0.06171802645991864
+          ]
+        }
+      }
+    },
+    "E2: the advocated scope alone (A-scope vs A)": {
+      "claude-sonnet-5-5": {
+        "optimal": {
+          "treated": "25/50",
+          "control": "101/114",
+          "riskDifference": -0.38596491228070173,
+          "newcombe95": [
+            -0.5272750557015147,
+            -0.2345535869351668
+          ]
+        },
+        "textOptimal": {
+          "treated": "47/50",
+          "control": "114/114",
+          "riskDifference": -0.06000000000000005,
+          "newcombe95": [
+            -0.1621709168883818,
+            -0.008874223820881162
+          ]
+        }
+      },
+      "claude-haiku-5-5": {
+        "optimal": {
+          "treated": "17/50",
+          "control": "43/114",
+          "riskDifference": -0.03719298245614033,
+          "newcombe95": [
+            -0.18471199654259784,
+            0.12454850273025919
+          ]
+        },
+        "textOptimal": {
+          "treated": "50/50",
+          "control": "112/114",
+          "riskDifference": 0.01754385964912286,
+          "newcombe95": [
+            -0.05492864602089216,
+            0.06171802645991864
+          ]
+        }
+      }
+    },
+    "E3: the advocacy package within the advocated scope (C vs A-scope)": {
+      "claude-sonnet-5-5": {
+        "optimal": {
+          "treated": "17/114",
+          "control": "25/50",
+          "riskDifference": -0.3508771929824561,
+          "newcombe95": [
+            -0.4948927815153348,
+            -0.1968344343853415
+          ]
+        },
+        "textOptimal": {
+          "treated": "50/114",
+          "control": "47/50",
+          "riskDifference": -0.5014035087719297,
+          "newcombe95": [
+            -0.5974616292871922,
+            -0.3641723549123015
+          ]
+        }
+      },
+      "claude-haiku-5-5": {
+        "optimal": {
+          "treated": "34/114",
+          "control": "17/50",
+          "riskDifference": -0.04175438596491232,
+          "newcombe95": [
+            -0.1998396209216019,
+            0.10442899127420127
+          ]
+        },
+        "textOptimal": {
+          "treated": "112/114",
+          "control": "50/50",
+          "riskDifference": -0.01754385964912286,
+          "newcombe95": [
+            -0.06171802645991864,
+            0.05492864602089216
+          ]
+        }
+      }
+    },
+    "E4: the advocated scope within the advocacy package (C vs C-full-scope)": {
+      "claude-sonnet-5-5": {
+        "optimal": {
+          "treated": "17/114",
+          "control": "42/50",
+          "riskDifference": -0.6908771929824561,
+          "newcombe95": [
+            -0.7845527081594474,
+            -0.5440683647053339
+          ]
+        },
+        "textOptimal": {
+          "treated": "50/114",
+          "control": "49/50",
+          "riskDifference": -0.5414035087719298,
+          "newcombe95": [
+            -0.6305491084481817,
+            -0.41646052373353654
+          ]
+        }
+      },
+      "claude-haiku-5-5": {
+        "optimal": {
+          "treated": "34/114",
+          "control": "23/50",
+          "riskDifference": -0.16175438596491232,
+          "newcombe95": [
+            -0.31769783125279766,
+            -0.0037095763320451336
+          ]
+        },
+        "textOptimal": {
+          "treated": "112/114",
+          "control": "50/50",
+          "riskDifference": -0.01754385964912286,
+          "newcombe95": [
+            -0.06171802645991864,
+            0.05492864602089216
+          ]
+        }
+      }
+    },
+    "E5: the advocacy package over A's scope, on Opus, within this run (C-full-scope vs A)": {
+      "claude-opus-5-5": {
+        "optimal": {
+          "treated": "18/25",
+          "control": "14/25",
+          "riskDifference": 0.15999999999999992,
+          "newcombe95": [
+            -0.10148107889116109,
+            0.39379020247013263
+          ]
+        },
+        "textOptimal": {
+          "treated": "25/25",
+          "control": "25/25",
+          "riskDifference": 0.0,
+          "newcombe95": [
+            -0.13319225093904852,
+            0.13319225093904852
+          ]
+        }
+      }
+    }
+  }
+}
