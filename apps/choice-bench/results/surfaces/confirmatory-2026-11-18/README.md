@@ -42,9 +42,10 @@ Each is the treated arm minus the control, in risk-difference points. The primar
 | progressive vs full | intended  | 50/50 vs 50/50: 0 (±7.1) | 50/50 vs 50/50: 0 (±7.1) | 0 (0, 0)             | 0 (0, 0)                      |
 
 - **Every one of the 400 trials was optimal,** both intended and completed, on every surface and both models. So every difference is 0.
+- **This is a ceiling.** The zeros reflect T6 not separating the surfaces under stated approval (§8.1). They don't show that the surfaces are equivalent. Review is checking the ceiling for an artifact, and until it confirms, nothing more is read from it.
 - **The per-model intervals carry the precision:** Newcombe's −7.1 to +7.1 points per model. That's narrower than the plan's ±19.6-point target, because rates far from 0.5 give narrower intervals (§5).
 - **The pooled interval of (0, 0) isn't certainty.** Sato's variance is zero when every arm is at 100%, so the interval collapses. It says nothing beyond the per-model intervals. Likewise, the bootstrap's heterogeneity is (0, 0) because every resample is all optimal.
-- **`full` against `browser` beside its primary:** on intended, both arms are 50 of 50 in each model too (the cell table above), the same 0 with the same ±7.1. The pinned script reports that contrast's completed measure as its primary, and doesn't emit a separate intended block for it. These counts are read from its cell table, with no added computation.
+- **`full` against `browser` on intended, hand-read from the cells, not script output:** under the fallback, the pinned script emits no intended result for this contrast. Its cell table has both arms at 50 of 50 in each model on intended, which gives the same 0 with the same ±7.1. Nothing was computed beyond reading those counts.
 - **The sensitivity** (missing counted as not optimal) is identical to the primary in every contrast, with `sensitivityDisagrees` false, since no spec is missing.
 
 ## The fallback, and its cause
@@ -108,8 +109,3 @@ The method is the pilot's: a scan of every trace and every CLI stream log (`clau
 - **the tools:** Chromium 156.0.8078.4, Playwright 1.64.1, Node v26.13.1 and vlt 1.8.0.
 
 `launch-1.json`, `preflight-1.json`, `end-1.json` and `pin.json` are the run's own records, committed by backend.
-
-## Exploratory, not part of the confirmatory result
-
-- **What the run can't tell apart.** With every arm at 100%, this run shows no difference in choice between surfaces, to within about 7 points per model. It can't rank the surfaces on choice. The cost side differs: v0 used the fewest tokens, and the browser the most tool calls and wall time. That's descriptive, with no contrast computed.
-- **A hypothesis, not a finding:** that the approval sentence (§8.1), together with T6, leaves too little room for the surfaces to differ, since the pilot without it differed widely. Testing that would take a later pre-registered run with a harder task. No mechanism is claimed (§5).
