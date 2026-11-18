@@ -14,7 +14,7 @@
 | arm, model | optimal | non-optimal | (a) unknown or enough | (b) asked, partial approval | (c) other plan | (d) none | (e) other |
 | ---------- | ------- | ----------- | --------------------- | --------------------------- | -------------- | -------- | --------- |
 | A, Sonnet  | 101/114 | 13          | 0                     | 13                          | 0              | 0        | 0         |
-| C, Sonnet  | 17/114  | 97          | 51                    | 33, an upper bound          | 9              | 0        | 4         |
+| C, Sonnet  | 17/114  | 97          | 51, a lower bound     | 33, an upper bound          | 9              | 0        | 4         |
 | S, Sonnet  | 101/114 | 13          | 0                     | 11                          | 2              | 0        | 0         |
 | A, Haiku   | 43/114  | 71          | 0                     | 69                          | 0              | 2        | 0         |
 | C, Haiku   | 34/114  | 80          | 0                     | 78                          | 1              | 1        | 0         |
@@ -74,7 +74,7 @@ A trial is text-optimal if it's optimal, or coded (b). This is reported beside t
 
 ## Review's re-derivation of the coding
 
-Review hand-coded a 20% random sample with a fixed seed: 70 trials, 61 of them adjudicated. It agreed with the rule on **60 of 70**.
+Review hand-coded a 20% random sample with a fixed seed: 70 trials, all coded. It agreed with the rule on **60 of 70**, and on 61 of 70 after adjudicating the 10 disagreements.
 
 - **All 9 real disagreements are the rule's (b) where review codes (a).** The trial says Pro's bandwidth is unknown, offers the add-on only as a fallback, and asks only about Pro. The rule's precedence puts (b) before (a), and its patterns can't tell a recommendation from a fallback.
 - **8 of the 9 are in C Sonnet.** So C Sonnet's (b) count of 33 and its text-stated rate of 50/114 are **upper bounds**, and its (a) count of 51 is a lower bound.
