@@ -26,6 +26,7 @@ Everything else is byte-identical across the six, and the preflight refuses a ru
 
 - **The check:** before any trial, an oracle walk through each surface's own tools reaches all of them, extending ffb00260's disclosure test to every surface (backend, 09:21Z):
   - **`full` and `progressive`:** ffb00260's walk, every expansion plus inspect;
+  - **On `full`, `progressive`, MCP and WebMCP,** a structured result shows a fact when one object holds the entity's slug and the fact's value together. Protocol 1 gives an add-on's and the bundle's price only in the rendered summary of the offer targeting it ("Add Daily backups to …, for 5 USD a month"), not as an attribute. So for prices only, and only on the offer targeting that add-on or bundle, the oracle also accepts ffb00260's existing rule: that offer's summary names "<price> USD" as a whole phrase. It's a pre-existing rule, adopted here after the first live preflight run found the miss (backend's step 7, ce11d26c). `v0` and `browser` find prices as attributes and page text;
   - **`v0`:** open every route in the SiteIndex, and read each graph;
   - **MCP and WebMCP:** call every query tool, and read the tool schemas;
   - **`browser`:** visit every page reachable from the start by links, and read each snapshot. This check reads text, so it's weaker: a fact passes only when its value appears in the same element as its label ("Pro" and "100 GB").
