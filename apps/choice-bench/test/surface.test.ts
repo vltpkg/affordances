@@ -547,3 +547,24 @@ test.skipIf(!build)(
   },
   600_000,
 )
+
+// the PLAN's budget (§4): one retry per trial, faults and crashes together. A spec that always faults gets two
+// attempts, then is missing, never imputed; two faults don't pass the pilot's pause
+test.skipIf(!build)(
+  'with the pilot’s cap of two attempts, a spec that always faults is tried twice, then reported missing',
+  async () => {
+    const at = path.join(dir, 'capped')
+    const s = spec('full', 'always-faults-capped')
+    const driver = answering5xxOnce(1, at, path.join(at, `${s.id}.state.json`), 99)
+    const r = await runSurfaceSpecs([s], () => driver, at, {
+      labBuild: build!,
+      port: PORT,
+      ports: [PORT],
+      pilot: true,
+      maxAttempts: 2,
+    })
+    expect(r).toEqual({ missing: [s.id], faults: 2, trialsRun: 2 })
+    expect(existsSync(path.join(at, `${s.id}.jsonl`))).toBe(false)
+  },
+  600_000,
+)

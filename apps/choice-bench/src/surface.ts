@@ -536,32 +536,61 @@ export const runSurfaceSpecs = async (
   specs: TrialSpec[],
   driverFor: (spec: TrialSpec) => Driver,
   dir: string,
-  options: SurfaceOptions & { pilot: boolean; maxFaults?: number },
+  options: SurfaceOptions & {
+    pilot: boolean
+    maxFaults?: number
+    // workers: one per port, taking the next spec from the one ordered queue (M5's concurrency 2)
+    ports?: number[]
+    // a cap on every spec's attempts, faults and CLI crashes together, counted from disk (the PLAN's one retry)
+    maxAttempts?: number
+  },
 ) => {
   const missing: string[] = []
   const trialsRun = () => specs.filter((s) => scored(dir, s.id)).length + faultsOf(dir).length
-  for (const s of specs) {
-    if (scored(dir, s.id)) continue
+  // a spec's attempts so far, from disk, so a resume counts the same: its faults and its CLI failures
+  const attemptsOf = (id: string) =>
+    faultsOf(dir).filter((f) => f.spec.id === id).length + priorFailures(dir, id)
+  const queue = specs.filter((s) => !scored(dir, s.id))
+  let stopped: Error | undefined
+  const runOne = async (s: TrialSpec, port: number) => {
     let faults = 0
     let crashes = 0
     for (;;) {
+      if (stopped) return
+      if (options.maxAttempts !== undefined && attemptsOf(s.id) >= options.maxAttempts) {
+        missing.push(s.id)
+        return
+      }
       let r: Awaited<ReturnType<typeof runSurfaceTrial>>
       try {
-        r = await runSurfaceTrial(s, driverFor(s), dir, options)
+        r = await runSurfaceTrial(s, driverFor(s), dir, { ...options, port })
       } catch (e) {
         if (e instanceof DriverFailure && e.kind !== 'auth' && crashes++ === 0) continue
         if (e instanceof DriverFailure && e.kind === 'auth')
           throw new SurfaceRunStopped(`an auth failure in ${s.id}: re-login is the human's`)
         throw e
       }
-      if (!('fault' in r)) break
+      if (!('fault' in r)) return
       const paused = faultPause(dir, trialsRun(), options.pilot)
       if (paused) throw new SurfaceRunStopped(paused)
-      if (++faults >= (options.maxFaults ?? 3)) {
+      if (options.maxAttempts === undefined && ++faults >= (options.maxFaults ?? 3)) {
         missing.push(s.id)
-        break
+        return
       }
     }
   }
+  const ports = options.ports ?? [options.port]
+  await Promise.all(
+    ports.map(async (port) => {
+      for (let s = queue.shift(); s && !stopped; s = queue.shift())
+        try {
+          await runOne(s, port)
+        } catch (e) {
+          // a pause or an auth failure stops every worker before its next spec
+          stopped ??= e as Error
+        }
+    }),
+  )
+  if (stopped) throw stopped
   return { missing, faults: faultsOf(dir).length, trialsRun: trialsRun() }
 }
