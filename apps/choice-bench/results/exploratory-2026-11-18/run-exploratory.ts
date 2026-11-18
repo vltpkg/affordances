@@ -30,6 +30,8 @@ export const FIXTURE = 'c81eeeb1a61e0330be34ce170169c8d9a77292cc'
 export const CALIBRATION_LOADED = '7e6da386b85f5c05328e22194177d756289039bbace41281f3104135fedb5b35'
 // conditions.patch, committed beside this file
 export const PATCH = '983d94d39f8c97ab8c574a230c1d17ce93798c6a6adae50d73ddc2165c4102b7'
+// the patched copy's loaded-files digest (PLAN.md): pinned, so a copy left over from any other patch refuses
+export const PATCHED_LOADED = '99d61cd76b89163f79be3073e9faa1d4e0ff75eb7053f3fb2e1d0e2d1bd04d55'
 // the only files the patch may change: one modified, one added
 export const PATCHED = ['apps/choice-bench/src/conditions.ts', 'apps/choice-bench/src/offerset.ts']
 // the v2 canary baselines each model must match, by sha256: Sonnet's and Haiku's from calibration, and Opus's first,
@@ -167,6 +169,8 @@ const main = async () => {
       `the patched copy differs from the export in ${JSON.stringify(changed)}, not exactly the declared files`,
     )
   const patchedLoaded = loadedDigest(patched)
+  if (patchedLoaded !== PATCHED_LOADED)
+    refuse(`the patched copy's loaded files digest to ${patchedLoaded}, not ${PATCHED_LOADED}`)
 
   // the patched export's own modules
   const src = path.join(patched, 'apps', 'choice-bench', 'src')
@@ -218,9 +222,11 @@ const main = async () => {
     if (!out.startsWith(`${isolation.TRIALS_ROOT}${path.sep}`))
       refuse(`results go under ${isolation.TRIALS_ROOT}`)
     if (process.env.HOSTING_LAB_INSPECTOR !== undefined) refuse('HOSTING_LAB_INSPECTOR is set')
+    // every trial runs through claude -p (Codex is dropped this round): the Claude login gates the run, and both are
+    // recorded
     const logins = isolation.loginStatus()
     preflight.loginsBefore = logins
-    if (!(logins.claude && logins.codex)) refuse('a login is not valid')
+    if (!logins.claude) refuse('the Claude login is not valid')
     const leaks = isolation.contextLeaks(out)
     if (leaks.length) refuse(`the results root isn't isolated: ${leaks.join('; ')}`)
     // the existing v2 baselines, by sha256, and no re-baseline: a missing or different one refuses

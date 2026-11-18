@@ -40,14 +40,14 @@ Each is tested to differ from its source in scope alone (`apps/choice-bench/test
 - **The patch:** [`conditions.patch`](conditions.patch), sha256 `983d94d39f8c97ab8c574a230c1d17ce93798c6a6adae50d73ddc2165c4102b7`.
   - It changes exactly two files: `apps/choice-bench/src/conditions.ts` (each condition's `manipulates` declaration, the `Factor` type and the two new cells) and `apps/choice-bench/src/offerset.ts` (new: the offer-set check).
   - It's built from c81eeeb1's own `conditions.ts`, so none of the later runtime or fixture work (the effective input, the per-add-on charges) is in it.
-  - The patched export's loaded-files digest is `99d61cd76b89163f79be3073e9faa1d4e0ff75eb7053f3fb2e1d0e2d1bd04d55`.
-- **The runner:** [`run-exploratory.ts`](run-exploratory.ts), sha256 `f6c0b7ff0799064020b225e5c58099da27ca85ab0295d55be37431a888ed288e`.
+  - The patched export's loaded-files digest is `99d61cd76b89163f79be3073e9faa1d4e0ff75eb7053f3fb2e1d0e2d1bd04d55`. The runner pins it, so a copy left over from any other patch refuses.
+- **The runner:** [`run-exploratory.ts`](run-exploratory.ts), sha256 `5b811ca5b704d998950c1dc27d4b4a4dde1f1f515b1b6b7ad83e1ce7b219092e`.
   - It patches a copy of the export beside it, and re-checks that copy on every invocation.
   - Every trial is the patched export's own `runTrial`.
   - It refuses unless all of these hold:
     - the export is c81eeeb1, and digests to calibration's unpatched;
     - its own sha256 and the patch's are the ones above;
-    - the patched copy differs from the export in exactly the two declared files;
+    - the patched copy differs from the export in exactly the two declared files, and digests to the pinned value above;
     - the offer-set check and both equalities below pass;
     - each model's v2 baseline has the sha256 below.
 - **The launcher:** [`launch.sh`](launch.sh). It checks the runner and patch copies beside the export byte for byte against these files, and reads the runner's sha256 from this plan's runner line. It records the gate in `launch-<n>.json`.
@@ -83,7 +83,7 @@ Each run's canary must match its baseline (0 written, 0 different), or the run d
 - **Caps, concurrency and isolation:** the confirmatory run's.
   - 30 tool calls, 40 turns, 10 minutes and 150,000 tokens per trial; concurrency 2.
   - Real config directories, and the watched-global-config stop.
-  - Logins checked before and after, the credential scan and the email scan.
+  - Logins checked before and after: the Claude login gates the run, since every trial is `claude -p`, and both are recorded. Then the credential scan and the email scan.
 - **The gate:** a 1-minute load under 32 at start, recorded in `launch-<n>.json`. Load is recorded per trial.
 
 ## Stopping and re-runs
@@ -114,6 +114,7 @@ The confirmatory operating rules apply:
   - There are no p-values, no Holm correction and no pooling across models.
 - **The code:** [`analyze_exploratory.py`](analyze_exploratory.py), committed with this plan, before any outcome is read.
   - It imports Newcombe's interval from the confirmatory `analyze.py` (d699a0d4), and the trial reader and coding from `audit/code.py` (aa8071b0), both unchanged.
+  - **Intent to treat:** it enumerates every expected spec id per cell (50, or 25 for Opus, and 114 per confirmatory cell). A missing or incomplete trace stays in its cell's denominator as failed and not optimal, and each cell's failed count is reported.
   - Its self-test is `python3 -I analyze_exploratory.py --selftest`.
 
 ## After the run

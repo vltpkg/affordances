@@ -39,23 +39,36 @@ CONTRASTS = [
 ]
 
 
+# every expected spec, per run and cell, as the runners name them: intent to treat. A spec with no complete trace (no
+# end or metrics line, or no file) is in its cell's denominator as failed, never left out, as the confirmatory
+# analyze.py's load_rows does
+EXPECTED = {
+    'expl': [('C-full-scope', SONNET, 50), ('C-full-scope', HAIKU, 50), ('A-scope', SONNET, 50), ('A-scope', HAIKU, 50),
+             ('A', OPUS, 25), ('C-full-scope', OPUS, 25)],
+    'conf': [(c, m, 114) for m in (SONNET, HAIKU) for c in ('A', 'C', 'S')],
+}
+
+
+def spec_id(run, condition, model, index):
+    raw = f"{run}-{condition}-T6-{model}-{index}"
+    return ''.join(ch if ch.isalnum() or ch in '_.-' else '_' for ch in raw)
+
+
 def rows_of(trace_dir, run):
     rows = []
-    for f in sorted(glob.glob(os.path.join(trace_dir, '*.jsonl'))):
-        name = os.path.basename(f)
-        if not (name.startswith('expl-') or name.startswith('conf-')):
-            continue
-        lines = [json.loads(l) for l in open(f) if l.strip()]
-        if not any(l.get('kind') == 'metrics' for l in lines):
-            continue
-        t0 = lines[0]
-        t = audit.trial_of(lines)
-        category, _ = audit.code(t)
-        rows.append({
-            'run': run, 'condition': t0['condition'], 'model': t0['model']['requested'],
-            'optimal': t['optimal'], 'textOptimal': t['optimal'] or category == 'b',
-            'sawAllowance': t['proAllowanceBeforeFirstRequest'],
-        })
+    for condition, model, n in EXPECTED[run]:
+        for i in range(n):
+            f = os.path.join(trace_dir, spec_id(run, condition, model, i) + '.jsonl')
+            row = {'run': run, 'condition': condition, 'model': model, 'optimal': False, 'textOptimal': False,
+                   'sawAllowance': False, 'failed': True}
+            if os.path.exists(f):
+                lines = [json.loads(l) for l in open(f) if l.strip()]
+                if any(l.get('kind') == 'end' for l in lines) and any(l.get('kind') == 'metrics' for l in lines):
+                    t = audit.trial_of(lines)
+                    category, _ = audit.code(t)
+                    row.update(optimal=t['optimal'], textOptimal=t['optimal'] or category == 'b',
+                               sawAllowance=t['proAllowanceBeforeFirstRequest'], failed=False)
+            rows.append(row)
     return rows
 
 
@@ -82,6 +95,7 @@ def analyze_all(rows):
         g = cell(rows, run, condition, model)
         out['cells'][f'{run} {condition} {model}'] = {
             'optimal': frac(g, 'optimal'), 'textOptimal': frac(g, 'textOptimal'), 'sawAllowance': frac(g, 'sawAllowance'),
+            'failed': sum(r.get('failed', False) for r in g),
         }
     for label, (tr, tc), (cr, cc), models in CONTRASTS:
         out['contrasts'][label] = {
@@ -110,6 +124,25 @@ def selftest():
     # a contrast with an empty cell gives None, never a number
     assert out['contrasts'][CONTRASTS[0][0]][HAIKU]['optimal'] is None
     assert 'p' not in json.dumps(out['contrasts']).replace('"', ' ').split()
+    # intent to treat: a trace dir with one complete trace and the rest missing keeps every denominator, all failed
+    import tempfile
+    with tempfile.TemporaryDirectory(dir=HERE) as d:
+        sid = spec_id('expl', 'C-full-scope', SONNET, 0)
+        with open(os.path.join(d, sid + '.jsonl'), 'w') as f:
+            for line in [{'kind': 'trial', 'condition': 'C-full-scope', 'model': {'requested': SONNET}},
+                         {'kind': 'call', 'tool': 'project', 'input': {}, 'response': '{}'},
+                         {'kind': 'end', 'finalText': ''}, {'kind': 'metrics', 'optimal': True, 'choice': 'pro+extra-bandwidth'}]:
+                f.write(json.dumps(line) + '\n')
+        # a metric-less trace counts as failed too
+        with open(os.path.join(d, spec_id('expl', 'C-full-scope', SONNET, 1) + '.jsonl'), 'w') as f:
+            f.write(json.dumps({'kind': 'trial'}) + '\n')
+        rows = rows_of(d, 'expl')
+        assert len(rows) == 250
+        c = analyze_all(rows)['cells']['expl C-full-scope claude-sonnet-5-5']
+        assert c['optimal'] == '1/50' and c['failed'] == 49, c
+        assert analyze_all(rows)['cells']['expl A claude-opus-5-5']['optimal'] == '0/25'
+    assert spec_id('conf', 'A', SONNET, 0) == 'conf-A-T6-claude-sonnet-5-5-0'
+    assert spec_id('expl', 'C-full-scope', OPUS, 3) == 'expl-C-full-scope-T6-claude-opus-5-5-3'
     print('selftest ok')
 
 
