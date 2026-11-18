@@ -1,6 +1,6 @@
 # RFC 0005: Compiling capabilities from a Next.js app
 
-**Status:** draft. **Builds on:** RFC 0001 (the IR), RFC 0002 (contextual projection). **Defers to RFC 0004:** the projection wire format.
+**Status:** accepted (2026-11-18); amended 2026-11-18: §1 (the namespace is an absolute URI and never inferred, `E_CAPABILITY_MANIFEST`, the authoring API's re-export `@affordances/next/author`, and `withAffordances`' manifest and projection options); §2.1 (only the slice runs, under a lint, not a sandbox, and capabilities resolve through renames, namespace imports and real tsconfigs); §2.2 and §3 (the diagnostics catalog as built, `W_TSCONFIG_UNREADABLE` and the codemod's placeholder ids); §4 (the files written, `capabilities.ts` included); §5 (the projection route's contract as built, its key and token store failing closed, and runtime as next's second optional peer); §7 (assumption 8 measured, with ids carved out). **Builds on:** RFC 0001 (the IR), RFC 0002 (contextual projection). **Defers to RFC 0004:** the projection wire format.
 
 ## Summary
 

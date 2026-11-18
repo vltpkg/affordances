@@ -1,6 +1,6 @@
 # RFC 0004: Protocol evolution
 
-**Status:** draft. **Builds on:** RFC 0001 (the IR), RFC 0002 (contextual projection), RFC 0003 (the benchmark's tools), RFC 0005 (Next.js compilation). **Settles:** the wire format RFC 0002 §10 and RFC 0005 §5 left open.
+**Status:** accepted (2026-11-18); amended 2026-11-18: §5 (WebMCP's confirmation fails closed, generic is its default, the per-capability option as built, a fixed list, with following the view not built, and the page's start); §4 (an MCP server over any adapter, protocol 1 over fetch in the runtime's agent core, and a connection's start is the host's). **Builds on:** RFC 0001 (the IR), RFC 0002 (contextual projection), RFC 0003 (the benchmark's tools), RFC 0005 (Next.js compilation). **Settles:** the wire format RFC 0002 §10 and RFC 0005 §5 left open.
 
 ## Summary
 
