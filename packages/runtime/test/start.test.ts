@@ -13,3 +13,20 @@ test('a start round-trips: a resource as type:key, an id as it is, and nothing f
   expect(encodeStart(undefined)).toBeUndefined()
   for (const value of [undefined, '', 7, { type: 'x' }]) expect(decodeStart(value)).toBeUndefined()
 })
+
+// the input fields an offer id fixes, where the manifest says they go
+test('inputOf puts the target key at targetAt and each bound reference at its at, and nothing for a non-id', async () => {
+  const { inputOf } = await import('../src/offer-id.ts')
+  const plans = (await import('../../ir/fixtures/valid/plans.json', { with: { type: 'json' } }))
+    .default
+  const m = plans as never
+  expect(inputOf(m, 'hosting.plan.subscribe@hosting.plan:pro?project=p1')).toEqual({
+    planId: 'pro',
+    projectId: 'p1',
+  })
+  expect(inputOf(m, 'hosting.plan.subscribe@hosting.plan:pro')).toEqual({ planId: 'pro' })
+  // a capability that doesn't say where its target's key goes, an unknown one, and what isn't an id
+  expect(inputOf(m, 'hosting.plan.cancel@hosting.plan:pro')).toEqual({})
+  expect(inputOf(m, 'nothing.here@x:y')).toEqual({})
+  expect(inputOf(m, 'not an id')).toEqual({})
+})

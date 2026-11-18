@@ -1,7 +1,8 @@
 import * as lab from '@affordances/hosting-lab/trial'
 import { plans as catalog } from '@affordances/hosting-lab/catalog'
 import type { DriverResult } from './drivers/types.ts'
-import type { Intended } from './intended.ts'
+import { offerId } from '@affordances/runtime'
+import { capabilityOf, type Intended } from './intended.ts'
 import { askedToConfirm, responseOf } from './response.ts'
 import type { ServerRecord } from './server.ts'
 
@@ -51,8 +52,14 @@ export const computeMetrics = (
   const offerOf = (label: string) => {
     const [base] = label.split('+') as [string]
     return catalog.some((p) => p.slug === base)
-      ? `hosting.plan.subscribe@hosting.plan:${planId(base)}`
-      : `hosting.bundle.subscribe@hosting.bundle:${base}`
+      ? offerId({
+          capability: 'hosting.plan.subscribe',
+          target: { type: 'hosting.plan', key: planId(base) },
+        })
+      : offerId({
+          capability: 'hosting.bundle.subscribe',
+          target: { type: 'hosting.bundle', key: base },
+        })
   }
   const optimalOffers = truth.optimal.map(offerOf)
   const firstOptimum = calls.find((c) => optimalOffers.some((o) => c.response.includes(o)))?.call
@@ -62,7 +69,7 @@ export const computeMetrics = (
       .filter(
         (c) =>
           c.tool === 'inspect' &&
-          CHOICE.has(String((c.input as { offer?: string }).offer).split('@')[0]!),
+          CHOICE.has(capabilityOf(String((c.input as { offer?: string }).offer))),
       )
       .map((c) => (c.input as { offer: string }).offer),
   )

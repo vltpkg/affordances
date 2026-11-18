@@ -144,26 +144,9 @@ const parsed = (text: string) => {
 
 // the simulated person approves, as on every surface: in the app, on the review page of the refused call, and in the
 // same session, then back to the agent
-// what the runtime bound from the offer itself, for a call that named only its offer: the target's key under the field
-// its type names (hosting.plan's 'plan', hosting.addOn's 'addOn'), as every hosting-lab capability names its target in
-// its input, and the project from the offer's ?project=. The call's own input wins where it says more
-const bound = (offer: string) => {
-  const at = offer.indexOf('@')
-  if (at < 0) return {}
-  const [target = '', query = ''] = offer.slice(at + 1).split('?')
-  const colon = target.indexOf(':')
-  const type = target.slice(0, colon)
-  const out: Record<string, string> = {}
-  if (colon > 0) out[type.slice(type.lastIndexOf('.') + 1)] = target.slice(colon + 1)
-  const project = new URLSearchParams(query).get('project')
-  if (project) out.projectId = project
-  return out
-}
 const complete = async (call: number, offer: string, input: unknown) => {
-  const review = reviewUrl(offer, {
-    ...bound(offer),
-    ...(input && typeof input === 'object' ? input : {}),
-  })
+  // the review page's fields: what the offer id fixes, from the manifest, then the call's own input (reviewUrl)
+  const review = reviewUrl(offer, input)
   if (!review) return
   const tab = await context.newPage()
   try {

@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { canonicalJson } from '@affordances/ir'
+import { parseOfferId } from '@affordances/runtime'
 import { conditions } from './conditions.ts'
 import { askedToConfirm } from './response.ts'
 import type { ServerRecord } from './server.ts'
@@ -48,6 +49,11 @@ export const intendedEndState = async (recordPath: string) =>
 // a decision (intake, 2026-11-18): a connected component of the capabilities whose offers form a choice set, joined by
 // the manifest's alternativeTo relations, either way they're declared. Built from the condition's own manifest, with
 // nothing hard-coded. A capability in no decision (an add-on, a deploy) is outside them, and always applies
+// an offer's capability, as the agent sent it: the parsed id's, or for an id that isn't canonical, what precedes its
+// '@', so a trace scores what the agent named whatever form it took
+export const capabilityOf = (offer: string) =>
+  parseOfferId(offer)?.capability ?? offer.split('@')[0]!
+
 export const decisionsOf = (
   manifest: { relations?: readonly { type: string; from: string; to: string }[] },
   choiceSets: Iterable<string>,
@@ -116,7 +122,7 @@ const replayOnce = async (record: Base, given: (Request | CapabilityRequest)[]) 
   const replayed: Request[] = []
   const skipped: Request[] = []
   for (const r of requests) {
-    const decision = decisions.get(r.offer.split('@')[0]!)
+    const decision = decisions.get(capabilityOf(r.offer))
     if (decision && decided.has(decision)) {
       skipped.push(r)
       continue
@@ -182,9 +188,9 @@ const replayAll = async (
   // others left out. 'Corrected after discovery' reads these (metrics.ts)
   const alternatives: Intended['alternatives'] = []
   for (const s of first.skipped) {
-    const decision = first.decisions.get(s.offer.split('@')[0]!)
+    const decision = first.decisions.get(capabilityOf(s.offer))
     const variant = first.requests.filter(
-      (r) => r === s || first.decisions.get(r.offer.split('@')[0]!) !== decision,
+      (r) => r === s || first.decisions.get(capabilityOf(r.offer)) !== decision,
     )
     alternatives.push({ offer: s.offer, state: (await replayOnce(record, variant)).state })
   }

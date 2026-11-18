@@ -1,4 +1,4 @@
-import type { Principal } from '@affordances/runtime'
+import { inputOf, parseOfferId, type Principal } from '@affordances/runtime'
 import { runtime } from './runtime.ts'
 import { Refused } from './store.ts'
 
@@ -113,13 +113,17 @@ export const confirmReviewed = async (
  * person would in this app. Undefined for a capability with no review step.
  */
 export const reviewUrl = (offer: string, input: unknown): string | undefined => {
-  // an offer id starts with its capability id (RFC 0002 §4.1); a capability id alone is accepted too
-  const capability = offer.split('@')[0]
+  // the offer's capability (RFC 0002 §4.1); a capability id alone is an offer id too
+  const capability = parseOfferId(offer)?.capability
   const action = (Object.keys(REVIEWED) as ReviewedAction[]).find(
     (a) => REVIEWED[a].capability === capability,
   )
   if (!action) return undefined
-  const fields = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>
+  // the fields the offer id fixes, where the manifest says they go, then what the call's own input says
+  const fields = {
+    ...inputOf(runtime.manifest, offer),
+    ...(input && typeof input === 'object' ? input : {}),
+  } as Record<string, unknown>
   const params = new URLSearchParams({ action })
   for (const f of REVIEWED[action].fields)
     if (typeof fields[f] === 'string') params.set(f, fields[f] as string)

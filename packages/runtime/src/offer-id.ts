@@ -1,4 +1,4 @@
-import { Id } from '@affordances/ir'
+import { Id, putPointer, type CapabilityManifest } from '@affordances/ir'
 import type { OfferId, ResourceRef } from './types.ts'
 
 // RFC 0002 §4.1: the capability, then @ and the target's type and key, then the bound references in canonical
@@ -40,4 +40,20 @@ export const parseOfferId = (id: string): OfferParts | undefined => {
   }
   // canonical only: the same opportunity has one id
   return offerId(parts) === id ? parts : undefined
+}
+
+/**
+ * @experimental The input fields an offer id fixes for its capability, from the manifest: the target's key at the
+ * capability's `targetAt`, and each bound reference's key at its `at` (RFC 0001 §2.2). Nothing for an id that isn't
+ * one, or a capability that doesn't say where its keys go.
+ */
+export const inputOf = (manifest: CapabilityManifest, offer: string): Record<string, unknown> => {
+  const parts = parseOfferId(offer)
+  const c = parts && manifest.capabilities.find((x) => x.id === parts.capability)
+  const input: Record<string, unknown> = {}
+  if (!c) return input
+  if (c.targetAt !== undefined && parts.target) putPointer(input, c.targetAt, parts.target.key)
+  for (const r of c.references ?? [])
+    if (parts.with?.[r.name] !== undefined) putPointer(input, r.at, parts.with[r.name])
+  return input
 }
