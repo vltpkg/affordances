@@ -148,13 +148,18 @@ type ExecuteRequest = ViewRequest & {
 
 ## 5. WebMCP
 
-**Decision: one tool per capability the page's view offers, named by the capability id, registered and unregistered as the view changes.**
+**Decision: generic tools by default, as on MCP (§4). One tool per capability the page's view offers is an option: it's named by the capability id, and registered and unregistered as the view changes** (amended, intake, 2026-11-18; the per-capability details below apply to that option).
 
 - **The name:** WebMCP's rule is normative. `registerTool()` rejects a name that isn't 1-128 characters of `[A-Za-z0-9_.-]` (prior art §4.2). A capability id always passes, and an id that wouldn't is already invalid in the IR. So a capability's WebMCP tool name is its id, unchanged.
 - **One tool per capability, not per offer:** when a view has several offers of one capability (the plans of a choice set), it registers one tool, and the target goes in its input, as `targetAt` names it (RFC 0001 §2.2).
 - **Registration follows the view:** an offer that appears registers its capability's tool, and one that's removed unregisters it.
 - **Beside v0's tools:** v0's WebMCP tools are bare action names (repo audit §6). Version-1 names are dotted ids, so the two can't collide, and a page can serve both.
-- **Confirmation is the person's, through the browser.** On WebMCP the agent runs in the user's own browser, so nothing else stands between it and a resend. When `execute` is refused with `confirmation_required`, the page itself gets the person's consent to the rendered summary, charges included. It does that through the browser's own user-interaction mechanism (WebMCP's request for user interaction, from inside the tool's execution), and only then resends with `approval`. An agent's own resend is never consent, and the tool never returns the token to the agent.
+- **Confirmation fails closed** (amended, intake, 2026-11-18). The rule is unchanged: an agent's own resend is never consent, and no tool returns a token to the agent. What changed is the mechanism, since Chromium's WebMCP has no browser-mediated consent (`rfcs/research/0004-webmcp/SPIKE.md`).
+  - **A call that needs confirmation:** when `execute` is refused with `confirmation_required`, the tool returns only the refusal, through the same boundary every tool result passes (`toModel`), with no token and no way to approve. The person confirms in the app's own review-and-confirm step.
+  - **In-tool consent, only where the browser offers it:** when the tool's execution gets a client with `requestUserInteraction` (WebMCP's request for user interaction), the tool asks the person for consent to the rendered summary, charges included, through it, and only then resends with `approval`. That's feature-detected, and no current build has it.
+  - **The guarantee, exactly:** no tool channel ever yields an approval.
+  - **The limit, plainly:** an agent that also drives the page's DOM can click the app's own Confirm, as on any web app, and the protocol can't prevent that. The guarantee is about the tool channel, not about the page.
+- **The default mode is generic,** the four tools over the page's projection, with one tool per capability as an option. By M7d's criterion (`rfcs/research/0004-webmcp/CRITERION.md`), per-capability isn't lossless: a capability that requires confirmation isn't reachable as a tool without in-tool consent. M7f's pilot uses generic.
 
 ## 6. Measuring what each export loses
 

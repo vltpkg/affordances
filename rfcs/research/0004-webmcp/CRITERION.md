@@ -45,3 +45,12 @@ That's 4 × 3 = 12 cells. The capabilities are every capability in hosting-lab's
 - **Per cell:** the capabilities offered, and for each, conditions 1 to 4.
 - **The loss:** the count of capabilities that fail in some cell, with their names, cells and failed conditions.
 - **The default** this rule gives, and the measured commit.
+
+## The decision (intake, 2026-11-18 13:45Z)
+
+**Generic is WebMCP's default.**
+
+- **The reason, by the rule above:** per-capability isn't lossless. Condition 4 fails for every capability that requires confirmation, in every cell that offers it, because Chromium's WebMCP has no `requestUserInteraction` (SPIKE.md). There's no browser-mediated consent for a tool to ask from inside its execution.
+- **With consent failing closed,** such a tool returns the refusal and no approval, so those capabilities aren't reachable as tools.
+- **No measurement was needed to decide it:** the failure is by construction, wherever a consequential capability is offered.
+- **The loss table,** measured as M7c measured MCP, is still made for M7e's fidelity doc.
