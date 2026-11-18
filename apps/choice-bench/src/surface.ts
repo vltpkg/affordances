@@ -265,6 +265,49 @@ const emptyRecord = async (
   }
 }
 
+/**
+ * A surface trial's metrics line, from what its trace keeps: the server's record, the cross-checked end state, the
+ * replay records beside it, and the driver's counts. The run scores with it, and so does a re-score of a committed
+ * trace (src/rescore.ts, intake's standing check), so the two can't drift.
+ */
+export const scoreSurfaceTrial = async (t: {
+  surface: Surface
+  task: string
+  index: number
+  record: SurfaceServerRecord | V0Record | BrowserRecord | McpRecord | WebMcpRecord
+  endState: lab.EndState
+  replayFile: string
+  confirmFile: string
+  tokens: number
+  durationMs: number
+  end: EndReason
+}) => {
+  const task = lab.tasks.find((x) => x.id === t.task)!
+  const intended = await intendedEndState(t.replayFile)
+  let browserMetrics: { browsingLoad: boolean; optimalConfirmLoad: boolean } | undefined
+  if (t.surface.kind === 'browser') {
+    const alternate = await intendedEndState(t.confirmFile)
+    browserMetrics = {
+      browsingLoad: browsingLoad(t.record as BrowserRecord),
+      optimalConfirmLoad:
+        !!alternate.state && lab.groundTruth(task).optimal.includes(lab.label(alternate.state)),
+    }
+  }
+  // completed, from the store: the session's cross-checked end state against the trial's own start (purchaseMade)
+  const start = await (await setupTrial(surfaces.full.condition!, t.index, t.task)).endState()
+  const facts: SurfaceFacts = {
+    ...(await factsOf(t.surface, t.task, t.record, t.endState)),
+    completed: purchaseMade(start, t.endState),
+  }
+  return {
+    ...surfaceMetrics(facts, intended, { tokens: t.tokens, durationMs: t.durationMs }, t.end),
+    ...browserMetrics,
+    ...(t.surface.kind === 'mcp' && {
+      elicitationDeclared: declaresElicitation(t.record as McpRecord),
+    }),
+  }
+}
+
 export const runSurfaceTrial = async (
   spec: TrialSpec,
   driver: Driver,
@@ -461,29 +504,21 @@ export const runSurfaceTrial = async (
             : record,
     ),
   )
-  const intended = await intendedEndState(replayFile)
   // the browser's alternate request event (§5), for the pilot's browsing rule: the confirm click with the review-page
   // load just before it, replayed the same way
-  let browserMetrics: { browsingLoad: boolean; optimalConfirmLoad: boolean } | undefined
-  if (surface.kind === 'browser') {
-    const b = record as BrowserRecord
-    const confirmFile = file('replay-confirm.json')
-    const confirmTrial: BrowserTrial = {
-      ...b,
-      condition: 'A',
-      index: spec.index,
-      task: spec.task,
-      project,
-      rule: 'confirm-load',
-    }
-    writeFileSync(confirmFile, JSON.stringify(confirmTrial))
-    const alternate = await intendedEndState(confirmFile)
-    browserMetrics = {
-      browsingLoad: browsingLoad(b),
-      optimalConfirmLoad:
-        !!alternate.state && lab.groundTruth(task).optimal.includes(lab.label(alternate.state)),
-    }
-  }
+  const confirmFile = file('replay-confirm.json')
+  if (surface.kind === 'browser')
+    writeFileSync(
+      confirmFile,
+      JSON.stringify({
+        ...(record as BrowserRecord),
+        condition: 'A',
+        index: spec.index,
+        task: spec.task,
+        project,
+        rule: 'confirm-load',
+      } satisfies BrowserTrial),
+    )
   const usage = result?.usage ?? { inputTokens: 0, outputTokens: 0 }
   // M5's count: input plus output, with cache writes as input and cache reads excluded
   const tokens = usage.inputTokens + usage.outputTokens + (usage.cacheWriteTokens ?? 0)
@@ -495,19 +530,18 @@ export const runSurfaceTrial = async (
     result?.stopped === 'turns' && 'turns',
   ].filter((x): x is string => typeof x === 'string')
   const end: EndReason = failed ? 'failed' : capHits.length ? 'capped' : 'final'
-  // completed, from the store: the session's cross-checked end state against the trial's own start (purchaseMade)
-  const start = await (await setupTrial(surfaces.full.condition!, spec.index, spec.task)).endState()
-  const facts: SurfaceFacts = {
-    ...(await factsOf(surface, spec.task, record, endState!)),
-    completed: purchaseMade(start, endState!),
-  }
-  const metrics = {
-    ...surfaceMetrics(facts, intended, { tokens, durationMs: result?.durationMs ?? 0 }, end),
-    ...browserMetrics,
-    ...(surface.kind === 'mcp' && {
-      elicitationDeclared: declaresElicitation(record as McpRecord),
-    }),
-  }
+  const metrics = await scoreSurfaceTrial({
+    surface,
+    task: spec.task,
+    index: spec.index,
+    record,
+    endState: endState!,
+    replayFile,
+    confirmFile,
+    tokens,
+    durationMs: result?.durationMs ?? 0,
+    end,
+  })
   // the driver's record of its calls against the server's: a mismatch marks the trial, as in M5
   const known =
     surface.kind === 'v0'
