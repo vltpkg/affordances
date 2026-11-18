@@ -424,12 +424,16 @@ export const claims = defineClaims({
     kind: 'benefit',
     statement: 'Includes instant rollback, so a bad deployment can be undone in seconds',
     applies: when.eq('target.rollback', true),
+    // what its statement relies on, kept for every member of any comparison it's shown with (RFC 0002 §6.6)
+    cites: ['rollback'],
   },
   bundleSaves: {
     subject: subscribeBundle,
     kind: 'estimate',
     statement: 'Saves 5 USD a month against Pro and Priority support bought separately',
     quantity: { value: 5, unit: 'USD per month' },
+    // a saving is a difference in price
+    cites: ['priceUsd'],
   },
 })
 

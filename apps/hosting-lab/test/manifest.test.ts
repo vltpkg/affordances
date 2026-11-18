@@ -15,9 +15,12 @@ import { manifest } from '../src/app/capabilities.ts'
 
 // the fixed option set every benchmark condition shares (roadmap M4a)
 
-// the benchmark's records pin this manifest by digest, so moving it into a capability module (RFC 0005 §1) must leave
-// it byte for byte as it was: this is the digest of src/manifest.ts at 8298a927, before the move
-const ON_RECORD = 'sha256-5wGv2c-mT5wJu9N542it5-327q9I3dVboRvAGUDucs4'
+// the manifest is pinned by digest, so any change to it is deliberate and named here.
+// - M5's: 'sha256-5wGv2c-mT5wJu9N542it5-327q9I3dVboRvAGUDucs4', the manifest of the c81eeeb1 era (calibration, the
+//   confirmatory and exploratory runs), unchanged by the move into a capability module (RFC 0005 §1, 4ee4e0cb)
+// - M7f's: the claims cite what their statements rely on (RFC 0002 §6.6, M7a). Only M7f's new export uses it, which
+//   names its own commit and is never pooled with c81eeeb1's
+const ON_RECORD = 'sha256-TdMAthJoydo0hSSNqNByr3W31-_HXXpO185qdNojN2s'
 
 test('the capability module gives the manifest on record, byte for byte', async () => {
   expect(await digest(manifest)).toBe(ON_RECORD)
