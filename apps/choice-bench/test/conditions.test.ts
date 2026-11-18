@@ -63,3 +63,42 @@ test('A starts from the user’s project, with no bind, and the bundle is in its
   expect(trial.request).toEqual({ start: trial.project, policy: 'exhaustive-claims-omitted' })
   expect(view.offers.some((o) => o.capability === BUNDLE)).toBe(true)
 })
+
+test('calibration is exactly §8’s 70: A, C and S on T6 and T7, and A on T3, for Sonnet and Haiku, five each', async () => {
+  const { calibrationPlan } = await import('../src/harness.ts')
+  const plan = calibrationPlan()
+  expect(plan.length).toBe(70)
+  expect(new Set(plan.map((t) => t.id)).size).toBe(70)
+  const cells = [...new Set(plan.map((t) => `${t.condition}${t.task} ${t.model}`))].toSorted()
+  expect(cells).toEqual(
+    ['claude-haiku-5-5', 'claude-sonnet-5-5']
+      .flatMap((m) => ['AT3', 'AT6', 'AT7', 'CT6', 'CT7', 'ST6', 'ST7'].map((c) => `${c} ${m}`))
+      .toSorted(),
+  )
+  expect(plan.every((t) => t.driver === 'claude-cli')).toBe(true)
+})
+
+// a condition's claims on a task, as its trial's manifest has them
+const claimsOf = async (id: keyof typeof conditions, task: string) => {
+  const trial = await setupTrial(conditions[id], 0, task)
+  return (trial.runtime.manifest.claims ?? []).map((c) => ({ id: c.id, applies: c.applies }))
+}
+
+test('on T6 and T7 the owner recommends Business, in every condition alike; T3 keeps Pro', async () => {
+  for (const task of ['T6', 'T7']) {
+    const a = await claimsOf('A', task)
+    expect(a).toContainEqual({
+      id: 'businessRecommended',
+      applies: { eq: [{ path: 'target.slug' }, { value: 'business' }] },
+    })
+    expect(a.some((c) => c.id === 'proRecommended')).toBe(false)
+    // the same claims in C and S, so only C showing them differs
+    expect(await claimsOf('C', task)).toEqual(a)
+    expect(await claimsOf('S', task)).toEqual(a)
+  }
+  expect((await claimsOf('A', 'T3')).some((c) => c.id === 'proRecommended')).toBe(true)
+  // and the edit changes the digest
+  const base = await digest(lab.manifest)
+  expect(await digest((await setupTrial(conditions.A, 0, 'T6')).runtime.manifest)).not.toBe(base)
+  expect(await digest((await setupTrial(conditions.A, 0, 'T3')).runtime.manifest)).toBe(base)
+})

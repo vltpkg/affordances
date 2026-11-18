@@ -8,7 +8,7 @@ import { claudeCli } from './drivers/claude-cli.ts'
 import { codexCli } from './drivers/codex-cli.ts'
 import { fakeDriver } from './drivers/fake.ts'
 import type { Driver } from './drivers/types.ts'
-import { pilotPlan, runTrial, type TrialSpec } from './harness.ts'
+import { calibrationPlan, pilotPlan, runTrial, type TrialSpec } from './harness.ts'
 import { type CanaryRecord, runCanary } from './canary.ts'
 import {
   configRoots,
@@ -26,6 +26,8 @@ import { type Failed, pilotReport, type Result } from './report.ts'
 //                                                 one trial, outside the pilot: a driver's smoke trial
 // node src/run.ts plan                            the pilot's 110 trials, listed, not run
 // node src/run.ts pilot <out dir>                 runs them, two at a time. Only in the planner's announced window
+// node src/run.ts canary <out dir>               calibration's preflight alone: logins, leaks, a canary per driver and model
+// node src/run.ts calibration <out dir>          calibration's 70 trials (RFC 0003 §8), on the planner's GO only
 const [mode, ...rest] = process.argv.slice(2)
 
 // the global config files a trial must never change: each one's mtime and size, as one string
@@ -119,7 +121,13 @@ const pool = async <T, R>(items: T[], width: number, f: (t: T) => Promise<R>) =>
 if (mode === 'plan') {
   const plan = pilotPlan()
   console.log(JSON.stringify({ trials: plan.length, plan }, null, 2))
-} else if (mode === 'dry' || mode === 'pilot' || mode === 'trial') {
+} else if (
+  mode === 'dry' ||
+  mode === 'pilot' ||
+  mode === 'trial' ||
+  mode === 'calibration' ||
+  mode === 'canary'
+) {
   const out = path.resolve(rest[mode === 'trial' ? 4 : 0] ?? 'results')
   mkdirSync(out, { recursive: true })
   const specs: TrialSpec[] =
@@ -143,7 +151,9 @@ if (mode === 'plan') {
               index: 0,
             },
           ]
-        : pilotPlan()
+        : mode === 'calibration' || mode === 'canary'
+          ? calibrationPlan()
+          : pilotPlan()
   const driverFor = (spec: TrialSpec): Driver =>
     spec.driver === 'fake'
       ? fakeDriver(spec.index, path.join(out, `${spec.id}.raw.json`))
@@ -236,6 +246,15 @@ if (mode === 'plan') {
       resolvedModel: trial.model.resolved,
     }
   }
+  // canary mode is the preflight alone: the logins, the leaks and every canary, recorded, then no trial (the planner)
+  if (mode === 'canary') {
+    writeFileSync(
+      path.join(out, 'preflight.json'),
+      JSON.stringify({ commit, logins: loginsBefore, canaries }, null, 2),
+    )
+    console.log(JSON.stringify({ commit, logins: loginsBefore, canaries }, null, 2))
+    process.exit(0)
+  }
   // a CLI that writes outside its own trial's key (a shared or global file) could reach other trials, so the run stops:
   // no further trial starts, and the ones not run are listed (the planner, 2026-11-18)
   const watchedBefore = real ? watchedGlobals() : ''
@@ -318,7 +337,7 @@ if (mode === 'plan') {
   }
 } else {
   console.error(
-    'usage: node src/run.ts dry <out> | trial <driver> <model> <condition> <task> <out> | plan | pilot <out>',
+    'usage: node src/run.ts dry <out> | trial <driver> <model> <condition> <task> <out> | plan | pilot <out> | canary <out> | calibration <out>',
   )
   process.exit(2)
 }

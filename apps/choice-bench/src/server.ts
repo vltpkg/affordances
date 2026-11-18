@@ -18,6 +18,7 @@ export type ServerRecord = {
   plans: readonly string[]
   project: string // the trial's project key, which offer ids carry
   manifestDigest: string
+  baseDigest?: string
   calls: ReturnType<typeof createTools>['calls']
   exposures: ReturnType<typeof createTools>['exposures']
   approvals: ReturnType<typeof createTools>['approvals']
@@ -33,9 +34,11 @@ const config = JSON.parse(readFileSync(process.argv[2]!, 'utf8')) as ServerConfi
 const condition = conditions[config.condition]
 const task = lab.tasks.find((t) => t.id === config.task)
 if (!task) throw new Error(`no task ${config.task}`)
-const trial = await setupTrial(condition, config.index)
+const trial = await setupTrial(condition, config.index, config.task)
 const tools = createTools(trial, condition, task)
 const manifestDigest = await digest(trial.runtime.manifest)
+// the unedited fixture's digest beside it, as F's and G's edits and T6's and T7's claim edit change it (RFC 0003 §9)
+const baseDigest = await digest(lab.manifest)
 let aborted: string | undefined
 
 const save = () => {
@@ -46,6 +49,7 @@ const save = () => {
     plans: trial.plans,
     project: trial.project.key,
     manifestDigest,
+    baseDigest,
     calls: tools.calls,
     exposures: tools.exposures,
     approvals: tools.approvals,

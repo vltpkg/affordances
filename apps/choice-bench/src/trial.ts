@@ -8,7 +8,7 @@ import {
   type ProjectionRequest,
   type Runtime,
 } from '@affordances/runtime'
-import type { Condition } from './conditions.ts'
+import { type Condition, TASK_EDITS } from './conditions.ts'
 
 // one trial's app: hosting-lab's store reset, its plan ids permuted, an account made up front, and a runtime over the
 // condition's manifest, handlers and policy (RFC 0003 §5.1). One process is one trial, so the store is the trial's
@@ -36,14 +36,21 @@ export type Trial = {
   request: Omit<ProjectionRequest, 'principal'>
 }
 
-export const setupTrial = async (condition: Condition, index: number): Promise<Trial> => {
+export const setupTrial = async (
+  condition: Condition,
+  index: number,
+  task?: string,
+): Promise<Trial> => {
   lab.reset()
   const plans = permutationFor(index)
   lab.setPlanIds(plans)
   const sid = `s_trial_${index}`
   // the account exists before the agent's first call: reads never make one
   const project = { type: 'hosting.project' as const, key: lab.account(sid).project.id }
-  const manifest = condition.edit ? condition.edit.apply(lab.manifest) : lab.manifest
+  // the task's edit first (T6 and T7's recommendation), then the condition's (F's and G's)
+  const taskEdit = task ? TASK_EDITS[task] : undefined
+  const base = taskEdit ? taskEdit.apply(lab.manifest) : lab.manifest
+  const manifest = condition.edit ? condition.edit.apply(base) : base
   const handlers = condition.handlers ? condition.handlers(lab.handlers) : lab.handlers
   const key = (await crypto.subtle.generateKey({ name: 'HMAC', hash: 'SHA-256' }, false, [
     'sign',

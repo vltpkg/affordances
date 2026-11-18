@@ -77,7 +77,7 @@ const keyOf = (r: Request) => canonicalJson({ offer: r.offer, input: r.input ?? 
 // one replay of requests on a fresh store: within a decision, the first that applies wins and a later one is skipped
 const replayOnce = async (record: ServerRecord, requests: Request[]) => {
   const condition = conditions[record.condition]
-  const trial = await setupTrial(condition, record.index)
+  const trial = await setupTrial(condition, record.index, record.task)
   // the fresh account's project key stands in for the trial's in every offer id and input
   const rekey = <T>(v: T): T =>
     JSON.parse(JSON.stringify(v).replaceAll(record.project, trial.project.key)) as T

@@ -130,7 +130,7 @@ export const runTrial = async (spec: TrialSpec, driver: Driver, dir: string) => 
       caps: { ...CAPS, tokensCount: 'input + output + cache writes; cache reads excluded' },
       plans: record.plans,
       startedAt,
-      fixture: { manifestDigest: record.manifestDigest, policy },
+      fixture: { manifestDigest: record.manifestDigest, baseDigest: record.baseDigest, policy },
       prompt,
     },
     ...record.calls.map((c) => ({ kind: 'call', ...c })),
@@ -206,6 +206,25 @@ export const pilotPlan = (codexModel = PILOT_MODELS.codex): TrialSpec[] => {
       ...c,
       index,
       id: `${c.condition}-${c.task}-${c.model}-${index}`.replace(/[^\w.-]/g, '_'),
+    })),
+  )
+}
+
+// calibration (RFC 0003 §8, intake 2026-11-18): A, C and S × Sonnet and Haiku × T6 and T7 × 5, and A on T3 × the two
+// models × 5. 70 trials. The primary task is chosen from A's optimal rate alone (§8's rule), never from C or S
+export const calibrationPlan = (): TrialSpec[] => {
+  const cells: { condition: ConditionId; task: string; model: string; driver: string }[] = []
+  for (const model of [PILOT_MODELS.sonnet, PILOT_MODELS.haiku]) {
+    for (const task of ['T6', 'T7'])
+      for (const condition of ['A', 'C', 'S'] as const)
+        cells.push({ condition, task, model, driver: 'claude-cli' })
+    cells.push({ condition: 'A', task: 'T3', model, driver: 'claude-cli' })
+  }
+  return cells.flatMap((c) =>
+    Array.from({ length: 5 }, (_, index) => ({
+      ...c,
+      index,
+      id: `cal-${c.condition}-${c.task}-${c.model}-${index}`.replace(/[^\w.-]/g, '_'),
     })),
   )
 }
