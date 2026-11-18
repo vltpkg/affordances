@@ -180,3 +180,28 @@ test("the page's view request rides on every call: its policy on view, inspect a
   expect(s.calls[1]!.url).toContain('policy=exhaustive')
   expect(s.calls[2]!.body?.policy).toBe('exhaustive')
 })
+
+test("the page's start is the first view's when the agent names none, and the agent's own start wins", async () => {
+  const context = fakeContext()
+  const s = server()
+  registerWebMcp({
+    base: '/api/projection',
+    ask: yes,
+    context,
+    fetcher: s.fetcher,
+    start: { type: 'hosting.project', key: 'proj_1' },
+  })
+  const project = context.tools.find((t) => t.name === 'project')!
+  await project.execute({})
+  await project.execute({ start: { type: 'hosting.plan', key: 'p2' } })
+  expect(s.calls.map((c) => c.url)).toEqual([
+    '/api/projection/view?start=hosting.project%3Aproj_1',
+    '/api/projection/view?start=hosting.plan%3Ap2',
+  ])
+  // without one, today's site-wide view
+  const bare = fakeContext()
+  const s2 = server()
+  registerWebMcp({ base: '/api/projection', ask: yes, context: bare, fetcher: s2.fetcher })
+  await bare.tools.find((t) => t.name === 'project')!.execute({})
+  expect(s2.calls[0]!.url).toBe('/api/projection/view')
+})

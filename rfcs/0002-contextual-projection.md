@@ -150,6 +150,8 @@ The application registers how the runtime learns what it needs:
   - **Not supplied against null:** a declared attribute the resolver leaves out (no key) is not supplied, which RFC 0001 §3.1 evaluates as `missing`, so `unknown`. A key present with `null` is `absent`. The same holds for `Principal.attributes`. A resolver that can't read an attribute leaves it out; one that knows there's no value says `null`. Inside a value supplied whole (an attribute's own attributes, array elements, the input), an omitted key is `absent` (RFC 0001 §3.1). It returns `null` when the instance doesn't exist **or the principal may not see it**. The runtime can't tell those apart, and doesn't need to.
 - **`resources[type].list(principal, scope)`** enumerates instances for a choice set or a containment: every plan, or a cart's items (§5).
 
+**A resolver MUST return `null` for a resource its principal can't read.** The runtime evaluates conditions on whatever a resolver returns, so a resolver that ignores the principal leaks condition values, for example through a start naming another user's resource (RFC 0004 §5). Read access is the resolver's to enforce, and the runtime doesn't (intake, 2026-11-18). The conformance kit tests it: `resolverConformance` (`@affordances/runtime`) takes the application's resolvers and two principals, each with the private resources it may read. For every one, its own principal's `load` returns it, the other principal's and an anonymous principal's `load` return `null`, and neither of their `list`s includes it.
+
 A resolver that throws makes the attributes it would have supplied `unknown`, never a guess. Conditions that read them evaluate to `unknown` (RFC 0001 §3.1), and the offer says so (§4.2).
 
 ## 3. Principal attributes (RFC 0001, open question 1)
@@ -450,7 +452,7 @@ That's enough for every benchmark condition (§6.1).
 
 - **Ruled out, for every policy:** uncounted or unreachable omission, and partial choice sets. Those are the strongest forms of obstruction and sneaking in the dark-patterns taxonomy (dark patterns §2, §9).
 - **Bounded, not ruled out:** one counted expansion of friction (condition E), and defaults (G). They stay expressible on purpose, so the benchmark can measure them.
-- **Outside the invariant: visibility.** The invariant holds over what the application's resolvers return. A resolver's `load` returning `null` for an instance, or its `list` leaving one out, is the application deciding what the principal may see, and the runtime can't check it. The conformance kit can't either: it's the application's own access policy.
+- **Outside the invariant: visibility.** The invariant holds over what the application's resolvers return. A resolver's `load` returning `null` for an instance, or its `list` leaving one out, is the application deciding what the principal may see, and the runtime can't check it. The conformance kit checks it against the application's own statement of who may read what: `resolverConformance` (§2.1). Which resources are private remains the application's policy, so a resource no principal lists isn't checked.
 
 **Tested by construction.** M3c's property tests generate manifests, principals and policies. For each, they check that the union of a view and its expansions equals the `exhaustive` projection's offers, and that every alternative of every shown offer is reachable in one expansion.
 

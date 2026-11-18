@@ -12,12 +12,19 @@ let registered = false
 // call that needs confirmation returns its refusal, and the person confirms on the review-and-confirm page
 const ask = async (summary: string) => window.confirm(`Approve this?\n\n${summary}`)
 
-export const WebMcp = () => {
+// start: the page's resource, the person's own project, as the first view's start (intake, 2026-11-18). It's a view
+// parameter only: the route checks every offer and every call against the session's principal, whatever it names
+export const WebMcp = ({ start }: { start?: { type: string; key: string } }) => {
   useEffect(() => {
     if (registered) return
     registered = true
     // exhaustive: an agent in the browser is shown every offer the person may see, as protocol 1's full view is
-    registerWebMcp({ base: '/api/projection', ask, view: { policy: 'exhaustive' } })
-  }, [])
+    registerWebMcp({
+      base: '/api/projection',
+      ask,
+      view: { policy: 'exhaustive' },
+      ...(start && { start }),
+    })
+  }, [start])
   return null
 }

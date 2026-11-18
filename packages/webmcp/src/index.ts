@@ -71,6 +71,9 @@ export type WebMcpOptions = {
   ask: AskPerson
   // the view request every call carries: the policy (the route's default without one)
   view?: ViewRequest
+  // the resource the page is about, as the projection's start when the agent's project names none (intake,
+  // 2026-11-18): a view parameter only, which grants nothing. Without it, the first view is site-wide
+  start?: ViewRequest['start']
   context?: ModelContext
   fetcher?: typeof fetch
 }
@@ -82,8 +85,10 @@ export type WebMcpOptions = {
 export const registerWebMcp = (options: WebMcpOptions): string[] => {
   const context = options.context ?? modelContext()
   if (!context) return []
+  // the page's start rides in the view request, where the adapter keeps it for any project() that names none
+  const view = { ...options.view, ...(options.start !== undefined && { start: options.start }) }
   const toolset = createToolset({
-    adapter: httpAdapter(options.base, options.fetcher, options.view),
+    adapter: httpAdapter(options.base, options.fetcher, view),
     mode: options.mode ?? 'generic',
     ...(options.manifest && { manifest: options.manifest }),
   })

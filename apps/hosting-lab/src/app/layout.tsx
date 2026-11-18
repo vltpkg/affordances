@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { fontVariables } from '@affordances/ui/lib/fonts'
 import '@affordances/ui/globals.css'
 import { WebMcp } from '@/components/webmcp'
+import { currentAccount } from '@/lib/view'
 
 export const metadata: Metadata = {
   title: { default: 'Hosting Lab', template: '%s · Hosting Lab' },
@@ -17,30 +18,34 @@ const nav = [
   { href: '/deployments', label: 'Deployments' },
 ]
 
-const RootLayout = ({ children }: LayoutProps<'/'>) => (
-  <html lang="en" className={`${fontVariables} h-full antialiased`}>
-    <body className="text-body flex min-h-full flex-col">
-      <header className="border-b">
-        <div className="mx-auto flex w-full max-w-4xl items-center gap-6 px-4 py-3 sm:px-6">
-          <Link href="/" className="font-medium">
-            Hosting Lab
-          </Link>
-          <nav aria-label="Main" className="flex gap-4 text-sm text-muted-foreground">
-            {nav.map((item) => (
-              <Link key={item.href} href={item.href} className="hover:text-foreground">
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-        </div>
-      </header>
-      <main className="mx-auto w-full max-w-4xl flex-1 px-4 pt-6 pb-20 sm:px-6">{children}</main>
-      <WebMcp />
-      <footer className="border-t px-4 py-4 text-center text-xs text-muted-foreground">
-        A fictional provider with invented prices. Nothing is charged.
-      </footer>
-    </body>
-  </html>
-)
+const RootLayout = async ({ children }: LayoutProps<'/'>) => {
+  // the person's own project, every page's resource: WebMCP's first view starts from it, as full's does
+  const { project } = await currentAccount()
+  return (
+    <html lang="en" className={`${fontVariables} h-full antialiased`}>
+      <body className="text-body flex min-h-full flex-col">
+        <header className="border-b">
+          <div className="mx-auto flex w-full max-w-4xl items-center gap-6 px-4 py-3 sm:px-6">
+            <Link href="/" className="font-medium">
+              Hosting Lab
+            </Link>
+            <nav aria-label="Main" className="flex gap-4 text-sm text-muted-foreground">
+              {nav.map((item) => (
+                <Link key={item.href} href={item.href} className="hover:text-foreground">
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+          </div>
+        </header>
+        <main className="mx-auto w-full max-w-4xl flex-1 px-4 pt-6 pb-20 sm:px-6">{children}</main>
+        <WebMcp start={{ type: 'hosting.project', key: project.id }} />
+        <footer className="border-t px-4 py-4 text-center text-xs text-muted-foreground">
+          A fictional provider with invented prices. Nothing is charged.
+        </footer>
+      </body>
+    </html>
+  )
+}
 
 export default RootLayout
