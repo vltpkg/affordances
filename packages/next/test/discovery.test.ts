@@ -89,6 +89,23 @@ describe('an app with capabilities', () => {
     expect(await signedIn.text()).toBe(compiled.canonical)
   })
 
+  // design's real path (M7b2): behind withAffordances' rewrite, the request keeps the url it was asked for, without
+  // API_PATH, as the index's does
+  test('the manifest is served at the url a rewrite delivers, unprefixed, as well as under the route’s own path', async () => {
+    const route = createRouteHandler({ manifest, compiled, visibility: 'public' })
+    const rewritten = await route(new Request(`${origin}${MANIFEST_PATH}`))
+    expect([rewritten.status, rewritten.headers.get('etag'), await rewritten.text()]).toEqual([
+      200,
+      '"sha256-abc"',
+      compiled.canonical,
+    ])
+    // and private answers it as any missing path, unprefixed too
+    const hidden = await createRouteHandler({ manifest, compiled, visibility: 'private' })(
+      new Request(`${origin}${MANIFEST_PATH}`),
+    )
+    expect(hidden.status).toBe(404)
+  })
+
   test('a base set for the route is the one the index names', async () => {
     const route = createRouteHandler({ manifest, compiled, base: '/v1' })
     expect(JSON.parse(await index(route)).capabilities.base).toBe('/v1')
