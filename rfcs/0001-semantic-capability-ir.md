@@ -792,7 +792,7 @@ type Claim = {
   statement: string // 'Includes automatic rollback'
   quantity?: { value: number; unit: string } // for estimates and measurable assessments
   applies?: Expr // when it holds; target.* paths only
-  cites?: string[] // proposed with RFC 0002 §6.6: the target attributes its statement relies on
+  cites?: string[] // with RFC 0002 §6.6: the target attributes its statement relies on
   provenance: Provenance // required: a claim is nothing without its source
   extensions?: Extensions
 }
@@ -811,7 +811,7 @@ type Claim = {
 
 **`applies` reads only the target.** Its paths use the `target` root: the subject resource, or the subject capability's target (`E_PATH` otherwise). A claim describes a definition to whoever reads it, so it can't depend on one caller's attributes or one call's input. A recommendation for one plan is a claim on the `subscribe` capability that applies to that plan.
 
-**`cites` names the facts a claim relies on** (proposed on 2026-11-18, with RFC 0002 §6.6, and not implemented).
+**`cites` names the facts a claim relies on** (added on 2026-11-18, with RFC 0002 §6.6; implemented in M7a, 900f4db4).
 
 - **What it holds:** declared attributes of the claim's target type, the same type `applies` reads as `target`. "1,000 GB of bandwidth and priority support included" cites `bandwidthGb` and `support`.
 - **What it does:** RFC 0002 §6.6 puts every cited attribute in a shown choice set's comparison, for every member, and never cuts it. So the fact the claim leans on is comparable across the choices, not only stated for the one it favors.
