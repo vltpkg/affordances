@@ -29,6 +29,11 @@ export type ProjectionRouteOptions<Session = unknown> = {
   // .affordances/manifest.json and .affordances/bindings.ts, as the app imports them
   manifest: unknown
   bindings: Record<string, ProjectionBinding>
+  /**
+   * @experimental The runtime's handlers, by capability id, used instead of those built from bindings: for an app that
+   * implements its capabilities for the runtime directly, rather than through bound v0 actions
+   */
+  handlers?: Record<string, Handler>
   resources: Record<string, ResourceResolver>
   // the caller, from the request's one credential (RFC 0004 §2.3)
   principal: (request: Request) => Principal | Promise<Principal>
@@ -215,7 +220,7 @@ export const createProjectionRoute = <Session = unknown>(
     const rt = createRuntime({
       manifest: options.manifest as never,
       resources: options.resources,
-      handlers: handlersOf(options.bindings),
+      handlers: options.handlers ?? handlersOf(options.bindings),
       approvalKeys: { current: key },
       seenTokens: options.seenTokens ?? { claim },
     })
@@ -230,6 +235,9 @@ export const createProjectionRoute = <Session = unknown>(
     const offers = p.offers === undefined || p.offers === '' ? undefined : Number(p.offers)
     if (offers !== undefined && !(Number.isInteger(offers) && offers > 0))
       return 'offers is a positive whole number'
+    // a start that isn't one is refused, never read as no start (hosting-lab's route, on moving here)
+    if (p.start !== undefined && (typeof p.start !== 'string' || !p.start))
+      return 'start is type:key, or a capability or resource type id'
     return {
       principal: await options.principal(request),
       start: startOf(p.start),

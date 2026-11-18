@@ -291,3 +291,16 @@ describe('POST {base}/check', () => {
     expect(calls.length).toBe(before)
   })
 })
+
+test('a start that isn’t type:key or an id is a 400, never read as no start', async () => {
+  for (const start of [7, '', { type: 'x' }])
+    expect(
+      (
+        await post('execute', {
+          offer: await offerOf(),
+          input: { slug: 'tee', quantity: 1 },
+          start,
+        })
+      ).status,
+    ).toBe(400)
+})
