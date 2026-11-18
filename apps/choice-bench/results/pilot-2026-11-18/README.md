@@ -42,7 +42,7 @@ A diagnostic `claude -p` call, configured exactly as a trial, was asked to quote
 - **What it received:** the seat's auto-memory index (`MEMORY.md`) and the memory-system instructions. It also got a git block: the branch, the git user, and the five latest commit subjects, which named the benchmark's harness.
 - **The user's email address,** which is also in its context.
 - **What it didn't receive:** any `CLAUDE.md`.
-- **Both outputs** are in `diagnostic/`: `in-repo.txt` and `control.txt`. They're redacted for the repo, with each redaction marked.
+- **Both outputs** are in `diagnostic/`: `in-repo.txt` and `control.txt`. They're redacted for the repo, with each redaction marked. The unredacted originals are kept off the repo, in the seat's on-disk export directory: `in-repo.txt` has sha256 `7668fc260d45126767724651ef31bddf67a9420d828060e4603031018d3195ed`, and `control.txt` has `4c79c95b091ea1b9d6f49fa4a2a8aa63f02cb8c8215f09969b82c9f5faca117f`.
 - **A control from an empty directory outside the repo** received only the memory instructions, with an empty memory directory: no index, no git block.
 
 The git block tells an agent it's in a benchmark, a demand characteristic. So the Claude cells are void, whether or not the effect is consistent across conditions. Codex loads `AGENTS.md`, and the repo has none, so its trials stand.
