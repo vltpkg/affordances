@@ -143,7 +143,8 @@ type ExecuteRequest = ViewRequest & {
 - **What's lost, by mode** (assumption 9, measured in §6):
   - **The per-capability mode** loses everything contextual: availability, conditions, claims, relations, choice sets, revisions, and per-principal scope. It loses reversibility beyond MCP's four booleans, and a financial effect's amount outside the confirmation summary.
   - **The generic mode** loses only MCP's own per-tool annotations. It carries everything else in views.
-- **Confirmation** works the same in both: `execute` returns `confirmation_required` with the summary and a token, and the client shows the person the summary before resending with `approval`. An MCP annotation never stands in for it (§7).
+- **Confirmation goes to the person, not the model.** When `execute` is refused with `confirmation_required`, the MCP server asks the person itself, through MCP's elicitation (`elicitation/create`): it shows the rendered summary, charges included, and asks for an answer. On an accept, the server runs the same call with the token. The model never holds the token, so it can't approve on the person's behalf. A client that doesn't support elicitation gets the refusal and the summary, but no token. Only the person's own client can approve, and the client must not resend on its own. An MCP annotation never stands in for any of this (§7).
+- **The per-capability mode's descriptions carry the charges.** A tool's annotations can't state a price, so a capability with a financial effect gets its confirmation summary's charges clause appended to its tool description. A client reading only the tool list then still sees what it charges.
 
 ## 5. WebMCP
 
@@ -153,6 +154,7 @@ type ExecuteRequest = ViewRequest & {
 - **One tool per capability, not per offer:** when a view has several offers of one capability (the plans of a choice set), it registers one tool, and the target goes in its input, as `targetAt` names it (RFC 0001 §2.2).
 - **Registration follows the view:** an offer that appears registers its capability's tool, and one that's removed unregisters it.
 - **Beside v0's tools:** v0's WebMCP tools are bare action names (repo audit §6). Version-1 names are dotted ids, so the two can't collide, and a page can serve both.
+- **Confirmation is the person's, through the browser.** On WebMCP the agent runs in the user's own browser, so nothing else stands between it and a resend. When `execute` is refused with `confirmation_required`, the page itself gets the person's consent to the rendered summary, charges included. It does that through the browser's own user-interaction mechanism (WebMCP's request for user interaction, from inside the tool's execution), and only then resends with `approval`. An agent's own resend is never consent, and the tool never returns the token to the agent.
 
 ## 6. Measuring what each export loses
 
@@ -171,6 +173,7 @@ Each reports the benchmark's metrics (RFC 0003 §6). A metric that moves between
 
 - **An offer is never authorization.** Every execution, over any transport, goes through the runtime's `execute`, which re-checks everything (RFC 0002 §8.1). A view, a tool list or an annotation grants nothing.
 - **What's approved is what runs.** The approval token is an HMAC over the offer, the effective input's digest (after schema defaults), the rendered summary (charges included), the subject, the offer revision, an expiry and a nonce (RFC 0002 §8.2). It's single use. A transport that alters any of those between approval and run gets a refusal, never a different run.
+- **Who approves is the client's duty.** The token guarantees that what's approved is what runs, and that it runs once. It can't guarantee that a person approved, since it returns to the caller that asked for it. That a person approved is the client's duty on each transport: MCP's elicitation (§4), the browser's user interaction on WebMCP (§5), and the human-facing client over HTTP (spec.md:155). It's not the runtime's.
 - **Annotations never skip confirmation.** `readOnlyHint`, `destructiveHint` and any other hint are derived from the manifest, and are advice. A capability that requires confirmation requires a token on every transport, whatever its annotations or claims say.
 - **v0's confirm is v0's.** A v0 `confirm: true` reaches the runtime only as `{ basis: 'v0-client-flag' }`, and is never an approval (RFC 0001 §12.1).
 
