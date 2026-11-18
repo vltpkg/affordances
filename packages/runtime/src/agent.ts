@@ -1,4 +1,4 @@
-import { canonicalJson, chargesOf, type CapabilityManifest } from '@affordances/ir'
+import { canonicalJson, chargesOf, localId, type CapabilityManifest } from '@affordances/ir'
 import { ALONG } from './along.ts'
 import { encodeStart } from './start.ts'
 import type { ExecutionResult, OfferDetails, ProjectionRequest, View } from './types.ts'
@@ -139,6 +139,52 @@ export const GENERIC_TOOLS: AgentTool[] = [
 ]
 
 type Capability = CapabilityManifest['capabilities'][number]
+
+/** @experimental What a tool does with one thing a capability declares. */
+export type Fate =
+  | 'carried' // in the tool as it is
+  | 'partial' // in the tool, reduced: a boolean annotation, or text in the description
+  | 'at-call' // not in the tool, but enforced when it's called: the runtime's checks and the person's confirmation
+  | 'lost' // nowhere an agent reading the tool list can see it
+
+/**
+ * @experimental What capabilityTool does with each thing a capability declares, kept beside it so the two change
+ * together: mcp-v1's lossReport reads it (RFC 0004 §6).
+ */
+export const capabilityToolFates = (m: CapabilityManifest, c: Capability): Record<string, Fate> => {
+  const effects = c.effects ?? []
+  const target = c.target ? m.resources.find((r) => r.id === c.target) : undefined
+  const out: Record<string, Fate> = {
+    id: 'carried',
+    description: 'carried',
+    kind: c.safe === true ? 'partial' : 'lost',
+  }
+  if (c.input) out.input = 'carried'
+  if (c.output) out.output = 'lost'
+  if (c.safe !== undefined) out.safe = 'partial'
+  if (c.idempotent !== undefined) out.idempotent = 'partial'
+  if (c.target) out.target = 'lost'
+  if (c.references?.length) out.references = 'lost'
+  if (c.preconditions?.length) out.preconditions = 'at-call'
+  if (c.authorization) out.authorization = 'at-call'
+  if (c.authorization?.conditions?.length) out['authorization.conditions'] = 'at-call'
+  if (c.confirmation) out.confirmation = 'at-call'
+  // reversibility beyond MCP's destructive boolean, and an external effect as open-world, are reduced
+  if (effects.some((e) => e.reversibility)) out['effects.reversibility'] = 'partial'
+  if (effects.some((e) => e.category === 'external')) out['effects.external'] = 'partial'
+  // a charge's amount: in the description as the summary's charges clause, unknown when it's read from the target
+  if (effects.some((e) => e.category === 'financial')) out['effects.financial'] = 'partial'
+  if (effects.some((e) => e.category === 'state')) out['effects.state'] = 'lost'
+  if ((m.claims ?? []).some((k) => localId(m, k.subject) === c.id)) out.claims = 'lost'
+  if ((m.relations ?? []).some((r) => localId(m, r.from) === c.id || localId(m, r.to) === c.id))
+    out.relations = 'lost'
+  // what a view says per caller and per instance: never in a tool list
+  if (target?.alternatives) out.choiceSet = 'lost'
+  out.availability = 'lost'
+  out.revision = 'lost'
+  out.relevance = 'lost'
+  return out
+}
 
 /** @experimental RFC 0004 §4's per-capability tool: its id, its description with its charges, its input, four hints. */
 export const capabilityTool = (c: Capability): AgentTool => {

@@ -12,7 +12,8 @@ import { describe, expect, test, vi } from 'vitest'
 import plansJson from '../../ir/fixtures/valid/plans.json' with { type: 'json' }
 import { resolverConformance } from '@affordances/runtime'
 import { createRuntimeAdapter } from '@affordances/runtime/agent-runtime'
-import { createMcpServer, exportable } from '../src/index.ts'
+import { exportable } from '@affordances/runtime/agent'
+import { createMcpServer } from '../src/index.ts'
 
 // M7c: RFC 0004 §4's MCP modes over the plans fixture. Generic tools carry the views exactly; confirmation goes to the
 // person by elicitation, with exactly the summary the token binds, and only an explicit accept runs it; the model

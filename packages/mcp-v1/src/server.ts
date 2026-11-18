@@ -1,13 +1,9 @@
 import type { CapabilityManifest } from '@affordances/ir'
-import type {
-  Handler,
-  Principal,
-  ProjectionRequest,
-  ResourceResolver,
-  TokenStore,
-} from '@affordances/runtime'
 import { createToolset, type AgentAdapter, type Confirm } from '@affordances/runtime/agent'
-import { createRuntimeAdapter } from '@affordances/runtime/agent-runtime'
+import {
+  createRuntimeAdapter,
+  type RuntimeAdapterOptions,
+} from '@affordances/runtime/agent-runtime'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 
@@ -16,26 +12,11 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 // only. Its tool list and calls map onto the toolset's, over an in-process runtime, and the person confirms through
 // MCP's elicitation
 
-export { capabilityTool, exportable, TOKEN, toModel } from '@affordances/runtime/agent'
-
-/** @experimental What createMcpServer takes: the app's manifest and resolvers, as a runtime does, for one principal. */
-export type McpServerOptions = {
-  manifest: CapabilityManifest
-  resources: Record<string, ResourceResolver>
-  handlers?: Record<string, Handler>
-  // the connection's caller: an MCP server serves one connection, so one principal
-  principal: Principal
-  // the projection request's other parts, the same on every call: a policy, a start, a task
-  request?: Omit<ProjectionRequest, 'principal'>
+/** @experimental What createMcpServer takes: the in-process adapter's options, for one principal, and MCP's own. */
+export type McpServerOptions = Omit<RuntimeAdapterOptions, 'caller'> & {
   mode?: 'generic' | 'per-capability'
-  // approval tokens (RFC 0002 §8.2): required unless NODE_ENV is development or test, as the projection route's are
-  approvalKey?: CryptoKey
-  seenTokens?: TokenStore
   // how long the person has to answer a confirmation before it counts as declined
   elicitTimeoutMs?: number
-  // the runtime's approval expiry and clock (RFC 0002 §8.2), passed through
-  approvalTtlMs?: number
-  now?: () => number
 }
 
 /**
@@ -53,13 +34,11 @@ export type McpAdapterOptions = {
 /** @experimental An MCP server for one connection over the app's capabilities (RFC 0004 §4). */
 export const createMcpServer = (options: McpServerOptions | McpAdapterOptions) => {
   const { mode, elicitTimeoutMs } = options
+  // the in-process adapter reads only its own options, so MCP's two pass through it unread
   const adapter =
     'adapter' in options
       ? options.adapter
-      : (() => {
-          const { mode: _m, elicitTimeoutMs: _e, ...rest } = options
-          return createRuntimeAdapter({ ...rest, caller: 'createMcpServer' })
-        })()
+      : createRuntimeAdapter({ ...options, caller: 'createMcpServer' })
   const toolset = createToolset({ adapter, mode, manifest: options.manifest })
   const server = new Server(
     { name: 'affordances-v1', version: '0.0.0' },

@@ -5,7 +5,8 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { ElicitRequestSchema, type ElicitResult } from '@modelcontextprotocol/sdk/types.js'
 import { afterEach, expect, test, vi } from 'vitest'
 import plansJson from '../../ir/fixtures/valid/plans.json' with { type: 'json' }
-import { createMcpServer, TOKEN, toModel } from '../src/index.ts'
+import { TOKEN, toModel } from '@affordances/runtime/agent'
+import { createMcpServer } from '../src/index.ts'
 
 // the planner (after review of 3a02e2c8): every tool result reaches the model through one boundary, and no result
 // carries an approval token, for every tool and mode and every outcome. A generated sweep, checked two ways: no
