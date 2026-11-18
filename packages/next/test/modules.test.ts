@@ -108,6 +108,27 @@ test('the environment, the network and the clock are E_CAPABILITY_AMBIENT; a loc
       .toSorted(),
   )
 
+  // the global object's aliases, and what's stable on one machine but not across them (review of 299c02d4)
+  expect(
+    codes(
+      'app/aliases/capabilities.ts',
+      [
+        'export const a = globalThis.process.platform',
+        'export const b = global.crypto',
+        'export const c = () => self.fetch',
+        'export const d = performance.now()',
+        'export const e = Intl.DateTimeFormat().resolvedOptions().timeZone',
+        'export const f = navigator.language',
+        'export const g = Number.MAX_SAFE_INTEGER + JSON.stringify([1]).length + Math.max(1, 2)',
+      ].join('\n'),
+    )
+      .map(([code, subject]) => `${code} ${subject}`)
+      .toSorted(),
+  ).toEqual(
+    ['globalThis', 'global', 'self', 'performance', 'Intl', 'navigator']
+      .map((s) => `E_CAPABILITY_AMBIENT ${s}`)
+      .toSorted(),
+  )
   // a module's own binding named like an ambient value is its own
   expect(
     codes(

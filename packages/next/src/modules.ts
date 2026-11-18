@@ -15,16 +15,34 @@ export const MODULE = 'capabilities.ts'
 const NOT_ERASABLE = ['capabilities.tsx', 'capabilities.js', 'capabilities.jsx', 'capabilities.mts']
 // the authoring API a module may import, besides the schema libraries
 const AUTHORING = ['@affordances/ir', '@affordances/next/author']
-// what a module may not read at all (RFC 0005 §1), with Math.random checked as a member
-const AMBIENT = new Set([
-  'require',
-  'process',
-  'Date',
-  'crypto',
-  'fetch',
-  'setTimeout',
-  'setInterval',
-  'setImmediate',
+// the globals a module may read: values that are the same on every machine and at every moment. Anything else free is
+// ambient (RFC 0005 §1): an allowlist, as the slice's, since a denylist let globalThis.process.platform and Intl's time
+// zone through (review of 299c02d4). Math is a value, but Math.random is checked as a member
+const VALUE_GLOBALS = new Set([
+  'undefined',
+  'NaN',
+  'Infinity',
+  'Number',
+  'String',
+  'Boolean',
+  'BigInt',
+  'Symbol',
+  'Array',
+  'Object',
+  'RegExp',
+  'JSON',
+  'Map',
+  'Set',
+  'WeakMap',
+  'WeakSet',
+  'Error',
+  'TypeError',
+  'RangeError',
+  'Math',
+  'parseInt',
+  'parseFloat',
+  'isNaN',
+  'isFinite',
 ])
 
 type Node = { type: string; start: number; end: number; [key: string]: unknown }
@@ -189,12 +207,25 @@ export const checkModule = (
     if ((d.type === 'FunctionDeclaration' || d.type === 'ClassDeclaration') && d.id)
       top.add((d.id as Node).name as string)
   }
+  // what in the module can read a value: not its imports, and not an export's specifiers, whose names are exported, not
+  // read; an export's own declaration, or its default expression, can
+  const readers = body.flatMap((n): Node[] =>
+    n.type === 'ImportDeclaration' || n.type === 'ExportAllDeclaration'
+      ? []
+      : n.type === 'ExportNamedDeclaration'
+        ? n.declaration
+          ? [n.declaration as Node]
+          : []
+        : n.type === 'ExportDefaultDeclaration'
+          ? [n.declaration as Node]
+          : [n],
+  )
   const { free, banned } = freeIdentifiers(
     {
       type: 'Program',
       start: 0,
       end: source.length,
-      body: body.filter((n) => n.type !== 'ImportDeclaration'),
+      body: readers,
     },
     [top],
   )
@@ -205,7 +236,7 @@ export const checkModule = (
     out.push({ code: 'E_CAPABILITY_AMBIENT', file: rel, line: lineOf(at), subject: what })
   }
   for (const b of banned) if (b === 'a dynamic import()') ambient('import()', 0)
-  for (const { name, node } of free) if (AMBIENT.has(name)) ambient(name, node.start)
+  for (const { name, node } of free) if (!VALUE_GLOBALS.has(name)) ambient(name, node.start)
   // Math.random, read as a member: Math itself is a value global
   const visitMath = (n: unknown): void => {
     if (!n || typeof n !== 'object') return
