@@ -25,3 +25,5 @@ coverage
 **/test/.probe-*/
 **/test/.v0-adapter-*/
 apps/example/scripts/v0-golden/out.json
+# Python's bytecode caches, written beside the analysis scripts they load
+__pycache__/
