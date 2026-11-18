@@ -45,7 +45,7 @@ Meanwhile a reference implementation exists: hosting-lab serves views, expansion
 | `SiteIndex` (`/.well-known/affordances.json`)                                                     | **stays, and gains one additive field,** `capabilities: { manifest, base }`, naming version 1's manifest and endpoints. v0 clients ignore it (spec.md:161) |
 | `expose`                                                                                          | **stays** for v0. Version 1 states authorization and confirmation per capability instead                                                                   |
 | `confirm: true`                                                                                   | **stays** for v0. Version 1 confirms with RFC 0002's single-use approval token. v0's flag is never accepted as an approval (RFC 0001 §12.1)                |
-| The error codes (spec.md:124-132)                                                                 | **stay,** and version 1 maps its refusal codes onto the same HTTP statuses (§2.3)                                                                          |
+| The error codes (spec.md:124-132)                                                                 | **stay,** for v0. Version 1 maps its refusal codes onto HTTP's own meanings, with 401 and 403 told apart (§2.3)                                            |
 | The v0 MCP tools `affordances_open` and `affordances_call`, and v0's WebMCP tools named by action | **stay,** for v0                                                                                                                                           |
 
 **Nothing goes.** Retiring any v0 concept is a later major version's decision, once version 1 has users.
@@ -98,16 +98,17 @@ type ExecuteRequest = ViewRequest & {
 - **Origin for cookies.** A POST the cookie authenticates must carry an `Origin` that matches the site, or it's refused with 403 (spec.md:154). A bearer call is exempt.
 - **No session from a read.** An agent-facing request with no credential is an anonymous principal. It's never given a session, and reading never creates state (M3's code review, findings 3 and 4).
 - **Caching.** Every response to a credentialed request, and every view, sends `Cache-Control: private, no-store` and `Vary: Authorization, Cookie`. Only the manifest is publicly cacheable.
-- **Statuses,** onto v0's:
+- **Statuses,** with HTTP's own meanings. Both `unauthorized` cases follow RFC 0001's authorization requirement against `principal.authenticated`. v0's responses keep v0's own mapping (spec.md:124-132), with its 401, since v0's wire stays additive (repo audit §6). The planner's ruling, 2026-11-18:
 
-  | Code                                             | Status                  |
-  | ------------------------------------------------ | ----------------------- |
-  | `not_found`                                      | 404                     |
-  | `unauthorized`                                   | 403                     |
-  | `invalid_input`                                  | 400                     |
-  | `precondition`, `stale`, `confirmation_required` | 409                     |
-  | `rate_limited`                                   | 429, with `Retry-After` |
-  | a handler failure                                | 500                     |
+  | Code                                                                                    | Status                                   |
+  | --------------------------------------------------------------------------------------- | ---------------------------------------- |
+  | `not_found`                                                                             | 404                                      |
+  | `unauthorized`, the principal isn't authenticated (no credential, or an invalid one)    | 401, with a `WWW-Authenticate` challenge |
+  | `unauthorized`, the principal is authenticated but lacks the capability's authorization | 403                                      |
+  | `invalid_input`                                                                         | 400                                      |
+  | `precondition`, `stale`, `confirmation_required`                                        | 409                                      |
+  | `rate_limited`                                                                          | 429, with `Retry-After`                  |
+  | a handler failure                                                                       | 500                                      |
 
   A refusal's body is the runtime's, in full: its code, condition, detail, issues and, for a confirmation, its summary and token.
 
@@ -180,14 +181,14 @@ Each reports the benchmark's metrics (RFC 0003 §6). A metric that moves between
 
 Each of the repo audit's constraints (§6), and how it holds:
 
-| Constraint                                                              | How it holds                                                                                 |
-| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| v0's wire documents validate, with `v: '0'`, and change only additively | v0's documents are untouched. `SiteIndex` gains one optional field                           |
-| v0's authoring API and files keep working                               | version 1 adds endpoints and tools. It changes no v0 API or file                             |
-| v0's identity, (route, name), is recoverable                            | through the `affordances/v0` binding (§8)                                                    |
-| `effects` keeps its v0 meaning                                          | version 1's consequences are the IR's `effects`, a different field in a different document   |
-| v0's check order and error codes stay                                   | version 1 runs RFC 0002's checks, which include v0's, and maps onto the same statuses (§2.3) |
-| `@affordances/md` needs no IR                                           | nothing here touches it                                                                      |
+| Constraint                                                              | How it holds                                                                                             |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| v0's wire documents validate, with `v: '0'`, and change only additively | v0's documents are untouched. `SiteIndex` gains one optional field                                       |
+| v0's authoring API and files keep working                               | version 1 adds endpoints and tools. It changes no v0 API or file                                         |
+| v0's identity, (route, name), is recoverable                            | through the `affordances/v0` binding (§8)                                                                |
+| `effects` keeps its v0 meaning                                          | version 1's consequences are the IR's `effects`, a different field in a different document               |
+| v0's check order and error codes stay                                   | v0's are untouched. Version 1 runs RFC 0002's checks, which include v0's, with its own status map (§2.3) |
+| `@affordances/md` needs no IR                                           | nothing here touches it                                                                                  |
 
 ## 10. Open questions
 
