@@ -54,7 +54,7 @@ What's needed is a build step that reads what's already written, asks for only w
     - an export beside a `defineManifest` export that the manifest doesn't hold, `E_CAPABILITY_MANIFEST`. The manifest's own parts may be exported beside it, since bound actions import them;
     - claims with no owner, `E_CLAIMS_NO_OWNER`.
   - **It reports, it doesn't throw:** `validate`'s issues are reported the same way.
-- **What they may import:** `@affordances/ir`, or its re-export `@affordances/next/author` (the authoring API apps import, under M6b's contract), a Standard Schema library, and other capability modules, nothing else. Type-only imports are erased, so they import nothing.
+- **What they may import:** `@affordances/ir`, or its re-export `@affordances/next/author` (the authoring API apps will import, under M6b's contract; not built yet, since it follows the inlined evaluator entry), a Standard Schema library, and other capability modules, nothing else. Type-only imports are erased, so they import nothing.
   - The compiler checks the import graph statically with oxc, which codegen already depends on, before it evaluates anything.
   - An import of application code is the error `E_CAPABILITY_IMPORT`, naming the import.
   - That keeps G2: building the manifest runs the capability modules alone (RFC 0001 §12.1), never the app.
