@@ -94,6 +94,7 @@ confirmation exactly, but not the ids themselves, which the developer chooses (R
   - manifest diffing across releases (RFC 0001 §6.2);
   - rate limiting, so `rate_limited` exists only in the types;
   - the v0 spec text for the site index's `capabilities` field.
+- **Protocol-1 request schemas:** v1's request bodies have no published schemas; the route validates by hand, and the generic tools' schemas are held to it by a test. Publishing them would add surface to a published package, which is a release decision.
 - **Two open optimizations,** recorded rather than changed (M8's simplification pass):
   - the stateless HTTP `inspect` and `expand` re-project on every call; offer-scoped inspection would avoid it;
   - a checked v0 call projects twice.
