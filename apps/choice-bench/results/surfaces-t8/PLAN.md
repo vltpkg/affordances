@@ -1,6 +1,6 @@
 # M8e: a deeper surface task, T8, the plan
 
-**Status:** DRAFT (design, 2026-11-18), for review and then intake. Nothing here runs until intake approves it, and it's committed before any trial. Its method is M7f's (`../surfaces/PLAN.md`) and RFC 0003's, as amended, with §16's lessons. Where this plan says nothing, M7f's plan holds.
+**Status:** accepted by intake, 2026-11-18 23:43Z, with its sizes: a pilot of 40 plus a margin of 20, and a confirmatory run of 400, conditional on the pilot passing the headroom gate and the no-request check, and only on intake's word once the pilot's integrity is cleared. Committed before any trial, with its analysis code (`analyze.py`, beside it). Its method is M7f's (`../surfaces/PLAN.md`) and RFC 0003's, as amended, with §16's lessons. Where this plan says nothing, M7f's plan holds.
 
 In the benchmark, token-passing stands in for the person's approval, as v0's confirm resend and the browser's click do; the product toolset never gives a model a token (RFC 0004 §4, §5).
 
@@ -81,7 +81,7 @@ Plus:
 - **The primary outcome:** the intended end state is optimal, on every contrast. Completed is beside it, by M7f's one store rule (`purchaseMade`).
 - **The fallback:** M7f's fallback check, applied as pre-registered there but **directional**, as its motivation is: it applies only if browser − full ≥ 0.40 on the unconfirmed-request rate (a request event but no completed purchase, over the trials run, pooled over both models per arm), compared exactly, as a fraction. A difference the other way never applies it. Then `full` against `browser` takes completed as its primary. The browsing-load rule (0.20) is M7f's, unchanged.
 - **The cost side and the descriptive measures:** as M7f's §5, with one addition: whether the deciding fact was seen before the first request event (`regionSeen`), by the parity walk's matcher, per surface, beside `proAllowanceSeen`. It's descriptive, and never conditioned on.
-- **The analysis code:** M7f's `analyze.py`, extended for T8 only where it must be (the task id, `regionSeen`, the directional fallback), with a selftest at exactly the threshold, and committed before the pilot.
+- **The analysis code:** `analyze.py`, beside this plan, committed with the plan's acceptance and before the pilot. It loads M7f's `../surfaces/analyze.py` from its file, unchanged, so M7f's records still reproduce from it, and changes only what this plan names: every trace must be T8's; `regionSeen` per cell; the directional fallback; and the headroom mode (§6), which prints only the two models' pooled rates and pass or fail. Its selftest checks the gate at its edges (2 and 18 of 20 pass, 1 and 19 fail) and the fallback at exactly the threshold, in both directions.
 
 ## 6. The pilot and its gates
 
