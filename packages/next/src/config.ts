@@ -85,7 +85,10 @@ export type AffordancesConfig = {
    * `declared`; without one, the compiler reports `W_NO_OWNER`.
    */
   owner?: { id: string; name: string }
-  /** @experimental Strict mode (RFC 0005 §3): `W_NO_ID`, `W_INPUT_OPAQUE` and `W_INPUT_LOSSY` become errors. */
+  /**
+   * @experimental Strict mode (RFC 0005 §3): `W_NO_ID`, `W_INPUT_OPAQUE`, `W_INPUT_LOSSY` and `W_TSCONFIG_UNREADABLE`
+   * become errors.
+   */
   strict?: boolean
   /**
    * @experimental Whether the capability manifest is public (RFC 0005 §1): listed in the index and served at
