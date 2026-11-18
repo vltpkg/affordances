@@ -553,7 +553,7 @@ type Comparison = {
 ```
 
 - **Every declared attribute is in it,** except the resource's key, which the member's offer id already carries:
-  - **declared means** a top-level property of the resource's `attributes` schema. The table holds only those keys, filtered from what the resolver returned, so a field the schema never declared never surfaces. The runtime doesn't validate values against the schema: that's the application's;
+  - **declared means** a top-level property of the resource's `attributes` schema. The table holds only those keys, filtered from what the resolver returned, so a field the schema never declared never surfaces. The runtime does check values against the schema, before it uses them: a resolver's attributes that aren't plain data fitting the resource's declared `attributes` are taken as none at all. The load counts as failed, as a resolver that throws does, so the instance is read as unknown, never a throw (`packages/runtime/src/data.ts`, `attributesFor`, used by `project.ts`'s load; a correction to what's built, 87667f5b);
   - **columns are top-level:** an object or array value is one cell, compared whole by RFC 8785 bytes, never flattened into paths;
   - **in `differ`:** an attribute on which the members differ, by RFC 8785 bytes, with one row per member;
   - **in `shared`:** an attribute every member supplied with the same value, stated once. Leaving it out would save little, and the agent couldn't tell "the same for every plan" from "not shown", though a requirement such as "instant rollback" can turn on exactly that;
