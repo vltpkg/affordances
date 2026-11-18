@@ -1,5 +1,6 @@
 import type { Principal } from '@affordances/runtime'
 import { runtime } from './runtime.ts'
+import { Refused } from './store.ts'
 
 // the review-and-confirm step of the purchase flow (M7f's plan, §3; intake, 2026-11-18): before a capability that
 // requires confirmation charges anything, the page shows the runtime's own confirmation summary, the same text the API
@@ -32,6 +33,8 @@ export type Review = {
   // reason, which is then given
   summary?: string
   refused?: string
+  // the runtime's refusal code, when it's refused
+  code?: string
 }
 
 // the runtime's check, without approval: a capability that requires confirmation refuses with its rendered summary,
@@ -55,7 +58,53 @@ export const review = async (
       checked.status === 'refused'
         ? (checked.condition?.description ?? checked.detail ?? checked.code)
         : 'This needs no confirmation',
+    ...(checked.status === 'refused' && { code: checked.code }),
   }
+}
+
+/**
+ * Why a Confirm didn't purchase, as the review page says it. The URL carries only one of these codes, never text, so
+ * no link can put its own words on the page; what's true now comes from a fresh review beside it.
+ */
+export const NOT_CONFIRMED = {
+  changed:
+    'What you reviewed has changed since, so nothing was charged. Here it is as it stands now.',
+  refused: "That can't be done any more, so nothing was charged.",
+} as const
+
+export type NotConfirmed = keyof typeof NOT_CONFIRMED
+
+export const isNotConfirmed = (code: unknown): code is NotConfirmed =>
+  typeof code === 'string' && Object.hasOwn(NOT_CONFIRMED, code)
+
+/**
+ * A Confirm, handled: the call is checked again first, and runs only if the summary is still the one the person
+ * approved. A refusal, the runtime's or the store's, is an answer for the page, never a thrown error and a 500.
+ */
+export const confirmReviewed = async (
+  principal: Principal,
+  action: ReviewedAction,
+  form: FormData,
+  run: (form: FormData) => Promise<unknown>,
+): Promise<'confirmed' | NotConfirmed> => {
+  const params = Object.fromEntries(
+    REVIEWED[action].fields.map((f) => [f, form.get(f)?.toString()]),
+  )
+  const now = await review(principal, action, params)
+  if (!now.summary) return 'refused'
+  if (now.summary !== form.get('seen')?.toString()) return 'changed'
+  // only the capability's own fields reach the action: the seen summary isn't its input
+  const input = new FormData()
+  for (const [k, v] of Object.entries(now.input)) input.set(k, v)
+  try {
+    await run(input)
+  } catch (error) {
+    // the store refuses a call the state no longer allows (src/lib/store.ts's Refused), as a second tab's stale
+    // Confirm finds; anything else is a real failure, and stays one
+    if (error instanceof Refused) return 'refused'
+    throw error
+  }
+  return 'confirmed'
 }
 
 /**

@@ -88,3 +88,29 @@ test("the inspector shows the projection's offers, their conditions and claims, 
     page.getByText('hosting.plan.subscribe@hosting.plan over hosting.plan'),
   ).toBeVisible()
 })
+
+test("a second tab's stale Confirm is answered on the page, with no 5xx and nothing charged twice", async ({
+  context,
+}) => {
+  // every response either tab gets: a refusal is an ordinary page, never a server error
+  const statuses: number[] = []
+  context.on('response', (r) => void statuses.push(r.status()))
+  const first = await context.newPage()
+  await first.goto('/plans')
+  await first.getByRole('button', { name: 'Move to Pro', exact: true }).click()
+  await expect(first.locator('[data-confirmation-summary]')).toContainText('USD a month')
+  // the second tab reviews the same purchase, on the same session
+  const second = await context.newPage()
+  await second.goto(first.url())
+  await expect(second.locator('[data-confirmation-summary]')).toContainText('USD a month')
+  await confirm(first)
+  await second.getByRole('button', { name: 'Confirm' }).click()
+  await expect(second.locator('[data-not-confirmed="refused"]')).toBeVisible()
+  await expect(second.getByRole('alert').first()).toContainText('nothing was charged')
+  expect(statuses.filter((s) => s >= 500)).toEqual([])
+  // charged once: the ledger holds one charge, Pro's first month
+  await second.goto('/')
+  const charges = second.getByRole('region', { name: 'Charges' }).getByRole('listitem')
+  await expect(charges).toHaveCount(1)
+  await expect(charges.first()).toContainText('$20')
+})

@@ -3,7 +3,13 @@ import { beforeEach, expect, test } from 'vitest'
 import { addOns, bundles } from '../src/catalog.ts'
 import { ConfirmationSummary } from '../src/components/confirmation.tsx'
 import { principalFor } from '../src/lib/resolvers.ts'
-import { REVIEWED, review, reviewUrl, type ReviewedAction } from '../src/lib/review.ts'
+import {
+  REVIEWED,
+  confirmReviewed,
+  review,
+  reviewUrl,
+  type ReviewedAction,
+} from '../src/lib/review.ts'
 import { runtime } from '../src/lib/runtime.ts'
 import * as store from '../src/lib/store.ts'
 
@@ -108,4 +114,93 @@ test("a refused call's review URL names its action and fields, from its offer id
   // every reviewed action is reachable from its capability
   for (const [action, spec] of Object.entries(REVIEWED))
     expect(reviewUrl(spec.capability, {})).toBe(`/review?action=${action}`)
+})
+
+// a Confirm, handled (the planner, 16:04Z): checked again, run only on the summary the person saw, and a refusal is an
+// answer for the page, never a throw
+const confirmForm = (fields: Record<string, string>, seen: string | undefined) => {
+  const form = new FormData()
+  for (const [k, v] of Object.entries(fields)) form.set(k, v)
+  if (seen !== undefined) form.set('seen', seen)
+  return form
+}
+const pro = () => store.currentPlans().find((p) => p.slug === 'pro')!
+const refuse = async () => {
+  throw new store.Refused('Pro is already the plan')
+}
+const fail = async () => {
+  throw new Error('the disk is full')
+}
+
+test('a Confirm on the summary shown runs the call, with only its own fields', async () => {
+  const { project } = store.account(sid)
+  const principal = principalFor(sid)
+  const fields = { plan: pro().id, projectId: project.id }
+  const { summary } = await review(principal, 'subscribe', fields)
+  const ran: Record<string, string>[] = []
+  const outcome = await confirmReviewed(
+    principal,
+    'subscribe',
+    confirmForm(fields, summary),
+    async (form) => {
+      ran.push(Object.fromEntries([...form.entries()].map(([k, v]) => [k, String(v)])))
+      store.subscribePlan(store.account(sid).id, project.id, pro().id)
+    },
+  )
+  expect(outcome).toBe('confirmed')
+  expect(ran).toEqual([fields])
+  expect(store.account(sid).project.plan).toBe('pro')
+})
+
+test("a second tab's stale Confirm is answered 'refused', with nothing charged twice and nothing thrown", async () => {
+  const { project } = store.account(sid)
+  const principal = principalFor(sid)
+  const fields = { plan: pro().id, projectId: project.id }
+  // both tabs reviewed the same summary; the first confirmed
+  const { summary } = await review(principal, 'subscribe', fields)
+  const subscribe = async () =>
+    void store.subscribePlan(store.account(sid).id, project.id, pro().id)
+  expect(
+    await confirmReviewed(principal, 'subscribe', confirmForm(fields, summary), subscribe),
+  ).toBe('confirmed')
+  const charges = store.account(sid).ledger.length
+  // the second: the runtime's check now refuses it, or the store does; either way an answer, never a throw
+  expect(
+    await confirmReviewed(principal, 'subscribe', confirmForm(fields, summary), subscribe),
+  ).toBe('refused')
+  expect(store.account(sid).ledger.length).toBe(charges)
+})
+
+test("a store refusal the runtime didn't foresee is answered 'refused', and any other error still throws", async () => {
+  const { project } = store.account(sid)
+  const principal = principalFor(sid)
+  const fields = { plan: pro().id, projectId: project.id }
+  const { summary } = await review(principal, 'subscribe', fields)
+  expect(await confirmReviewed(principal, 'subscribe', confirmForm(fields, summary), refuse)).toBe(
+    'refused',
+  )
+  await expect(
+    confirmReviewed(principal, 'subscribe', confirmForm(fields, summary), fail),
+  ).rejects.toThrow('the disk is full')
+})
+
+test("a summary that's changed since it was shown isn't run: the page shows the new one", async () => {
+  const { project } = store.account(sid)
+  const principal = principalFor(sid)
+  const fields = { plan: pro().id, projectId: project.id }
+  let ran = false
+  const run = async () => void (ran = true)
+  expect(
+    await confirmReviewed(
+      principal,
+      'subscribe',
+      confirmForm(fields, 'Move to Pro, for 1 USD'),
+      run,
+    ),
+  ).toBe('changed')
+  // no summary posted at all is a change too
+  expect(await confirmReviewed(principal, 'subscribe', confirmForm(fields, undefined), run)).toBe(
+    'changed',
+  )
+  expect(ran).toBe(false)
 })
