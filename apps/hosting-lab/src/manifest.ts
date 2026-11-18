@@ -247,26 +247,24 @@ export const subscribeBundle = defineCapability({
 
 // ---- add-ons ----
 
+// as subscribing does: the add-on is the target, so its offer carries its own attributes, name and price included,
+// and the project is a reference, bound from the start
 const withAddOn = z.object({ projectId: z.string(), addOn: z.string() })
 
 export const removeAddOn = defineCapability({
   id: 'hosting.addOn.remove',
   kind: 'action',
   description: 'Remove an add-on at the end of the month. Nothing already charged is refunded',
-  target: project,
+  target: addOn,
   input: withAddOn,
-  targetAt: 'projectId',
-  references: { addOn: { resource: addOn, at: 'addOn' } },
+  targetAt: 'addOn',
+  references: { project: { resource: project, at: 'projectId' } },
   principal: owner,
   idempotent: true,
-  authorization: {
-    principal: 'authenticated',
-    conditions: {
-      owns: when.eq('target.ownerId', when.path('principal.id')).because('You own the project'),
-    },
-  },
+  authorization: { principal: 'authenticated' },
   preconditions: {
-    has: when.in('addOn.slug', when.path('target.addOns')).because('The project has this add-on'),
+    owns: when.eq('project.ownerId', when.path('principal.id')).because('You own the project'),
+    has: when.in('target.slug', when.path('project.addOns')).because('The project has this add-on'),
   },
   effects: [
     {
@@ -284,21 +282,17 @@ export const addAddOn = defineCapability({
   kind: 'action',
   description:
     "Add an add-on to a project. Charges its price now, then every month until it's removed",
-  target: project,
+  target: addOn,
   input: withAddOn,
-  targetAt: 'projectId',
-  references: { addOn: { resource: addOn, at: 'addOn' } },
+  targetAt: 'addOn',
+  references: { project: { resource: project, at: 'projectId' } },
   principal: owner,
-  authorization: {
-    principal: 'authenticated',
-    conditions: {
-      owns: when.eq('target.ownerId', when.path('principal.id')).because('You own the project'),
-    },
-  },
-  confirmation: { summary: 'Add {addOn.name} to {target.id}, for {addOn.priceUsd} USD a month' },
+  authorization: { principal: 'authenticated' },
+  confirmation: { summary: 'Add {target.name} to {project.id}, for {target.priceUsd} USD a month' },
   preconditions: {
+    owns: when.eq('project.ownerId', when.path('principal.id')).because('You own the project'),
     notAdded: when
-      .not(when.in('addOn.slug', when.path('target.addOns')))
+      .not(when.in('target.slug', when.path('project.addOns')))
       .because("The project doesn't have it yet"),
   },
   effects: [
@@ -306,7 +300,7 @@ export const addAddOn = defineCapability({
       category: 'state',
       change: 'update',
       resource: project,
-      // what it establishes names the add-on, and an effect's expression reads only the target, so it isn't stated
+      // what it establishes is on the project, and an effect's expression reads only the target, so it isn't stated
       description: 'Adds the add-on to the project',
       reversibility: 'reversible',
     },
