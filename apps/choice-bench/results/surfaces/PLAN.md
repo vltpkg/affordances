@@ -137,6 +137,8 @@ Everything else is byte-identical across the six, and the preflight refuses a ru
 
 ## 7. Before any trial
 
+0. **The gate on backend's fixes** (intake, 2026-11-18): backend's M5 boundary-review fixes #7, #8, #9 and #15 are fixed and review-accepted. That's checked in this plan's final review, before any trial, the pilot included.
+
 1. **Committed first:** this plan in final form, the analysis code, and the preflight. The preflight proves the conditions differ ONLY in the surface (§2): byte-identity outside each surface's tool layer, plus the parity walk.
 2. **Agreed with backend (09:21Z):** the browser driver, the v0 tools, the parity oracle and the preflight's checks. Backend builds the drivers and the export after M6, the boundary fixes and M7a, in intake's order. The WebMCP driver is still to agree.
 3. **The new export,** with §6.6 built (M7a), named by its commit.
