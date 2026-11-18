@@ -15,6 +15,11 @@ export type Fate =
 type Capability = CapabilityManifest['capabilities'][number]
 type Row = { capability: string; exported: boolean; fields: Record<string, Fate> }
 
+// whether a Ref names this definition: its bare id, or this manifest's namespace#id (RFC 0001 §6.1), never a suffix
+// that merely ends the same way (review of 3a02e2c8)
+const names = (ref: string, id: string) =>
+  ref === id || (ref.slice(ref.lastIndexOf('#') + 1) === id && ref.includes('#'))
+
 // what one capability declares, and in the per-capability mode, its fate
 const fieldsOf = (m: CapabilityManifest, c: Capability): Record<string, Fate> => {
   const effects = c.effects ?? []
@@ -40,8 +45,8 @@ const fieldsOf = (m: CapabilityManifest, c: Capability): Record<string, Fate> =>
   // a charge's amount: in the description as the summary's charges clause, unknown when it's read from the target
   if (effects.some((e) => e.category === 'financial')) out['effects.financial'] = 'partial'
   if (effects.some((e) => e.category === 'state')) out['effects.state'] = 'lost'
-  if ((m.claims ?? []).some((k) => k.subject.endsWith(c.id))) out.claims = 'lost'
-  if ((m.relations ?? []).some((r) => r.from.endsWith(c.id) || r.to.endsWith(c.id)))
+  if ((m.claims ?? []).some((k) => names(k.subject, c.id))) out.claims = 'lost'
+  if ((m.relations ?? []).some((r) => names(r.from, c.id) || names(r.to, c.id)))
     out.relations = 'lost'
   // what a view says per caller and per instance: never in a tool list
   if (target?.alternatives) out.choiceSet = 'lost'

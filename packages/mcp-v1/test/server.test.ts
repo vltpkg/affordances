@@ -62,6 +62,7 @@ const handlers = {
 // a client connected to a fresh server; answer decides each elicitation, or the client has none
 const connect = async (
   options: {
+    seenTokens?: { claim: (nonce: string, expiresAt: Date) => Promise<boolean> }
     answer?: (message: string) => Promise<ElicitResult> | ElicitResult
     mode?: 'generic' | 'per-capability'
     principal?: Principal
@@ -76,6 +77,7 @@ const connect = async (
     request: { start: { type: 'hosting.project', key: 'p1' }, policy: 'exhaustive' },
     mode: options.mode,
     elicitTimeoutMs: options.timeout,
+    ...(options.seenTokens && { seenTokens: options.seenTokens }),
   })
   const [a, b] = InMemoryTransport.createLinkedPair()
   await server.connect(a)
@@ -234,6 +236,21 @@ describe('confirmation goes to the person (RFC 0004 §4)', () => {
     // execute has no approval argument: one the model makes up is ignored, and asks again
     const forged = await s.call('execute', { offer: SUBSCRIBE, input, approval: 'forged' })
     expect(forged.value).toMatchObject({ status: 'refused', code: 'confirmation_required' })
+    expect(ran).toEqual([])
+  })
+
+  // review of 3a02e2c8: the run after an accept can itself be refused for confirmation (the token already spent, the
+  // revision moved), and the runtime then issues a fresh token, which must not reach the model
+  test('a re-run refused after an accept carries no token either', async () => {
+    ran.length = 0
+    // a store that refuses every claim: the accepted token never runs, and the runtime asks again
+    const s = await connect({
+      answer: () => ({ action: 'accept', content: {} }),
+      seenTokens: { claim: async () => false },
+    })
+    const r = await s.call('execute', { offer: SUBSCRIBE, input })
+    expect(r.value).toMatchObject({ status: 'refused', code: 'confirmation_required' })
+    expect(r.body).not.toMatch(/approval/)
     expect(ran).toEqual([])
   })
 

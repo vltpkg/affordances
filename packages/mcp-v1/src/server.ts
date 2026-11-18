@@ -198,7 +198,8 @@ export const createMcpServer = (options: McpServerOptions) => {
       view: { ...options.request },
     } as never
     const result = await rt.execute(call)
-    if (result.status !== 'refused' || result.code !== 'confirmation_required') return result
+    if (result.status !== 'refused' || result.code !== 'confirmation_required')
+      return withoutToken(result)
     const summary = result.confirmation?.summary ?? ''
     const token = result.confirmation?.approval
     if (!token || !server.getClientCapabilities()?.elicitation) return withoutToken(result)
@@ -212,7 +213,9 @@ export const createMcpServer = (options: McpServerOptions) => {
     } catch {
       return { ...withoutToken(result), answered: 'timeout' }
     }
-    return rt.execute({ ...(call as object), approval: token } as never)
+    // the run with the person's token. Whatever comes back is stripped too: a refusal here (the token spent, the
+    // offer's revision moved) can carry a fresh token, which the model must never see (review of 3a02e2c8)
+    return withoutToken(await rt.execute({ ...(call as object), approval: token } as never))
   }
 
   const tools = mode === 'generic' ? GENERIC : exportable(options.manifest).map(capabilityTool)
