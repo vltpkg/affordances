@@ -80,7 +80,9 @@ const stringEnd = (text: string, start: number) => {
 // tsconfig's JSONC as JSON, in two passes outside strings, since a string holds globs like "**/*.ts" and URLs that a
 // plain regex reads as comments (hosting-lab's real build, 2026-11-18): comments first, so a trailing comma followed
 // by a comment is still seen as trailing (review of 65d47ddb), then trailing commas
-export const jsonc = (text: string): unknown => {
+export const jsonc = (source: string): unknown => {
+  // a leading byte order mark, which tsc accepts (review of 9f30e30c)
+  const text = source.startsWith('\uFEFF') ? source.slice(1) : source
   let bare = ''
   for (let i = 0; i < text.length; i++) {
     if (text[i] === '"') {

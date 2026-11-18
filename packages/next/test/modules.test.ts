@@ -235,6 +235,7 @@ test('jsonc reads every comment and trailing-comma placement TypeScript accepts,
       { a: 'quote " // not a comment', b: 'back\\' },
     ],
     ['{ "a"/* between */: 1 }', { a: 1 }],
+    ['\uFEFF{ "a": 1 }', { a: 1 }],
   ]
   for (const [text, value] of corpus) expect({ text, value: jsonc(text) }).toEqual({ text, value })
   // an unterminated block comment is unreadable. A lone comma ('[,]') reads as a trailing one, so as empty: laxer than
