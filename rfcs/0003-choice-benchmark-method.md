@@ -592,12 +592,10 @@ The record is [`confirmatory-2026-11-18/`](../apps/choice-bench/results/confirma
   - **What's next:** exploratory cells separate the two factors. RFC 0002 §6.6 proposes the runtime rule this case calls for.
 - **A lesson for condition construction:**
   - **The rule, the goal:** a condition differs from its control only in the factor it manipulates, and that's checked mechanically, not by reading the condition's definition.
-  - **The first step, built (588e7093):**
+  - **The first step, built (588e7093, tightened in bccfb231):**
     - each condition declares what it manipulates against A;
-    - before a real run, the harness compares the offer ids in the condition's first view with A's, and refuses any difference that a declared `scope` or `start` doesn't cover.
-  - **What it doesn't check yet:**
-    - claims, order or relevance;
-    - any condition that declares `scope` or `start`.
+    - before a real run, the harness compares the offer ids in the condition's first view with those of a control. The control is A's policy, carrying only the condition's declared `scope`, depth and `start`, so any other change to the offer set refuses the run, an undeclared budget included.
+  - **What it doesn't check yet:** claims, order or relevance.
   - **Why:** RFC 0002 §6.1 maps C to a policy whose scope differs from A's, and nothing compared the two first views before the run. Under the check, C and D as built refuse on T6, each missing `hosting.plan.list`.
 
 ## References

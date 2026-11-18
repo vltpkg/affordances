@@ -110,6 +110,6 @@ It doesn't include the charges rule (§3.5). Results apply to that version and d
 - **As built, C differs from A in two ways:** the owner's claims, and the advocated policy's scope (neighborhood depth 1). That scope leaves out `hosting.plan.list`, the only offer carrying the plans' allowances.
 - **So H2 measures the advocated policy as a whole** against exhaustive disclosure. It doesn't isolate the claims, and this report makes no claim that advocacy steers agents.
 - **Conditional on seeing Pro's allowance** before the first approval request, C on Sonnet was optimal in 17 of 19 trials. Without it, 0 of 95 were ([`confirmatory-2026-11-18/audit/`](confirmatory-2026-11-18/audit/README.md), post hoc and descriptive).
-- **What's next:** the exploratory cells C-claims and A-scope separate the two factors. RFC 0002 §6.6 proposes the runtime rule this case calls for.
+- **What's next:** the exploratory cells C-full-scope and A-scope separate the two factors. RFC 0002 §6.6 proposes the runtime rule this case calls for.
 
 ⟨backend: the confirmatory results, H1 and H2, the sensitivity analysis, and calibration's unsealed C and S⟩
