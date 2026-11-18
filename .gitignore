@@ -23,3 +23,5 @@ coverage
 **/test/.extract-*/
 **/test/.modules-*/
 **/test/.probe-*/
+**/test/.v0-adapter-*/
+apps/example/scripts/v0-golden/out.json
