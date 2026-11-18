@@ -11,7 +11,8 @@ import {
   type Condition,
   type Context,
   type Id,
-  renderSummary as render,
+  applyDefaults,
+  renderConfirmation as render,
 } from '@affordances/ir'
 import { decideCondition, instancesOf } from './decide.ts'
 import type { Facts } from './facts.ts'
@@ -261,6 +262,9 @@ export const executor = (deps: ExecutionDeps) => {
     if (c.input !== undefined) {
       const issues = inputIssues(c.input, input)
       if (issues.length) return refuse('invalid_input', { issues })
+      // the effective input: the schema's declared defaults applied. It's the one value the summary renders, the
+      // approval binds and the handler runs, so a handler never defaults on its own (intake, 2026-11-18; RFC 0002 §8.1)
+      input = applyDefaults(c.input, input)
     }
     context.input = (input ?? {}) as Obj
 
@@ -295,7 +299,8 @@ export const executor = (deps: ExecutionDeps) => {
 
     // 8. confirmation, from the definition: nothing annotated removes it (§9, R2)
     if (c.confirmation) {
-      const summary = render(c.confirmation.summary, context)
+      // with every charge it makes, each with its amount (RFC 0001 §3.2 and §4)
+      const summary = render(c.confirmation.summary, c.effects, context)
       if (mode === 'check') {
         // v0's own confirm, recorded with its basis: never an approval (C3.1)
         if (!request.confirmed)

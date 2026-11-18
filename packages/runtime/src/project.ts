@@ -14,7 +14,8 @@ import {
   type Expr,
   type Id,
   type Truth,
-  renderSummary as render,
+  applyDefaults,
+  renderConfirmation as render,
 } from '@affordances/ir'
 import { attributesFor } from './data.ts'
 import { decideCondition, guardTruth, instancesOf } from './decide.ts'
@@ -352,7 +353,14 @@ export const createRuntime = ({
                 : 'unknown',
       }
       if (c.confirmation)
-        requirements.confirmation = { summary: render(c.confirmation.summary, context) }
+        // the effective input as far as it's known before the agent supplies any: the schema's defaults, so a default's
+        // charge shows before it's approved (intake, 2026-11-18)
+        requirements.confirmation = {
+          summary: render(c.confirmation.summary, c.effects, {
+            ...context,
+            input: applyDefaults(c.input, undefined) as Record<string, unknown>,
+          }),
+        }
       const availability = ((): Availability => {
         if (authorization === undefined) return { status: 'unknown', because: ['authorization'] }
         if (authorization === false) return { status: 'needs-authorization' }
