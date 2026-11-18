@@ -50,6 +50,10 @@ const TRIAL_FILES = [
   '.jsonl',
   '.failure.json',
   '.fault.json',
+  // a surface trial's (src/surface.ts): its server's state file and stderr, and the replay's record
+  '.state.json',
+  '.server.log',
+  '.replay.json',
 ]
 // what an earlier, unfinished attempt left of a trial: moved into interrupted/, never deleted (intake), so a rerun is
 // scored only from its own record (review of 4893655c: a stale server record would have passed the started check)
@@ -136,7 +140,7 @@ export const missingLogins = (
 export const recordFault = (
   dir: string,
   spec: TrialSpec,
-  fault: { kind: string; detail: string },
+  fault: { kind: string; detail: string; [evidence: string]: unknown },
 ) => {
   writeFileSync(
     path.join(dir, `${spec.id}.fault.json`),

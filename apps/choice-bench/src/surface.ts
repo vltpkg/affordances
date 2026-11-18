@@ -9,6 +9,8 @@ import {
   CAPS,
   DriverFailure,
   failureOf,
+  faultPause,
+  faultsOf,
   INSTRUCTIONS,
   priorFailures,
   recordFault,
@@ -216,7 +218,15 @@ export const runSurfaceTrial = async (
       }
     : undefined
   if (fault) {
-    recordFault(dir, spec, fault)
+    // the attempt is kept whole, beside its reason: setAside moves its record, state file, server log and raw output
+    // into interrupted/, never deleting them (M5's rule)
+    recordFault(dir, spec, {
+      ...fault,
+      serverErrors: answered5xx,
+      serverLog: `${spec.id}.server.log`,
+      raw: result?.raw ?? null,
+      attempt: faultsOf(dir).filter((f) => f.spec.id === spec.id).length + 1,
+    })
     return { spec, fault }
   }
   const attempts = priorFailures(dir, spec.id) + 1
@@ -315,4 +325,64 @@ export const runSurfaceTrial = async (
   ]
   writeFileSync(file('jsonl'), `${lines.map((l) => JSON.stringify(l)).join('\n')}\n`)
   return { spec, end, capHits, metrics }
+}
+
+// a trace that's complete: its trial, end and metrics lines all there. Read back, never run again (intake)
+const scored = (dir: string, id: string) => {
+  const file = path.join(dir, `${id}.jsonl`)
+  if (!existsSync(file)) return false
+  try {
+    const kinds = new Set(
+      readFileSync(file, 'utf8')
+        .trim()
+        .split('\n')
+        .map((l) => (JSON.parse(l) as { kind: string }).kind),
+    )
+    return kinds.has('trial') && kinds.has('end') && kinds.has('metrics')
+  } catch {
+    return false
+  }
+}
+
+/** A run that must stop: past the fault threshold (intake, 14:24Z), or on an auth failure. */
+export class SurfaceRunStopped extends Error {}
+
+/**
+ * A surface run's specs, one at a time on the worker's port. A harness fault is rerun at once, and counted; the run
+ * pauses past 2% of the trials run, or 2 in the pilot, counting what's on disk so a resume counts the same. A CLI
+ * driver's crash or 529 is rerun once, then scored failed, and auth stops the run (intake, 12:05Z). A spec still
+ * without a scored trace after maxFaults faulted attempts is reported missing, never imputed.
+ */
+export const runSurfaceSpecs = async (
+  specs: TrialSpec[],
+  driverFor: (spec: TrialSpec) => Driver,
+  dir: string,
+  options: SurfaceOptions & { pilot: boolean; maxFaults?: number },
+) => {
+  const missing: string[] = []
+  const trialsRun = () => specs.filter((s) => scored(dir, s.id)).length + faultsOf(dir).length
+  for (const s of specs) {
+    if (scored(dir, s.id)) continue
+    let faults = 0
+    let crashes = 0
+    for (;;) {
+      let r: Awaited<ReturnType<typeof runSurfaceTrial>>
+      try {
+        r = await runSurfaceTrial(s, driverFor(s), dir, options)
+      } catch (e) {
+        if (e instanceof DriverFailure && e.kind !== 'auth' && crashes++ === 0) continue
+        if (e instanceof DriverFailure && e.kind === 'auth')
+          throw new SurfaceRunStopped(`an auth failure in ${s.id}: re-login is the human's`)
+        throw e
+      }
+      if (!('fault' in r)) break
+      const paused = faultPause(dir, trialsRun(), options.pilot)
+      if (paused) throw new SurfaceRunStopped(paused)
+      if (++faults >= (options.maxFaults ?? 3)) {
+        missing.push(s.id)
+        break
+      }
+    }
+  }
+  return { missing, faults: faultsOf(dir).length, trialsRun: trialsRun() }
 }

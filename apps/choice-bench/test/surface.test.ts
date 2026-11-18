@@ -1,5 +1,5 @@
 import * as lab from '@affordances/hosting-lab/trial'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, expect, test } from 'vitest'
@@ -7,7 +7,7 @@ import { fakeDriver } from '../src/drivers/fake.ts'
 import type { Driver } from '../src/drivers/types.ts'
 import { DriverFailure, faultsByCell, type TrialSpec } from '../src/harness.ts'
 import { surfaceMetrics, type SurfaceFacts } from '../src/surface-metrics.ts'
-import { runSurfaceTrial, surfacePromptFor } from '../src/surface.ts'
+import { runSurfaceSpecs, runSurfaceTrial, surfacePromptFor } from '../src/surface.ts'
 import { surfaces, type SurfaceId } from '../src/surfaces.ts'
 
 // M7f's surface runner (the planner, 14:50Z): one runner for every surface, proven with the fake driver only
@@ -205,6 +205,83 @@ test.skipIf(!build)(
     })
     // and neither was a harness fault
     expect(faultsByCell(at)).toEqual({})
+  },
+  600_000,
+)
+
+// the planner (15:08Z): a harness fault is rerun, so the spec still gets a scored trial, and the faulted attempt is
+// kept whole in interrupted/ with its reason, never deleted; and the run pauses past the threshold
+const answering5xxOnce = (seed: number, at: string, stateFile: string, times = 1): Driver => {
+  let left = times
+  return {
+    id: 'answering-5xx',
+    async run(trial) {
+      const inner = editing(fakeDriver(seed, path.join(at, `raw-${left}.json`)), stateFile, (w) => {
+        if (left > 0) w.serverErrors = [{ status: 502, route: '/api/projection/[...op]', at: '' }]
+      })
+      const result = await inner.run(trial)
+      left--
+      return result
+    },
+  }
+}
+
+test.skipIf(!build)(
+  'a fault on attempt 1 and a clean attempt 2: one scored trial, one counted fault, the attempt kept whole',
+  async () => {
+    const at = path.join(dir, 'rerun')
+    const s = spec('full', 'reruns')
+    const driver = answering5xxOnce(1, at, path.join(at, `${s.id}.state.json`))
+    const r = await runSurfaceSpecs([s], () => driver, at, {
+      labBuild: build!,
+      port: PORT,
+      pilot: true,
+    })
+    expect(r).toEqual({ missing: [], faults: 1, trialsRun: 2 })
+    expect(existsSync(path.join(at, `${s.id}.jsonl`))).toBe(true)
+    // the faulted attempt, moved and complete: its reason with the 5xx and the log's name, its record, state and log
+    const [attempt] = readdirSync(path.join(at, 'interrupted'))
+    const kept = readdirSync(path.join(at, 'interrupted', attempt!)).toSorted()
+    expect(kept).toEqual(
+      ['config.json', 'fault.json', 'server.json', 'server.log', 'state.json'].map(
+        (f) => `${s.id}.${f}`,
+      ),
+    )
+    const fault = JSON.parse(
+      readFileSync(path.join(at, 'interrupted', attempt!, `${s.id}.fault.json`), 'utf8'),
+    )
+    expect(fault).toMatchObject({
+      kind: 'stall',
+      serverErrors: [{ status: 502, route: '/api/projection/[...op]' }],
+      serverLog: `${s.id}.server.log`,
+      attempt: 1,
+    })
+    // resumed, the scored spec isn't run again
+    const again = await runSurfaceSpecs([s], () => driver, at, {
+      labBuild: build!,
+      port: PORT,
+      pilot: true,
+    })
+    expect(again).toEqual({ missing: [], faults: 1, trialsRun: 2 })
+  },
+  600_000,
+)
+
+test.skipIf(!build)(
+  'past 2 faults in the pilot, the run pauses',
+  async () => {
+    const at = path.join(dir, 'pause')
+    const s = spec('v0', 'always-5xx')
+    const driver = answering5xxOnce(1, at, path.join(at, `${s.id}.state.json`), 99)
+    await expect(
+      runSurfaceSpecs([s], () => driver, at, {
+        labBuild: build!,
+        port: PORT,
+        pilot: true,
+        maxFaults: 10,
+      }),
+    ).rejects.toThrow(/3 harness faults in 3 trials run, more than the pilot’s 2/)
+    expect(faultsByCell(at)).toEqual({ 'v0 T6 fake': 3 })
   },
   600_000,
 )
