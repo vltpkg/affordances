@@ -39,6 +39,12 @@ export type RouteHandlerOptions = Omit<HandlerOptions, 'manifest' | 'basePath' |
 
 // app/api/affordances/graph/[[...path]]/route.ts: export { GET, POST } from '@affordances/next/route', or
 // call this with options and export the handler as both
+// RFC 9110 §13.1.2: If-None-Match holds * or a list of entity tags, each compared weakly, so a W/ prefix is ignored
+const noneMatch = (header: string | null, etag: string) =>
+  header !== null &&
+  (header.trim() === '*' ||
+    header.split(',').some((tag) => tag.trim().replace(/^W\//, '') === etag))
+
 export const createRouteHandler = (options: RouteHandlerOptions = {}) => {
   const { manifest, compiled, visibility, base, ...rest } = options
   // per build: withAffordances bridges its options as env, which Next inlines (read literally, so it can)
@@ -85,7 +91,7 @@ export const createRouteHandler = (options: RouteHandlerOptions = {}) => {
         etag,
         'cache-control': 'public, max-age=300',
       }
-      if (request.headers.get('if-none-match') === etag)
+      if (noneMatch(request.headers.get('if-none-match'), etag))
         return new Response(null, { status: 304, headers })
       return new Response(published.canonical, { headers })
     }

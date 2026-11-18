@@ -89,6 +89,24 @@ describe('an app with capabilities', () => {
     expect(await signedIn.text()).toBe(compiled.canonical)
   })
 
+  // code review of M8 (a lower item): If-None-Match as RFC 9110 §13.1.2 has it, a list of entity tags compared weakly,
+  // or *
+  test('If-None-Match matches a list, a weak tag and *, and nothing else', async () => {
+    const route = createRouteHandler({ manifest, compiled, visibility: 'public' })
+    const status = async (value: string) =>
+      (await route(request(MANIFEST_PATH, { headers: { 'if-none-match': value } }))).status
+    for (const value of [
+      '"sha256-abc"',
+      'W/"sha256-abc"',
+      '"x", "sha256-abc"',
+      '"x",W/"sha256-abc"',
+      '*',
+    ])
+      expect([value, await status(value)]).toEqual([value, 304])
+    for (const value of ['"sha256-abd"', '"x", "y"', 'sha256-abc', ''])
+      expect([value, await status(value)]).toEqual([value, 200])
+  })
+
   // design's real path (M7b2): behind withAffordances' rewrite, the request keeps the url it was asked for, without
   // API_PATH, as the index's does
   test('the manifest is served at the url a rewrite delivers, unprefixed, as well as under the route’s own path', async () => {
