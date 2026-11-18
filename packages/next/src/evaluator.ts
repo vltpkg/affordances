@@ -104,6 +104,11 @@ export const evaluateModules = (
       first.error?.message ?? (first.stderr.trim().split('\n').at(-1) || `exit ${first.status}`),
     )
   const second = run()
+  // the second run is checked as the first is: a crash there is no evidence of determinism (review of 3959720b)
+  if (second.error || second.status !== 0)
+    return failed(
+      second.error?.message ?? (second.stderr.trim().split('\n').at(-1) || `exit ${second.status}`),
+    )
   if (second.stdout !== first.stdout) {
     let at = 0
     while (at < first.stdout.length && first.stdout[at] === second.stdout[at]) at++
