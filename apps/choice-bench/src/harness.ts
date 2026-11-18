@@ -1,6 +1,13 @@
 import * as lab from '@affordances/hosting-lab/trial'
 import { canonicalJson } from '@affordances/ir'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'node:fs'
 import { loadavg } from 'node:os'
 import path from 'node:path'
 import { conditions, type ConditionId } from './conditions.ts'
@@ -32,7 +39,14 @@ export type TrialSpec = {
 const SERVER = path.resolve(import.meta.dirname, 'server.ts')
 
 // a trial's files, as a run leaves them
-const TRIAL_FILES = ['.server.json', '.server.json.tmp', '.config.json', '.raw.json', '.jsonl']
+const TRIAL_FILES = [
+  '.server.json',
+  '.server.json.tmp',
+  '.config.json',
+  '.raw.json',
+  '.jsonl',
+  '.failure.json',
+]
 // what an earlier, unfinished attempt left of a trial: moved into interrupted/, never deleted (intake), so a rerun is
 // scored only from its own record (review of 4893655c: a stale server record would have passed the started check)
 export const setAside = (dir: string, id: string) => {
@@ -41,6 +55,58 @@ export const setAside = (dir: string, id: string) => {
   const to = path.join(dir, 'interrupted', `${id}-${new Date().toISOString().replaceAll(':', '')}`)
   mkdirSync(to, { recursive: true })
   for (const e of stale) renameSync(path.join(dir, `${id}${e}`), path.join(to, `${id}${e}`))
+}
+
+// boundary review #8, intake's ruling (2026-11-18 12:05Z): a nonzero exit with no cap signal is a driver failure, one
+// of three kinds, read from the CLI's own error text. A crash or a 529 is set aside in interrupted/ and rerun once by
+// the resume; a second failure is scored 'failed'. An auth failure is never retried: it stops the whole run
+export type FailureKind = 'auth' | 'overloaded' | 'crash'
+const AUTH =
+  /\b401\b|authenticat|unauthori[sz]ed|invalid (api |x-api-)?key|\/login|not logged in|log in again|oauth token/i
+const OVERLOADED = /\b529\b|overloaded/i
+export const failureOf = (
+  result: DriverResult | undefined,
+  thrown?: string,
+): { kind: FailureKind; detail: string } | undefined => {
+  // an exit 0, the timeout's 124 (the time cap) and the CLI's own turn-limit signal are no driver failure
+  if (!thrown && result && (result.exitCode === 0 || result.exitCode === 124 || result.stopped))
+    return
+  const detail = (
+    [thrown, result?.error].filter(Boolean).join('\n') || `exit ${result?.exitCode}`
+  ).slice(0, 2000)
+  return {
+    kind: AUTH.test(detail) ? 'auth' : OVERLOADED.test(detail) ? 'overloaded' : 'crash',
+    detail,
+  }
+}
+export class DriverFailure extends Error {
+  // plain fields: node runs this file by stripping types, which parameter properties aren't
+  readonly spec: string
+  readonly kind: FailureKind
+  readonly detail: string
+  constructor(spec: string, kind: FailureKind, detail: string) {
+    super(`${spec}: a driver failure (${kind}): ${detail.split('\n')[0]}`)
+    this.spec = spec
+    this.kind = kind
+    this.detail = detail
+  }
+}
+// how many earlier attempts of a trial failed: each left its failure record in interrupted/
+export const priorFailures = (dir: string, id: string) => {
+  const root = path.join(dir, 'interrupted')
+  if (!existsSync(root)) return 0
+  return readdirSync(root).filter((d) => existsSync(path.join(root, d, `${id}.failure.json`)))
+    .length
+}
+// RFC 0003's pause, as the confirmatory PLAN states it: more than 5% of specs failed and not yet complete, and a resume
+// doesn't start; intake is told first
+export const pauseFor = (dir: string, specs: TrialSpec[]): string | undefined => {
+  const pending = specs.filter(
+    (s) => !existsSync(path.join(dir, `${s.id}.jsonl`)) && priorFailures(dir, s.id) > 0,
+  )
+  const limit = Math.floor(specs.length * 0.05)
+  if (pending.length > limit)
+    return `${pending.length} specs failed and await their rerun, more than 5% (${limit}): tell intake before resuming`
 }
 
 // codex's default: the first listed model in its cache, as codex exec with no -m takes it
@@ -90,6 +156,25 @@ export const runTrial = async (spec: TrialSpec, driver: Driver, dir: string) => 
   } catch (e) {
     failure = e instanceof Error ? e.message : String(e)
   }
+  // a driver failure: the first crash or 529 is recorded, set aside in interrupted/ and thrown, so the resume reruns
+  // the spec once; an auth failure always is, and stops the run. A second crash or 529 is scored 'failed'
+  const failed = failureOf(
+    result,
+    failure ?? (existsSync(out) ? undefined : `the tool server never started (no error)`),
+  )
+  if (failed && (failed.kind === 'auth' || priorFailures(dir, spec.id) === 0)) {
+    writeFileSync(
+      path.join(dir, `${spec.id}.failure.json`),
+      JSON.stringify({
+        ...failed,
+        at: new Date().toISOString(),
+        exitCode: result?.exitCode ?? null,
+        raw: result?.raw ?? null,
+      }),
+    )
+    setAside(dir, spec.id)
+    throw new DriverFailure(spec.id, failed.kind, failed.detail)
+  }
   if (!existsSync(out))
     throw new Error(`trial ${spec.id}: the tool server never started (${failure ?? 'no error'})`)
   const record = JSON.parse(readFileSync(out, 'utf8')) as ServerRecord
@@ -101,10 +186,17 @@ export const runTrial = async (spec: TrialSpec, driver: Driver, dir: string) => 
     record.capped && 'calls',
     tokens > CAPS.tokens && 'tokens',
     (result?.durationMs ?? 0) >= CAPS.ms && 'time',
-    // a CLI stopped at its turn limit exits nonzero with no final text
-    result && result.exitCode !== 0 && !result.finalText && 'turns',
+    // only the CLI's own signal that it stopped at its turn limit: a crash, a 529 or an auth failure also exits
+    // nonzero with no final text, and isn't a cap (boundary review #8)
+    result?.stopped === 'turns' && 'turns',
   ].filter((x): x is string => typeof x === 'string')
-  const end: EndReason = record.aborted ? 'aborted' : capHits.length || failure ? 'capped' : 'final'
+  const end: EndReason = record.aborted
+    ? 'aborted'
+    : failed
+      ? 'failed'
+      : capHits.length
+        ? 'capped'
+        : 'final'
   // the driver's record of its benchmark calls against the server's: a mismatch marks the trial (§5.1). Any other
   // tool the CLI called is recorded apart, and a sub-agent spawn marks the trial (§8)
   const names = (result?.trace ?? []).map((t) => t.name.replace(/^mcp__bench__/, ''))
@@ -142,6 +234,7 @@ export const runTrial = async (spec: TrialSpec, driver: Driver, dir: string) => 
       capHits,
       ...(record.aborted && { aborted: record.aborted }),
       ...(failure && { failure }),
+      ...(failed && { driverFailure: failed, attempts: priorFailures(dir, spec.id) + 1 }),
       traceMismatch,
       otherTools,
       spawned,

@@ -77,7 +77,7 @@ export const claudeCli = (options: {
 
 // exported for the tests, which feed it recorded output
 export const parse = (
-  ran: Pick<Ran, 'lines' | 'durationMs' | 'exitCode' | 'timedOut' | 'raw'>,
+  ran: Pick<Ran, 'lines' | 'durationMs' | 'exitCode' | 'timedOut' | 'raw' | 'stderr'>,
   version: string,
 ): DriverResult => {
   const trace: DriverResult['trace'] = []
@@ -85,6 +85,8 @@ export const parse = (
   let finalText = ''
   let resolvedModel: string | undefined
   let turns: number | undefined
+  let stopped: 'turns' | undefined
+  const errors: string[] = []
   const usage: DriverResult['usage'] = { inputTokens: 0, outputTokens: 0 }
   for (const { at, text } of ran.lines) {
     const event = json(text)
@@ -123,6 +125,11 @@ export const parse = (
     if (event.type === 'result') {
       finalText = typeof event.result === 'string' ? event.result : ''
       if (typeof event.num_turns === 'number') turns = event.num_turns
+      if (event.subtype === 'error_max_turns') stopped = 'turns'
+      if (event.is_error === true)
+        errors.push(
+          typeof event.result === 'string' ? event.result : String(event.subtype ?? 'error'),
+        )
       const u = (event.usage ?? {}) as Record<string, number | undefined>
       usage.inputTokens = u.input_tokens ?? 0
       usage.outputTokens = u.output_tokens ?? 0
@@ -140,6 +147,10 @@ export const parse = (
     cli: { name: 'claude', version },
     ...(resolvedModel && { resolvedModel }),
     ...(turns !== undefined && { turns }),
+    ...(stopped && { stopped }),
+    ...((errors.length || ran.stderr) && {
+      error: [...errors, ran.stderr ?? ''].join('\n').trim(),
+    }),
     raw: ran.raw,
   }
 }

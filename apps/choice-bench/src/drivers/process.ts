@@ -11,6 +11,7 @@ export type Ran = {
   durationMs: number
   timedOut: boolean
   raw: string
+  stderr?: string // what the CLI wrote to stderr, for classifying a failure (boundary review #8)
 }
 
 export const freshDir = (root: string, prefix: string) => mkdtempSync(path.join(root, `${prefix}-`))
@@ -63,6 +64,7 @@ export const runCli = (
         durationMs: performance.now() - started,
         timedOut,
         raw,
+        ...(err && { stderr: err }),
       })
     })
   })

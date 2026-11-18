@@ -9,7 +9,14 @@ import { claudeCli } from './drivers/claude-cli.ts'
 import { codexCli } from './drivers/codex-cli.ts'
 import { fakeDriver } from './drivers/fake.ts'
 import type { Driver } from './drivers/types.ts'
-import { calibrationPlan, pilotPlan, runTrial, type TrialSpec } from './harness.ts'
+import {
+  calibrationPlan,
+  DriverFailure,
+  pauseFor,
+  pilotPlan,
+  runTrial,
+  type TrialSpec,
+} from './harness.ts'
 import { baselineOf, checkBaseline, type CanaryRecord, readCanary, runCanary } from './canary.ts'
 import {
   configRoots,
@@ -293,6 +300,12 @@ if (mode === 'plan') {
   }
   // a CLI that writes outside its own trial's key (a shared or global file) could reach other trials, so the run stops:
   // no further trial starts, and the ones not run are listed (the planner, 2026-11-18)
+  // more than 5% of specs failed and awaiting their rerun: the resume doesn't start, and intake is told (the PLAN)
+  const paused = pauseFor(out, specs)
+  if (paused) {
+    console.error(paused)
+    process.exit(3)
+  }
   const watchedBefore = real ? watchedGlobals() : ''
   let stopped: string | undefined
   const notRun: string[] = []
@@ -317,6 +330,10 @@ if (mode === 'plan') {
     } catch (e) {
       failed.push({ spec: s, failed: e instanceof Error ? e.message : String(e) })
       console.error(`${new Date().toISOString()} ${s.id}: FAILED`)
+      // an auth failure stops the whole run: no further trial starts, the logins are checked read-only after, and
+      // re-login is the human's. It's never retried or worked around (intake, 2026-11-18 12:05Z)
+      if (e instanceof DriverFailure && e.kind === 'auth')
+        stopped ??= `an auth failure in ${s.id}: ${e.detail.split('\n')[0]}. Stop, and tell the planner and intake; re-login is the human's`
       return undefined
     }
   })

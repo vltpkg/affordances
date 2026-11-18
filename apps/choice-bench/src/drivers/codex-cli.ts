@@ -92,12 +92,13 @@ export const codexCli = (options: {
 
 // exported for the tests, which feed it recorded output
 export const parse = (
-  ran: Pick<Ran, 'lines' | 'durationMs' | 'exitCode' | 'timedOut' | 'raw'>,
+  ran: Pick<Ran, 'lines' | 'durationMs' | 'exitCode' | 'timedOut' | 'raw' | 'stderr'>,
   version: string,
 ): DriverResult => {
   const trace: DriverResult['trace'] = []
   const open = new Map<string, { index: number; at: number }>()
   const messages: string[] = []
+  const errors: string[] = []
   const usage: DriverResult['usage'] = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }
   for (const { at, text } of ran.lines) {
     const event = json(text)
@@ -138,6 +139,11 @@ export const parse = (
         trace[call.index]!.ms = at - call.at
       }
     }
+    // codex's own failures: an error event, or a turn that failed, with its message
+    if (event?.type === 'error' || event?.type === 'turn.failed') {
+      const e = (event.error ?? event) as { message?: unknown }
+      errors.push(String(e.message ?? JSON.stringify(e)))
+    }
     if (event?.type === 'item.completed' && item?.type === 'agent_message')
       messages.push(String(item.text ?? ''))
     if (event?.type === 'turn.completed') {
@@ -158,6 +164,9 @@ export const parse = (
     exitCode: ran.timedOut ? 124 : ran.exitCode,
     cli: { name: 'codex', version },
     turns: trace.length + 1,
+    ...((errors.length || ran.stderr) && {
+      error: [...errors, ran.stderr ?? ''].join('\n').trim(),
+    }),
     raw: ran.raw,
   }
 }

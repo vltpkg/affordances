@@ -42,6 +42,34 @@ describe('the drivers (RFC 0003 §5.1)', () => {
     })
   })
 
+  // boundary review #8: a turn cap is the CLI's own signal, never a nonzero exit without final text
+  test('claude’s turn limit is its result subtype error_max_turns; a crash with no result is no turn limit', () => {
+    const stream = recorded('claude-stream.jsonl')
+    const last = JSON.parse(stream.lines.at(-1)!.text) as Record<string, unknown>
+    const capped = {
+      ...stream,
+      exitCode: 1,
+      lines: [
+        ...stream.lines.slice(0, -1),
+        {
+          at: 0,
+          text: JSON.stringify({
+            ...last,
+            subtype: 'error_max_turns',
+            is_error: true,
+            result: undefined,
+          }),
+        },
+      ],
+    }
+    expect(claude(capped, 'v')).toMatchObject({ stopped: 'turns', finalText: '' })
+    expect(claude(stream, 'v').stopped).toBeUndefined()
+    // a crash: the stream ends before any result, nonzero
+    const crashed = { ...stream, exitCode: 1, lines: stream.lines.slice(0, 2) }
+    expect(claude(crashed, 'v')).toMatchObject({ finalText: '', exitCode: 1 })
+    expect(claude(crashed, 'v').stopped).toBeUndefined()
+  })
+
   test('a run past its timeout is exit 124, whatever the CLI returned', () => {
     expect(
       claude({ ...recorded('claude-stream.jsonl'), timedOut: true, exitCode: 143 }, 'v').exitCode,

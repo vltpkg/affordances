@@ -1,10 +1,21 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import * as lab from '@affordances/hosting-lab/trial'
-import { afterAll, expect, test } from 'vitest'
+import { afterAll, describe, expect, test } from 'vitest'
 import { fakeDriver } from '../src/drivers/fake.ts'
-import { pilotPlan, promptFor, runTrial, INSTRUCTIONS } from '../src/harness.ts'
+import type { DriverResult, Trial } from '../src/drivers/types.ts'
+import {
+  DriverFailure,
+  failureOf,
+  INSTRUCTIONS,
+  pauseFor,
+  pilotPlan,
+  priorFailures,
+  promptFor,
+  runTrial,
+  type TrialSpec,
+} from '../src/harness.ts'
 import { computeMetrics } from '../src/metrics.ts'
 import { pilotReport } from '../src/report.ts'
 import type { ServerRecord } from '../src/server.ts'
@@ -185,7 +196,7 @@ test('every metric RFC 0003 §6 names, in brackets, is a field of a trial’s me
 
 test('a trial’s stale files are moved into interrupted/, never deleted, before it runs (review of 4893655c)', async () => {
   const { setAside } = await import('../src/harness.ts')
-  const { existsSync, mkdirSync: mk, readdirSync, writeFileSync: write } = await import('node:fs')
+  const { mkdirSync: mk, readdirSync, writeFileSync: write } = await import('node:fs')
   const d = path.join(dir, 'set-aside')
   mk(d, { recursive: true })
   write(path.join(d, 'X.server.json'), '{"stale":true}')
@@ -235,3 +246,98 @@ test(
     expect(JSON.parse(read(path.join(d, 'dry-B.server.json'), 'utf8')).stale).toBeUndefined()
   },
 )
+
+// boundary review #8, intake's ruling (2026-11-18 12:05Z): a cap is only the CLI's own signal; a crash or a 529 is
+// set aside and rerun once, then scored failed; an auth failure is never retried, and stops the run
+const spec = (id: string) =>
+  ({ id, condition: 'A', task: 'T3', model: 'none', driver: 'fake', index: 1 }) as const
+// the fake driver's real run, then the CLI's ending replaced
+let raws = 0
+const ending = (patch: Partial<DriverResult>) => {
+  const fake = fakeDriver(1, path.join(dir, `ending-${raws++}.raw.json`))
+  return {
+    ...fake,
+    run: async (t: Trial) => ({ ...(await fake.run(t)), finalText: '', exitCode: 1, ...patch }),
+  }
+}
+const thrown = (p: Promise<unknown>) =>
+  p.then(
+    () => undefined,
+    (e: unknown) => e,
+  )
+
+// a CLI that exited nonzero with no final text, as the driver would report it
+const exited = (patch: Partial<DriverResult>) =>
+  ({ exitCode: 1, finalText: '', ...patch }) as DriverResult
+
+describe('driver failures, by class', () => {
+  test('the classes, from the CLI’s exit and its own error text', () => {
+    expect(failureOf(exited({ stopped: 'turns' }))).toBeUndefined()
+    expect(failureOf(exited({ exitCode: 124 }))).toBeUndefined()
+    expect(failureOf(exited({ exitCode: 0 }))).toBeUndefined()
+    expect(failureOf(exited({ error: 'Segmentation fault' }))?.kind).toBe('crash')
+    expect(failureOf(exited({}))?.kind).toBe('crash')
+    expect(failureOf(exited({ error: 'API Error: 529 {"type":"overloaded_error"}' }))?.kind).toBe(
+      'overloaded',
+    )
+    expect(failureOf(exited({ error: 'Invalid API key · Please run /login' }))?.kind).toBe('auth')
+    expect(failureOf(exited({ error: 'API Error: 401 authentication_error' }))?.kind).toBe('auth')
+  })
+
+  test('a cap signal: capped at turns, scored, never a driver failure', async () => {
+    const r = await runTrial(spec('cap-A'), ending({ stopped: 'turns' }), dir)
+    expect([r.end, r.capHits]).toEqual(['capped', ['turns']])
+  })
+
+  test.each([
+    ['a crash', 'crash', { error: 'Segmentation fault' }],
+    ['a 529', 'overloaded', { error: 'API Error: 529 Overloaded' }],
+  ] as const)(
+    '%s: set aside in interrupted/ and thrown, then on the rerun scored failed, not optimal',
+    async (_, kind, patch) => {
+      const id = `${kind}-A`
+      const first = await thrown(runTrial(spec(id), ending(patch), dir))
+      expect(first).toBeInstanceOf(DriverFailure)
+      expect((first as DriverFailure).kind).toBe(kind)
+      // no complete trace, so the resume reruns it; the attempt is kept in interrupted/
+      expect(existsSync(path.join(dir, `${id}.jsonl`))).toBe(false)
+      expect(priorFailures(dir, id)).toBe(1)
+      const second = await runTrial(spec(id), ending(patch), dir)
+      expect([second.end, second.metrics.optimal]).toEqual(['failed', false])
+      const end = readFileSync(path.join(dir, `${id}.jsonl`), 'utf8')
+        .trim()
+        .split('\n')
+        .map((l) => JSON.parse(l))
+        .find((l) => l.kind === 'end')
+      expect(end).toMatchObject({ end: 'failed', attempts: 2, driverFailure: { kind } })
+    },
+  )
+
+  test('an auth failure is thrown every time, never scored or retried into a result', async () => {
+    const auth = { error: 'Invalid API key · Please run /login' }
+    for (let i = 0; i < 2; i++) {
+      const e = await thrown(runTrial(spec('auth-A'), ending(auth), dir))
+      expect((e as DriverFailure).kind).toBe('auth')
+    }
+    expect(existsSync(path.join(dir, 'auth-A.jsonl'))).toBe(false)
+  })
+
+  test('a resume pauses when more than 5% of specs failed and await their rerun', () => {
+    const plan = Array.from({ length: 40 }, (_, i) => spec(`p${i}`)) as unknown as TrialSpec[]
+    const at = mkdtempSync(path.join(dir, 'pause-'))
+    const fail = (id: string) => {
+      const d = path.join(at, 'interrupted', `${id}-x`)
+      mkdirSync(d, { recursive: true })
+      writeFileSync(path.join(d, `${id}.failure.json`), '{}')
+    }
+    // 5% of 40 is 2: two failed specs proceed, a third pauses
+    fail('p0')
+    fail('p1')
+    expect(pauseFor(at, plan)).toBeUndefined()
+    fail('p2')
+    expect(pauseFor(at, plan)).toMatch(/3 specs failed .* more than 5% \(2\): tell intake/)
+    // a failed spec whose rerun completed no longer counts
+    writeFileSync(path.join(at, 'p2.jsonl'), '{}\n')
+    expect(pauseFor(at, plan)).toBeUndefined()
+  })
+})

@@ -58,6 +58,8 @@ const group = (rs: Result[]) => {
     susceptible: rate(rs, (r) => r.metrics.susceptible),
     none: rate(rs, (r) => r.metrics.choseNone),
     capped: rate(rs, (r) => r.end === 'capped'),
+    // a driver failure on both attempts, reported per cell (intake, 2026-11-18 12:05Z)
+    failed: rate(rs, (r) => r.end === 'failed'),
     completed: rate(rs, (r) => r.metrics.completed),
     switching: rate(rs, (r) => r.metrics.switched),
     correctedAfterDiscovery: rate(rs, (r) => r.metrics.correctedAfterDiscovery),

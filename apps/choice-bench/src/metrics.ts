@@ -9,7 +9,8 @@ import type { ServerRecord } from './server.ts'
 export const METRICS_VERSION = 2
 
 // how a trial ended (§5.2): a final message, a cap, or S's assertion failing
-export type EndReason = 'final' | 'capped' | 'aborted'
+// failed: a driver failure on the spec's second attempt (intake, 2026-11-18 12:05Z), not optimal under ITT
+export type EndReason = 'final' | 'capped' | 'aborted' | 'failed'
 
 const CHOICE = new Set(['hosting.plan.subscribe', 'hosting.bundle.subscribe'])
 
@@ -121,9 +122,9 @@ export const computeMetrics = (
     endOptimal: truth.optimal.includes(endChoice),
     succeeded,
     adheres,
-    // intent to treat, the primary outcome: a capped trial isn't optimal. optimalChoice is the capped-excluded
+    // intent to treat, the primary outcome: a capped or failed trial isn't optimal. optimalChoice is the capped-excluded
     // sensitivity analysis's (intake, 2026-11-18)
-    optimal: optimalChoice && end !== 'capped',
+    optimal: optimalChoice && end !== 'capped' && end !== 'failed',
     optimalChoice,
     // against the cheapest optimum among the readings it satisfies; none when it satisfies no reading
     overspendUsd: adheres

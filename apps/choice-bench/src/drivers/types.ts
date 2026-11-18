@@ -23,6 +23,12 @@ export type DriverResult = {
   resolvedModel?: string // the model the CLI says it ran, when it says
   // model turns: claude's own count; codex reports none, so its tool calls plus the final message
   turns?: number
+  // the CLI's own signal that it stopped at its turn limit: claude's result subtype error_max_turns. Codex has no turn
+  // flag, so its limit is the tool server's calls cap (boundary review #8)
+  stopped?: 'turns'
+  // the CLI's own error text when it failed: its error result or events, then stderr. The harness classifies a failure
+  // by it, as auth, overloaded or a crash
+  error?: string
   // what the run left in the real config dirs, listed and never deleted (isolation.ts)
   footprint?: import('./isolation.ts').Footprint
   raw: string // the path of the stored stdout
