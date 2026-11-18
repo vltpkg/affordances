@@ -42,9 +42,17 @@ export const applyDefaults = (schema: unknown, input: unknown): unknown => {
     return input
   const out: Record<string, unknown> = { ...(input as Record<string, unknown> | undefined) }
   for (const [key, prop] of Object.entries(s.properties)) {
-    if (!(key in out) && prop && typeof prop === 'object' && 'default' in prop)
+    // own keys only, never the prototype's: a property named toString or constructor gets its default, not an
+    // inherited function, and a __proto__ key is never assigned (review of 89799a3e)
+    if (key === '__proto__') continue
+    if (
+      !Object.hasOwn(out, key) &&
+      prop &&
+      typeof prop === 'object' &&
+      Object.hasOwn(prop, 'default')
+    )
       out[key] = structuredClone(prop.default)
-    if (key in out) out[key] = applyDefaults(prop, out[key])
+    if (Object.hasOwn(out, key)) out[key] = applyDefaults(prop, out[key])
   }
   return out
 }

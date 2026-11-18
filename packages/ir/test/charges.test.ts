@@ -95,3 +95,19 @@ test('a charge’s amount can’t read the principal', async () => {
   m.capabilities[1].effects[0].amount.value = 'principal.plan'
   expect(validate(m).issues.map((i) => i.code)).toContain('E_PATH')
 })
+
+test('defaults follow own keys only: toString and constructor get theirs, and __proto__ is never assigned', () => {
+  const schema = {
+    type: 'object',
+    properties: {
+      toString: { type: 'string', default: 'a' },
+      constructor: { type: 'string', default: 'b' },
+      ['__proto__']: { type: 'object', default: { polluted: true } },
+    },
+  }
+  const out = applyDefaults(schema, {}) as Record<string, unknown>
+  expect(out.toString).toBe('a')
+  expect(out.constructor).toBe('b')
+  expect(Object.hasOwn(out, '__proto__')).toBe(false)
+  expect(({} as Record<string, unknown>).polluted).toBeUndefined()
+})
