@@ -169,3 +169,14 @@ test('the adapter keeps the connection’s start, as type:key, on every later ca
   expect(s.calls[1]!.url).toContain('start=hosting.project%3Aproj_1')
   expect(s.calls[2]!.body?.start).toBe('hosting.project:proj_1')
 })
+
+test("the page's view request rides on every call: its policy on view, inspect and execute alike", async () => {
+  const s = server()
+  const adapter = httpAdapter('/api/projection', s.fetcher, { policy: 'exhaustive' })
+  await adapter.project(undefined)
+  await adapter.inspect('hosting.plan.subscribe@hosting.plan:p2')
+  await adapter.execute({ offer: 'hosting.plan.subscribe@hosting.plan:p2', input: {} })
+  expect(s.calls[0]!.url).toBe('/api/projection/view?policy=exhaustive')
+  expect(s.calls[1]!.url).toContain('policy=exhaustive')
+  expect(s.calls[2]!.body?.policy).toBe('exhaustive')
+})

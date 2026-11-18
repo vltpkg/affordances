@@ -28,13 +28,27 @@ const read = async (response: Response) => {
 }
 
 /**
- * @experimental The browser's adapter: RFC 0004 §2's endpoints under `base`, with the person's own cookie session. A
- * connection keeps the start its last view was made from, so expand, inspect and execute read the same projection.
+ * @experimental The page's view request, sent with every call: its policy, the app's choice (RFC 0002 §6). The route
+ * takes a budget only on expand, whose own arguments carry it.
  */
-export const httpAdapter = (base: string, fetcher: typeof fetch = fetch): AgentAdapter => {
+export type ViewRequest = { policy?: string }
+
+/**
+ * @experimental The browser's adapter: RFC 0004 §2's endpoints under `base`, with the person's own cookie session. A
+ * connection keeps the start its last view was made from, so expand, inspect and execute read the same projection,
+ * under the page's own view request.
+ */
+export const httpAdapter = (
+  base: string,
+  fetcher: typeof fetch = fetch,
+  view: ViewRequest = {},
+): AgentAdapter => {
   let start: string | undefined
-  const withStart = <T extends Record<string, unknown>>(body: T) =>
-    start === undefined ? body : { ...body, start }
+  const withStart = <T extends Record<string, unknown>>(body: T) => ({
+    ...body,
+    ...(view.policy && { policy: view.policy }),
+    ...(start !== undefined && { start }),
+  })
   const post = (op: string, body: Record<string, unknown>) =>
     fetcher(`${base}/${op}`, {
       method: 'POST',
@@ -117,6 +131,8 @@ export type WebMcpOptions = {
   manifest?: CapabilityManifest
   // the page's consent prompt, used only where the browser offers requestUserInteraction
   ask: AskPerson
+  // the view request every call carries: the policy (the route's default without one)
+  view?: ViewRequest
   context?: ModelContext
   fetcher?: typeof fetch
 }
@@ -129,7 +145,7 @@ export const registerWebMcp = (options: WebMcpOptions): string[] => {
   const context = options.context ?? modelContext()
   if (!context) return []
   const toolset = createToolset({
-    adapter: httpAdapter(options.base, options.fetcher),
+    adapter: httpAdapter(options.base, options.fetcher, options.view),
     mode: options.mode ?? 'generic',
     ...(options.manifest && { manifest: options.manifest }),
   })
