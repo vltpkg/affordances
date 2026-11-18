@@ -1,10 +1,15 @@
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { afterAll, beforeAll, expect, test } from 'vitest'
+import { afterAll, beforeAll, expect, test, vi } from 'vitest'
 // the IR's own schema, by path: next takes @affordances/ir as a devDependency once the shared lockfile is free
 import { CapabilityDefinition } from '../../ir/src/schema.ts'
 import { writeIds } from '../src/codegen.ts'
 import { extract, segmentResource, SOURCE } from '../src/extract.ts'
+
+// every test here runs the extractor, which compiles the fixture's TypeScript: 1.5 to 5s a call on a shared host at a
+// load average of 33 on 16 cores (M7f's real path at 87c5a44d), so the default 5s is a load limit, not a check. The
+// determinism and app-copy tests keep their own, longer budgets
+vi.setConfig({ testTimeout: 60_000 })
 
 // RFC 0005 §2.1's rules E1 to E9, each read from a literal, each with its basis, over a fixture app and over a copy
 // of apps/example
