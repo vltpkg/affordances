@@ -1,6 +1,6 @@
 # RFC 0004: Protocol evolution
 
-**Status:** accepted (2026-11-18); amended 2026-11-18: §5 (WebMCP's confirmation fails closed, generic is its default, the per-capability option as built, a fixed list, with following the view not built, and the page's start); §4 (an MCP server over any adapter, protocol 1 over fetch in the runtime's agent core, and a connection's start is the host's). **Builds on:** RFC 0001 (the IR), RFC 0002 (contextual projection), RFC 0003 (the benchmark's tools), RFC 0005 (Next.js compilation). **Settles:** the wire format RFC 0002 §10 and RFC 0005 §5 left open.
+**Status:** accepted (2026-11-18); amended 2026-11-18: §5 (WebMCP's confirmation fails closed, generic is its default, the per-capability option as built, a fixed list, with following the view not built, and the page's start); §4 (an MCP server over any adapter, protocol 1 over fetch in the runtime's agent core, and a connection's start is the host's); §2.3 (a refusal before the runtime has the runtime's shape, with its codes named, and every protocol-1 response carries `version=1`, from M8's code review). **Builds on:** RFC 0001 (the IR), RFC 0002 (contextual projection), RFC 0003 (the benchmark's tools), RFC 0005 (Next.js compilation). **Settles:** the wire format RFC 0002 §10 and RFC 0005 §5 left open.
 
 ## Summary
 
@@ -103,18 +103,21 @@ type ExecuteRequest = ViewRequest & {
   - **The challenge:** RFC 9110 requires one on every 401, so it's `WWW-Authenticate: Bearer`, since a bearer token is the agent's credential.
   - **One edge, as HTTP practice has it:** an anonymous caller refused by a condition that signing in wouldn't satisfy still gets 401 first, then 403 once authenticated.
 
-  | Code                                                                                    | Status                               |
-  | --------------------------------------------------------------------------------------- | ------------------------------------ |
-  | `not_found`                                                                             | 404                                  |
-  | `unauthorized`, the principal isn't authenticated (no credential, or an invalid one)    | 401, with `WWW-Authenticate: Bearer` |
-  | `unauthorized`, the principal is authenticated but lacks the capability's authorization | 403                                  |
-  | `invalid_input` (the input fails its schema)                                            | 422, as v0                           |
-  | a malformed body (not JSON, not an object, no offer id), refused before the runtime     | 400                                  |
-  | `precondition`, `stale`, `confirmation_required`                                        | 409                                  |
-  | `rate_limited`                                                                          | 429, with `Retry-After`              |
-  | a handler failure                                                                       | 500                                  |
+  | Code                                                                                                    | Status                               |
+  | ------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+  | `not_found`                                                                                             | 404                                  |
+  | `unauthorized`, the principal isn't authenticated (no credential, or an invalid one)                    | 401, with `WWW-Authenticate: Bearer` |
+  | `unauthorized`, the principal is authenticated but lacks the capability's authorization                 | 403                                  |
+  | `invalid_input` (the input fails its schema)                                                            | 422, as v0                           |
+  | a malformed body (not JSON, not an object, no offer id), refused before the runtime, as `invalid_input` | 400                                  |
+  | `precondition`, `stale`, `confirmation_required`                                                        | 409                                  |
+  | `rate_limited`                                                                                          | 429, with `Retry-After`              |
+  | a handler failure                                                                                       | 500                                  |
 
   A refusal's body is the runtime's, in full: its code, condition, detail, issues and, for a confirmation, its summary and token.
+
+- **A refusal before the runtime has the same shape** (amended, intake, 2026-11-18, from M8's code review): `{ status: 'refused', code, detail }`, with no new code. The Origin's 403 is `unauthorized`; a malformed body's 400 is `invalid_input`, which the status tells apart from a schema failure's 422; and a missing offer or operation's 404 is `not_found`. A client reads one vocabulary, and nothing branches on a code no runtime sends.
+- **Every protocol-1 response names its version:** `application/vnd.affordances+json; version=1` (§1), views, results and refusals alike. The manifest is `application/json`, since it's the canonical IR, not a protocol-1 body.
 
 **Alternatives considered:**
 
