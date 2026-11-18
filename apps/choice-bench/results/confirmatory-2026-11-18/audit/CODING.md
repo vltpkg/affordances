@@ -1,6 +1,6 @@
 # M5 confirmatory: the post-hoc audit's coding rule
 
-**POST HOC and DESCRIPTIVE** (intake, 2026-11-18 07:35Z). Nothing here changes a pre-registered number.
+**POST HOC and DESCRIPTIVE** (intake's audit packet, in queue row `qitem-20261118072815-57e3ca33…`, created 2026-11-18 07:28:15Z by the queue's clock; the packet's own heading says 07:35Z). `code.py`'s header carries the packet's label, and is left as committed, since it's the rule. Nothing here changes a pre-registered number.
 
 This rule was committed before it was applied to any trace. [`code.py`](code.py) is the rule, and this file states it in prose.
 

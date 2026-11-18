@@ -51,7 +51,7 @@ Its output is [`analysis.json`](analysis.json). The outcome is the optimal rate,
 
 ### H2, C vs A: rejected, with C lower
 
-> **Validity note (intake, 2026-11-18 07:40Z).** As built, C differs from A in two ways: the owner's claims, and the advocated policy's scope (neighborhood depth 1). That scope leaves out `hosting.plan.list`, the only offer carrying the plans' allowances. H2 therefore measures the advocated policy as a whole against exhaustive disclosure; it does not isolate the claims. Conditional on seeing Pro's allowance before the first approval request, C Sonnet was optimal 17/19; without it, 0/95 ([`audit/`](audit/README.md), post hoc).
+> **Validity note** (intake's rulings, in queue row `qitem-20261118073546-90250bb8…`, created 2026-11-18 07:35:46Z by the queue's clock; the packet's own heading says 07:40Z). As built, C differs from A in two ways: the owner's claims, and the advocated policy's scope (neighborhood depth 1). That scope leaves out `hosting.plan.list`, the only offer carrying the plans' allowances. H2 therefore measures the advocated policy as a whole against exhaustive disclosure; it does not isolate the claims. Conditional on seeing Pro's allowance before the first approval request, C Sonnet was optimal 17/19; without it, 0/95 ([`audit/`](audit/README.md), post hoc).
 
 The effect differs between the models (Breslow–Day chi² 53.3, p 2.9e-13), so it's reported per model first:
 
