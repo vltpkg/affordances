@@ -98,17 +98,6 @@ export const fromModules = (
     return beside.length ? { diagnostics } : { manifest: whole, diagnostics }
   }
 
-  // the namespace is the app's identity, so it's never inferred: without one there's no manifest (RFC 0005 §1)
-  if (!identity.namespace)
-    return {
-      diagnostics: [
-        {
-          code: 'W_NO_NAMESPACE',
-          message: 'No namespace is configured, so no manifest is built',
-        },
-      ],
-    }
-
   // one definition per id; the same canonical bytes collapse, different ones are reported with both places
   const unite = <T>(brand: Brand, id: (value: T) => string, bytes: (value: T) => string) => {
     const byId = new Map<string, Found>()
@@ -157,7 +146,15 @@ export const fromModules = (
         message: `${where(f)} makes claims, and a claim is the owner's: configure an owner`,
       })
   }
-  if (diagnostics.some((d) => d.code.startsWith('E_'))) return { diagnostics }
+  // the namespace is the app's identity, so it's never inferred: without one there's no manifest (RFC 0005 §1). The
+  // modules are still checked, so their errors show before a namespace is set
+  if (!identity.namespace)
+    diagnostics.push({
+      code: 'W_NO_NAMESPACE',
+      message: 'No namespace is configured, so no manifest is built',
+    })
+  if (!identity.namespace || diagnostics.some((d) => d.code.startsWith('E_')))
+    return { diagnostics }
 
   const spec: ManifestSpec = {
     namespace: identity.namespace,

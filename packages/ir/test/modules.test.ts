@@ -205,12 +205,29 @@ test('a defineManifest export is used whole, and nothing may sit beside it', () 
   ])
 })
 
-test('without a namespace nothing is built, and nothing is inferred', () => {
+test('without a namespace nothing is built, and nothing is inferred, but the modules are still checked', () => {
   const result = fromModules([{ file: 'app/capabilities.ts', exports: { plan, subscribe } }], {
     owner,
   })
   expect(result.manifest).toBeUndefined()
   expect(result.diagnostics.map((d) => d.code)).toEqual(['W_NO_NAMESPACE'])
+
+  // a module's own errors show before a namespace is set, not only after
+  const other = defineResource({ id: 'hosting.plan', description: 'Another plan', key: 'slug' })
+  const broken = fromModules(
+    [
+      { file: 'app/capabilities.ts', exports: { plan, subscribe, recommended } },
+      { file: 'app/admin/capabilities.ts', exports: { other } },
+    ],
+    {},
+  )
+  expect(broken.manifest).toBeUndefined()
+  expect(broken.diagnostics.map((d) => d.code).toSorted()).toEqual([
+    'E_CAPABILITY_DUPLICATE',
+    'E_CLAIMS_NO_OWNER',
+    'W_NO_NAMESPACE',
+    'W_NO_OWNER',
+  ])
 })
 
 test('without an owner nothing is declared, and a claim, being the owner’s, is an error', () => {
