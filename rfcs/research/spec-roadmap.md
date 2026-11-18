@@ -95,7 +95,7 @@ confirmation exactly, but not the ids themselves, which the developer chooses (R
   - rate limiting, so `rate_limited` exists only in the types;
   - the v0 spec text for the site index's `capabilities` field.
 - **Protocol-1 request schemas:** v1's request bodies have no published schemas; the route validates by hand, and the generic tools' schemas are held to it by a test. Publishing them would add surface to a published package, which is a release decision.
-- **Core serving the manifest:** the Next.js route normalizes the manifest's path itself, beside core's handler for the index, with a test holding the two alike. Moving it into core would add an option to a published package, which is a release decision.
+- **Core serving the manifest:** the Next.js route normalizes the manifest's path itself, beside core's handler for the index, with a test holding the two alike. Moving it into core would remove about two well-tested lines at the cost of a new experimental option on core, which wasn't judged worth it.
 - **Two open optimizations,** recorded rather than changed (M8's simplification pass):
   - the stateless HTTP `inspect` and `expand` re-project on every call; offer-scoped inspection would avoid it;
   - a checked v0 call projects twice.
