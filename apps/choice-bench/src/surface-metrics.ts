@@ -9,6 +9,16 @@ import type { SurfaceId } from './surfaces.ts'
 
 export const SURFACE_METRICS_VERSION = 1
 
+/**
+ * Completed, read from the store on every surface (the planner, 16:04Z and 16:07Z), never from navigation or the
+ * trace: the task's purchase made, so the session's end state costs more each month than the trial's own starting
+ * state, by the labeller's own price. A plan, bundle or add-on bought raises it; a cancel, a removal or a deploy
+ * doesn't, so no other change counts. M5 had no store rule (it counted an approved execution that ran, from the
+ * trace), and tasks.ts labels states without one, so this is the first.
+ */
+export const purchaseMade = (start: lab.EndState, end: lab.EndState) =>
+  lab.monthlyUsd(end) > lab.monthlyUsd(start)
+
 /** What the runner reads from a surface's record, the same way for every surface. */
 export type SurfaceFacts = {
   surface: SurfaceId

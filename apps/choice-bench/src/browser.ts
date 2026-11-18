@@ -77,13 +77,3 @@ export const browsingLoad = (record: Pick<BrowserRecord, 'loads' | 'confirms'>) 
       ),
   )
 }
-
-/**
- * A completed purchase: a confirm whose next load left the review step, as a confirmed purchase redirects back. A
- * confirm that failed stays on the review page, so a later Back doesn't count.
- */
-export const browserCompleted = (record: Pick<BrowserRecord, 'loads' | 'confirms'>) =>
-  record.confirms.some((c) => {
-    const next = record.loads.find((l) => l.at >= c.at)
-    return !!next && new URL(next.url).pathname !== '/review'
-  })

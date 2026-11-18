@@ -40,19 +40,6 @@ export const mcpRequestsOf = (record: Pick<McpRecord, 'calls'>) => {
   })
 }
 
-/** Completed: an execute that ran while the person accepted an elicitation within that same call. */
-export const mcpCompleted = (record: Pick<McpRecord, 'calls' | 'elicitations'>) =>
-  record.calls.some(
-    (c) =>
-      execution(c)?.status === 'succeeded' &&
-      record.elicitations.some(
-        (e) =>
-          e.at >= c.at &&
-          e.at <= c.at + c.ms &&
-          (e.answer as { action?: string } | undefined)?.action === 'accept',
-      ),
-  )
-
 /** The pilot's finding: whether the client declared MCP's elicitation at initialize. */
 export const declaresElicitation = (record: Pick<McpRecord, 'clientCapabilities'>) =>
   !!record.clientCapabilities && 'elicitation' in record.clientCapabilities

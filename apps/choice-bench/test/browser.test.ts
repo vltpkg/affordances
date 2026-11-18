@@ -1,11 +1,6 @@
 import { expect, test } from 'vitest'
 import type { BrowserLoad } from '../src/browser-server.ts'
-import {
-  browserCompleted,
-  browserRequestsOf,
-  browsingLoad,
-  firstRequestAt,
-} from '../src/browser.ts'
+import { browserRequestsOf, browsingLoad, firstRequestAt } from '../src/browser.ts'
 
 // the browser surface's request events and flags (surfaces/PLAN.md §5), from its record's loads and confirms
 
@@ -53,18 +48,4 @@ test('a browsing load: a review load, then without a confirm, one carrying a dif
       confirms: [{ call: 1, at: 2 }],
     }),
   ).toBe(false)
-})
-
-test('completed: a confirm whose next load left the review step; a failed confirm and a Back doesn’t count', () => {
-  expect(
-    browserCompleted({ loads: [at(pro, 1), at('/plans', 3)], confirms: [{ call: 1, at: 2 }] }),
-  ).toBe(true)
-  // the confirm failed, so the page reloaded the review step; then the agent went back
-  expect(
-    browserCompleted({
-      loads: [at(pro, 1), at(pro, 3), at('/plans', 5)],
-      confirms: [{ call: 1, at: 2 }],
-    }),
-  ).toBe(false)
-  expect(browserCompleted({ loads: [at(pro, 1)], confirms: [] })).toBe(false)
 })

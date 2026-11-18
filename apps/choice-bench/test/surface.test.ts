@@ -6,7 +6,7 @@ import { afterAll, expect, test } from 'vitest'
 import { fakeDriver } from '../src/drivers/fake.ts'
 import type { Driver } from '../src/drivers/types.ts'
 import { DriverFailure, faultsByCell, type TrialSpec } from '../src/harness.ts'
-import { surfaceMetrics, type SurfaceFacts } from '../src/surface-metrics.ts'
+import { purchaseMade, surfaceMetrics, type SurfaceFacts } from '../src/surface-metrics.ts'
 import { runSurfaceSpecs, runSurfaceTrial, surfacePromptFor } from '../src/surface.ts'
 import { surfaces, type SurfaceId } from '../src/surfaces.ts'
 
@@ -38,6 +38,19 @@ const facts = (over: Partial<SurfaceFacts> = {}): SurfaceFacts => ({
   ...over,
 })
 const none = { state: undefined, replayed: [], skipped: [], alternatives: [] }
+
+test('completed is the task’s purchase made, read from the store: a refused confirm or a non-purchase change isn’t', () => {
+  const hobby = { plan: 'hobby', bundle: null, addOns: [] } as lab.EndState
+  const pro = { plan: 'pro', bundle: null, addOns: [] } as lab.EndState
+  // a purchase in the store counts, whichever call made it: review's two tabs, the other tab's Pro
+  expect(purchaseMade(hobby, pro)).toBe(true)
+  expect(purchaseMade(hobby, { ...hobby, addOns: ['daily-backups'] } as lab.EndState)).toBe(true)
+  // a refused confirm leaves the store as it was, whatever the page did after
+  expect(purchaseMade(hobby, hobby)).toBe(false)
+  // a downgrade, or a removal, changes the state but buys nothing
+  expect(purchaseMade(pro, hobby)).toBe(false)
+  expect(purchaseMade({ ...pro, addOns: ['daily-backups'] } as lab.EndState, pro)).toBe(false)
+})
 
 test('a consequential error is any request event’s state satisfying no reading, or an unauthorized refusal', () => {
   const truth = lab.groundTruth(T6)

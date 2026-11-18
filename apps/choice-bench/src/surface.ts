@@ -29,22 +29,16 @@ import {
 import type { EndReason } from './metrics.ts'
 import { askedToConfirm, responseOf } from './response.ts'
 import type { SurfaceServerConfig, SurfaceServerRecord } from './surface-server.ts'
-import { surfaceMetrics, type SurfaceFacts } from './surface-metrics.ts'
+import { purchaseMade, surfaceMetrics, type SurfaceFacts } from './surface-metrics.ts'
 import { surfaces, type Surface } from './surfaces.ts'
 import { TOOLS } from './tools.ts'
-import { permutationFor } from './trial.ts'
+import { permutationFor, setupTrial } from './trial.ts'
 import type { V0Config, V0Record } from './v0-server.ts'
 import { consequential, type V0Trial } from './v0.ts'
 import type { BrowserConfig, BrowserRecord } from './browser-server.ts'
-import { browserCompleted, browsingLoad, firstRequestAt, type BrowserTrial } from './browser.ts'
+import { browsingLoad, firstRequestAt, type BrowserTrial } from './browser.ts'
 import type { McpConfig, McpRecord } from './mcp-server.ts'
-import {
-  declaresElicitation,
-  mcpCompleted,
-  mcpRequestEvent,
-  mcpUnauthorized,
-  type McpTrial,
-} from './mcp.ts'
+import { declaresElicitation, mcpRequestEvent, mcpUnauthorized, type McpTrial } from './mcp.ts'
 
 // one M7f surface trial (surfaces/PLAN.md §3, §5; the planner, 14:50Z): the trial's own fresh server, the surface's
 // tools, the driver, and the outcome read the same way on every surface. The intended end state is replayed from the
@@ -81,7 +75,7 @@ const factsOf = async (
   task: string,
   record: SurfaceServerRecord | V0Record | BrowserRecord | McpRecord,
   endState: lab.EndState,
-): Promise<SurfaceFacts> => {
+): Promise<Omit<SurfaceFacts, 'completed'>> => {
   const gb = (await planAttributes('pro')).bandwidthGb
   if (surface.kind === 'mcp') {
     const m = record as McpRecord
@@ -95,7 +89,6 @@ const factsOf = async (
       proAllowanceSeen: m.calls
         .slice(0, firstRequest)
         .some((c) => showsFact(c.output, 'pro', 'bandwidthGb', gb)),
-      completed: mcpCompleted(m),
       unauthorized: mcpUnauthorized(m),
       endState,
     }
@@ -118,7 +111,6 @@ const factsOf = async (
       proAllowanceSeen: before.some((c) =>
         showsInTree(parseAria(c.output), pro, `${Number(gb).toLocaleString('en')} GB`, plans),
       ),
-      completed: browserCompleted(b),
       // the browser reaches no API: a refusal is the page's, never 'unauthorized'
       unauthorized: false,
       endState,
@@ -137,12 +129,6 @@ const factsOf = async (
       calls: calls.length,
       firstRequest,
       proAllowanceSeen: before.some((c) => showsFact(c.output, 'pro', 'bandwidthGb', gb)),
-      completed: calls.some(
-        (c) =>
-          c.tool === 'affordances_call' &&
-          (c.input as { confirm?: boolean }).confirm === true &&
-          delta(c)?.ok === true,
-      ),
       unauthorized: calls.some((c) => delta(c)?.error?.code === 'unauthorized'),
       endState,
     }
@@ -158,9 +144,6 @@ const factsOf = async (
     proAllowanceSeen: calls
       .slice(0, firstRequest)
       .some((c) => showsFact(structured(c.response), 'pro', 'bandwidthGb', gb)),
-    completed: calls.some(
-      (c) => c.tool === 'execute' && !!c.state && !!(c.input as { approval?: string }).approval,
-    ),
     unauthorized: calls.some((c) => c.tool === 'execute' && responseOf(c)?.code === 'unauthorized'),
     endState,
   }
@@ -382,7 +365,12 @@ export const runSurfaceTrial = async (
     result?.stopped === 'turns' && 'turns',
   ].filter((x): x is string => typeof x === 'string')
   const end: EndReason = failed ? 'failed' : capHits.length ? 'capped' : 'final'
-  const facts = await factsOf(surface, spec.task, record, endState!)
+  // completed, from the store: the session's cross-checked end state against the trial's own start (purchaseMade)
+  const start = await (await setupTrial(surfaces.full.condition!, spec.index, spec.task)).endState()
+  const facts: SurfaceFacts = {
+    ...(await factsOf(surface, spec.task, record, endState!)),
+    completed: purchaseMade(start, endState!),
+  }
   const metrics = {
     ...surfaceMetrics(facts, intended, { tokens, durationMs: result?.durationMs ?? 0 }, end),
     ...browserMetrics,
