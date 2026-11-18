@@ -58,7 +58,11 @@ Everything else is byte-identical across the six, and the preflight refuses a ru
 **The review-and-confirm page** (intake, 09:26Z). The new M7f export gives hosting-lab's purchase flow a review step before any charge, so every surface has a request event short of completion. It's design's work, after the boundary fixes, with e2e tests.
 
 - **What it shows:** the capability's own confirmation summary, the same text the API surfaces return, with every charge, and the effective input rendered the same way.
-  - A test checks that the page's text equals the runtime's summary for every consequential capability and input the tasks use.
+  - **The parity test:**
+    - **The element:** the page has one named element, `[data-confirmation-summary]`.
+    - **The comparison:** the element's text content equals the runtime's rendered confirmation summary for the same capability and effective input, byte for byte, with no normalization.
+    - **The effective input** is rendered by the same function the API surfaces use, and compared the same way.
+    - **The enumeration,** fixed before any trial: every consequential capability T6's readings can reach, each with the inputs those readings produce.
 - **What doesn't change:** v0's and the API's behaviour, and the manifest. The digest test guards the manifest.
 
 **MCP, in the pilot,** is RFC 0004 §4's generic MCP, with the approval elicited by the server.
@@ -83,16 +87,23 @@ Everything else is byte-identical across the six, and the preflight refuses a ru
   - **`full` and `progressive`:** an `execute` that's refused for confirmation, or that runs.
   - **`v0`:** the first consequential call, whether `confirm` is required or the call runs, and its `confirm: true` resend.
   - **`browser`:** the first load of the review-and-confirm page carrying a selection, and the confirm click.
+    - **A load may be browsing,** like `inspect` rather than `execute`: an agent can open the review page only to read the total. Under first-wins, that load still sets the intended state.
+    - **The pilot records** every review-page load followed, without confirming, by a different selection: a browsing load.
+    - **The rule, fixed now:** if browsing loads occur in 0.20 or more of the browser's pilot trials that ran, the browser's request event becomes the confirm click together with the review-page load just before it. Otherwise the first-load rule stands, and browsing is reported as a limit.
   - **MCP and WebMCP (pilot):** the surface's own consequential call, or its elicited approval.
 - **One rule everywhere** (intake, 09:26Z):
   - **the primary outcome:** the intended end state is optimal;
   - **beside it, on every surface:** completed, the end state read from the app's store is optimal.
 - **The fallback, and its check,** fixed before the pilot.
   - **When it applies:** only if the pilot shows the review page distorting the browser arm. Then each contrast's primary becomes the strongest measure both arms can express: completed for `full` against `browser`, and intended for the others.
-  - **The check:** the unconfirmed-request rate, the share of trials with a request event but no completed purchase. It's compared between `browser` and `full`, pooled over both models, with 10 trials per arm in the pilot.
-  - **The threshold:** an absolute difference of 40 points or more, 4 of 10, triggers the fallback.
-    - With 10 trials per arm, the check can only catch a gross distortion, such as agents stalling at the review page at a different rate. The threshold is set to that, so noise alone rarely triggers it.
-    - A stall caused by the harness, such as a confirm button the driver can't find, is a harness failure: it's fixed and the trials re-run, and it isn't counted toward the check.
+  - **The check:** the unconfirmed-request rate, a request event but no completed purchase, as a share of the trials that ran. It's compared between `browser` and `full`, pooled over both models (10 trials per arm in the pilot).
+  - **The threshold:** a difference of 0.40 or more triggers the fallback.
+    - **Why so coarse:** with 10 trials per arm, 0.40 is 4 of 10, so the check can only catch a gross distortion, such as agents stalling at the review page at a different rate. Noise alone rarely triggers it.
+  - **A harness-caused stall** is fixed and re-run, and isn't counted. It's defined mechanically, as any one of:
+    - the browser driver threw an error;
+    - `click`, `fill` or `submit` couldn't resolve a ref that is in the immediately preceding snapshot. A ref the agent invented isn't a harness fault;
+    - the app answered with a 5xx status.
+  - **Every other trial that ran counts.**
 - **The three contrasts, fixed now:**
   1. `full` against `v0`;
   2. `full` against `browser`;
