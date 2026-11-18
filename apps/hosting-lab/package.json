@@ -5,7 +5,7 @@
   "description": "A fictional hosting provider: the fixed option set the agent-choice benchmark shares, and its app",
   "type": "module",
   "exports": {
-    "./manifest": "./src/manifest.ts",
+    "./manifest": "./src/app/capabilities.ts",
     "./catalog": "./src/catalog.ts",
     "./trial": "./src/trial.ts",
     "./serve": "./src/lib/serve.ts"
