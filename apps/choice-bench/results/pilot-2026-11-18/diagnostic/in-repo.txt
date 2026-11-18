@@ -1,0 +1,31 @@
+# In-repo context diagnostic: a factual summary (intake, 2026-11-18)
+
+This summarizes the call's output. The verbatim output stays off the repo, in the seat's on-disk export directory; its sha256 is in the README.
+
+## The call
+
+- **What:** one `claude -p` call (claude-haiku-5-5), configured exactly as a pilot trial. Its cwd was a fresh directory under `apps/choice-bench/results/`, inside the repo. It used the driver's flags, including `--setting-sources ''`, `--strict-mcp-config` and `--no-session-persistence`.
+- **Not a trial:** it wasn't scored, and isn't counted among the 110.
+- **The prompt:** list, verbatim and in full, every instruction, memory, project file or context it was given besides the message, or say NONE, and call no tool.
+
+## What it reported receiving
+
+1. **The base system prompt.** It summarized this rather than quoting it: its identity, security, harness and tool-use rules.
+2. **An environment block:** the working directory, platform, shell, model and date.
+3. **The seat's auto-memory index** (`MEMORY.md`), quoted verbatim: 31 one-line entries.
+   - **What it covers:** the seat's working notes on version control, review routines, root checks, the md and md-core packages, test pitfalls and rig routing.
+   - **What it doesn't cover:** none of the entries names a hosting plan, a price, an add-on, a bundle, a task, or the benchmark's answers. A search of the full output for hobby, pro, business, priority, bundle, rollback, price, USD and optim finds 0 matches.
+4. **The memory-system instructions,** which describe how memory files are written.
+5. **A git block:** the branch (`gitbutler/workspace`), the main branch, the git user's name and email, and the five most recent commit subjects:
+   - `569a72b7` GitButler Workspace Commit
+   - `4893655c` fix(choice-bench): a pilot run resumes from complete traces, and never re-runs a trial
+   - `9ddd9d8b` feat(choice-bench): intake's pilot runbook, in the harness
+   - `da78736b` docs(rfcs): RFC 0003 §6, switching is after a request from the decision has applied
+   - `d9f75de2` fix(choice-bench): every metric RFC 0003 §6 names is a field, under that name
+6. **No CLAUDE.md content:** it said so explicitly.
+
+## Reading
+
+- **The commit subjects name the benchmark's harness** (choice-bench, the pilot runbook, RFC 0003's metrics), so an agent that reads them can tell it's in a benchmark. That's a demand characteristic, and the reason the pilot's Claude cells are void.
+- **The memory index is foreign context, not task information.**
+- **The control,** in `control.txt`, ran from an empty directory outside the repo. It received only the base prompt, the environment and the memory-system instructions, with an empty memory directory. It got no index and no git block.

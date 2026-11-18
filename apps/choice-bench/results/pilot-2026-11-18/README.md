@@ -40,7 +40,9 @@ RFC 0003 §8's pilot: 110 trials, run by `node src/run.ts pilot` at `ejkorol/sem
 A diagnostic `claude -p` call, configured exactly as a trial, was asked to quote whatever it was given besides the prompt. It wasn't a trial and wasn't scored. Its cwd was under `results/` in the repo, and it used `--setting-sources ''`.
 
 - **What it received:** the seat's auto-memory index (`MEMORY.md`) and the memory-system instructions. It also got a git block: the branch, the git user, and the five latest commit subjects, which named the benchmark's harness.
-- **What it didn't:** any `CLAUDE.md`.
+- **The user's email address,** which is also in its context.
+- **What it didn't receive:** any `CLAUDE.md`.
+- **Both outputs** are in `diagnostic/`: `in-repo.txt` and `control.txt`. They're redacted for the repo, with each redaction marked.
 - **A control from an empty directory outside the repo** received only the memory instructions, with an empty memory directory: no index, no git block.
 
 The git block tells an agent it's in a benchmark, a demand characteristic. So the Claude cells are void, whether or not the effect is consistent across conditions. Codex loads `AGENTS.md`, and the repo has none, so its trials stand.
