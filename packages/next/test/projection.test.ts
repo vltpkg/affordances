@@ -293,20 +293,35 @@ const message = (f: () => unknown) => {
   }
   return 'no error'
 }
-test("the route's approval gate is the runtime's, word for word", async () => {
+// the gate is a security decision, so the copy is held to the runtime's on every input: for each NODE_ENV, unset
+// included, and each combination of key and store, both pass or both throw, with the same message
+test("the route's approval gate decides as the runtime's does, in every case, word for word", async () => {
   const { approvalGate } = await import('@affordances/runtime')
   const store = { claim: async () => true }
   const key = {} as CryptoKey
+  let checked = 0
   try {
-    vi.stubEnv('NODE_ENV', 'production')
-    for (const given of [{}, { seenTokens: store }, { approvalKey: key }]) {
-      const theirs = message(() => approvalGate('createProjectionRoute', given))
-      expect(theirs).not.toBe('no error')
-      expect(message(() => createProjectionRoute({ ...routeOptions, ...given }))).toBe(theirs)
+    for (const env of [undefined, '', 'staging', 'production', 'development', 'test']) {
+      vi.stubEnv('NODE_ENV', env)
+      for (const given of [
+        {},
+        { seenTokens: store },
+        { approvalKey: key },
+        { approvalKey: key, seenTokens: store },
+      ]) {
+        const theirs = message(() => approvalGate('createProjectionRoute', given))
+        expect([
+          env,
+          Object.keys(given),
+          message(() => createProjectionRoute({ ...routeOptions, ...given })),
+        ]).toEqual([env, Object.keys(given), theirs])
+        checked++
+      }
     }
   } finally {
     vi.unstubAllEnvs()
   }
+  expect(checked).toBe(24)
 })
 
 test('a token claimed through one instance’s shared store is refused when replayed through another', async () => {
