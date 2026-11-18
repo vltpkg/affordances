@@ -23,6 +23,8 @@ export type DriverResult = {
   resolvedModel?: string // the model the CLI says it ran, when it says
   // model turns: claude's own count; codex reports none, so its tool calls plus the final message
   turns?: number
+  // what the run left in the real config dirs, listed and never deleted (isolation.ts)
+  footprint?: import('./isolation.ts').Footprint
   raw: string // the path of the stored stdout
 }
 

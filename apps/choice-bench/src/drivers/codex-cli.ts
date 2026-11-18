@@ -1,4 +1,4 @@
-import { assertIsolated, makeHome, removeHome } from './isolation.ts'
+import { assertIsolated, codexSessions, footprintOf } from './isolation.ts'
 import { freshDir, json, runCli, trialEnv, versionOf, type Ran } from './process.ts'
 import type { Driver, DriverResult } from './types.ts'
 
@@ -44,11 +44,11 @@ export const codexCli = (options: {
     async run(trial) {
       version ??= versionOf(command)
       const dir = freshDir(options.root, 'codex')
-      // a home of its own, and nothing of the repo's or the seat's reachable (isolation.ts)
-      // isolated: false is the canary's own negative check, never a trial (canary.test.ts)
-      const home = options.isolated === false ? undefined : makeHome('codex')
-      try {
-        if (home) assertIsolated(dir, home)
+      // nothing of the repo's or the seat's reachable, and the real config dirs read, never written (isolation.ts).
+      // isolated: false is the canary's own negative check, never a trial
+      if (options.isolated !== false) assertIsolated(dir)
+      const sessionsBefore = codexSessions()
+      {
         const server =
           'url' in trial.mcp
             ? [`mcp_servers.${SERVER}.url=${toml(trial.mcp.url)}`]
@@ -62,6 +62,9 @@ export const codexCli = (options: {
             'exec',
             '--json',
             '--ephemeral',
+            // no AGENTS.md of any kind loads: the canary refuses the run if the user's global one still does
+            '-c',
+            'project_doc_max_bytes=0',
             '--ignore-user-config',
             '--ignore-rules',
             '--skip-git-repo-check',
@@ -79,11 +82,9 @@ export const codexCli = (options: {
             ...(options.disabled ?? DISABLED).flatMap((f) => ['--disable', f]),
             trial.prompt,
           ],
-          { dir, timeoutMs: trial.timeoutMs, env: { ...trialEnv(), ...home?.env }, stdin: '' },
+          { dir, timeoutMs: trial.timeoutMs, env: trialEnv(), stdin: '' },
         )
-        return parse(ran, version)
-      } finally {
-        if (home) removeHome(home)
+        return { ...parse(ran, version), footprint: footprintOf(dir, sessionsBefore) }
       }
     },
   }

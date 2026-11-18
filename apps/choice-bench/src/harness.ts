@@ -150,6 +150,8 @@ export const runTrial = async (spec: TrialSpec, driver: Driver, dir: string) => 
       totalTokens: tokens,
       durationMs: result?.durationMs ?? 0,
       turns: result?.turns ?? null,
+      // what the CLI left in the real config dirs: listed, never deleted. A Claude file under the trial's own key flags it
+      footprint: result?.footprint ?? null,
       load: { start: loadAtStart, end: loadavg() },
       endState: record.endState,
       raw: result?.raw ?? null,
@@ -169,6 +171,8 @@ export const runTrial = async (spec: TrialSpec, driver: Driver, dir: string) => 
     spawned,
     metrics,
     turns: result?.turns ?? null,
+    footprint: result?.footprint ?? null,
+    flagged: (result?.footprint?.claude.length ?? 0) > 0,
     load: loadAtStart[0]!,
     cli: result?.cli ?? null,
     resolvedModel: result?.resolvedModel ?? null,

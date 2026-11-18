@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { assertIsolated, makeHome, removeHome } from './isolation.ts'
+import { assertIsolated, codexSessions, footprintOf } from './isolation.ts'
 import { freshDir, json, runCli, trialEnv, versionOf, type Ran } from './process.ts'
 import type { Driver, DriverResult } from './types.ts'
 
@@ -21,11 +21,11 @@ export const claudeCli = (options: {
     async run(trial) {
       version ??= versionOf(command)
       const dir = freshDir(options.root, 'claude')
-      // a home of its own, and nothing of the repo's or the seat's reachable (isolation.ts)
-      // isolated: false is the canary's own negative check, never a trial (canary.test.ts)
-      const home = options.isolated === false ? undefined : makeHome('claude')
-      try {
-        if (home) assertIsolated(dir, home)
+      // nothing of the repo's or the seat's reachable, and the real config dirs read, never written (isolation.ts).
+      // isolated: false is the canary's own negative check, never a trial
+      if (options.isolated !== false) assertIsolated(dir)
+      const sessionsBefore = codexSessions()
+      {
         const server =
           'url' in trial.mcp
             ? { type: 'http', url: trial.mcp.url }
@@ -51,16 +51,25 @@ export const claudeCli = (options: {
             `${PREFIX}*`,
             '--setting-sources',
             '',
+            // auto-memory off: no memory instructions, no index, nothing written to a memory dir
+            '--settings',
+            JSON.stringify({ autoMemoryEnabled: false }),
             '--disable-slash-commands',
             '--no-session-persistence',
             '--max-turns',
             String(trial.maxTurns),
           ],
-          { dir, timeoutMs: trial.timeoutMs, env: { ...trialEnv(), ...home?.env } },
+          {
+            dir,
+            timeoutMs: trial.timeoutMs,
+            env: {
+              ...trialEnv(),
+              // no CLAUDE.md of any kind, the user's included (isolation, 2026-11-18)
+              CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1',
+            },
+          },
         )
-        return parse(ran, version)
-      } finally {
-        if (home) removeHome(home)
+        return { ...parse(ran, version), footprint: footprintOf(dir, sessionsBefore) }
       }
     },
   }

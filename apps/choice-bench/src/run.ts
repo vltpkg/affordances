@@ -10,7 +10,14 @@ import { fakeDriver } from './drivers/fake.ts'
 import type { Driver } from './drivers/types.ts'
 import { pilotPlan, runTrial, type TrialSpec } from './harness.ts'
 import { type CanaryRecord, runCanary } from './canary.ts'
-import { contextLeaks, filesWithSecrets } from './drivers/isolation.ts'
+import {
+  configRoots,
+  contextLeaks,
+  emailScan,
+  filesWithSecrets,
+  loginStatus,
+  TRIALS_ROOT,
+} from './drivers/isolation.ts'
 import { type Failed, pilotReport, type Result } from './report.ts'
 
 // node src/run.ts dry <out dir>                   one fake-driver trial per condition, with no model: every metric, a
@@ -20,6 +27,29 @@ import { type Failed, pilotReport, type Result } from './report.ts'
 // node src/run.ts plan                            the pilot's 110 trials, listed, not run
 // node src/run.ts pilot <out dir>                 runs them, two at a time. Only in the planner's announced window
 const [mode, ...rest] = process.argv.slice(2)
+
+// the global config files a trial must never change: each one's mtime and size, as one string
+const WATCHED = () => {
+  const roots = configRoots()
+  return [
+    path.join(roots.claude, 'settings.json'),
+    path.join(roots.claude, 'CLAUDE.md'),
+    path.join(roots.codex, 'config.toml'),
+    path.join(roots.codex, 'AGENTS.md'),
+  ]
+}
+const watchedGlobals = () =>
+  WATCHED()
+    .map((f) => (existsSync(f) ? `${f}:${statSync(f).mtimeMs}:${statSync(f).size}` : `${f}:absent`))
+    .join('\n')
+const watchedChanges = (before: string) => {
+  const was = new Set(before.split('\n'))
+  return watchedGlobals()
+    .split('\n')
+    .filter((l) => !was.has(l))
+    .map((l) => l.split(':')[0])
+    .join(', ')
+}
 
 // the sha a pinned export records, found by walking up from this file; none in a working tree
 const exportSha = () => {
@@ -139,7 +169,18 @@ if (mode === 'plan') {
   }
   const commit = { ...codeIdentity(exported), loadedFiles: loadedDigest() }
   const canaries: CanaryRecord[] = []
+  // the logins, read-only, before the run; a run doesn't start without both
+  const loginsBefore = real ? loginStatus() : undefined
+  if (loginsBefore && !(loginsBefore.claude && loginsBefore.codex)) {
+    console.error('a login isn’t valid: no run starts. Re-login is the human’s action')
+    process.exit(3)
+  }
   if (real) {
+    // trial cwds go under the dedicated trials root, outside the repo and /tmp (the planner, 2026-11-18)
+    if (!path.resolve(out).startsWith(`${TRIALS_ROOT}${path.sep}`)) {
+      console.error(`a real-model run's results go under ${TRIALS_ROOT}`)
+      process.exit(3)
+    }
     const leaks = contextLeaks(out)
     if (leaks.length) {
       console.error(`the results root isn't isolated: ${leaks.join('; ')}`)
@@ -179,6 +220,7 @@ if (mode === 'plan') {
     const [trial, endLine, metrics] = [of('trial'), of('end'), of('metrics')]
     if (!trial || !endLine || !metrics) return
     const { kind: _k, ...m } = metrics
+    const footprint = endLine.footprint ?? null
     return {
       spec: s,
       end: endLine.end,
@@ -187,20 +229,35 @@ if (mode === 'plan') {
       spawned: endLine.spawned,
       metrics: m as Result['metrics'],
       turns: endLine.turns,
+      footprint,
+      flagged: (footprint?.claude?.length ?? 0) > 0,
       load: endLine.load.start[0],
       cli: trial.cli,
       resolvedModel: trial.model.resolved,
     }
   }
+  // a CLI that writes outside its own trial's key (a shared or global file) could reach other trials, so the run stops:
+  // no further trial starts, and the ones not run are listed (the planner, 2026-11-18)
+  const watchedBefore = real ? watchedGlobals() : ''
+  let stopped: string | undefined
+  const notRun: string[] = []
   const settled = await pool(specs, 2, async (s) => {
     const resumed = done(s)
     if (resumed) {
       console.error(`${new Date().toISOString()} ${s.id}: resumed from its trace`)
       return resumed
     }
+    if (stopped) {
+      notRun.push(s.id)
+      return undefined
+    }
     try {
       const r = await runTrial(s, driverFor(s), out)
-      console.error(`${new Date().toISOString()} ${s.id}: ${r.end} ${r.metrics.choice}`)
+      console.error(
+        `${new Date().toISOString()} ${s.id}: ${r.end} ${r.metrics.choice}${r.flagged ? ' FLAGGED' : ''}`,
+      )
+      if (real && watchedGlobals() !== watchedBefore)
+        stopped ??= `a global config file changed during ${s.id}: ${watchedChanges(watchedBefore)}`
       return r
     } catch (e) {
       failed.push({ spec: s, failed: e instanceof Error ? e.message : String(e) })
@@ -224,9 +281,35 @@ if (mode === 'plan') {
   }
   // no credential reaches the results (the planner's security rule)
   const credentialLeaks = real ? filesWithSecrets(out) : []
-  const report = { run: { ...run, canaries, credentialLeaks }, ...pilotReport(results, failed) }
+  const loginsAfter = real ? loginStatus() : undefined
+  const report = {
+    run: {
+      ...run,
+      canaries,
+      credentialLeaks,
+      // whether the user's email appears in the results: counts only, the address never (intake). An archive of
+      // them redacts it (scripts/archive.ts)
+      emailScan: real ? emailScan(out) : { checked: false },
+      logins: { before: loginsBefore, after: loginsAfter },
+      ...(stopped && { stopped, notRun }),
+      // trials whose CLI wrote under their own Claude key: flagged, listed, never deleted (ruling B)
+      flagged: results
+        .filter((r) => r.flagged)
+        .map((r) => ({ id: r.spec.id, files: r.footprint?.claude })),
+      // Codex session files, listed (not fatal)
+      codexSessions: results.flatMap((r) => r.footprint?.codex ?? []),
+    },
+    ...pilotReport(results, failed),
+  }
   writeFileSync(path.join(out, 'report.json'), JSON.stringify(report, null, 2))
   console.log(JSON.stringify(report, null, 2))
+  if (stopped || (loginsAfter && !(loginsAfter.claude && loginsAfter.codex))) {
+    console.error(
+      stopped ??
+        'a login is no longer valid after the run: stop, and tell intake; re-login is the human’s',
+    )
+    process.exit(5)
+  }
   if (credentialLeaks.length) {
     console.error(
       `credential content in the results: ${credentialLeaks.join(', ')}. Remove it before anything is shared`,
