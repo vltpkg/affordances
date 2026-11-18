@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { canonicalJson } from '@affordances/ir'
 import { conditions } from './conditions.ts'
+import { askedToConfirm } from './response.ts'
 import type { ServerRecord } from './server.ts'
 import { setupTrial } from './trial.ts'
 
@@ -113,7 +114,7 @@ const replay = async (record: ServerRecord): Promise<Intended> => {
   // identical requests (same offer and input) count once: an approved choice is two, and add-on offers share an id
   const requests = record.calls.flatMap((c) => {
     if (c.tool !== 'execute') return []
-    const asked = /"code": "confirmation_required"/.test(c.response)
+    const asked = askedToConfirm(c)
     const r = c.input as Request
     if (!(asked || c.state) || seen.has(keyOf(r))) return []
     seen.add(keyOf(r))

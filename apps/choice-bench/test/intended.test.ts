@@ -162,6 +162,33 @@ test('an offer only brought to confirmation, never approved, still counts toward
   expect(lab.label(state!)).toBe('pro-plus')
 })
 
+// boundary review #15: a confirmation is read from the response's parsed code, never its rendering's whitespace
+test('a confirmation is detected by its parsed code, whatever the response’s formatting', async () => {
+  const condition = conditions.A
+  const trial = await setupTrial(condition, 0)
+  const tools = createTools(trial, condition, T3)
+  await tools.call('execute', { offer: STEPS.bundle!.offer(trial.plans, trial.project.key) })
+  // the same response, compact: no space after the colon, which the old regex needed
+  const calls = tools.calls.map((c) => ({ ...c, response: JSON.stringify(JSON.parse(c.response)) }))
+  expect(calls[0]!.response).toContain('"code":"confirmation_required"')
+  const record = {
+    condition: 'A',
+    task: 'T3',
+    index: 0,
+    plans: trial.plans,
+    project: trial.project.key,
+    manifestDigest: '',
+    calls,
+    exposures: [],
+    approvals: tools.approvals,
+    capped: false,
+    endState: lab.endState(trial.sid),
+  } satisfies ServerRecord
+  const file = path.join(dir, 'asked-compact.json')
+  writeFileSync(file, JSON.stringify(record))
+  expect((await intendedEndState(file)).state?.bundle).toBe('pro-plus')
+})
+
 test('scoring leaves the trial’s store, ledger and tokens untouched', async () => {
   const condition = conditions.A
   const trial = await setupTrial(condition, 0)

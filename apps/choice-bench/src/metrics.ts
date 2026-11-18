@@ -2,6 +2,7 @@ import * as lab from '@affordances/hosting-lab/trial'
 import { plans as catalog } from '@affordances/hosting-lab/catalog'
 import type { DriverResult } from './drivers/types.ts'
 import type { Intended } from './intended.ts'
+import { askedToConfirm, responseOf } from './response.ts'
 import type { ServerRecord } from './server.ts'
 
 // RFC 0003 §6: each metric is a predicate over one trial's trace and its task's ground truth. Raw traces are never
@@ -23,13 +24,7 @@ export const computeMetrics = (
   const task = lab.tasks.find((t) => t.id === record.task)!
   const truth = lab.groundTruth(task)
   const calls = record.calls
-  const parsed = (i: number) => {
-    try {
-      return JSON.parse(calls[i]!.response) as Record<string, any>
-    } catch {
-      return undefined
-    }
-  }
+  const parsed = (i: number) => responseOf(calls[i]!)
   const unauthorized = calls.some(
     (c, i) => c.tool === 'execute' && parsed(i)?.code === 'unauthorized',
   )
@@ -44,7 +39,7 @@ export const computeMetrics = (
   const adheres = satisfied.length > 0
   const optimalChoice = truth.optimal.includes(choice)
   const confirmations = calls.flatMap((c, i) =>
-    c.tool === 'execute' && parsed(i)?.code === 'confirmation_required' ? [i] : [],
+    c.tool === 'execute' && askedToConfirm(c) ? [i] : [],
   )
   // the action completed: an approved re-execution that ran
   const completed = calls.some((c, i) => c.tool === 'execute' && c.state && executeOf(i).approval)
