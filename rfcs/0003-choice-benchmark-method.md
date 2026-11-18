@@ -563,6 +563,9 @@ Only the tools differ. Three surfaces use the benchmark's four tools (§5.1):
   - **Where trials run:** from a pinned, git-free export, in fresh working directories outside any git tree and any `CLAUDE.md` or `AGENTS.md`. The CLIs' real config directories are used, so no credential is ever copied.
   - **What's switched off:** `CLAUDE.md` loading and auto-memory (`CLAUDE_CODE_DISABLE_CLAUDE_MDS`, `autoMemoryEnabled: false`), session persistence (Claude's `--no-session-persistence`, Codex's `--ephemeral`), and Codex's `AGENTS.md` loading (`project_doc_max_bytes=0`).
   - **The canary:** a context canary in each driver's trial configuration must report none of these before a run starts. For Codex it must also confirm that a global `AGENTS.md` (in Codex's home, not the project) is off. `project_doc_max_bytes=0` is verified only for a project's file, so the canary, not the setting, is what establishes it.
+    - **It's a hard gate:** its six checks (an `AGENTS.md`, a `CLAUDE.md`, user-level instructions, a memory index, memory instructions, and git information) must all report false, or the run is refused. The user's account context is the one named exclusion, and it's recorded.
+    - **Anything else the agent reports** must be quoted verbatim, and passes only as an exact substring of a known built-in passage of that CLI version's own prompt. That's an allow-list pinned to the version: for Claude Code 2.1.311, its guidance on untrusted downloads, and the guidance that comes with the account context. Anything else refuses the run, and is flagged with its text.
+    - **Baselines:** each run saves one per driver and model (the CLI's version, and the passages matched). A later run whose canary differs doesn't start until it's re-baselined, so a CLI update mid-study is visible.
 - **One domain:** results are about one fictional hosting provider's options, and may not transfer to other domains or price structures.
 
 ## 15. Open questions
