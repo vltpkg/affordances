@@ -15,7 +15,8 @@ import type { McpCall } from './mcp-server.ts'
 // refused execute is the request event, and the simulated person completes it in the app, on its review-and-confirm
 // page, in a tab of the same session, so the agent's page is left as it was
 
-export type WebMcpConfig = { url: string; session: string; out: string }
+// toolsTimeoutMs: how long the page may take to register its tools after a navigation (30s by default)
+export type WebMcpConfig = { url: string; session: string; out: string; toolsTimeoutMs?: number }
 export type WebMcpRecord = {
   surface: 'webmcp'
   url: string
@@ -66,18 +67,44 @@ await context.route('**/*', async (route) => {
 })
 // the agent's page: the app's home, whose tools it registers on load
 const page = await context.newPage()
+// getTools() is asynchronous (design's measure.mjs awaits it): the page is ready once it lists a tool. The wait is
+// bounded, and it runs again after every navigation of the agent's page, so no call reaches a document whose tools
+// aren't registered yet (the planner, 17:26Z). A timeout is the harness's fault, recorded as a stall, and the bridge
+// keeps serving, so the record is written and the runner sets the trial aside
+const TOOLS_TIMEOUT_MS = config.toolsTimeoutMs ?? 30_000
+// polled here, awaiting getTools() each time: a waitForFunction whose predicate is async gets a promise back, which
+// is truthy at once, so it never waited (the stub-site test caught it)
+const toolCount = () =>
+  page
+    .evaluate(
+      async () =>
+        (
+          await (
+            document as unknown as { modelContext?: { getTools(): Promise<unknown[]> } }
+          ).modelContext?.getTools()
+        )?.length ?? 0,
+    )
+    // a document being replaced mid-evaluate has no tools yet
+    .catch(() => 0)
+const waitForTools = async () => {
+  const deadline = Date.now() + TOOLS_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    if ((await toolCount()) > 0) return
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  record.errors.push({
+    call: record.calls.length,
+    tool: 'wait',
+    detail: `the page registered no tools within ${TOOLS_TIMEOUT_MS}ms`,
+  })
+  save()
+}
+let ready = Promise.resolve()
+page.on('framenavigated', (frame) => {
+  if (frame === page.mainFrame()) ready = waitForTools()
+})
 await page.goto(new URL('/', config.url).href)
-// getTools() is asynchronous (design's measure.mjs awaits it): the page is ready once it lists a tool
-await page.waitForFunction(
-  async () =>
-    ((
-      await (
-        document as unknown as { modelContext?: { getTools(): Promise<unknown[]> } }
-      ).modelContext?.getTools()
-    )?.length ?? 0) > 0,
-  undefined,
-  { timeout: 30_000 },
-)
+await ready
 save()
 
 type PageTool = { name: string; description?: string; inputSchema?: unknown }
@@ -174,8 +201,17 @@ const server = new Server(
   { capabilities: { tools: {} } },
 )
 server.setRequestHandler(ListToolsRequestSchema, async () => {
+  await ready
   const tools = await toolsOf(page)
   record.toolLists.push(tools)
+  // design (17:26Z): the page's tools go from none to four at hydration and never drop, so an empty list after the
+  // wait is unexplained. It's the harness's fault, a stall, never the agent's, and its trace goes to design
+  if (!tools.length)
+    record.errors.push({
+      call: record.calls.length,
+      tool: 'tools/list',
+      detail: 'the page listed no tools after its wait',
+    })
   save()
   return { tools: tools as { name: string; inputSchema: { type: 'object' } }[] }
 })
@@ -185,6 +221,7 @@ server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
   const input = (params.arguments ?? {}) as Record<string, unknown>
   let text: string
   let isError = false
+  await ready
   try {
     text = await run(page, params.name, input)
   } catch (e) {
