@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from 'vitest'
 import { resolveIdentity } from '../src/config.ts'
+import { MODULE_CODES, validate } from '@affordances/ir'
 import { CATALOG, fails, format, type DiagnosticCode } from '../src/diagnostics.ts'
 
 test("the catalog's codes are exactly RFC 0005 §3's table, so the two can't drift", () => {
@@ -72,4 +73,47 @@ test('a diagnostic can say what to do in this place, after the general fix', () 
   expect(format({ code: 'W_NO_NAMESPACE', file: 'next.config.ts', detail: 'paste this' })).toBe(
     `next.config.ts warning W_NO_NAMESPACE: ${CATALOG.W_NO_NAMESPACE.means}. Fix: ${CATALOG.W_NO_NAMESPACE.fix}. Here: paste this.`,
   )
+})
+
+// M5 boundary review, #10: the catalog and the IR's codes had drifted (W_AMOUNT_MISSING against W_NO_AMOUNT)
+test('every code the authoring merge reports is in the catalog, so the two lists cannot drift again', () => {
+  for (const code of MODULE_CODES) expect(Object.keys(CATALOG)).toContain(code)
+})
+
+test("the financial effect's missing amount has one name, RFC 0001's, in the IR and the catalog", () => {
+  const charge = {
+    schemaVersion: '0.1',
+    namespace: 'https://acme.example/capabilities',
+    provenance: { source: 'acme', basis: 'declared' },
+    sources: [{ id: 'acme', role: 'owner', name: 'Acme' }],
+    resources: [],
+    capabilities: [
+      {
+        id: 'acme.pay',
+        kind: 'action',
+        description: 'Pay',
+        authorization: { principal: 'authenticated' },
+        confirmation: { summary: 'Pay' },
+        effects: [{ category: 'financial', description: 'A charge' }],
+      },
+    ],
+  }
+  const codes = validate(charge).issues.map((i) => i.code)
+  expect(codes).toContain('W_NO_AMOUNT')
+  expect(CATALOG).toHaveProperty('W_NO_AMOUNT')
+  expect(CATALOG).not.toHaveProperty('W_AMOUNT_MISSING')
+})
+
+test('a code the catalog doesn’t hold, relayed from the IR, is formatted from its own message and never throws', () => {
+  const line = format({
+    code: 'E_PATH',
+    file: 'app/capabilities.ts',
+    subject: '/capabilities/0',
+    message: 'target.nope is not declared',
+  })
+  expect(line).toBe(
+    'app/capabilities.ts error E_PATH (/capabilities/0): target.nope is not declared.',
+  )
+  expect(fails('E_PATH')).toBe(true)
+  expect(fails('W_SOMETHING_NEW', true)).toBe(false)
 })

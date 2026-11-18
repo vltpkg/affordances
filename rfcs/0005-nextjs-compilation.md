@@ -133,7 +133,7 @@ Each rule reads one fact, statically, and records its basis. Fields from a v0 `d
 
 These are never extracted, because code doesn't state them. Each one missing is a warning that names what to declare:
 
-- **Effects** (`W_EFFECTS_UNKNOWN`): v0's `effects` are delta keys, not consequences (RFC 0001 §10.1). A financial effect without an amount is `W_AMOUNT_MISSING`, since every confirmation summary lists every charge (RFC 0001 §4).
+- **Effects** (`W_EFFECTS_UNKNOWN`): v0's `effects` are delta keys, not consequences (RFC 0001 §10.1). A financial effect without an amount is `W_NO_AMOUNT`, since every confirmation summary lists every charge (RFC 0001 §4).
 - **Declarative preconditions** (`W_OPAQUE` on the guard): a v0 guard is code. The developer declares what it checks, with `when.*`.
 - **Claims:** a claim is the owner's assertion, so only the owner writes one.
 - **Relations** beyond what's derived (`alternativeTo`, `relatedTo`).
@@ -168,7 +168,7 @@ These are never extracted, because code doesn't state them. Each one missing is 
 | `W_SUMMARY_GENERIC`             | a confirm action whose summary is v0's function                                                                                                   |
 | `W_OPAQUE`                      | a v0 guard, which can't be evaluated outside the app                                                                                              |
 | `W_EFFECTS_UNKNOWN`             | no effects declared                                                                                                                               |
-| `W_AMOUNT_MISSING`              | a financial effect with no amount                                                                                                                 |
+| `W_NO_AMOUNT`                   | a financial effect with no amount (RFC 0001's code)                                                                                               |
 | `W_ATTRIBUTES_UNKNOWN`          | a resource type inferred from a segment, with no `defineResource`                                                                                 |
 | `W_NO_NAMESPACE`                | no namespace configured, so no `manifest.json`; it names the line to paste, with a suggested value where one is readable                          |
 | `W_NO_OWNER`                    | no owner configured                                                                                                                               |

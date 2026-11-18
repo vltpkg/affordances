@@ -6,7 +6,10 @@ export type DiagnosticCode = keyof typeof CATALOG
 
 /** @experimental One reported diagnostic: the code, and where it was found. */
 export type Diagnostic = {
-  code: DiagnosticCode
+  // a catalog code, or one relayed from the IR's validate (E_PATH, E_SCHEMA …), which `format` renders by its message
+  code: DiagnosticCode | `E_${string}` | `W_${string}`
+  // a relayed code's own message; a catalog code's meaning comes from the catalog
+  message?: string
   file: string
   line?: number
   // what it's about: the action, capability, construct or field it names
@@ -60,7 +63,7 @@ export const CATALOG = {
     means: "No effects are declared, so an agent can't tell what the action changes or charges",
     fix: "Declare the capability's effects: what it changes, and what it charges",
   },
-  W_AMOUNT_MISSING: {
+  W_NO_AMOUNT: {
     severity: 'warning',
     means: 'A financial effect has no amount, so confirmation summaries say "amount unknown"',
     fix: "Give the effect an `amount`, such as `{ value: 'target.priceUsd', currency: 'USD' }`",
@@ -140,16 +143,24 @@ export const CATALOG = {
   },
 } as const satisfies Record<string, Entry>
 
+// a code the catalog doesn't hold, relayed from the IR: its prefix says its severity, and its own message says the rest
+const entryOf = (code: Diagnostic['code']): Entry =>
+  code in CATALOG
+    ? CATALOG[code as DiagnosticCode]
+    : { severity: code.startsWith('E_') ? 'error' : 'warning', means: '', fix: '' }
+
 /** @experimental Whether a diagnostic fails the build: an error always, a strict warning in strict mode. */
-export const fails = (code: DiagnosticCode, strict = false): boolean => {
-  const entry: Entry = CATALOG[code]
+export const fails = (code: Diagnostic['code'], strict = false): boolean => {
+  const entry = entryOf(code)
   return entry.severity === 'error' || (strict && entry.strict === true)
 }
 
 /** @experimental One diagnostic as a line: where, the code, what it means and how to fix it. */
 export const format = (d: Diagnostic, strict = false): string => {
-  const entry: Entry = CATALOG[d.code]
+  const entry = entryOf(d.code)
   const where = d.line === undefined ? d.file : `${d.file}:${d.line}`
   const level = fails(d.code, strict) ? 'error' : 'warning'
-  return `${where} ${level} ${d.code}${d.subject ? ` (${d.subject})` : ''}: ${entry.means}. Fix: ${entry.fix}.${d.detail ? ` Here: ${d.detail}.` : ''}`
+  const means = entry.means || d.message || 'No description'
+  const fix = entry.fix ? ` Fix: ${entry.fix}.` : ''
+  return `${where} ${level} ${d.code}${d.subject ? ` (${d.subject})` : ''}: ${means}.${fix}${d.detail ? ` Here: ${d.detail}.` : ''}`
 }

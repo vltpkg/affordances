@@ -1,6 +1,6 @@
 import { canonicalJson } from '../canonical.ts'
 import { normalize } from '../normalize.ts'
-import type { CapabilityManifest, Relation, URI } from '../schema.ts'
+import type { CapabilityManifest, Relation, URI, ValidationIssue } from '../schema.ts'
 import { brandOf, type Brand } from './brand.ts'
 import {
   assemble,
@@ -25,8 +25,19 @@ export type ModuleIdentity = {
 }
 
 /** @experimental What fromModules reports, by RFC 0005 §3's codes; for an IR issue, `subject` is its pointer. */
+/**
+ * @experimental The codes fromModules reports itself (RFC 0005 §3), so a compiler's catalog can be checked against them.
+ * It also relays validate's issues under their own codes.
+ */
+export const MODULE_CODES = [
+  'E_CAPABILITY_DUPLICATE',
+  'E_CAPABILITY_MANIFEST',
+  'E_CLAIMS_NO_OWNER',
+  'W_NO_OWNER',
+] as const
+
 export type ModuleDiagnostic = {
-  code: `E_${string}` | `W_${string}`
+  code: (typeof MODULE_CODES)[number] | ValidationIssue['code']
   file?: string
   subject?: string
   message: string
@@ -147,12 +158,8 @@ export const fromModules = (
       })
   }
   // the namespace is the app's identity, so it's never inferred: without one there's no manifest (RFC 0005 §1). The
-  // modules are still checked, so their errors show before a namespace is set
-  if (!identity.namespace)
-    diagnostics.push({
-      code: 'W_NO_NAMESPACE',
-      message: 'No namespace is configured, so no manifest is built',
-    })
+  // modules are still checked, so their errors show before a namespace is set. W_NO_NAMESPACE is the caller's to report,
+  // once, with the line that turns the manifest on (withAffordances)
   if (!identity.namespace || diagnostics.some((d) => d.code.startsWith('E_')))
     return { diagnostics }
 

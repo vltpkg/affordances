@@ -205,12 +205,13 @@ test('a defineManifest export is used whole, and nothing may sit beside it', () 
   ])
 })
 
-test('without a namespace nothing is built, and nothing is inferred, but the modules are still checked', () => {
+test('without a namespace nothing is built, and the modules are still checked; W_NO_NAMESPACE is the caller’s to report', () => {
   const result = fromModules([{ file: 'app/capabilities.ts', exports: { plan, subscribe } }], {
     owner,
   })
   expect(result.manifest).toBeUndefined()
-  expect(result.diagnostics.map((d) => d.code)).toEqual(['W_NO_NAMESPACE'])
+  // reported once, by withAffordances, with the line to paste; not again here (M5 boundary review, #10)
+  expect(result.diagnostics).toEqual([])
 
   // a module's own errors show before a namespace is set, not only after
   const other = defineResource({ id: 'hosting.plan', description: 'Another plan', key: 'slug' })
@@ -225,7 +226,6 @@ test('without a namespace nothing is built, and nothing is inferred, but the mod
   expect(broken.diagnostics.map((d) => d.code).toSorted()).toEqual([
     'E_CAPABILITY_DUPLICATE',
     'E_CLAIMS_NO_OWNER',
-    'W_NO_NAMESPACE',
     'W_NO_OWNER',
   ])
 })

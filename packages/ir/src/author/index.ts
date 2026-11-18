@@ -19,6 +19,7 @@ export {
 } from './define.ts'
 export {
   fromModules,
+  MODULE_CODES,
   type CapabilityModule,
   type ModuleDiagnostic,
   type ModuleIdentity,
