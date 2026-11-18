@@ -1,5 +1,6 @@
 import { canonicalJson, renderConfirmation, type CapabilityManifest } from '@affordances/ir'
 import { ALONG } from './along.ts'
+import { encodeStart } from './start.ts'
 import type { ExecutionResult, OfferDetails, ProjectionRequest, View } from './types.ts'
 
 // RFC 0004 §3 and §4's agent tools, transport-free and browser-safe (intake, 2026-11-18 13:43Z; design's split): the
@@ -221,9 +222,6 @@ export const createToolset = (options: ToolsetOptions) => {
 type Start = Parameters<AgentAdapter['project']>[0]
 
 // a start in the query's form: a capability or resource type id, or type:key (the projection route's startOf)
-const startParam = (start: Start) =>
-  start === undefined ? undefined : typeof start === 'string' ? start : `${start.type}:${start.key}`
-
 // an execution's refusal is its result, whatever its status; a view, an expansion or an inspection that isn't 2xx is
 // the route's refusal (RFC 0004 §2.3), never a view, and anything else that isn't 2xx is a transport error
 const read = (op: string) => async (response: Response) => {
@@ -256,7 +254,7 @@ export const httpAdapter = (
   view: ViewRequest = {},
 ): AgentAdapter => {
   // the connection's own start until a project() names another, so every call reads the same projection from the first
-  let start: string | undefined = startParam(view.start)
+  let start: string | undefined = encodeStart(view.start)
   const withStart = <T extends Record<string, unknown>>(body: T) => ({
     ...body,
     ...(view.policy && { policy: view.policy }),
@@ -277,7 +275,7 @@ export const httpAdapter = (
   }
   return {
     project: async (next) => {
-      start = startParam(next ?? view.start)
+      start = encodeStart(next ?? view.start)
       return (await get('view', {})) as Awaited<ReturnType<AgentAdapter['project']>>
     },
     expand: async (args) =>

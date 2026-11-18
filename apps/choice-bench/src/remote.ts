@@ -1,12 +1,13 @@
-import type {
-  Budget,
-  ExecutionRequest,
-  ExecutionResult,
-  Expansion,
-  OfferDetails,
-  Projection,
-  ProjectionRequest,
-  View,
+import {
+  encodeStart,
+  type Budget,
+  type ExecutionRequest,
+  type ExecutionResult,
+  type Expansion,
+  type OfferDetails,
+  type Projection,
+  type ProjectionRequest,
+  type View,
 } from '@affordances/runtime'
 
 // a TEST-HARNESS client only (the planner, 2026-11-18 14:10Z): the runtime calls the benchmark's tools make, over a
@@ -25,12 +26,7 @@ export type RemoteRuntime = {
 const paramsOf = (r: Omit<ProjectionRequest, 'principal'>) => {
   if (r.bind?.length)
     throw new Error('the protocol-1 route has no bind: a surface trial starts from the project')
-  const start =
-    r.start === undefined
-      ? undefined
-      : typeof r.start === 'string'
-        ? r.start
-        : `${r.start.type}:${r.start.key}`
+  const start = encodeStart(r.start)
   return {
     ...(r.policy && { policy: r.policy }),
     ...(start && { start }),

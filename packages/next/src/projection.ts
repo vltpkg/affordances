@@ -212,11 +212,6 @@ const crossSite = (request: Request, allowed: ReadonlySet<string>): Response | u
 const positiveWhole = (n: unknown) => typeof n === 'number' && Number.isInteger(n) && n > 0
 
 type Params = Record<string, unknown>
-const startOf = (value: unknown): ProjectionRequest['start'] => {
-  if (typeof value !== 'string' || !value) return undefined
-  const at = value.indexOf(':')
-  return at === -1 ? value : { type: value.slice(0, at), key: value.slice(at + 1) }
-}
 
 // the runtime's approval gate, word for word (see createProjectionRoute)
 const approvalGate = (caller: string, given: { approvalKey?: unknown; seenTokens?: unknown }) => {
@@ -258,6 +253,7 @@ export const createProjectionRoute = <Session = unknown>(
         statusOf: Runtime['statusOf']
         policies: Set<string>
         along: Runtime['ALONG']
+        decodeStart: Runtime['decodeStart']
       }>
     | undefined
   const runtime = () =>
@@ -266,8 +262,15 @@ export const createProjectionRoute = <Session = unknown>(
       throw error
     }))
   const make = async () => {
-    const { createRuntime, statusOf, builtInPolicies, devApprovalKey, memoryTokenStore, ALONG } =
-      await loadRuntime()
+    const {
+      createRuntime,
+      statusOf,
+      builtInPolicies,
+      devApprovalKey,
+      memoryTokenStore,
+      ALONG,
+      decodeStart,
+    } = await loadRuntime()
     const rt = createRuntime({
       manifest: options.manifest as never,
       resources: options.resources,
@@ -275,12 +278,18 @@ export const createProjectionRoute = <Session = unknown>(
       approvalKeys: { current: options.approvalKey ?? (await devApprovalKey()) },
       seenTokens: options.seenTokens ?? memoryTokenStore(),
     })
-    return { rt, statusOf, policies: new Set(builtInPolicies.map((p) => p.id)), along: ALONG }
+    return {
+      rt,
+      statusOf,
+      policies: new Set(builtInPolicies.map((p) => p.id)),
+      along: ALONG,
+      decodeStart,
+    }
   }
 
   const projectionOf = async (request: Request, p: Params): Promise<ProjectionRequest | string> => {
     const policy = typeof p.policy === 'string' && p.policy ? p.policy : undefined
-    const { policies } = await runtime()
+    const { policies, decodeStart } = await runtime()
     if (policy && !policies.has(policy))
       return `No policy ${policy}: one of ${[...policies].join(', ')}`
     const offers = p.offers === undefined || p.offers === '' ? undefined : Number(p.offers)
@@ -290,7 +299,7 @@ export const createProjectionRoute = <Session = unknown>(
       return 'start is type:key, or a capability or resource type id'
     return {
       principal: await options.principal(request),
-      start: startOf(p.start),
+      start: decodeStart(p.start),
       policy,
       seen: typeof p.seen === 'string' && p.seen ? p.seen : undefined,
       task: typeof p.task === 'string' && p.task ? { statement: p.task } : undefined,

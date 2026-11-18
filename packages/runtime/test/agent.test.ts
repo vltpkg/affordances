@@ -16,11 +16,16 @@ test('the core imports ir, runtime’s types and its expansion directions only: 
   expect(imports).toEqual([
     ['@affordances/ir', false],
     ['./along.ts', false],
+    ['./start.ts', false],
     ['./types.ts', true],
   ])
   expect(source).not.toMatch(/\bcrypto\.|\bprocess\.|createRuntime/)
   // and the one value it takes from the runtime, the expansion directions, imports nothing
   expect(readFileSync(new URL('../src/along.ts', import.meta.url), 'utf8')).not.toMatch(/^import /m)
+  // and the start codec, which imports a type only
+  expect(readFileSync(new URL('../src/start.ts', import.meta.url), 'utf8')).not.toMatch(
+    /^import (?!type )/m,
+  )
 })
 
 // a hostile adapter: every result it returns carries a token, in the field and in free text
