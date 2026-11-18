@@ -8,6 +8,7 @@ import path from 'node:path'
 import { TASK_EDITS } from './conditions.ts'
 import { projectKeyOf, startLabServer } from './lab-server.ts'
 import { decidingFacts, reached, walk } from './oracle.ts'
+import { checkPin } from './pin.ts'
 import { checkMcpPin } from './pins.ts'
 import { HOST, surfacePromptFor, toolServerConfig, toolServerOf } from './surface.ts'
 import { surfaces, type SurfaceId } from './surfaces.ts'
@@ -40,6 +41,7 @@ export type Preflight = {
   manifestDigest: string
   catalog: string
   mcpPin: ReturnType<typeof checkMcpPin>
+  exportPin?: ReturnType<typeof checkPin>
 }
 
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex')
@@ -127,6 +129,8 @@ export const refusalsOf = (
   checks: SurfaceCheck[],
   prompts: string[],
   mcpPin?: ReturnType<typeof checkMcpPin>,
+  // the pinned export's own check, at every launch and resume (the planner, 17:13Z)
+  exportPin?: ReturnType<typeof checkPin>,
 ): string[] => {
   const refusals: string[] = []
   for (const c of checks) {
@@ -157,6 +161,8 @@ export const refusalsOf = (
   for (const [i, p] of lines.entries())
     if (p.length !== lines[0]!.length || p.some((line, n) => n !== 1 && line !== lines[0]![n]))
       refusals.push(`${checks[i]?.surface ?? i}: its prompt differs beyond its instruction line`)
+  if (exportPin && !exportPin.ok)
+    refusals.push(`the pinned export has drifted: ${exportPin.reason}`)
   if (mcpPin && !mcpPin.ok)
     refusals.push(
       `packages/mcp isn't main's ${mcpPin.commit}: ${mcpPin.differ.map((d) => `${d.file} ${d.reason}`).join(', ')}`,
@@ -171,6 +177,8 @@ export const surfacePreflight = async (options: {
   dir: string
   // the tree whose packages/mcp the v0 cell runs: the pinned export's root
   root: string
+  // a launch or a resume on the pinned export: its tree must be the pinned bytes (src/pin.ts)
+  pinned?: boolean
   surfaces: SurfaceId[]
 }): Promise<Preflight> => {
   mkdirSync(options.dir, { recursive: true })
@@ -179,7 +187,13 @@ export const surfacePreflight = async (options: {
   const task = lab.tasks.find((t) => t.id === 'T6')!
   const prompts = options.surfaces.map((s) => surfacePromptFor(surfaces[s], task))
   const mcpPin = checkMcpPin(options.root)
-  const refusals = refusalsOf(checks, prompts, options.surfaces.includes('v0') ? mcpPin : undefined)
+  const exportPin = options.pinned ? checkPin(options.root) : undefined
+  const refusals = refusalsOf(
+    checks,
+    prompts,
+    options.surfaces.includes('v0') ? mcpPin : undefined,
+    exportPin,
+  )
   const edit = TASK_EDITS.T6
   return {
     ok: refusals.length === 0,
@@ -188,5 +202,6 @@ export const surfacePreflight = async (options: {
     manifestDigest: await digest(edit ? edit.apply(lab.manifest) : lab.manifest),
     catalog: sha256(canonicalJson(await decidingFacts())),
     mcpPin,
+    ...(exportPin && { exportPin }),
   }
 }
