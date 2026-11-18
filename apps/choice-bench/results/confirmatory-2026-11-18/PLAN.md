@@ -58,6 +58,17 @@ This plan is committed before any confirmatory trial. Its commit's timestamp pre
   - each model's Fisher exact test, and its risk difference with a Newcombe interval;
   - a Breslow–Day test of homogeneity across the two models;
   - the capped-excluded sensitivity analysis.
+- **Addendum: two method rules** (intake, 2026-11-18 06:52Z; written 2026-11-18T06:53:16Z). These were written before any confirmatory outcome was read.
+  - **The primary CMH test is continuity-corrected.** The uncorrected statistic is reported beside it. If the two disagree on significance, the corrected one governs. Holm's correction and the family (H1, H2) stay as pre-registered, applied to the corrected p-values.
+  - **The Mantel–Haenszel risk difference's 95% CI uses Sato's (1989) variance.**
+  - **The code** is `analyze.py`, beside this plan: standard-library Python, run as `python3 -I analyze.py <trace dir>`.
+    - Its self-test, `python3 -I analyze.py --selftest`, checks Fisher's tea-tasting table (two-sided 0.4857), Newcombe's 1998 example (56/70 vs 48/80: 0.2000, 0.0524 to 0.3339), and the single-stratum reductions: the MH chi-square against Pearson's, its corrected form, and Sato's variance against Wald's. It also checks the chi-square tail, Breslow–Day on identical strata, Holm's correction, and that Holm runs on the corrected p.
+    - **The other methods in the code:**
+      - Fisher's two-sided p sums the tables no likelier than the one observed;
+      - Newcombe's interval is the hybrid score (method 10);
+      - Breslow–Day carries Tarone's correction;
+      - the capped-excluded analysis takes `optimalChoice` over trials that ended final;
+      - load terciles are cut over the trials' start loads.
 - **Calibration's C and S results stay sealed** until this run's results are in. They're reported afterwards as calibration-only (n=5 per model), and are never pooled into this run.
 
 ## What runs
