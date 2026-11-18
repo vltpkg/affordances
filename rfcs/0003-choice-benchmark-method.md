@@ -604,6 +604,7 @@ The record is [`confirmatory-2026-11-18/`](../apps/choice-bench/results/confirma
     - before a real run, the harness compares the offer ids in the condition's first view with those of a control. The control is A's policy, carrying only the condition's declared `scope`, depth and `start`, so any other change to the offer set refuses the run, an undeclared budget included.
   - **What it doesn't check yet:** claims, order or relevance.
   - **Why:** RFC 0002 §6.1 maps C to a policy whose scope differs from A's, and nothing compared the two first views before the run. Under the check, C and D as built refuse on T6, each missing `hosting.plan.list`.
+- **A lesson for pre-set decision rules** (M7f's pilot): a fallback's trigger should name its direction and its cause, not only a threshold. M7f's distortion check counted a difference either way, and it fired at −0.40 on the control arm's behaviour (full's agents not resending), not on the review-page distortion that motivated it. The rule applied as written, and the mismatch went to the decider instead of being reinterpreted.
 
 ## References
 
