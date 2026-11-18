@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { loadavg } from 'node:os'
 import path from 'node:path'
 import { conditions, type ConditionId } from './conditions.ts'
@@ -29,7 +30,47 @@ const exportSha = () => {
   }
 }
 
-const git = (...args: string[]) => execFileSync('git', args, { encoding: 'utf8' }).trim()
+const git = (...args: string[]) =>
+  execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', stdio: 'pipe' }).trim()
+
+// the workspace root: three up from this file (apps/choice-bench/src)
+const ROOT = path.resolve(import.meta.dirname, '..', '..', '..')
+// what a trial's processes load: the bench and the fixture as source, the runtime and the IR as built
+const LOADED = [
+  'apps/choice-bench/src',
+  'apps/hosting-lab/src',
+  'packages/ir/dist',
+  'packages/runtime/dist',
+]
+
+// which code ran (review of 4893655c): a pinned export's sha; else HEAD in a git checkout, with whether anything a
+// trial loads differs from it; else unknown, as in a clean export with no .git, where a dry run still runs
+const codeIdentity = (exported: string | undefined) => {
+  if (exported) return { sha: exported, from: 'pinned export' }
+  try {
+    const sha = git('rev-parse', 'HEAD')
+    const dirty =
+      git('status', '--porcelain', '--', ...LOADED.filter((p) => p.endsWith('src'))) !== ''
+    return { sha, from: 'working tree (dry runs only)', dirty }
+  } catch {
+    return { sha: 'unknown', from: 'no git and no export (dry runs only)' }
+  }
+}
+
+// one sha256 over every file a trial loads, by path and content: what ran, whatever git says
+const loadedDigest = () => {
+  const hash = createHash('sha256')
+  for (const dir of LOADED) {
+    const abs = path.join(ROOT, dir)
+    if (!existsSync(abs)) continue
+    for (const rel of readdirSync(abs, { recursive: true, encoding: 'utf8' }).toSorted()) {
+      const file = path.join(abs, rel)
+      if (!statSync(file).isFile()) continue
+      hash.update(`${dir}/${rel}\0`).update(readFileSync(file)).update('\0')
+    }
+  }
+  return hash.digest('hex')
+}
 
 const pool = async <T, R>(items: T[], width: number, f: (t: T) => Promise<R>) => {
   const out: R[] = []
@@ -96,9 +137,7 @@ if (mode === 'plan') {
     )
     process.exit(3)
   }
-  const commit = exported
-    ? { sha: exported, from: 'pinned export' }
-    : { sha: git('rev-parse', 'HEAD'), from: 'working tree (dry run only)' }
+  const commit = { ...codeIdentity(exported), loadedFiles: loadedDigest() }
   const canaries: CanaryRecord[] = []
   if (real) {
     const leaks = contextLeaks(out)
