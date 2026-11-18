@@ -8,7 +8,12 @@ import type { Driver, DriverResult } from './types.ts'
 // CLI takes. It projects, follows up to five expansions, inspects what it found, and subscribes to one plan, chosen
 // by the seed, approving as the user does. So every metric and trace field is produced without a model call
 
-type Offer = { id: string; capability: string; availability: { status: string } }
+type Offer = {
+  id: string
+  capability: string
+  availability: { status: string }
+  target?: { type: string; key: string }
+}
 type View = {
   offers: Offer[]
   // members are ids, or under S the offers themselves
@@ -61,6 +66,7 @@ export const fakeDriver = (
       return { text, error: r.isError === true }
     }
     let finalText = 'I looked and found nothing to subscribe to.'
+    const notes: string[] = []
     // the v0 surface's two tools (M7f): its own script, below; the four tools' is M5's, unchanged
     const listed = new Set((await client.listTools()).tools.map((t) => t.name))
     try {
@@ -72,7 +78,22 @@ export const fakeDriver = (
         finalText = await browserScript(seed, call)
         return finish()
       }
-      const first = parse((await call('project')).text) as View
+      let first = parse((await call('project')).text) as View
+      // a view with no start (the product's generic tools, on MCP and WebMCP) binds no project, so nothing in it is
+      // available: an agent reading it projects again from the project its project.read offer names
+      const plansAvailable = (v: View) =>
+        offersOf(v).some(
+          (o) => o.capability === 'hosting.plan.subscribe' && o.availability.status === 'available',
+        )
+      const project = offersOf(first).find((o) => o.capability === 'hosting.project.read')?.target
+      if (!plansAvailable(first) && project) {
+        notes.push(
+          `re-projected from ${project.type}:${project.key}: the first view had no available plan`,
+        )
+        first = parse(
+          (await call('project', { start: { type: project.type, key: project.key } })).text,
+        ) as View
+      }
       const offers = offersOf(first)
       for (const e of first.omitted.expand.slice(0, 5)) {
         const r = await call('expand', { from: e.from, along: e.along })
@@ -111,6 +132,7 @@ export const fakeDriver = (
         exitCode: 0,
         cli: { name: 'fake', version: '0.0.0' },
         raw,
+        ...(notes.length && { notes }),
       }
     }
   },

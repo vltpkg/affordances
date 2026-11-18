@@ -67,10 +67,14 @@ await context.route('**/*', async (route) => {
 // the agent's page: the app's home, whose tools it registers on load
 const page = await context.newPage()
 await page.goto(new URL('/', config.url).href)
+// getTools() is asynchronous (design's measure.mjs awaits it): the page is ready once it lists a tool
 await page.waitForFunction(
-  () =>
-    ((document as unknown as { modelContext?: { getTools(): unknown[] } }).modelContext?.getTools()
-      .length ?? 0) > 0,
+  async () =>
+    ((
+      await (
+        document as unknown as { modelContext?: { getTools(): Promise<unknown[]> } }
+      ).modelContext?.getTools()
+    )?.length ?? 0) > 0,
   undefined,
   { timeout: 30_000 },
 )
@@ -78,10 +82,12 @@ save()
 
 type PageTool = { name: string; description?: string; inputSchema?: unknown }
 const toolsOf = (p: Page) =>
-  p.evaluate(() =>
-    (document as unknown as { modelContext: { getTools(): PageTool[] } }).modelContext
-      .getTools()
-      .map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
+  p.evaluate(async () =>
+    (
+      await (
+        document as unknown as { modelContext: { getTools(): Promise<PageTool[]> } }
+      ).modelContext.getTools()
+    ).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
   )
 const run = (p: Page, name: string, args: Record<string, unknown>) =>
   p.evaluate(
@@ -89,12 +95,12 @@ const run = (p: Page, name: string, args: Record<string, unknown>) =>
       const mc = (
         document as unknown as {
           modelContext: {
-            getTools(): { name: string }[]
+            getTools(): Promise<{ name: string }[]>
             executeTool(t: unknown, a: unknown): Promise<string>
           }
         }
       ).modelContext
-      const tool = mc.getTools().find((t) => t.name === toolName)
+      const tool = (await mc.getTools()).find((t) => t.name === toolName)
       if (!tool) throw new Error(`the page has no tool ${toolName}`)
       return mc.executeTool(tool, toolArgs)
     },
@@ -110,8 +116,26 @@ const parsed = (text: string) => {
 
 // the simulated person approves, as on every surface: in the app, on the review page of the refused call, and in the
 // same session, then back to the agent
+// what the runtime bound from the offer itself, for a call that named only its offer: the target's key under the field
+// its type names (hosting.plan's 'plan', hosting.addOn's 'addOn'), as every hosting-lab capability names its target in
+// its input, and the project from the offer's ?project=. The call's own input wins where it says more
+const bound = (offer: string) => {
+  const at = offer.indexOf('@')
+  if (at < 0) return {}
+  const [target = '', query = ''] = offer.slice(at + 1).split('?')
+  const colon = target.indexOf(':')
+  const type = target.slice(0, colon)
+  const out: Record<string, string> = {}
+  if (colon > 0) out[type.slice(type.lastIndexOf('.') + 1)] = target.slice(colon + 1)
+  const project = new URLSearchParams(query).get('project')
+  if (project) out.projectId = project
+  return out
+}
 const complete = async (call: number, offer: string, input: unknown) => {
-  const review = reviewUrl(offer, input)
+  const review = reviewUrl(offer, {
+    ...bound(offer),
+    ...(input && typeof input === 'object' ? input : {}),
+  })
   if (!review) return
   const tab = await context.newPage()
   try {
@@ -168,7 +192,14 @@ server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
     text = 'The page’s tool failed.'
     record.errors.push({ call, tool: params.name, detail: (e as Error).message.split('\n')[0]! })
   }
-  const output = parsed(text)
+  // executeTool answers with the page tool's own result, { content, isError }, as JSON: relayed as it is, and its text
+  // recorded, as the other MCP servers record theirs
+  const result = parsed(text) as { content?: { type: 'text'; text: string }[]; isError?: boolean }
+  const content = Array.isArray(result?.content)
+    ? result.content
+    : [{ type: 'text' as const, text }]
+  isError ||= result?.isError === true
+  const output = parsed(content.map((c) => c.text).join(''))
   record.calls.push({ tool: params.name, input, output, isError, at, ms: Date.now() - at })
   save()
   const refusal = output as { status?: string; code?: string }
@@ -180,7 +211,7 @@ server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
     await complete(call, String(input.offer), input.input)
     save()
   }
-  return { content: [{ type: 'text' as const, text }], ...(isError && { isError: true }) }
+  return { content, ...(isError && { isError: true }) }
 })
 const transport = new StdioServerTransport()
 // oxlint-disable-next-line unicorn/prefer-add-event-listener

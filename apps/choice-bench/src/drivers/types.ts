@@ -35,6 +35,8 @@ export type DriverResult = {
   // what the run left in the real config dirs, listed and never deleted (isolation.ts)
   footprint?: import('./isolation.ts').Footprint
   raw: string // the path of the stored stdout
+  // what a scripted driver did beyond its plain script, so the trace shows it (the planner, 16:27Z)
+  notes?: string[]
 }
 
 export type Driver = {

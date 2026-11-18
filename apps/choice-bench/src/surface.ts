@@ -462,6 +462,7 @@ export const runSurfaceTrial = async (
       ...(failed && { driverFailure: failed, attempts }),
       traceMismatch,
       otherTools,
+      ...(result?.notes?.length && { driverNotes: result.notes }),
       spawned: otherTools.some((n) => /spawn/i.test(n)),
       finalText: result?.finalText ?? '',
       usage,
