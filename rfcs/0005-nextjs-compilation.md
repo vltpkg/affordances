@@ -226,13 +226,14 @@ These are never extracted, because code doesn't state them. Each one missing is 
 
 ## 4. Output
 
-`next build` writes three files to `.affordances/`:
+`next build` writes four files to `.affordances/` (`writeCompiled`, `packages/next/src/compile.ts`):
 
-| File               | What it is                                                                                                                                                             | Imports app code?                     |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| `manifest.json`    | written only when a namespace is configured (§1): the RFC 0001 manifest, canonical JSON (RFC 8785), validated by `validate`, with the manifest digest RFC 0001 defines | **no**                                |
-| `bindings.ts`      | the runtime binding module: capability id to the `defineAction` export that implements it, and how to call it (below)                                                  | yes: it's runtime, never the artifact |
-| `diagnostics.json` | §3's warnings, for tools and CI                                                                                                                                        | no                                    |
+| File               | What it is                                                                                                                                                                                                                                                                                                                 | Imports app code?                     |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `manifest.json`    | written only when a namespace is configured (§1): the RFC 0001 manifest, canonical JSON (RFC 8785), validated by `validate`, with the manifest digest RFC 0001 defines                                                                                                                                                     | **no**                                |
+| `bindings.ts`      | the runtime binding module: capability id to the `defineAction` export that implements it, and how to call it (below)                                                                                                                                                                                                      | yes: it's runtime, never the artifact |
+| `diagnostics.json` | §3's warnings, for tools and CI                                                                                                                                                                                                                                                                                            | no                                    |
+| `capabilities.ts`  | always written: `export const capabilities`, the manifest's canonical JSON and digest, or `null` without a namespace. `withAffordances` aliases `@affordances/next/compiled` to it, so the route serving the manifest finds it without reading the file system at request time (RFC 0004 §2). A correction to what's built | no                                    |
 
 **What a binding holds.** A runtime handler is called with `(input, { principal, target, refs })` (RFC 0002 §11). A v0 `run` and `guard` take v0's page context: the route's params, and the session. So each entry in `bindings.ts` says how to rebuild that context:
 
