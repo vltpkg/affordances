@@ -398,3 +398,26 @@ test('a refusal before the runtime is a refusal: the Origin as unauthorized, a m
     detail: 'No projection operation nothing',
   })
 })
+
+// code review of M8 (#5): expand's budget is held to the view's rule, offers and facts as positive whole numbers and
+// nothing else, and anything else is a 400 refusal, never passed to the runtime
+test('an expansion’s budget is offers and facts, each a positive whole number, or a 400', async () => {
+  const from = await offerOf()
+  for (const budget of [
+    null,
+    'x',
+    [],
+    { offers: 0 },
+    { offers: 1.5 },
+    { facts: -1 },
+    { facts: '2' },
+    { depth: 1 },
+    { offers: 1, other: 1 },
+  ]) {
+    const response = await post('expand', { from, along: 'alternatives', budget })
+    expect([JSON.stringify(budget), response.status]).toEqual([JSON.stringify(budget), 400])
+    expect(await response.json()).toMatchObject({ status: 'refused', code: 'invalid_input' })
+  }
+  for (const budget of [{}, { offers: 1 }, { facts: 3 }, { offers: 2, facts: 1 }])
+    expect((await post('expand', { from, along: 'alternatives', budget })).status).toBe(200)
+})

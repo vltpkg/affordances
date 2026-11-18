@@ -184,6 +184,9 @@ const crossSite = (request: Request, allowed: ReadonlySet<string>): Response | u
   )
 }
 
+// a budget's limit, on the view's query and in an expansion's body alike
+const positiveWhole = (n: unknown) => typeof n === 'number' && Number.isInteger(n) && n > 0
+
 const ALONG = new Set<string>([
   'alternatives',
   'members',
@@ -281,8 +284,7 @@ export const createProjectionRoute = <Session = unknown>(
     if (policy && !policies.has(policy))
       return `No policy ${policy}: one of ${[...policies].join(', ')}`
     const offers = p.offers === undefined || p.offers === '' ? undefined : Number(p.offers)
-    if (offers !== undefined && !(Number.isInteger(offers) && offers > 0))
-      return 'offers is a positive whole number'
+    if (offers !== undefined && !positiveWhole(offers)) return 'offers is a positive whole number'
     // a start that isn't one is refused, never read as no start (hosting-lab's route, on moving here)
     if (p.start !== undefined && (typeof p.start !== 'string' || !p.start))
       return 'start is type:key, or a capability or resource type id'
@@ -339,8 +341,17 @@ export const createProjectionRoute = <Session = unknown>(
           )
         if (typeof along !== 'string' || !ALONG.has(along))
           return refuse(400, `along is one of ${[...ALONG].join(', ')}`)
-        if (budget !== undefined && (budget === null || typeof budget !== 'object'))
-          return refuse(400, 'budget is { offers? }')
+        // the view's rule (code review of M8, #5): offers and facts, each a positive whole number, and nothing else
+        if (
+          budget !== undefined &&
+          (budget === null ||
+            typeof budget !== 'object' ||
+            Array.isArray(budget) ||
+            Object.entries(budget).some(
+              ([k, v]) => !(k === 'offers' || k === 'facts') || !positiveWhole(v),
+            ))
+        )
+          return refuse(400, 'budget is { offers?, facts? }, each a positive whole number')
         try {
           const step = { from: from as Expansion['from'], along: along as Expansion['along'] }
           return json(
