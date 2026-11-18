@@ -117,7 +117,8 @@ def audit(trace_dir):
         t = trial_of(lines)
         primary, flags = code(t)
         rows.append({
-            'id': t0['id'], 'condition': t0['condition'], 'model': t0['model'], 'index': t0['index'],
+            # the trial line's model is { requested, resolved }: the cell is the requested one
+            'id': t0['id'], 'condition': t0['condition'], 'model': t0['model']['requested'], 'index': t0['index'],
             'choice': t['choice'], 'optimal': t['optimal'], 'category': primary, **flags,
             'proAllowanceBeforeFirstRequest': t['proAllowanceBeforeFirstRequest'],
             'addOnApprovalRequested': t['addOnApprovalRequested'],
@@ -142,6 +143,8 @@ def audit(trace_dir):
             # (4) scored by the final text: optimal, or (b), the optimum recommended with only a partial approval asked
             'textStatedOptimal': frac([r['optimal'] or r['category'] == 'b' for r in g]),
         }
+    # every trial in exactly one cell, so a grouping mistake fails here rather than printing empty tables
+    assert sum(len(of(c, m)) for c, m in cells) == len(rows), 'a trial matched no cell'
     out['trials'] = rows
     return out
 
