@@ -132,7 +132,9 @@ export const GENERIC_TOOLS: AgentTool[] = [
   {
     name: 'execute',
     description:
-      'Do an offer’s action. If it needs the user’s approval, the server asks them directly and runs it only if they accept.',
+      // transport-neutral (design's M7d measurement): over MCP the person is asked by elicitation; on WebMCP no browser
+      // can ask yet, so the call is refused and the person confirms in the app
+      'Do an offer’s action. If it needs the user’s approval, it runs only once they approve it; otherwise this returns the refusal, with its summary for them.',
     inputSchema: {
       type: 'object',
       properties: { offer: { type: 'string' }, input: { type: 'object' } },
