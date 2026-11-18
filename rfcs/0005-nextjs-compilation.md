@@ -54,7 +54,7 @@ What's needed is a build step that reads what's already written, asks for only w
     - an export beside a `defineManifest` export that the manifest doesn't hold, `E_CAPABILITY_MANIFEST`. The manifest's own parts may be exported beside it, since bound actions import them;
     - claims with no owner, `E_CLAIMS_NO_OWNER`.
   - **It reports, it doesn't throw:** `validate`'s issues are reported the same way.
-- **What they may import:** `@affordances/ir`, or its re-export `@affordances/next/author` (the authoring API apps will import, under M6b's contract; not built yet, since it follows the inlined evaluator entry), a Standard Schema library, and other capability modules, nothing else. Type-only imports are erased, so they import nothing.
+- **What they may import:** `@affordances/ir`, or its re-export `@affordances/next/author` (the authoring API apps import, under M6b's contract; it needs `@affordances/ir` installed, below), a Standard Schema library, and other capability modules, nothing else. Type-only imports are erased, so they import nothing.
   - The compiler checks the import graph statically with oxc, which codegen already depends on, before it evaluates anything.
   - An import of application code is the error `E_CAPABILITY_IMPORT`, naming the import.
   - That keeps G2: building the manifest runs the capability modules alone (RFC 0001 §12.1), never the app.
@@ -64,6 +64,24 @@ What's needed is a build step that reads what's already written, asks for only w
 - **How they're evaluated:** in a separate Node process, with Node's own type stripping, so there's no new dependency. Two ordinary things break that, and the compiler handles both:
   - **Imports without extensions, and tsconfig path aliases** (`./dep`, `@/schemas`), which Next apps use everywhere and Node won't resolve. The evaluator registers a small resolve hook (`node:module`'s `register`) that resolves them to `.ts`, from the app's tsconfig.
   - **Syntax that can't be erased** (an `enum`, a `namespace`, parameter properties, `import =`), which Node refuses with `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`. The compiler checks every module and slice with oxc first, and reports `E_CAPABILITY_SYNTAX`, with the construct and its location, instead of a Node crash. A TS `enum` reaching a schema (`z.nativeEnum(Status)`) is the common case. The fix is a `const` object and `z.enum`.
+
+**`@affordances/ir` is an optional peer, never bundled** (intake, 2026-11-18).
+
+- **next bundles neither ir nor zod.** `@affordances/ir` is an optional `peerDependency` of `@affordances/next`. zod is ir's own dependency, and next names it nowhere: not in its dependencies, peers or optional dependencies.
+- **Where it resolves from:** the compiler loads ir from the app's root, where the app installed it. The evaluator's child imports it with a bare `import('@affordances/ir')`, which its resolve hook resolves from the app's root.
+- **An app without capabilities** (no `capabilities.ts`, and no namespace) loads nothing new. next works as it does for a v0 app today.
+- **An app with capabilities but no resolvable ir** gets one diagnostic, `E_IR_MISSING`, naming the peer to install, never a crash.
+- **The one exception is `/author`.** `@affordances/next/author` re-exports the authoring API from the peer, in code and in types, so it's the one entry that references ir. An app that imports it has ir installed, and an app that doesn't never loads it.
+- **Checked by tests:**
+  - **next's dist:** no ir or zod code in it. Only `/author`'s code and declarations refer to ir, the evaluator only by its bare import, and no other entry at all. zod is in no dependency field.
+  - **An app without ir:** a fixture app without ir installed typechecks and builds against next's main entry, with `skipLibCheck: false`, so the optional peer never leaks.
+
+**Why:**
+
+- **Nothing private in a public package.** next is published, and ir isn't yet: it's at 0.0.0 and private. Bundling ir would pin a private package's code into a public one, and a second zod with it. That would be a release decision the human hasn't made.
+- **One copy of ir per app.** A peer resolved from the app keeps a single copy, so the brand symbol, the canonical JSON and the digest are the same code the app's own capability modules run with.
+- **A v0 app pays nothing.**
+- **Publishing:** publishing ir, or its author entry, is the human's call. Until then, `/author` works only inside this repository. Once ir is published, the optional peer resolves for real apps.
 
 **Identity comes from configuration.** `withAffordances(nextConfig, { namespace, owner })` gains two optional fields, beside the existing `name`, `root` and `plugins`:
 

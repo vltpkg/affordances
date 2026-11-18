@@ -19,6 +19,16 @@ export default defineConfig([
     // source (extract.test.ts reads ir's schema) would otherwise have its declarations written into that package's src
     tsconfig: 'tsconfig.build.json',
   },
+  // /author, the authoring API a capability module imports: a re-export of @affordances/ir, next's optional peer, kept
+  // external in code and declarations, so it's the one entry that references ir (intake, 2026-11-18). Built on its own,
+  // so no chunk it shares with the main entries can carry the reference
+  {
+    ...base,
+    entry: ['src/author.ts'],
+    platform: 'node',
+    clean: false,
+    tsconfig: 'tsconfig.build.json',
+  },
   // the capability-module evaluator's child program (RFC 0005 §1), run by path, never imported: so no declarations.
   // @affordances/ir is next's optional peer, so tsdown keeps it external, a bare import the app resolves (intake,
   // 2026-11-18); nothing of ir or zod is bundled. Built after the main entries, without cleaning their output

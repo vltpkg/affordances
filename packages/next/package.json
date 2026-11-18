@@ -37,6 +37,10 @@
     "./diagnostics": {
       "types": "./dist/diagnostics.d.ts",
       "default": "./dist/diagnostics.js"
+    },
+    "./author": {
+      "types": "./dist/author.d.ts",
+      "default": "./dist/author.js"
     }
   },
   "scripts": {

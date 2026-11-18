@@ -47,10 +47,30 @@ test('the evaluator reaches ir by a bare import, which the app resolves, and not
   expect(zodImports).toEqual([])
 })
 
-test('no declaration next emits refers to ir: no import of it, nor a type from it', () => {
-  // an import or import type, or an inline import() type; prose naming the package (a diagnostic's text) isn't one
-  const refers = /from ["']@affordances\/ir["'/]|import\(["']@affordances\/ir["'/]/
-  expect(dts.filter((f) => refers.test(read(f)))).toEqual([])
+// an import or import type, or an inline import() type; prose naming the package (a diagnostic's text) isn't one
+const refersToIr = /from ["']@affordances\/ir["'/]|import\(["']@affordances\/ir["'/]/
+
+test('only /author refers to ir, in code and declarations; the evaluator only by its bare import; no other entry at all', () => {
+  // intake (2026-11-18): next/author re-exports the authoring API from the optional peer, the one entry that may
+  // reference ir
+  expect(read('author.js')).toMatch(refersToIr)
+  expect(read('author.d.ts')).toMatch(refersToIr)
+  // the evaluator's child imports ir, but only by a dynamic, bare import the app resolves, never a static one
+  expect(read('evaluate.js')).not.toMatch(/from ["']@affordances\/ir["'/]/)
+  const others = [...js, ...dts].filter(
+    (f) => !['author.js', 'author.d.ts', 'evaluate.js'].includes(f),
+  )
+  expect(others.length).toBeGreaterThan(5)
+  expect(others.filter((f) => refersToIr.test(read(f)))).toEqual([])
+})
+
+test("/author is a re-export only: it holds none of ir's code, and names only the authoring API", () => {
+  const text = read('author.js')
+  expect(IR_CODE.filter((re) => re.test(text))).toEqual([])
+  // the app-facing API, not the compiler's internals
+  for (const internal of ['fromModules', 'MODULE_CODES', 'brandOf', 'assemble'])
+    expect(text).not.toContain(internal)
+  expect(text).toContain('defineCapability')
 })
 
 test('package.json: ir is an optional peer and no dependency; zod is in no dependency, peer or optional field', () => {
