@@ -132,7 +132,9 @@ export const parse = (
     if (event?.type === 'turn.completed') {
       // usage comes per turn: the trial's is their sum
       const u = (event.usage ?? {}) as Record<string, number | undefined>
-      usage.inputTokens += u.input_tokens ?? 0
+      // codex's input_tokens includes its cached input; inputTokens is the uncached part, as claude reports it, so a
+      // trial's total (input, output and cache) counts each token once
+      usage.inputTokens += (u.input_tokens ?? 0) - (u.cached_input_tokens ?? 0)
       usage.outputTokens += (u.output_tokens ?? 0) + (u.reasoning_output_tokens ?? 0)
       usage.cacheReadTokens! += u.cached_input_tokens ?? 0
     }

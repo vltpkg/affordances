@@ -34,7 +34,12 @@ describe('the drivers (RFC 0003 §5.1)', () => {
       { name: 'lookup', input: { key: 'color' }, resultBytes: 4, ms: expect.any(Number) },
     ])
     expect(r.finalText).toBe('teal')
-    expect(r.usage.inputTokens).toBeGreaterThan(0)
+    // input is the uncached part, as claude reports it: 29,884 less the 19,584 cached
+    expect(r.usage).toMatchObject({
+      inputTokens: 10_300,
+      cacheReadTokens: 19_584,
+      outputTokens: 86,
+    })
   })
 
   test('a run past its timeout is exit 124, whatever the CLI returned', () => {
