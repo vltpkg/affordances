@@ -33,7 +33,7 @@ Backend's widened check is `stale-check.json`, over all 14 browser traces: the p
 - **Before any trial's first purchase submit:** 0 of 14.
 - **After Confirm:** 7, all in the re-pilot's 4 browser traces (2, 1, 2 and 2).
 - **Stale refs then used** in any scored trace: 0.
-- **The fix:** backend's settle-wait goes into the confirmatory pin, the only change to the pin intake allows, and its commit is named in the confirmatory record.
+- **The fix,** d1b2821d, goes into the confirmatory pin, the only change to the pin intake allows. After `open`, `click`, `fill` and `submit`, the browser's tool server snapshots only once the page has settled: no request in flight for 300 ms, bounded at 10 s. So a Confirm's client-side redirect has finished before the agent is shown the page. Each call records its `settleMs` in the trace (backend, 19:39Z).
 
 ## Integrity
 
