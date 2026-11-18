@@ -1,5 +1,5 @@
 import { base64url, canonicalJson, type CapabilityManifest, type Id } from '@affordances/ir'
-import { columnsOf, comparisonOf, summaryReads, targetReads } from './comparison.ts'
+import { columnsOf, comparisonOf, keptColumns } from './comparison.ts'
 import { words, type Facts } from './facts.ts'
 import type {
   Budget,
@@ -231,18 +231,12 @@ export const views = (args: {
       resource?.attributes as { properties?: Record<string, unknown> } | undefined
     )?.properties
     const declared = Object.keys(properties ?? {}).filter((a) => a !== resource?.key)
-    // what a claim shown on the members cites: none when the policy omits claims
-    const cited = new Set(
-      policy.claims === 'omitted'
-        ? []
-        : s.members.flatMap((m) => byId.get(m)!.claims.flatMap((k) => k.cites ?? [])),
+    // what a claim shown on the members cites (none when the policy omits claims), and what the capability's
+    // conditions and effects read and its confirmation summary renders: never cut
+    const { cited, read } = keptColumns(
+      args.facts.capability(s.capability),
+      policy.claims === 'omitted' ? [] : s.members.flatMap((m) => byId.get(m)!.claims),
     )
-    const c = args.facts.capability(s.capability)
-    // what the capability's conditions and effects read, and what its confirmation summary renders: never cut
-    const read = new Set([
-      ...targetReads([c?.preconditions, c?.authorization?.conditions, c?.effects]),
-      ...summaryReads(c?.confirmation?.summary),
-    ])
     return comparisonOf(
       s.members.map((id) => ({ id, attributes: args.memberAttributes.get(id) })),
       columnsOf(declared, cited, read),

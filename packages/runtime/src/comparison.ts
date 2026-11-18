@@ -1,4 +1,4 @@
-import { canonicalJson, summaryPaths } from '@affordances/ir'
+import { canonicalJson, summaryPaths, type CapabilityDefinition } from '@affordances/ir'
 import type { Comparison, OfferId } from './types.ts'
 
 // RFC 0002 §6.6, rule 6 of the disclosure invariant: a choice set carries its comparison, every declared attribute of
@@ -102,3 +102,24 @@ export const targetReads = (definition: unknown): Set<string> => {
   walk(definition)
   return out
 }
+
+/**
+ * @experimental The comparison columns a choice set can't cut (RFC 0002 §6.6), from the set's capability and the
+ * claims shown on its members: what those claims cite, and what the capability's conditions and effects read and its
+ * confirmation summary renders. The runtime's views keep exactly these; the inspector marks them by the same rule
+ * (code review of M8, #9). Under a policy that omits claims, no claim is shown, so pass none.
+ */
+export const keptColumns = (
+  capability: CapabilityDefinition | undefined,
+  shownClaims: readonly { cites?: readonly string[] }[],
+): { cited: Set<string>; read: Set<string> } => ({
+  cited: new Set(shownClaims.flatMap((k) => k.cites ?? [])),
+  read: new Set([
+    ...targetReads([
+      capability?.preconditions,
+      capability?.authorization?.conditions,
+      capability?.effects,
+    ]),
+    ...summaryReads(capability?.confirmation?.summary),
+  ]),
+})

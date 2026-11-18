@@ -4,6 +4,7 @@ import { describe, expect, test } from 'vitest'
 import plansJson from '../../ir/fixtures/valid/plans.json' with { type: 'json' }
 import {
   builtInPolicies,
+  keptColumns,
   type Comparison,
   type DiscoveryPolicy,
   type Principal,
@@ -165,6 +166,28 @@ describe('rule 6: a choice set carries its comparison', () => {
     expect(subscribe.differ).toEqual(['bandwidthGb', 'priceUsd'])
     expect(subscribe.shared).toEqual({ regions: up })
     expect(subscribe.rows.map((r) => r.bandwidthGb)).toEqual([100, 400, 1000])
+  })
+
+  // code review of M8 (#9): the exported rule is the one views keep, so the inspector can mark columns by it
+  test('keptColumns names exactly what a cut comparison keeps, for every set', async () => {
+    const manifest = manifestOf()
+    const v = (
+      await runtime([], manifest).project({
+        principal: member,
+        policy: 'exhaustive',
+        budget: { facts: 0 },
+      })
+    ).view()
+    const offers = new Map(v.offers.map((o) => [o.id, o]))
+    expect(v.choiceSets.length).toBeGreaterThan(1)
+    for (const set of v.choiceSets) {
+      const { cited, read } = keptColumns(
+        manifest.capabilities.find((c) => c.id === set.capability),
+        set.members.flatMap((m) => offers.get(m)?.claims ?? []),
+      )
+      const kept = DECLARED.filter((a) => !set.comparison.omitted.attributes.includes(a))
+      expect(kept).toEqual(DECLARED.filter((a) => cited.has(a) || read.has(a)))
+    }
   })
 
   test('a facts limit keeps columns in the runtime’s order, cutting from the end, and an expansion returns the whole table', async () => {

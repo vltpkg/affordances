@@ -1,6 +1,7 @@
 export type * from './types.ts'
 export { createRuntime, type RuntimeOptions } from './project.ts'
 export { HandlerRefusal } from './execute.ts'
+export { keptColumns } from './comparison.ts'
 export { offerId, parseOfferId, type OfferParts } from './offer-id.ts'
 export { BUILT_IN as builtInPolicies } from './views.ts'
 export { checkOrderBasis, claimFree } from './order.ts'
