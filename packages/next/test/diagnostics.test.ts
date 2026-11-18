@@ -33,26 +33,43 @@ test('a diagnostic reads as where, the code, what it means and how to fix it', (
   expect(format({ code: 'W_NO_ID', file: 'a.ts' }, true)).toMatch(/^a\.ts error W_NO_ID: /)
 })
 
-test("the identity: a written namespace, or one inferred from the site's name, and an owner, all checked", () => {
-  expect(resolveIdentity({ namespace: 'acme', owner: { id: 'acme', name: 'Acme' } })).toEqual({
-    namespace: 'acme',
-    namespaceFrom: 'config',
+test('the identity: a namespace URI as written, never inferred, an id prefix from the name, and an owner, all checked', () => {
+  expect(
+    resolveIdentity({
+      name: 'Acme Store',
+      namespace: 'https://acme.example/capabilities',
+      owner: { id: 'acme', name: 'Acme' },
+    }),
+  ).toEqual({
+    namespace: 'https://acme.example/capabilities',
+    idPrefix: 'acmeStore',
     owner: { id: 'acme', name: 'Acme' },
     strict: false,
   })
-  // inferred from the name, and said to be
+  // a name gives the id prefix, never the namespace: the namespace is the app's identity (RFC 0005 §1)
   expect(resolveIdentity({ name: 'Acme Store', strict: true })).toEqual({
-    namespace: 'acmeStore',
-    namespaceFrom: 'name',
+    idPrefix: 'acmeStore',
     strict: true,
   })
-  // nothing to go on
-  expect(resolveIdentity({})).toBeUndefined()
-  expect(resolveIdentity({ name: '42' })).toBeUndefined()
-  // a written namespace and an owner id must be identifiers; an owner needs a name
-  expect(() => resolveIdentity({ namespace: 'Acme Store' })).toThrow(/isn't an identifier/)
+  expect(resolveIdentity({})).toEqual({ strict: false })
+  expect(resolveIdentity({ name: '42' })).toEqual({ strict: false })
+  // RFC 0001's namespace: an absolute URI with no fragment; an identifier isn't one
+  expect(resolveIdentity({ namespace: 'urn:example:acme' }).namespace).toBe('urn:example:acme')
+  for (const namespace of [
+    'acme',
+    'Acme Store',
+    'https://acme.example/capabilities#x',
+    '/capabilities',
+  ])
+    expect(() => resolveIdentity({ namespace })).toThrow(/isn't an absolute URI/)
   expect(() => resolveIdentity({ owner: { id: 'Acme', name: 'Acme' } })).toThrow(/owner\.id/)
   expect(() => resolveIdentity({ owner: { id: 'acme', name: ' ' } })).toThrow(
     /owner\.name is empty/,
+  )
+})
+
+test('a diagnostic can say what to do in this place, after the general fix', () => {
+  expect(format({ code: 'W_NO_NAMESPACE', file: 'next.config.ts', detail: 'paste this' })).toBe(
+    `next.config.ts warning W_NO_NAMESPACE: ${CATALOG.W_NO_NAMESPACE.means}. Fix: ${CATALOG.W_NO_NAMESPACE.fix}. Here: paste this.`,
   )
 })

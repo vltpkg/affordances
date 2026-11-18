@@ -11,6 +11,8 @@ export type Diagnostic = {
   line?: number
   // what it's about: the action, capability, construct or field it names
   subject?: string
+  // what to do here, after the catalog's general fix: for W_NO_NAMESPACE, the line to paste
+  detail?: string
 }
 
 type Entry = {
@@ -68,6 +70,12 @@ export const CATALOG = {
     means: 'A resource type was inferred from a route segment, with no attributes declared',
     fix: 'Declare it with defineResource, under the same id, with its attributes',
   },
+  W_NO_NAMESPACE: {
+    severity: 'warning',
+    means:
+      "No namespace is configured, so no capability manifest is written. A v0 app's own manifest is unaffected",
+    fix: 'Pass `namespace`, an absolute URI such as `https://acme.example/capabilities`, to withAffordances',
+  },
   W_NO_OWNER: {
     severity: 'warning',
     means: 'No owner is configured, so no field can be `declared`',
@@ -96,6 +104,22 @@ export const CATALOG = {
       'Two evaluations, in fresh processes with an empty environment, gave different manifests',
     fix: 'Find what varies between runs (the first difference is shown) and write it as a literal',
   },
+  E_CAPABILITY_DUPLICATE: {
+    severity: 'error',
+    means: 'Two capability modules define one id differently',
+    fix: 'Keep one definition, and import it where the other module needs it',
+  },
+  E_CAPABILITY_MANIFEST: {
+    severity: 'error',
+    means: 'A defineManifest export is used whole, and other definitions sit beside it',
+    fix: 'Move them into the defineManifest, or drop the defineManifest and export each definition',
+  },
+  E_CLAIMS_NO_OWNER: {
+    severity: 'error',
+    means:
+      "A capability module makes claims, and no owner is configured; a claim is the owner's assertion",
+    fix: 'Pass `owner: { id, name }` to withAffordances',
+  },
   E_BOUND_REDEFINES: {
     severity: 'error',
     means: 'A capability-bound action also sets a v0 field its capability defines',
@@ -114,5 +138,5 @@ export const format = (d: Diagnostic, strict = false): string => {
   const entry: Entry = CATALOG[d.code]
   const where = d.line === undefined ? d.file : `${d.file}:${d.line}`
   const level = fails(d.code, strict) ? 'error' : 'warning'
-  return `${where} ${level} ${d.code}${d.subject ? ` (${d.subject})` : ''}: ${entry.means}. Fix: ${entry.fix}.`
+  return `${where} ${level} ${d.code}${d.subject ? ` (${d.subject})` : ''}: ${entry.means}. Fix: ${entry.fix}.${d.detail ? ` Here: ${d.detail}.` : ''}`
 }

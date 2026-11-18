@@ -44,7 +44,16 @@ What's needed is a build step that reads what's already written, asks for only w
 **Decision: capability modules, files named `capabilities.ts`.**
 
 - **Where:** a `capabilities.ts` may sit in any app route folder, beside `actions.ts` and `page.tsx`. One more may sit at the app root, for definitions shared across routes. The compiler finds them with the same walk codegen already does (`codegen.ts:96-150`), so there's no new configuration.
-- **What they hold:** `defineResource`, `definePrincipal`, `defineCapability` and `defineClaims` exports (RFC 0001 §12.1). Or one `defineManifest` export, which is then used whole, as `apps/hosting-lab` does.
+- **`_private` folders:** a `capabilities.ts` in one is never a module itself. What it defines counts only when a discovered module exports it, since only exports are read.
+- **What they hold:** `defineResource`, `definePrincipal`, `defineCapability`, `defineClaims` and `defineRelations` exports (RFC 0001 §12.1). Or one `defineManifest` export, which is then used whole, as `apps/hosting-lab` does.
+- **How exports are read:**
+  - **By brand:** every value the authoring API returns carries a non-enumerable `Symbol.for('affordances.defined')` brand, naming what it is, so a resource is never told from a capability by its shape. Unbranded exports, such as a shared schema, are ignored.
+  - **One manifest:** `fromModules`, in the authoring API, merges every module's branded exports, wherever the modules sit. A value exported twice is one value. The result is normalized, so the order the modules are found in never shows.
+  - **What it refuses:**
+    - two different definitions with one id, including a resource and a capability, `E_CAPABILITY_DUPLICATE`, naming both places;
+    - anything beside a `defineManifest` export, `E_CAPABILITY_MANIFEST`;
+    - claims with no owner, `E_CLAIMS_NO_OWNER`.
+  - **It reports, it doesn't throw:** `validate`'s issues are reported the same way.
 - **What they may import:** `@affordances/ir`, a Standard Schema library, and other capability modules, nothing else.
   - The compiler checks the import graph statically with oxc, which codegen already depends on, before it evaluates anything.
   - An import of application code is the error `E_CAPABILITY_IMPORT`, naming the import.
@@ -58,10 +67,20 @@ What's needed is a build step that reads what's already written, asks for only w
 
 **Identity comes from configuration.** `withAffordances(nextConfig, { namespace, owner })` gains two optional fields, beside the existing `name`, `root` and `plugins`:
 
-- **`namespace`:** the manifest's namespace, and the prefix suggested ids take;
+- **`namespace`:** the manifest's namespace, an absolute URI with no fragment, such as `https://acme.example/capabilities` (RFC 0001 §2);
 - **`owner`:** the manifest's owner source, `{ id, name }`. Only the configured owner produces `declared` provenance (RFC 0001 §12.1, rule 3).
 
-A `defineManifest` export overrides both. Without either, the manifest's namespace is inferred from `name` as an identifier ("Acme Store" gives `acmeStore`), and said to be inferred, and the owner is unset. That's a warning, `W_NO_OWNER`, since no field can then be `declared`.
+A `defineManifest` export overrides both.
+
+- **Suggested ids:** their prefix is an identifier inferred from `name` ("Acme Store" gives `acmeStore`). That's a separate thing from the namespace.
+- **No owner:** the owner is unset, and that's a warning, `W_NO_OWNER`, since no field can then be `declared`.
+- **No namespace: nothing is inferred, and no `manifest.json` is written** (intake, 2026-11-18).
+  - **What the build reports:** `W_NO_NAMESPACE`, with the exact line to paste.
+  - **The suggested value:** derived from the site's URL where it can be read without running the app: a literal `metadataBase` in the root layout, then `package.json`'s `homepage`. It's shown as "suggested, not applied", and the build never writes it in.
+  - **A v0 app loses nothing:** `.affordances/manifest.ts`, its routes and its graph are unchanged.
+  - **Why not infer:** the namespace is the app's identity. Every capability's canonical URI is `<namespace>#<id>` (RFC 0001 §2), so a silently inferred namespace that later changes re-keys every id.
+    - **A local URN,** such as `urn:affordances:acmeStore`, would invent a URN namespace no one registered.
+    - **A homepage** is often a repository's URL, not the site's.
 
 **Alternatives considered:**
 
@@ -130,7 +149,9 @@ These are never extracted, because code doesn't state them. Each one missing is 
   - A declarative condition with no runtime fails closed (RFC 0001 §12.1).
   - Extraction never produces `declared`.
   - An app import in a capability module is an error, not a warning.
-- **Zero configuration.** A v0 app with `withAffordances` already in `next.config` gets `.affordances/manifest.json` from its next `next build`. The manifest lists every action that has an `id`, plus `W_NO_ID` suggestions for the rest. The existing codemod writes the suggestions in (`writeIds`, `codegen.ts:188-283`).
+- **Zero configuration breaks nothing a v0 app has, and the first build names the one line, pre-filled where possible, that turns the manifest on** (`W_NO_NAMESPACE`, §1).
+  - **With a namespace:** `.affordances/manifest.json` lists every action that has an `id`, plus `W_NO_ID` suggestions for the rest.
+  - **The codemod:** the existing codemod writes the suggestions in (`writeIds`, `codegen.ts:188-283`).
 - **Diagnostics.** Every warning:
   - names the file, the line and the rule;
   - says what to declare, and where;
@@ -146,23 +167,27 @@ These are never extracted, because code doesn't state them. Each one missing is 
 | `W_EFFECTS_UNKNOWN`             | no effects declared                                                                                                      |
 | `W_AMOUNT_MISSING`              | a financial effect with no amount                                                                                        |
 | `W_ATTRIBUTES_UNKNOWN`          | a resource type inferred from a segment, with no `defineResource`                                                        |
+| `W_NO_NAMESPACE`                | no namespace configured, so no `manifest.json`; it names the line to paste, with a suggested value where one is readable |
 | `W_NO_OWNER`                    | no owner configured                                                                                                      |
 | `W_INPUT_LOSSY`                 | E3's slice converts, but drops a refinement or transform; each is named                                                  |
 | `E_CAPABILITY_IMPORT`           | a capability module imports application code                                                                             |
 | `E_CAPABILITY_SYNTAX`           | a capability module or slice uses syntax Node can't erase (an `enum`, a `namespace`)                                     |
 | `E_CAPABILITY_AMBIENT`          | a capability module uses a dynamic `import()`, `require`, `process`, `Date`, `Math.random`, `crypto`, `fetch` or a timer |
 | `E_CAPABILITY_NONDETERMINISTIC` | two evaluations, in fresh processes with an empty environment, give different manifests                                  |
+| `E_CAPABILITY_DUPLICATE`        | two capability modules define one id differently                                                                         |
+| `E_CAPABILITY_MANIFEST`         | a `defineManifest` export, with other definitions beside it                                                              |
+| `E_CLAIMS_NO_OWNER`             | a capability module makes claims, and no owner is configured                                                             |
 | `E_BOUND_REDEFINES`             | a bound action also sets a v0 field its capability defines                                                               |
 
 ## 4. Output
 
 `next build` writes three files to `.affordances/`:
 
-| File               | What it is                                                                                                            | Imports app code?                     |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| `manifest.json`    | the RFC 0001 manifest, canonical JSON (RFC 8785), validated by `validate`, with the manifest digest RFC 0001 defines  | **no**                                |
-| `bindings.ts`      | the runtime binding module: capability id to the `defineAction` export that implements it, and how to call it (below) | yes: it's runtime, never the artifact |
-| `diagnostics.json` | §3's warnings, for tools and CI                                                                                       | no                                    |
+| File               | What it is                                                                                                                                                             | Imports app code?                     |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `manifest.json`    | written only when a namespace is configured (§1): the RFC 0001 manifest, canonical JSON (RFC 8785), validated by `validate`, with the manifest digest RFC 0001 defines | **no**                                |
+| `bindings.ts`      | the runtime binding module: capability id to the `defineAction` export that implements it, and how to call it (below)                                                  | yes: it's runtime, never the artifact |
+| `diagnostics.json` | §3's warnings, for tools and CI                                                                                                                                        | no                                    |
 
 **What a binding holds.** A runtime handler is called with `(input, { principal, target, refs })` (RFC 0002 §11). A v0 `run` and `guard` take v0's page context: the route's params, and the session. So each entry in `bindings.ts` says how to rebuild that context:
 
@@ -173,7 +198,7 @@ These are never extracted, because code doesn't state them. Each one missing is 
 
 - **The existing route manifest is kept.** `.affordances/manifest.ts` stays v0's, unchanged.
 - **Deterministic:** the same sources give byte-identical output, and `manifest.json` changes only when its content does, as codegen's writer already does (`codegen.ts:178-186`).
-- **Validation:** an `E_*` from `validate` fails the build. A `W_*` doesn't, except in strict mode.
+- **Validation:** an `E_*` from `validate` fails the build. A `W_*` doesn't. In strict mode, §3's three strict codes (`W_NO_ID`, `W_INPUT_OPAQUE` and `W_INPUT_LOSSY`) do.
 
 ## 5. The runtime interop
 

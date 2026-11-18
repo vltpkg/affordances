@@ -140,6 +140,23 @@ test('two different definitions with one id are reported with both places, and n
   ])
 })
 
+test('a resource and a capability with one id are reported, not merged', () => {
+  const clash = defineCapability({
+    id: 'hosting.plan',
+    kind: 'query',
+    description: 'Read the plan',
+    authorization: { principal: 'any' },
+  })
+  const result = fromModules([{ file: 'app/capabilities.ts', exports: { plan, clash } }], {
+    namespace: 'https://host.example/capabilities',
+    owner,
+  })
+  expect(result.manifest).toBeUndefined()
+  expect(errors(result.diagnostics).map((d) => [d.code, d.subject])).toEqual([
+    ['E_CAPABILITY_DUPLICATE', 'hosting.plan'],
+  ])
+})
+
 test('a defineManifest export is used whole, and nothing may sit beside it', () => {
   const whole = defineManifest({
     namespace: 'https://lab.example/capabilities',
@@ -166,12 +183,12 @@ test('a defineManifest export is used whole, and nothing may sit beside it', () 
   ])
 })
 
-test('without a namespace nothing is built', () => {
+test('without a namespace nothing is built, and nothing is inferred', () => {
   const result = fromModules([{ file: 'app/capabilities.ts', exports: { plan, subscribe } }], {
     owner,
   })
   expect(result.manifest).toBeUndefined()
-  expect(result.diagnostics.map((d) => d.code)).toEqual(['E_NO_NAMESPACE'])
+  expect(result.diagnostics.map((d) => d.code)).toEqual(['W_NO_NAMESPACE'])
 })
 
 test('without an owner nothing is declared, and a claim, being the owner’s, is an error', () => {

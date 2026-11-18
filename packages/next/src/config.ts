@@ -1,9 +1,10 @@
-import { watch } from 'node:fs'
+import { existsSync, readFileSync, watch } from 'node:fs'
 import path from 'node:path'
 import type { NextConfig } from 'next'
 import { MEDIA_TYPE, WELL_KNOWN_PATH } from '@affordances/protocol'
 import { findAppDir, generate } from './codegen.ts'
 import { API_PATH } from './constants.ts'
+import { format, type Diagnostic } from './diagnostics.ts'
 
 export { API_PATH }
 
@@ -66,8 +67,9 @@ export type AffordancesConfig = {
   // more Affordances capabilities on the same app, applied in order after the graph, e.g. [md()] from @affordances/md/next
   plugins?: AffordancesPlugin[]
   /**
-   * @experimental The capability manifest's namespace (RFC 0005 §1), and the prefix suggested ids take. An RFC 0001
-   * §6.1 identifier, such as `acme`. Without one, it's inferred from `name`.
+   * @experimental The capability manifest's namespace (RFC 0005 §1): an absolute URI with no fragment, such as
+   * `https://acme.example/capabilities` (RFC 0001 §2). It's the app's identity, so it's never inferred: without one,
+   * no manifest is written, and the build says which line turns it on (`W_NO_NAMESPACE`).
    */
   namespace?: string
   /**
@@ -81,17 +83,20 @@ export type AffordancesConfig = {
 
 // RFC 0001 §6.1's identifier
 const ID = /^[a-z][A-Za-z0-9]*(\.[a-z][A-Za-z0-9]*)*$/
+// RFC 0001's namespace: an absolute URI with no fragment (§2, and §7.3's schema table)
+const URI = /^[A-Za-z][A-Za-z0-9+.-]*:[^#\s]*$/
 
 /** @experimental What the capability compiler reads from withAffordances' options (RFC 0005 §1). */
 export type Identity = {
-  namespace: string
-  // how the namespace was found: written in the config, or inferred from the site's name
-  namespaceFrom: 'config' | 'name'
+  // absent when none is configured: then no manifest is written
+  namespace?: string
+  // the prefix suggested ids take, an identifier inferred from the site's name; absent when the name gives none
+  idPrefix?: string
   owner?: { id: string; name: string }
   strict: boolean
 }
 
-// a site name as an identifier: 'Acme Store' is 'acmeStore'. It's inferred, so it's said to be
+// a site name as an identifier: 'Acme Store' is 'acmeStore'
 const fromName = (name: string) => {
   const words = name
     .normalize('NFKD')
@@ -105,31 +110,73 @@ const fromName = (name: string) => {
 }
 
 /**
- * @experimental The capability manifest's identity, from withAffordances' options, checked: a namespace and an
- * owner id must be RFC 0001 §6.1 identifiers. Returns undefined when there's neither a namespace nor a name to infer
- * one from.
+ * @experimental The capability manifest's identity, from withAffordances' options, checked: a namespace must be an
+ * absolute URI, and an owner id an RFC 0001 §6.1 identifier. The namespace is never inferred.
  */
-export const resolveIdentity = (options: AffordancesConfig = {}): Identity | undefined => {
-  if (options.namespace !== undefined && !ID.test(options.namespace))
+export const resolveIdentity = (options: AffordancesConfig = {}): Identity => {
+  if (options.namespace !== undefined && !URI.test(options.namespace))
     throw new TypeError(
-      `withAffordances: namespace '${options.namespace}' isn't an identifier (lowercase first, then letters and digits, dot-separated)`,
+      `withAffordances: namespace '${options.namespace}' isn't an absolute URI without a fragment, such as 'https://acme.example/capabilities'`,
     )
   if (options.owner !== undefined) {
     if (!ID.test(options.owner.id))
       throw new TypeError(`withAffordances: owner.id '${options.owner.id}' isn't an identifier`)
     if (!options.owner.name.trim()) throw new TypeError('withAffordances: owner.name is empty')
   }
-  const inferred =
-    options.namespace === undefined && options.name ? fromName(options.name) : undefined
-  const namespace = options.namespace ?? inferred
-  if (namespace === undefined) return undefined
+  const idPrefix = options.name ? fromName(options.name) : undefined
   return {
-    namespace,
-    namespaceFrom: options.namespace === undefined ? 'name' : 'config',
+    ...(options.namespace !== undefined && { namespace: options.namespace }),
+    ...(idPrefix !== undefined && { idPrefix }),
     ...(options.owner && { owner: options.owner }),
     strict: options.strict ?? false,
   }
 }
+
+// a site URL read without running anything: a literal metadataBase in the root layout, then package.json's homepage
+const siteUrl = (root: string): { url: string; from: string } | undefined => {
+  const http = /^https?:\/\/[^\s#?]+$/
+  for (const dir of ['app', 'src/app'])
+    for (const ext of ['.tsx', '.ts', '.jsx', '.js']) {
+      const file = path.join(dir, `layout${ext}`)
+      if (!existsSync(path.join(root, file))) continue
+      const literal = /metadataBase:\s*new URL\(\s*(['"`])([^'"`]+)\1\s*\)/.exec(
+        readFileSync(path.join(root, file), 'utf8'),
+      )?.[2]
+      if (literal && http.test(literal)) return { url: literal, from: `${file}'s metadataBase` }
+    }
+  try {
+    const { homepage } = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')) as {
+      homepage?: unknown
+    }
+    if (typeof homepage === 'string' && http.test(homepage))
+      return { url: homepage, from: "package.json's homepage" }
+  } catch {
+    // no package.json, or not JSON: nothing to suggest from
+  }
+  return undefined
+}
+
+/**
+ * @experimental `W_NO_NAMESPACE` (RFC 0005 §3), with the line that turns the manifest on: a suggested value when the
+ * site's URL can be read statically, never applied.
+ */
+export const noNamespace = (root: string): Diagnostic => {
+  const config = ['next.config.ts', 'next.config.mjs', 'next.config.js'].find((f) =>
+    existsSync(path.join(root, f)),
+  )
+  const site = siteUrl(root)
+  const value = site
+    ? `${new URL(site.url).origin}/capabilities`
+    : 'https://<your-site>/capabilities'
+  return {
+    code: 'W_NO_NAMESPACE',
+    file: config ?? 'next.config',
+    detail: `add \`namespace: '${value}'\` to withAffordances' options${site ? ` (suggested from ${site.from}, not applied)` : ''}`,
+  }
+}
+
+// once per process: next loads its config more than once in one build
+let reported = false
 
 // the slice of NextConfig withAffordances touches; generic so it accepts whichever copy of next the app has
 // webpack is typed loosely: its context drags in all of NextConfig, which two copies of next don't agree on
@@ -144,7 +191,11 @@ export const withAffordances = <C extends Config>(
 ): C => {
   const root = options.root ?? process.cwd()
   // a bad namespace or owner fails here, as the config loads, not later in the capability compiler
-  resolveIdentity(options)
+  const identity = resolveIdentity(options)
+  if (identity.namespace === undefined && !reported) {
+    reported = true
+    console.warn(`[affordances] ${format(noNamespace(root))}`)
+  }
   const entries = generate(root, options)
 
   // dev: regenerate when an actions or state file changes; turbopack picks up the new manifest

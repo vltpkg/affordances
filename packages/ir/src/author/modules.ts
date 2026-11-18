@@ -70,12 +70,13 @@ export const fromModules = (
       : { manifest: manifests[0]!.value as CapabilityManifest, diagnostics }
   }
 
+  // the namespace is the app's identity, so it's never inferred: without one there's no manifest (RFC 0005 §1)
   if (!identity.namespace)
     return {
       diagnostics: [
         {
-          code: 'E_NO_NAMESPACE',
-          message: 'No namespace: configure one, or give a name it can be inferred from',
+          code: 'W_NO_NAMESPACE',
+          message: 'No namespace is configured, so no manifest is built',
         },
       ],
     }
@@ -99,6 +100,14 @@ export const fromModules = (
   }
   const resources = unite<DefinedResource>('resource', (r) => r.definition.id, definition)
   const capabilities = unite<DefinedCapability>('capability', (c) => c.definition.id, definition)
+  // one id names one definition, whatever it is: a resource and a capability can't share one
+  const resourceIds = new Set(resources.map((r) => r.definition.id))
+  for (const c of capabilities.filter((x) => resourceIds.has(x.definition.id)))
+    diagnostics.push({
+      code: 'E_CAPABILITY_DUPLICATE',
+      subject: c.definition.id,
+      message: `${c.definition.id} is both a resource and a capability`,
+    })
   const principals = unite<DefinedPrincipal>('principal', () => 'the principal', definition)
   const claims = found.filter((f) => f.brand === 'claims').map((f) => f.value as DefinedClaims)
   // relations have no identity of their own; exact duplicates collapse when the manifest is normalized
