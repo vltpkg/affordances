@@ -8,6 +8,8 @@ import { codexCli } from './drivers/codex-cli.ts'
 import { fakeDriver } from './drivers/fake.ts'
 import type { Driver } from './drivers/types.ts'
 import { pilotPlan, runTrial, type TrialSpec } from './harness.ts'
+import { type CanaryRecord, runCanary } from './canary.ts'
+import { contextLeaks, filesWithSecrets } from './drivers/isolation.ts'
 import { type Failed, pilotReport, type Result } from './report.ts'
 
 // node src/run.ts dry <out dir>                   one fake-driver trial per condition, with no model: every metric, a
@@ -17,6 +19,15 @@ import { type Failed, pilotReport, type Result } from './report.ts'
 // node src/run.ts plan                            the pilot's 110 trials, listed, not run
 // node src/run.ts pilot <out dir>                 runs them, two at a time. Only in the planner's announced window
 const [mode, ...rest] = process.argv.slice(2)
+
+// the sha a pinned export records, found by walking up from this file; none in a working tree
+const exportSha = () => {
+  for (let at = import.meta.dirname; ; at = path.dirname(at)) {
+    const file = path.join(at, '.export-sha')
+    if (existsSync(file)) return readFileSync(file, 'utf8').trim()
+    if (path.dirname(at) === at) return undefined
+  }
+}
 
 const git = (...args: string[]) => execFileSync('git', args, { encoding: 'utf8' }).trim()
 
@@ -75,12 +86,39 @@ if (mode === 'plan') {
   }
   const startedAt = new Date().toISOString()
   const loadAtStart = loadavg()
-  // the branch's commit the harness ran at, and whether the bench had uncommitted changes (it shouldn't)
-  const commit = {
-    branch: 'ejkorol/semantic-capabilities',
-    sha: git('rev-parse', 'ejkorol/semantic-capabilities'),
-    benchDirty:
-      git('diff', '--stat', 'ejkorol/semantic-capabilities', '--', import.meta.dirname) !== '',
+  // real models run only from a pinned, git-free export (scripts/export.sh), with every trial isolated and a context
+  // canary passing first (intake, 2026-11-18). The dry run's fake driver needs neither
+  const real = specs.some((s) => s.driver !== 'fake')
+  const exported = exportSha()
+  if (real && !exported) {
+    console.error(
+      'real-model runs only from a pinned export: scripts/export.sh <commit>, then run from it',
+    )
+    process.exit(3)
+  }
+  const commit = exported
+    ? { sha: exported, from: 'pinned export' }
+    : { sha: git('rev-parse', 'HEAD'), from: 'working tree (dry run only)' }
+  const canaries: CanaryRecord[] = []
+  if (real) {
+    const leaks = contextLeaks(out)
+    if (leaks.length) {
+      console.error(`the results root isn't isolated: ${leaks.join('; ')}`)
+      process.exit(3)
+    }
+    // one canary per driver and model the run uses, in the trial configuration
+    for (const key of new Set(specs.map((s) => `${s.driver} ${s.model}`))) {
+      const [driver, model] = key.split(' ') as [string, string]
+      const record = await runCanary(driverFor({ driver } as TrialSpec), model, out, {
+        command: process.execPath,
+        args: [path.resolve(import.meta.dirname, 'smoke-server.ts')],
+      })
+      canaries.push(record)
+      if (!record.passed) {
+        console.error(`the context canary failed for ${key}: ${record.problems.join('; ')}`)
+        process.exit(3)
+      }
+    }
   }
   // concurrency at most 2 (row 80a8328d). A trial that throws is reported as failed, and never re-run (intake)
   const failed: Failed[] = []
@@ -145,9 +183,17 @@ if (mode === 'plan') {
       ]),
     ),
   }
-  const report = { run, ...pilotReport(results, failed) }
+  // no credential reaches the results (the planner's security rule)
+  const credentialLeaks = real ? filesWithSecrets(out) : []
+  const report = { run: { ...run, canaries, credentialLeaks }, ...pilotReport(results, failed) }
   writeFileSync(path.join(out, 'report.json'), JSON.stringify(report, null, 2))
   console.log(JSON.stringify(report, null, 2))
+  if (credentialLeaks.length) {
+    console.error(
+      `credential content in the results: ${credentialLeaks.join(', ')}. Remove it before anything is shared`,
+    )
+    process.exit(4)
+  }
 } else {
   console.error(
     'usage: node src/run.ts dry <out> | trial <driver> <model> <condition> <task> <out> | plan | pilot <out>',

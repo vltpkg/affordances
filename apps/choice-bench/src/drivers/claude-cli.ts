@@ -1,5 +1,6 @@
 import { writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { assertIsolated, makeHome, removeHome } from './isolation.ts'
 import { freshDir, json, runCli, trialEnv, versionOf, type Ran } from './process.ts'
 import type { Driver, DriverResult } from './types.ts'
 
@@ -8,7 +9,11 @@ import type { Driver, DriverResult } from './types.ts'
 const SERVER = 'bench'
 const PREFIX = `mcp__${SERVER}__`
 
-export const claudeCli = (options: { root: string; command?: string }): Driver => {
+export const claudeCli = (options: {
+  root: string
+  command?: string
+  isolated?: false
+}): Driver => {
   const command = options.command ?? 'claude'
   let version: string | undefined
   return {
@@ -16,39 +21,47 @@ export const claudeCli = (options: { root: string; command?: string }): Driver =
     async run(trial) {
       version ??= versionOf(command)
       const dir = freshDir(options.root, 'claude')
-      const server =
-        'url' in trial.mcp
-          ? { type: 'http', url: trial.mcp.url }
-          : { command: trial.mcp.command, args: trial.mcp.args }
-      const config = path.join(dir, 'mcp.json')
-      writeFileSync(config, JSON.stringify({ mcpServers: { [SERVER]: server } }))
-      const ran = await runCli(
-        command,
-        [
-          '-p',
-          trial.prompt,
-          '--model',
-          trial.model,
-          '--output-format',
-          'stream-json',
-          '--verbose',
-          '--mcp-config',
-          config,
-          '--strict-mcp-config',
-          '--tools',
-          '',
-          '--allowedTools',
-          `${PREFIX}*`,
-          '--setting-sources',
-          '',
-          '--disable-slash-commands',
-          '--no-session-persistence',
-          '--max-turns',
-          String(trial.maxTurns),
-        ],
-        { dir, timeoutMs: trial.timeoutMs, env: trialEnv() },
-      )
-      return parse(ran, version)
+      // a home of its own, and nothing of the repo's or the seat's reachable (isolation.ts)
+      // isolated: false is the canary's own negative check, never a trial (canary.test.ts)
+      const home = options.isolated === false ? undefined : makeHome('claude')
+      try {
+        if (home) assertIsolated(dir, home)
+        const server =
+          'url' in trial.mcp
+            ? { type: 'http', url: trial.mcp.url }
+            : { command: trial.mcp.command, args: trial.mcp.args }
+        const config = path.join(dir, 'mcp.json')
+        writeFileSync(config, JSON.stringify({ mcpServers: { [SERVER]: server } }))
+        const ran = await runCli(
+          command,
+          [
+            '-p',
+            trial.prompt,
+            '--model',
+            trial.model,
+            '--output-format',
+            'stream-json',
+            '--verbose',
+            '--mcp-config',
+            config,
+            '--strict-mcp-config',
+            '--tools',
+            '',
+            '--allowedTools',
+            `${PREFIX}*`,
+            '--setting-sources',
+            '',
+            '--disable-slash-commands',
+            '--no-session-persistence',
+            '--max-turns',
+            String(trial.maxTurns),
+          ],
+          { dir, timeoutMs: trial.timeoutMs, env: { ...trialEnv(), ...home?.env } },
+        )
+        return parse(ran, version)
+      } finally {
+        if (home) removeHome(home)
+      }
     },
   }
 }

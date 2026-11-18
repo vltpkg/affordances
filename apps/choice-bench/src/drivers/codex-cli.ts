@@ -1,3 +1,4 @@
+import { assertIsolated, makeHome, removeHome } from './isolation.ts'
 import { freshDir, json, runCli, trialEnv, versionOf, type Ran } from './process.ts'
 import type { Driver, DriverResult } from './types.ts'
 
@@ -34,6 +35,7 @@ export const codexCli = (options: {
   root: string
   command?: string
   disabled?: string[]
+  isolated?: false
 }): Driver => {
   const command = options.command ?? 'codex'
   let version: string | undefined
@@ -42,39 +44,47 @@ export const codexCli = (options: {
     async run(trial) {
       version ??= versionOf(command)
       const dir = freshDir(options.root, 'codex')
-      const server =
-        'url' in trial.mcp
-          ? [`mcp_servers.${SERVER}.url=${toml(trial.mcp.url)}`]
-          : [
-              `mcp_servers.${SERVER}.command=${toml(trial.mcp.command)}`,
-              `mcp_servers.${SERVER}.args=${toml(trial.mcp.args)}`,
-            ]
-      const ran = await runCli(
-        command,
-        [
-          'exec',
-          '--json',
-          '--ephemeral',
-          '--ignore-user-config',
-          '--ignore-rules',
-          '--skip-git-repo-check',
-          '-s',
-          'read-only',
-          '-C',
-          dir,
-          '-m',
-          trial.model,
-          ...server.flatMap((c) => ['-c', c]),
-          '-c',
-          `mcp_servers.${SERVER}.default_tools_approval_mode="approve"`,
-          '-c',
-          'web_search="disabled"',
-          ...(options.disabled ?? DISABLED).flatMap((f) => ['--disable', f]),
-          trial.prompt,
-        ],
-        { dir, timeoutMs: trial.timeoutMs, env: trialEnv(), stdin: '' },
-      )
-      return parse(ran, version)
+      // a home of its own, and nothing of the repo's or the seat's reachable (isolation.ts)
+      // isolated: false is the canary's own negative check, never a trial (canary.test.ts)
+      const home = options.isolated === false ? undefined : makeHome('codex')
+      try {
+        if (home) assertIsolated(dir, home)
+        const server =
+          'url' in trial.mcp
+            ? [`mcp_servers.${SERVER}.url=${toml(trial.mcp.url)}`]
+            : [
+                `mcp_servers.${SERVER}.command=${toml(trial.mcp.command)}`,
+                `mcp_servers.${SERVER}.args=${toml(trial.mcp.args)}`,
+              ]
+        const ran = await runCli(
+          command,
+          [
+            'exec',
+            '--json',
+            '--ephemeral',
+            '--ignore-user-config',
+            '--ignore-rules',
+            '--skip-git-repo-check',
+            '-s',
+            'read-only',
+            '-C',
+            dir,
+            '-m',
+            trial.model,
+            ...server.flatMap((c) => ['-c', c]),
+            '-c',
+            `mcp_servers.${SERVER}.default_tools_approval_mode="approve"`,
+            '-c',
+            'web_search="disabled"',
+            ...(options.disabled ?? DISABLED).flatMap((f) => ['--disable', f]),
+            trial.prompt,
+          ],
+          { dir, timeoutMs: trial.timeoutMs, env: { ...trialEnv(), ...home?.env }, stdin: '' },
+        )
+        return parse(ran, version)
+      } finally {
+        if (home) removeHome(home)
+      }
     },
   }
 }
