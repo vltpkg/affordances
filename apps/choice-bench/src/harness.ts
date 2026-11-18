@@ -289,6 +289,27 @@ export const runTrial = async (spec: TrialSpec, driver: Driver, dir: string) => 
   }
 }
 
+// canary mode's plan (boundary review #7, the planner, 2026-11-18): the preflight alone needs drivers and models, not
+// conditions, so it's one spec per driver and model, condition A. The Claude models with a v2 canary baseline, so the
+// baseline's keys and checks are unchanged; Codex stays out until its isolation is solved
+export const canaryPlan = (): TrialSpec[] =>
+  [PILOT_MODELS.sonnet, PILOT_MODELS.haiku, PILOT_MODELS.opus].map((model, index) => ({
+    id: `canary-A-T6-${model}`.replace(/[^\w.-]/g, '_'),
+    condition: 'A',
+    task: 'T6',
+    model,
+    driver: 'claude-cli',
+    index,
+  }))
+
+// M5's runs, closed: their plans are on record at their commits, so their modes refuse rather than run a changed plan
+export const RETIRED: Record<string, string> = {
+  pilot: '4893655c032c1ee57ef8450a747dfc50a1ecfaf2',
+  calibration: 'c81eeeb1a61e0330be34ce170169c8d9a77292cc',
+}
+export const retiredMode = (mode: string): string | undefined =>
+  RETIRED[mode] && `M5 is closed: the ${mode} plan is on record at its commit, ${RETIRED[mode]}`
+
 // the pilot (§8, as the planner sized it): 110 trials, five per cell
 export const PILOT_MODELS = {
   // Codex's default model, pinned by exact id with -m (the planner, 2026-11-18)

@@ -6,6 +6,7 @@ import { afterAll, describe, expect, test } from 'vitest'
 import { fakeDriver } from '../src/drivers/fake.ts'
 import type { DriverResult, Trial } from '../src/drivers/types.ts'
 import {
+  canaryPlan,
   DriverFailure,
   failureOf,
   INSTRUCTIONS,
@@ -14,6 +15,7 @@ import {
   pilotPlan,
   priorFailures,
   promptFor,
+  retiredMode,
   runTrial,
   type TrialSpec,
 } from '../src/harness.ts'
@@ -362,3 +364,39 @@ test('a run needs only the logins its plan’s drivers use', () => {
     missingLogins({ claude: false, codex: false }, [spec('f')] as unknown as TrialSpec[]),
   ).toEqual([])
 })
+
+// boundary review #7, the planner (2026-11-18): every mode that can run a real model passes the preflight, and M5's
+// closed modes refuse instead of running a changed plan
+test('canary mode’s plan is one spec per Claude model with a baseline, condition A, and passes the offer-set check', async () => {
+  const { offerSetCheck } = await import('../src/offerset.ts')
+  const plan = canaryPlan()
+  expect(plan.map((s) => [s.driver, s.model, s.condition])).toEqual([
+    ['claude-cli', 'claude-sonnet-5-5', 'A'],
+    ['claude-cli', 'claude-haiku-5-5', 'A'],
+    ['claude-cli', 'claude-opus-5-5', 'A'],
+  ])
+  for (const task of new Set(plan.map((s) => s.task)))
+    expect(
+      await offerSetCheck(
+        [...new Set(plan.filter((s) => s.task === task).map((s) => s.condition))],
+        task,
+      ),
+    ).toEqual([])
+})
+
+test('the pilot and calibration modes refuse, naming the commit their plan is on record at', async () => {
+  expect(retiredMode('pilot')).toBe(
+    'M5 is closed: the pilot plan is on record at its commit, 4893655c032c1ee57ef8450a747dfc50a1ecfaf2',
+  )
+  expect(retiredMode('calibration')).toMatch(/c81eeeb1a61e0330be34ce170169c8d9a77292cc$/)
+  expect(retiredMode('canary')).toBeUndefined()
+  const { spawnSync } = await import('node:child_process')
+  for (const mode of ['pilot', 'calibration']) {
+    const run = spawnSync(
+      process.execPath,
+      [path.resolve(import.meta.dirname, '../src/run.ts'), mode, path.join(dir, `retired-${mode}`)],
+      { encoding: 'utf8' },
+    )
+    expect([run.status, run.stderr.trim()]).toEqual([3, retiredMode(mode)])
+  }
+}, 60_000)

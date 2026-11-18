@@ -10,11 +10,12 @@ import { codexCli } from './drivers/codex-cli.ts'
 import { fakeDriver } from './drivers/fake.ts'
 import type { Driver } from './drivers/types.ts'
 import {
-  calibrationPlan,
+  canaryPlan,
   DriverFailure,
   missingLogins,
   pauseFor,
   pilotPlan,
+  retiredMode,
   runTrial,
   type TrialSpec,
 } from './harness.ts'
@@ -137,6 +138,12 @@ if (mode === 'plan') {
   mode === 'calibration' ||
   mode === 'canary'
 ) {
+  // pilot and calibration are M5's, closed: never run with a changed plan (the planner, 2026-11-18)
+  const retired = retiredMode(mode)
+  if (retired) {
+    console.error(retired)
+    process.exit(3)
+  }
   const out = path.resolve(rest[mode === 'trial' ? 4 : 0] ?? 'results')
   mkdirSync(out, { recursive: true })
   const specs: TrialSpec[] =
@@ -160,9 +167,7 @@ if (mode === 'plan') {
               index: 0,
             },
           ]
-        : mode === 'calibration' || mode === 'canary'
-          ? calibrationPlan()
-          : pilotPlan()
+        : canaryPlan()
   const driverFor = (spec: TrialSpec): Driver =>
     spec.driver === 'fake'
       ? fakeDriver(spec.index, path.join(out, `${spec.id}.raw.json`))
