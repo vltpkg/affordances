@@ -7,7 +7,10 @@ import { loadGate, ownerChanges, stampOwnerFiles } from '../src/integrity.ts'
 import {
   PILOT_MODELS,
   PILOT_SURFACES,
+  CONFIRMATORY_SURFACES,
   REPILOT_SURFACES,
+  RUN_PLANS,
+  surfaceConfirmatoryPlan,
   surfacePilotPlan,
   surfaceRepilotPlan,
 } from '../src/surface-plan.ts'
@@ -104,4 +107,41 @@ test('the re-pilot: the 4 confirmatory surfaces x 2 models x 2, interleaved, alt
   expect(plan.every((s) => s.id.startsWith('repilot-'))).toBe(true)
   // the pilot's own ids are as they were, so its committed record still matches its plan
   expect(surfacePilotPlan()[0]!.id).toBe('pilot-full-T6-claude-sonnet-5-5-0')
+})
+
+// the planner (18:41Z): the confirmatory run on the re-pilot's pin, through the same entry
+test('the confirmatory 400: 4 surfaces x 2 models x 50, interleaved and rotated, each index fixing its plan order', () => {
+  const plan = surfaceConfirmatoryPlan()
+  expect(plan).toHaveLength(400)
+  expect(new Set(plan.map((s) => s.id)).size).toBe(400)
+  expect(new Set(plan.map((s) => `${s.surface} ${s.model} ${s.index}`)).size).toBe(400)
+  const perCell = new Map<string, number>()
+  for (const s of plan)
+    perCell.set(`${s.surface} ${s.model}`, (perCell.get(`${s.surface} ${s.model}`) ?? 0) + 1)
+  expect([...perCell.values()]).toEqual(Array(8).fill(50))
+  for (let i = 0; i < 50; i++) {
+    const block = plan.slice(i * 8, i * 8 + 8)
+    expect(block.every((s) => s.index === i)).toBe(true)
+    expect(block[0]!.model).toBe(i % 2 === 0 ? 'claude-sonnet-5-5' : 'claude-haiku-5-5')
+    expect(block[0]!.surface).toBe(CONFIRMATORY_SURFACES[i % 4])
+  }
+  // its pause is the confirmatory rule, more than 2%, not the pilots' more than 2
+  expect(RUN_PLANS.confirmatory.pilot).toBe(false)
+  expect([RUN_PLANS.pilot.pilot, RUN_PLANS.repilot.pilot]).toEqual([true, true])
+})
+
+test('off the pinned export, every run mode refuses before any trial', () => {
+  for (const mode of ['repilot', 'confirmatory']) {
+    const out = path.join(dir, `unpinned-${mode}`)
+    const r = spawnSync(
+      process.execPath,
+      [path.join(import.meta.dirname, '..', 'src', 'surface-run.ts'), mode, out, '--dry'],
+      {
+        encoding: 'utf8',
+      },
+    )
+    expect({ mode, status: r.status }).toEqual({ mode, status: 3 })
+    expect(r.stderr).toMatch(/REFUSED: no pin.json/)
+    expect(readdirSync(out)).toEqual([])
+  }
 })

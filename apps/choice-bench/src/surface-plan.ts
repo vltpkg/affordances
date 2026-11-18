@@ -17,6 +17,9 @@ export const PILOT_TASK = 'T6'
 // same interleaved and rotated order, on the new pin with the approval sentence
 export const REPILOT_SURFACES: SurfaceId[] = ['full', 'progressive', 'v0', 'browser']
 export const REPILOT_PER_CELL = 2
+// the confirmatory run (PLAN §4): the same 4 surfaces x 2 models x 50 = 400, on the re-pilot's pin
+export const CONFIRMATORY_SURFACES: SurfaceId[] = REPILOT_SURFACES
+export const CONFIRMATORY_PER_CELL = 50
 
 type PlanShape = { prefix: string; surfaces: SurfaceId[]; perCell: number }
 
@@ -57,3 +60,20 @@ export const surfacePilotPlan = (driver = 'claude-cli') =>
 /** The re-pilot's 16, in the order they run. */
 export const surfaceRepilotPlan = (driver = 'claude-cli') =>
   planOf({ prefix: 'repilot', surfaces: REPILOT_SURFACES, perCell: REPILOT_PER_CELL }, driver)
+
+/** The confirmatory run's 400, in the order they run: each index fixes its plan-id order, as in M5 (RFC 0003 §4). */
+export const surfaceConfirmatoryPlan = (driver = 'claude-cli') =>
+  planOf(
+    { prefix: 'confirmatory', surfaces: CONFIRMATORY_SURFACES, perCell: CONFIRMATORY_PER_CELL },
+    driver,
+  )
+
+/**
+ * The plans the entry runs, by mode: their specs, the surfaces their pinned preflight checks, and their pause rule,
+ * the pilots' 'more than 2 faults' (pilot: true) or the confirmatory run's 'more than 2% of the trials run'
+ */
+export const RUN_PLANS = {
+  pilot: { specs: surfacePilotPlan, surfaces: PILOT_SURFACES, pilot: true },
+  repilot: { specs: surfaceRepilotPlan, surfaces: REPILOT_SURFACES, pilot: true },
+  confirmatory: { specs: surfaceConfirmatoryPlan, surfaces: CONFIRMATORY_SURFACES, pilot: false },
+} as const
