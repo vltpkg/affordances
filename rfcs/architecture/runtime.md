@@ -26,11 +26,12 @@ What an offer discloses and why (views, choice sets, the comparison and the disc
 - **`.`:** `createRuntime`, `offerId` and `parseOfferId`, `builtInPolicies`, `checkOrderBasis`, `claimFree`,
   `statusOf`, `HandlerRefusal`, `keptColumns`, `conformance` and `resolverConformance`, and every type.
 - **`./agent`:** the shared tool core ([mcp.md](./mcp.md#the-shared-tool-core)): `createToolset`, `toModel`,
-  `GENERIC_TOOLS`, `capabilityTool`, `exportable` and `httpAdapter`. It imports only ir and types, so it runs in a
+  `TOKEN`, `GENERIC_TOOLS`, `capabilityTool`, `exportable` and `httpAdapter`. It imports only ir and types, so it runs in a
   browser.
 - **`./agent-runtime`:** `createRuntimeAdapter`, the same tools over an in-process runtime, for a server.
 
-Several are marked `@experimental`, as is everything an unpublished package exports.
+Several are marked `@experimental`, among them `statusOf`, `HandlerRefusal`, `keptColumns`, the conformance kits
+and the agent modules. The package as a whole is unpublished.
 
 ## Startup
 
@@ -135,10 +136,12 @@ the one views apply, exported so the inspector marks the same columns ([projecti
 
 ## Not built, and divergences
 
-- **Not built:** rate limiting, so `rate_limited` exists only in the types and in `statusOf`; a generated detail for a
-  declarative condition ("count is 0"), and the index of the element a quantifier fails on; event subscriptions, since
-  events have no offers; cross-manifest projection, since references are local only; and relevance beyond `basic`.
-  These are RFC 0002's open questions (§13).
+- **Not built, though specified:** rate limiting ([§8.1](../0002-contextual-projection.md#81-the-request), step 3), so
+  `rate_limited` exists only in the types and in `statusOf`; a generated detail for a declarative condition, "count
+  is 0" ([§8.3](../0002-contextual-projection.md#83-the-result)); and a quantified condition's detail naming the
+  element that decided it ([§4.2](../0002-contextual-projection.md#42-availability)).
+- **Open in RFC 0002 §13, and not built:** relevance beyond `basic`, event capabilities (events have no offers), and
+  cross-manifest projection (references are local only).
 - **Divergences:** §11 makes `approvalKeys` required, while the code needs it only when something requires
   confirmation. The token's string form, a nonce spent before the run, failed loads left out of observation,
   `establishes` checked on the target only, and the throwing-`list` fallback are as built here and not specified in

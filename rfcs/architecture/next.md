@@ -34,8 +34,10 @@ The specification is [§1 and §2](../0005-nextjs-compilation.md#1-where-declara
   v0 binding, `{ route, action }`, and a route parameter is mapped from the target.
 - **An input schema** is evaluated, never parsed by hand. The compiler takes a slice of the module, only the consts
   and imports the schema needs, and runs it in a child process under Node's permission model, which reads only the
-  slice's folder and `node_modules`, with an empty environment, and can't write or fetch. Zod, Valibot, ArkType and
-  TypeBox are recognized. Two runs that differ are `E_CAPABILITY_NONDETERMINISTIC`.
+  slice's folder and `node_modules`, with an empty environment, and can't write or fetch. Zod, Valibot, ArkType,
+  TypeBox, Effect and `@effect/schema` are recognized. The slice is run twice, and two runs that give different
+  schemas make the input opaque (`W_INPUT_OPAQUE`). `E_CAPABILITY_NONDETERMINISTIC` is a different check, on the
+  capability modules' whole evaluation.
 
 ## The slice's rule
 
@@ -50,8 +52,9 @@ refused, and the input becomes opaque (`W_INPUT_OPAQUE`):
   pattern or a class, at any depth, a key is an identifier or a plain string or number literal, never computed, and
   never a banned member. Any computed key is refused, a numeric index such as `a[0]` included, whatever it computes to.
 - **Also refused:** `import()`, `import.meta`, a `let`, a function declaration, and any other read.
-- **Lossy constructs** that survive evaluation but not JSON Schema (`refine`, `superRefine`, `transform`, `preprocess`,
-  `custom`, a pipe to a function) are `W_INPUT_LOSSY`, each named, and opaque in strict mode.
+- **Lossy constructs** survive evaluation but not JSON Schema, for example zod's `refine`, `superRefine`, `transform`,
+  `preprocess`, `custom` or a pipe to a function, and each library has its own. They're `W_INPUT_LOSSY`, each named,
+  and opaque in strict mode.
 
 ## What the build emits
 

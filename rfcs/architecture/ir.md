@@ -48,7 +48,7 @@ The specification is [§1 to §5](../0001-semantic-capability-ir.md#1-the-model-
   is `all`, `any`, `not`, seven comparisons, `exists`, the quantifiers `some` and `every`, and `count`
   ([§3.1](../0001-semantic-capability-ir.md#31-the-expression-vocabulary)). They're evaluated three-valued: a path
   resolves to a value, to absent (`null`, a known no-value) or to missing (unknown), and an unknown never passes.
-- **Effects** are state, financial or other. A financial effect is a charge, with its `amount` and, optionally, when it
+- **Effects** are state, financial, external or access. A financial effect is a charge, with its `amount` and, optionally, when it
   `applies` ([§4](../0001-semantic-capability-ir.md#4-effects-question-3)). A compensable effect names what compensates
   it. A confirmation summary renders every charge with its amount, from the effective input.
 - **Relations** are `alternativeTo`, `enables` and `relatedTo`. Edges the definitions imply (supports, produces,
