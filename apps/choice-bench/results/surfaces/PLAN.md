@@ -120,6 +120,11 @@ Everything else is byte-identical across the six, and the preflight refuses a ru
 - **One rule everywhere** (intake, 09:26Z):
   - **the primary outcome:** the intended end state is optimal;
   - **beside it, on every surface:** completed, the session's `lab.endState` (cross-checked, §3) is optimal.
+- **Completion is one store rule, on all five surfaces** (backend's 4c915b2a; the planner, 16:10Z): `completed = purchaseMade(start, end)`. It holds when the task's purchase was made, read from the session's end state, which is cross-checked against `project.read`, with `start` as the trial's fresh store.
+  - **What counts:** a plan, bundle or add-on bought. A cancel, a removal, a downgrade or a deploy doesn't.
+  - **It's new.** M5's "completed" was an approved re-execution, read from the trace. Here it's read from the store, so every surface is measured the same way.
+  - **A refused Confirm** is the agent's outcome, and is scored. The review page answers it as an ordinary page (§3).
+  - **If the catalog gains one-time charges,** backend may refine `purchaseMade` from the price to the items purchased, and the plan will say which.
 - **The fallback, and its check,** fixed before the pilot.
   - **When it applies:** only if the pilot shows the review page distorting the browser arm. Then each contrast's primary becomes the strongest measure both arms can express: completed for `full` against `browser`, and intended for the others.
   - **The check:** the unconfirmed-request rate, a request event but no completed purchase, as a share of the trials that ran. It's compared between `browser` and `full`, pooled over both models (10 trials per arm in the pilot).
