@@ -146,7 +146,7 @@ type Budget = { offers?: number; depth?: number }
 The application registers how the runtime learns what it needs:
 
 - **The principal** isn't resolved by the runtime. The runtime is transport-free: every request carries a resolved `Principal`, and the binding or adapter that receives the HTTP request resolves it, as v0's `auth` does today.
-- **`resources[type].load(key, principal)`** returns an instance's attributes, as declared in its `ResourceDefinition.attributes`, and optionally its `version` (§7).
+- **`resources[type].load(key, principal)`** returns an instance's attributes, as declared in its `ResourceDefinition.attributes`, and optionally its `version` (§7). A `version` changes whenever any of the instance's attributes does. Revisions depend on that, and so does a choice set's comparison (§6.6).
   - **Not supplied against null:** a declared attribute the resolver leaves out (no key) is not supplied, which RFC 0001 §3.1 evaluates as `missing`, so `unknown`. A key present with `null` is `absent`. The same holds for `Principal.attributes`. A resolver that can't read an attribute leaves it out; one that knows there's no value says `null`. Inside a value supplied whole (an attribute's own attributes, array elements, the input), an omitted key is `absent` (RFC 0001 §3.1). It returns `null` when the instance doesn't exist **or the principal may not see it**. The runtime can't tell those apart, and doesn't need to.
 - **`resources[type].list(principal, scope)`** enumerates instances for a choice set or a containment: every plan, or a cart's items (§5).
 
@@ -542,10 +542,13 @@ type Comparison = {
 ```
 
 - **Every declared attribute is in it,** except the resource's key, which the member's offer id already carries:
+  - **declared means** a top-level property of the resource's `attributes` schema. The table holds only those keys, filtered from what the resolver returned, so a field the schema never declared never surfaces. The runtime doesn't validate values against the schema: that's the application's;
+  - **columns are top-level:** an object or array value is one cell, compared whole by RFC 8785 bytes, never flattened into paths;
   - **in `differ`:** an attribute on which the members differ, by RFC 8785 bytes, with one row per member;
   - **in `shared`:** an attribute every member supplied with the same value, stated once. Leaving it out would save little, and the agent couldn't tell "the same for every plan" from "not shown", though a requirement such as "instant rollback" can turn on exactly that;
   - **in `unsupplied`:** an attribute a resolver didn't supply for a member. It's named, and counted as differing, so an asymmetry between members shows instead of being silent.
 - **It sits on the choice set,** a table, not repeated on each offer. The offers stay as §4.1 defines them.
+- **A summarized choice set carries it too, whole.** When an offers budget summarizes a set to its member ids (§5), the comparison stays. A summary of offers isn't a summary of facts, and only `facts` cuts the table.
 - **No policy can remove it.** A policy decides whether a choice set is in the first view. If the set is in, its comparison is too. `claims: 'omitted'` doesn't touch it, because attributes are the application's state, not claims (§4.5).
 - **Only the request can cut it.** `Budget` gains `facts?: number`, a limit in cells.
   - **What gets cut:** columns, never rows, so no member carries less than another. Each cut column is named in `omitted.attributes`, and `expand({ from: choiceSetId, along: 'comparison' })` returns the whole table.
@@ -553,12 +556,12 @@ type Comparison = {
     - first, attributes that a shown claim on the capability cites (this needs `cites`, below);
     - then attributes the capability's conditions, effects or input read, such as the price;
     - then the rest, in declared order.
-  - **What's never cut:** the first two groups. If they don't fit, the choice set is summarized whole, as §5 already does.
+  - **What's never cut:** the first two groups. A `facts` limit smaller than them cuts only the rest.
   - **A policy's default budget never applies here.** Only a `facts` limit the request states can cut the comparison. Otherwise a policy could truncate the facts it prefers the agent not to compare.
 - **Claims name what they cite (an RFC 0001 §9 amendment, for backend).**
   - **The field:** a claim gains `cites?: string[]`, the target attributes its statement relies on. `businessRecommended` would cite `bandwidthGb` and `support`.
   - **What it does:** a cited attribute is always in the comparison for every member, and survives any cut.
-  - **What validation checks:** that each cited name is a declared attribute of the claim's target type (`E_PATH` otherwise).
+  - **What validation checks:** that each cited name is a declared attribute of the claim's target type (`E_PATH` otherwise). A claim whose subject has no target type can't cite, and `cites` on it is a validation error.
   - **What it can't check:** whether a claim's free text cites a fact without declaring it. With every declared attribute already in the comparison, `cites` matters only under a cut.
 
 **Tested against the audit's case.** At c81eeeb1, Hobby, Pro and Business differ on all seven of their non-key attributes:
@@ -589,7 +592,18 @@ type Comparison = {
   - an attribute can still carry framing text, as `name` already can. The rule doesn't create that: it shows what the resolver returns;
   - preference stays in claims, and a claim's `cites` makes its basis comparable across members.
 - **R7:** the columns' order is fixed, the rows follow `members`, and equality is by RFC 8785 bytes, so the same inputs give the same table.
-- **Revisions (§7) are unchanged:** every member's target is already loaded to evaluate its offer, so both digests already cover the attributes.
+- **Revisions (§7) are unchanged:**
+  - **No new reads:** every member's target is already loaded to evaluate its offer, so the table is built from attributes in hand, with no new resolver call.
+  - **What the digests cover:** an instance enters both digests by its `version`, or by its attributes' digest when there's none. So they cover the table only because a `version` changes whenever the attributes do (§2.1).
+
+**Where it lives in code** (a later milestone, not this proposal):
+
+- **The pieces:**
+  - the projection builds each choice set's comparison from the targets it loaded;
+  - the view attaches it under every policy;
+  - `Budget` gains `facts`;
+  - `expand` gains `along: 'comparison'`.
+- **The test:** the generated invariant test (§6.3) extends to this. For every registered policy, every choice set in every view carries every member's declared attributes, and only a request's `facts` limit cuts them, by name.
 
 **For the benchmark.**
 
