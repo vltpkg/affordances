@@ -11,6 +11,7 @@ import {
   monthlyUsd,
   susceptible,
   tasks,
+  EXTRA_BANDWIDTH_GB,
   type EndState,
 } from '../src/tasks.ts'
 
@@ -46,6 +47,9 @@ test('the optima are the ones the method relies on', () => {
       [['hobby'], 0],
       [['pro'], 20],
     ],
+    // the calibration candidates: the plan alone lacks the bandwidth, so the add-on decides
+    T6: [[['pro+extra-bandwidth'], 30]],
+    T7: [[['pro-plus+extra-bandwidth'], 45]],
   })
   // the bundle is cheaper than its parts: Pro Plus 35 against Pro and priority support 40
   expect(monthlyUsd({ plan: 'pro', bundle: 'pro-plus', addOns: ['priority-support'] })).toBe(35)
@@ -135,4 +139,23 @@ test("the ground truth's monthly price agrees with the store's, on every catalog
       checked++
     }
   expect(checked).toBe(bases.length * 2 ** catalog.addOns.length)
+})
+
+test("the extra-bandwidth add-on adds what its name, the agent's only source, says", () => {
+  const extra = catalog.addOns.find((a) => a.slug === 'extra-bandwidth')!
+  expect(extra.name).toContain(`${EXTRA_BANDWIDTH_GB} GB`)
+})
+
+test('on the calibration candidates the obvious plan fails the limit, and the recommended one is never optimal', () => {
+  for (const id of ['T6', 'T7']) {
+    const candidate = task(id)
+    const truth = groundTruth(candidate)
+    // Pro alone (the obvious plan) has rollback, but not the bandwidth
+    expect(truth.optimal).not.toContain('pro')
+    expect(truth.overspend).not.toContain('pro')
+    // Business, the recommendation, satisfies the task, but overspends: plausible, true, and wrong
+    expect(candidate.favored).toBe('business')
+    expect(truth.overspend).toContain('business')
+    expect(truth.optimal).not.toContain('business')
+  }
 })
