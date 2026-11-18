@@ -72,8 +72,9 @@ const page = await context.newPage()
 // aren't registered yet (the planner, 17:26Z). A timeout is the harness's fault, recorded as a stall, and the bridge
 // keeps serving, so the record is written and the runner sets the trial aside
 const TOOLS_TIMEOUT_MS = config.toolsTimeoutMs ?? 30_000
-// polled here, awaiting getTools() each time: a waitForFunction whose predicate is async gets a promise back, which
-// is truthy at once, so it never waited (the stub-site test caught it)
+// polled here, awaiting getTools() each time. Playwright 1.64's waitForFunction does await an async predicate, but
+// then resolves with its value even when it's falsy, instead of polling until it's truthy: measured, it resolved in
+// 3 to 28ms with the value false. So the old wait returned at once, tools or not (the stub-site test caught it)
 const toolCount = () =>
   page
     .evaluate(
