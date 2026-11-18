@@ -185,7 +185,18 @@ const parseModule = (file: string, source: string): Module => {
 // positions skipped. Also returns what can't be in a slice whatever it reads: import(), import.meta
 // members that reach the language's machinery rather than a schema: Object.constructor('return process')() would
 // read the environment through a value global (review of aef81dc1)
-const BANNED_MEMBERS = new Set(['constructor', '__proto__', 'prototype'])
+const BANNED_MEMBERS = new Set([
+  'constructor',
+  '__proto__',
+  'prototype',
+  // the reflection that reaches the same machinery through a value global (review of bab4b5cf)
+  'getOwnPropertyDescriptor',
+  'getOwnPropertyDescriptors',
+  'getPrototypeOf',
+  'setPrototypeOf',
+  'defineProperty',
+  'defineProperties',
+])
 const TYPE_KEYS = new Set([
   'typeAnnotation',
   'returnType',
@@ -528,12 +539,13 @@ try {
 }
 `
 
-// what the child may read: the app root (its slice dir included), and every node_modules from the root up, where its
-// schema libraries resolve, through any symlinks into a package store
-/** The child's Node flags: the permission model, reading only the app and its node_modules. */
-export const childArgs = (root: string) => [
+// what the child may read: the slice's own dir, where emit wrote everything it runs, and every node_modules from it
+// up, where its schema libraries resolve, through any symlinks into a package store. Not the app root: an escaped
+// slice could otherwise read .env files into the published schema (review of bab4b5cf)
+/** The child's Node flags: the permission model, reading only the slice's own dir and the node_modules above it. */
+export const childArgs = (dir: string) => [
   '--permission',
-  ...readable(root).map((d) => `--allow-fs-read=${d}`),
+  ...readable(dir).map((d) => `--allow-fs-read=${d}`),
 ]
 const readable = (root: string) => {
   const dirs = [path.resolve(root)]
@@ -580,13 +592,17 @@ export const sliceInput = (
     // an empty environment: the slice can't read secrets or configuration (RFC 0005 §1)
     // Node's permission model (review of aef81dc1): reads only the app and the node_modules it resolves from, and no
     // writes, network, child processes or workers. The slice rule is a lint, not a sandbox; this is the sandbox
-    const child = spawnSync(process.execPath, [...childArgs(root), runner, entry], {
-      cwd: root,
-      // next's types make NODE_ENV required; the child gets none, on purpose
-      env: {} as NodeJS.ProcessEnv,
-      encoding: 'utf8',
-      timeout: options.timeoutMs ?? 15_000,
-    })
+    // two evaluations, each in a fresh child: a slice whose output differs between them read a clock or chance the
+    // lint missed (review of bab4b5cf), so it's opaque rather than published
+    const run = () =>
+      spawnSync(process.execPath, [...childArgs(dir), runner, entry], {
+        cwd: dir,
+        // next's types make NODE_ENV required; the child gets none, on purpose
+        env: {} as NodeJS.ProcessEnv,
+        encoding: 'utf8',
+        timeout: options.timeoutMs ?? 15_000,
+      })
+    const child = run()
     if (child.error)
       return { status: 'opaque', reason: `the slice's evaluation failed: ${child.error.message}` }
     let result: { schema?: Record<string, unknown>; error?: string }
@@ -600,6 +616,8 @@ export const sliceInput = (
     }
     if (!result.schema)
       return { status: 'opaque', reason: `the slice's evaluation failed: ${result.error}` }
+    if (run().stdout !== child.stdout)
+      return { status: 'opaque', reason: 'two evaluations of the slice gave different schemas' }
     return { status: 'converted', schema: result.schema, lossy: plan.lossy }
   } finally {
     rmSync(dir, { recursive: true, force: true })

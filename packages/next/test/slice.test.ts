@@ -165,6 +165,10 @@ test('the language’s machinery is out of reach: constructor, __proto__, protot
     ["z.string().default(String(({})['__proto__']))", /the __proto__ property/],
     ['z.string().default(String(Object.prototype))', /the prototype property/],
     ["z.string().default(String(({})['constr' + 'uctor']))", /computed key that isn’t a literal/],
+    [
+      "z.string().default(String(Object.getOwnPropertyDescriptor(Object, 'keys')))",
+      /the getOwnPropertyDescriptor property/,
+    ],
   ]
   for (const [input, reason] of cases)
     expect(summary(slice(Z, input))).toMatchObject(opaque(reason))
@@ -172,21 +176,31 @@ test('the language’s machinery is out of reach: constructor, __proto__, protot
   expect(summary(slice(Z, "z['object']({ a: z['string']() })"))).toMatchObject(CONVERTED)
 })
 
-test('the child runs under Node’s permission model: it can read the app, and can’t write, spawn or reach the network', () => {
-  const args = childArgs(root)
+test('the child runs under Node’s permission model: it reads only the slice dir and node_modules, and can’t write or fetch', () => {
+  const dir = path.join(root, 'app', 'sandbox')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(path.join(root, '.env'), 'SECRET=1\n')
+  const args = childArgs(dir)
   expect(args[0]).toBe('--permission')
   expect(args.some((a) => /allow-(fs-write|child-process|net|worker|addons)/.test(a))).toBe(false)
-  const write = spawnSync(
-    process.execPath,
-    [
-      ...args,
-      '-e',
-      `require('node:fs').writeFileSync(${JSON.stringify(path.join(root, 'x'))}, 'x')`,
-    ],
-    { env: {} as NodeJS.ProcessEnv, encoding: 'utf8' },
+  const attempt = (code: string) =>
+    spawnSync(process.execPath, [...args, '--input-type=module', '-e', code], {
+      cwd: dir,
+      env: {} as NodeJS.ProcessEnv,
+      encoding: 'utf8',
+    })
+  const denied = (r: ReturnType<typeof attempt>) =>
+    r.status !== 0 && /ERR_ACCESS_DENIED|permission/i.test(r.stderr + r.stdout)
+  const write = attempt(
+    `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(path.join(dir, 'x'))}, 'x')`,
   )
-  expect([write.status === 0, write.stderr.includes('ERR_ACCESS_DENIED')]).toEqual([false, true])
-  expect(existsSync(path.join(root, 'x'))).toBe(false)
+  const env = attempt(
+    `import { readFileSync } from 'node:fs'; readFileSync(${JSON.stringify(path.join(root, '.env'))})`,
+  )
+  // port 8080, since fetch refuses some ports (9) itself, before any permission check
+  const net = attempt("await fetch('http://127.0.0.1:8080/')")
+  expect([denied(write), denied(env), denied(net)]).toEqual([true, true, true])
+  expect(existsSync(path.join(dir, 'x'))).toBe(false)
 })
 
 test('a lossy schema converts with each dropped construct named, and is opaque in strict mode', () => {
