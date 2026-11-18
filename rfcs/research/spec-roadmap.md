@@ -83,6 +83,7 @@ bindings, kinds, authorization and confirmation exactly, but not ids, which the 
 - **View-following WebMCP registration** (RFC 0004 §5): not built. The per-capability option registers a fixed list. The generic mode is the default.
 - **In-tool WebMCP consent:** waits for the browser's request for user interaction. Until then, WebMCP fails closed, and the person confirms in the app's own review page (RFC 0004 §5).
 - **The resolver contract's enforcement:** a conformance check only. A runtime that enforced read scoping itself would need a principal-aware resource model, which is a larger change.
+- **Reference-sourced parameters** (RFC 0005 §4): not built. Compilation doesn't yet derive an input parameter from a resource reference.
 - **Strict JSON Schema validators** reject unknown fields in the published v0 schemas, against the v0 spec's rule that clients ignore them. The fix, opening the received documents' schemas, is prepared and not released. No release may emit the discovery field before it.
 
 ### 3.3 For the benchmark
