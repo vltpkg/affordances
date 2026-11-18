@@ -1,0 +1,320 @@
+import { existsSync, readFileSync } from 'node:fs'
+import path from 'node:path'
+import { parseSync } from 'oxc-parser'
+import { scan, suggestId } from './codegen.ts'
+import type { Diagnostic } from './diagnostics.ts'
+import { sliceInput } from './slice.ts'
+
+// RFC 0005 §2.1's extraction: each rule reads one literal from a v0 defineAction, statically, and records its basis.
+// A v0 field is `imported` (the developer's v0 declaration, carried across formats), with the file and line as its
+// evidence; what the compiler derives is `inferred`. Nothing here is ever `declared`, and nothing is guessed: a value
+// that isn't a literal is read as absent. A capability-bound action extracts nothing but its binding (E1). The
+// output is IR-shaped definitions for M6c's pipeline, which composes them with the capability modules and validates
+
+/** @experimental The extractor's source, which every extracted field's provenance names. */
+export const SOURCE = {
+  id: 'affordances-next',
+  role: 'tool',
+  name: '@affordances/next extractor',
+} as const
+
+type Provenance = {
+  source: string
+  basis: 'imported' | 'inferred'
+  evidence?: { description: string }[]
+}
+
+/** @experimental A capability definition as extraction produces it (RFC 0001 §2's shape, before validation). */
+export type ExtractedCapability = {
+  id: string
+  kind: 'query' | 'action'
+  description?: string
+  target?: string
+  targetAt?: string
+  input?: Record<string, unknown>
+  authorization?: { principal: 'any' | 'authenticated' }
+  confirmation?: { summary: string }
+  preconditions?: { id: string; description: string; guard: true }[]
+  provenance: Provenance
+  fieldProvenance: Record<string, Provenance>
+}
+
+/** @experimental What M6c needs to call an extracted capability: its export, its binding and its params (RFC 0005 §4). */
+export type ExtractedBinding = {
+  capability: string
+  protocol: 'affordances/v0'
+  address: { route: string; action: string }
+  export: { file: string; local: string }
+  params: Record<string, { from: 'target' }>
+  guards: Record<string, { file: string; local: string }>
+}
+
+/** @experimental A defineAction({ capability }): only its binding, checked against the capability in M6c. */
+export type BoundAction = {
+  route: string
+  action: string
+  export: { file: string; local: string }
+  capability: { local: string; from?: string }
+  // the v0 fields it also sets: M6c reports E_BOUND_REDEFINES for any its capability defines
+  alsoSets: string[]
+}
+
+/** @experimental E9's resource types, inferred from route segments. */
+export type ExtractedResource = {
+  id: string
+  key: string
+  description: string
+  provenance: Provenance
+}
+
+export type Extracted = {
+  source: typeof SOURCE
+  capabilities: ExtractedCapability[]
+  bindings: ExtractedBinding[]
+  resources: ExtractedResource[]
+  bound: BoundAction[]
+  diagnostics: Diagnostic[]
+}
+
+type Node = { type: string; start: number; end: number; [key: string]: unknown }
+
+// RFC 0001 §6.1's identifier, as codegen checks it
+const ID = /^[a-z][A-Za-z0-9]*(\.[a-z][A-Za-z0-9]*)*$/
+const V0_FIELDS = [
+  'description',
+  'input',
+  'expose',
+  'requires',
+  'guard',
+  'summary',
+  'effects',
+  'readOnly',
+  'output',
+  'jsonSchema',
+]
+
+const literal = (node: Node | undefined): unknown =>
+  node?.type === 'Literal'
+    ? node.value
+    : node?.type === 'TemplateLiteral' && (node.expressions as Node[]).length === 0
+      ? ((node.quasis as Node[])[0]!.value as { cooked: string }).cooked
+      : undefined
+
+// each exported defineAction in an actions file, with its config's properties by name
+const actionsIn = (file: string, source: string) => {
+  const { program } = parseSync(file, source)
+  const imports = new Map<string, string>()
+  const found: { local: string; props: Map<string, Node>; at: number }[] = []
+  for (const node of program.body as unknown as Node[]) {
+    if (node.type === 'ImportDeclaration')
+      for (const s of node.specifiers as Node[])
+        imports.set((s.local as Node).name as string, (node.source as Node).value as string)
+    if (node.type !== 'ExportNamedDeclaration') continue
+    const declaration = node.declaration as Node | null
+    if (declaration?.type !== 'VariableDeclaration') continue
+    for (const d of declaration.declarations as Node[]) {
+      const init = d.init as Node | null
+      if (init?.type !== 'CallExpression') continue
+      const callee = init.callee as Node
+      const name =
+        callee.type === 'Identifier' ? callee.name : (callee.property as Node | undefined)?.name
+      if (name !== 'defineAction') continue
+      const config = (init.arguments as Node[])[0]
+      if (config?.type !== 'ObjectExpression') continue
+      const props = new Map<string, Node>()
+      for (const p of config.properties as Node[])
+        // spreads are ignored, as codegen ignores them: a spread value isn't a literal (RFC 0005 §2.1)
+        if (p.type === 'Property' && !p.computed)
+          props.set(((p.key as Node).name ?? (p.key as Node).value) as string, p.value as Node)
+      found.push({ local: (d.id as Node).name as string, props, at: d.start })
+    }
+  }
+  return { found, imports }
+}
+
+const lineOf = (source: string, offset: number) => source.slice(0, offset).split('\n').length
+
+// E9: the last dynamic segment under a static one, as the target's type and key. The id is the segment as written,
+// never singularized (RFC 0005 §9.1); a segment that isn't an identifier, or a catch-all, yields nothing
+export const segmentResource = (route: string): { id: string; key: string } | undefined => {
+  const parts = route.split('/').filter(Boolean)
+  for (let i = parts.length - 1; i > 0; i--) {
+    const m = /^\[([A-Za-z_$][\w$]*)\]$/.exec(parts[i]!)
+    if (!m) continue
+    const id = parts[i - 1]!
+    if (id.startsWith('[') || !ID.test(id)) return undefined
+    return { id, key: m[1]! }
+  }
+  return undefined
+}
+
+const byId = <T extends { id: string }>(xs: T[]) => xs.toSorted((a, b) => a.id.localeCompare(b.id))
+
+/** @experimental RFC 0005 §2.1's rules E1 to E9 over a v0 app, for M6c's pipeline. Never throws on author input. */
+export const extract = (root: string, options: { strict?: boolean } = {}): Extracted => {
+  const capabilities: ExtractedCapability[] = []
+  const bindings: ExtractedBinding[] = []
+  const resources = new Map<string, ExtractedResource>()
+  const bound: BoundAction[] = []
+  const diagnostics: Diagnostic[] = []
+
+  for (const entry of scan(root)) {
+    if (!entry.actions) continue
+    const rel = entry.actions.file
+    const file = ['.ts', '.tsx', '.js', '.jsx']
+      .map((ext) => path.join(root, rel + ext))
+      .find((f) => existsSync(f))!
+    const relFile = path.relative(root, file)
+    const source = readFileSync(file, 'utf8')
+    const { found, imports } = actionsIn(file, source)
+    for (const { local, props, at } of found) {
+      const name = literal(props.get('name')) as string
+      const line = lineOf(source, at)
+      const evidence = [{ description: `defineAction ${local} in ${relFile}:${line}` }]
+      const imported: Provenance = { source: SOURCE.id, basis: 'imported', evidence }
+      const inferred: Provenance = { source: SOURCE.id, basis: 'inferred' }
+      const where = { file: relFile, line, subject: local }
+
+      // a bound action: its binding, and nothing from v0 (RFC 0005 §2.1)
+      const cap = props.get('capability')
+      if (cap) {
+        const capLocal = cap.type === 'Identifier' ? (cap.name as string) : undefined
+        bound.push({
+          route: entry.route,
+          action: name,
+          export: { file: relFile, local },
+          capability: {
+            local: capLocal ?? '',
+            ...(capLocal && imports.has(capLocal) && { from: imports.get(capLocal) }),
+          },
+          alsoSets: V0_FIELDS.filter((f) => props.has(f)),
+        })
+        continue
+      }
+
+      // E2: the id, a literal, or a suggestion and no capability
+      const id = literal(props.get('id'))
+      if (typeof id !== 'string') {
+        diagnostics.push({
+          code: 'W_NO_ID',
+          ...where,
+          detail: `id: '${suggestId(entry.route, name)}'`,
+        })
+        continue
+      }
+      const fieldProvenance: Record<string, Provenance> = { '/id': imported }
+
+      // E4: kind
+      const readOnly = literal(props.get('readOnly')) === true
+      fieldProvenance['/kind'] = imported
+
+      // E8: description
+      const description = literal(props.get('description'))
+      if (typeof description === 'string') fieldProvenance['/description'] = imported
+
+      // E5 and E6: authorization and confirmation, from expose's literal
+      const expose = literal(props.get('expose'))
+      const authorization =
+        expose === 'public'
+          ? { principal: 'any' as const }
+          : expose === 'session' || expose === 'confirm'
+            ? { principal: 'authenticated' as const }
+            : undefined
+      if (authorization) fieldProvenance['/authorization'] = imported
+      const confirmation = expose === 'confirm' ? { summary: `Run ${name}` } : undefined
+      if (confirmation) {
+        fieldProvenance['/confirmation'] = imported
+        fieldProvenance['/confirmation/summary'] = inferred
+        diagnostics.push({ code: 'W_SUMMARY_GENERIC', ...where })
+      }
+
+      // E7: the guard, as one opaque condition described by requires
+      const requires = literal(props.get('requires'))
+      const preconditions = props.has('guard')
+        ? [
+            {
+              id: 'guard',
+              description: typeof requires === 'string' ? requires : `${name}'s guard allows it`,
+              guard: true as const,
+            },
+          ]
+        : undefined
+      if (preconditions) {
+        fieldProvenance['/preconditions'] = imported
+        diagnostics.push({ code: 'W_OPAQUE', ...where, subject: `${local}'s guard` })
+      }
+
+      // E3: the input, by its slice
+      let input: Record<string, unknown> | undefined
+      const inputNode = props.get('input')
+      if (inputNode) {
+        const r = sliceInput(root, file, source, inputNode as never, { strict: options.strict })
+        if (r.status === 'converted') {
+          input = r.schema
+          fieldProvenance['/input'] = inferred
+          if (r.lossy.length)
+            diagnostics.push({ code: 'W_INPUT_LOSSY', ...where, detail: r.lossy.join(', ') })
+        } else diagnostics.push({ code: 'W_INPUT_OPAQUE', ...where, detail: r.reason })
+      }
+
+      // E9: the target, from the route's segments
+      const segment = segmentResource(entry.route)
+      let targetAt: string | undefined
+      if (segment) {
+        if (!resources.has(segment.id)) {
+          resources.set(segment.id, {
+            id: segment.id,
+            key: segment.key,
+            description: `A ${segment.id} resource, from the route segment ${entry.route}`,
+            provenance: inferred,
+          })
+          diagnostics.push({ code: 'W_ATTRIBUTES_UNKNOWN', file: relFile, subject: segment.id })
+        }
+        fieldProvenance['/target'] = inferred
+        if (
+          (input?.properties as Record<string, unknown> | undefined)?.[segment.key] !== undefined
+        ) {
+          targetAt = `/${segment.key}`
+          fieldProvenance['/targetAt'] = inferred
+        }
+      }
+
+      // the effects are never extracted: v0's effects are delta keys, not consequences (RFC 0005 §2.2)
+      if (!readOnly) diagnostics.push({ code: 'W_EFFECTS_UNKNOWN', ...where })
+
+      capabilities.push({
+        id,
+        kind: readOnly ? 'query' : 'action',
+        ...(typeof description === 'string' && { description }),
+        ...(segment && { target: segment.id }),
+        ...(targetAt && { targetAt }),
+        ...(input && { input }),
+        ...(authorization && { authorization }),
+        ...(confirmation && { confirmation }),
+        ...(preconditions && { preconditions }),
+        provenance: inferred,
+        fieldProvenance,
+      })
+      // E1: the binding, and how to call it (RFC 0005 §4)
+      bindings.push({
+        capability: id,
+        protocol: 'affordances/v0',
+        address: { route: entry.route, action: name },
+        export: { file: relFile, local },
+        params: segment ? { [segment.key]: { from: 'target' } } : {},
+        guards: preconditions ? { guard: { file: relFile, local } } : {},
+      })
+    }
+  }
+
+  return {
+    source: SOURCE,
+    capabilities: byId(capabilities),
+    bindings: bindings.toSorted((a, b) => a.capability.localeCompare(b.capability)),
+    resources: byId([...resources.values()]),
+    bound: bound.toSorted((a, b) =>
+      `${a.route} ${a.action}`.localeCompare(`${b.route} ${b.action}`),
+    ),
+    diagnostics,
+  }
+}
