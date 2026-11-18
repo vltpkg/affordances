@@ -30,6 +30,10 @@
       "types": "./dist/manifest.d.ts",
       "default": "./dist/manifest.js"
     },
+    "./compiled": {
+      "types": "./dist/compiled.d.ts",
+      "default": "./dist/compiled.js"
+    },
     "./codegen": {
       "types": "./dist/codegen.d.ts",
       "default": "./dist/codegen.js"

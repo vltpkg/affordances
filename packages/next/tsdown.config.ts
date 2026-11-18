@@ -9,11 +9,12 @@ export default defineConfig([
       'src/config.ts',
       'src/route.ts',
       'src/manifest.ts',
+      'src/compiled.ts',
       'src/codegen.ts',
       'src/diagnostics.ts',
     ],
     // the route handler's manifest import stays a package import, so the app's alias can replace it
-    external: ['@affordances/next/manifest'],
+    external: ['@affordances/next/manifest', '@affordances/next/compiled'],
     platform: 'node',
     // the build's own tsconfig, src only: tsconfig.json also includes test/, and a test importing another package's
     // source (extract.test.ts reads ir's schema) would otherwise have its declarations written into that package's src

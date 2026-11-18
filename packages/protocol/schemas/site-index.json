@@ -45,6 +45,22 @@
         "mcp": {
           "description": "URL of an MCP endpoint for this site",
           "type": "string"
+        },
+        "capabilities": {
+          "description": "Experimental: version 1 of the protocol, beside this one",
+          "type": "object",
+          "properties": {
+            "manifest": {
+              "type": "string",
+              "description": "URL of the site's capability manifest (RFC 0001)"
+            },
+            "base": {
+              "type": "string",
+              "description": "The base URL of version 1's endpoints (RFC 0004 §2)"
+            }
+          },
+          "required": ["manifest", "base"],
+          "additionalProperties": false
         }
       },
       "required": ["v", "routes", "auth"],

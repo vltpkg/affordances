@@ -44,6 +44,11 @@ export type HandlerOptions = {
   allowedOrigins?: string[]
   // the path a framework's own redirect error points to (e.g. next's redirect()), or undefined if it isn't one
   redirectFrom?: (error: unknown) => string | undefined
+  /**
+   * @experimental Version 1's discovery (RFC 0004 §2): the site index names the capability manifest and the base of
+   * version 1's endpoints. Set only when the site has capabilities and publishes its manifest; unset, the index is v0's
+   */
+  capabilities?: { manifest: string; base: string }
 }
 
 const status: Record<ErrorCode, number> = {
@@ -147,6 +152,7 @@ export const createHandler = (options: HandlerOptions) => {
     })),
     auth: ['cookie', 'bearer'],
     ...(manifest.mcp && { mcp: manifest.mcp }),
+    ...(options.capabilities && { capabilities: options.capabilities }),
   })
 
   const call = async (
