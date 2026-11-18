@@ -13,16 +13,18 @@ import {
 } from './drivers/isolation.ts'
 import type { Driver } from './drivers/types.ts'
 import { faultsByCell, missingLogins, type TrialSpec } from './harness.ts'
-import { loadGate, ownerChanges, stampOwnerFiles } from './integrity.ts'
+import { loadGate, ownerChanges, readStamps, sidecarFor, stampOwnerFiles } from './integrity.ts'
 import { PIN_FILE } from './pin.ts'
 import { surfacePreflight } from './preflight.ts'
 import { MAX_ATTEMPTS, runSurfaceSpecs, SurfaceRunStopped } from './surface.ts'
+import { cellTotals, statusOf } from './status.ts'
 import { PILOT_SURFACES, surfacePilotPlan } from './surface-plan.ts'
 
 // M7f's surface run, launch and resume (the planner, 2026-11-18 17:35Z). M5's run.ts and its modes are left as they ran.
 //   node src/surface-run.ts plan               the pilot's 60, listed in their order, not run
 //   node src/surface-run.ts pilot <out>        runs them, or resumes: from the pinned export, in the announced window
 //   node src/surface-run.ts pilot <out> --dry  the same entry with the fake driver and no model: the rehearsal
+//   node src/surface-run.ts status <out>       a liveness check: non-outcome fields only, read-only, safe mid-run
 // Every launch and every resume runs the pinned preflight FIRST (the tree hash, parity, the same start, the mcp pin,
 // one build) and refuses, with no trial started, unless it passes. Then M5's integrity steps: the logins read-only,
 // a canary per model against its baseline, the owner's files stamped, and the load gate. The trials run two at a time,
@@ -43,8 +45,20 @@ if (mode === 'plan') {
   for (const s of surfacePilotPlan()) console.log(`${s.id} ${s.surface} ${s.model} ${s.index}`)
   process.exit(0)
 }
+// the liveness check (intake, 18:18Z): non-outcome fields only, read-only, safe mid-run. It reads no pin and starts
+// nothing
+if (mode === 'status') {
+  if (!outArg) {
+    console.error('usage: node src/surface-run.ts status <out>')
+    process.exit(2)
+  }
+  const lines = statusOf(path.resolve(outArg), surfacePilotPlan())
+  for (const l of lines) console.log(JSON.stringify(l))
+  console.log(JSON.stringify({ cells: cellTotals(lines) }))
+  process.exit(0)
+}
 if (mode !== 'pilot' || !outArg) {
-  console.error('usage: node src/surface-run.ts plan | pilot <out> [--dry]')
+  console.error('usage: node src/surface-run.ts plan | status <out> | pilot <out> [--dry]')
   process.exit(2)
 }
 const dry = flags.includes('--dry')
@@ -108,7 +122,7 @@ if (!dry) {
 }
 
 // 3. the owner's files, stamped; 4. the load gate
-const stampsBefore = stampOwnerFiles()
+const stampsBefore = stampOwnerFiles(undefined, sidecarFor(out, launch, 'before'))
 const gate = await loadGate()
 const startedAt = new Date().toISOString()
 write('launch', {
@@ -143,7 +157,7 @@ try {
 }
 
 // 6. after: the owner's files again, the logins, the scans, and the faults per cell
-const stampsAfter = stampOwnerFiles()
+const stampsAfter = stampOwnerFiles(undefined, sidecarFor(out, launch, 'after'))
 write('end', {
   launch,
   endedAt: new Date().toISOString(),
@@ -152,7 +166,11 @@ write('end', {
   result: result ?? null,
   faultsByCell: faultsByCell(out),
   stampsAfter,
-  ownerChanges: ownerChanges(stampsBefore, stampsAfter),
+  // compared in full, from the sidecars outside the results; a credential change shows without its digest
+  ownerChanges: ownerChanges(
+    readStamps(sidecarFor(out, launch, 'before')),
+    readStamps(sidecarFor(out, launch, 'after')),
+  ),
   loginsAfter: dry ? null : loginStatus(),
   secrets: filesWithSecrets(out),
   email: emailScan(out),
