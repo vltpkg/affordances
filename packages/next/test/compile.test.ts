@@ -152,6 +152,19 @@ test('with no namespace, nothing but diagnostics is written, and W_NO_NAMESPACE 
   expect(r.diagnostics.map((d) => d.code)).not.toContain('W_NO_NAMESPACE')
 }, 120_000)
 
+// code review of M8 (#8): the three files agree. Once the namespace is removed, a manifest.json written before is
+// removed too, as capabilities.ts says null and diagnostics.json has no digest
+test('a manifest.json written before is removed once there is no manifest, so the three files agree', async () => {
+  const dir = app({ 'app/capabilities.ts': MODULE, 'app/products/[slug]/actions.ts': V0 })
+  const out = (f: string) => path.join(dir, '.affordances', f)
+  writeCompiled(dir, compileSync(dir, options))
+  expect(existsSync(out('manifest.json'))).toBe(true)
+  writeCompiled(dir, compileSync(dir, {}))
+  expect(existsSync(out('manifest.json'))).toBe(false)
+  expect(readFileSync(out('capabilities.ts'), 'utf8')).toContain('export const capabilities = null')
+  expect(JSON.parse(readFileSync(out('diagnostics.json'), 'utf8')).digest).toBeUndefined()
+}, 120_000)
+
 // intake (2026-11-18): @affordances/ir is next's optional peer, resolved from the app's root. These apps sit outside
 // this repo, so ir doesn't resolve from them, as in an app that never installed it
 const outside = (files: Record<string, string>) => {

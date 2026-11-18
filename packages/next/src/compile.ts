@@ -1,3 +1,4 @@
+import { rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 // codegen's writer: only on change, and atomically (a temp file renamed into place), since each of next's workers
@@ -158,10 +159,14 @@ export const renderBindings = (bindings: CompiledBinding[]) => {
   return lines.join('\n')
 }
 
-/** @experimental Write the compiler's output to .affordances/: manifest.json only when there's a manifest. */
+/**
+ * @experimental Write the compiler's output to .affordances/: manifest.json only when there's a manifest, and removed
+ * when there isn't, so it always agrees with capabilities.ts and diagnostics.json (code review of M8, #8).
+ */
 export const writeCompiled = (root: string, compiled: Compiled) => {
   const dir = path.join(root, '.affordances')
   if (compiled.canonical) writeIfChanged(path.join(dir, 'manifest.json'), `${compiled.canonical}\n`)
+  else rmSync(path.join(dir, 'manifest.json'), { force: true })
   writeIfChanged(path.join(dir, 'bindings.ts'), renderBindings(compiled.bindings))
   // always written, null without a manifest, so withAffordances' alias to it always resolves (RFC 0004 §2)
   writeIfChanged(
