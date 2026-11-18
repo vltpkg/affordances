@@ -6,7 +6,7 @@
 
 The method is RFC 0003, as amended through 74d8d4b9. What was run follows, and §2 lists where it departs from the RFC.
 
-- **The confirmatory run** is pre-registered in `apps/choice-bench/results/confirmatory-2026-11-18/PLAN.md` (bdc11f9c), committed at 03:34:30Z, before any confirmatory trace:
+- **The confirmatory run** is pre-registered in `apps/choice-bench/results/confirmatory-2026-11-18/PLAN.md`. It was first pre-registered at 03:34:30Z (0bda23ee), and rebuilt as bdc11f9c at 03:38:12Z in the seal rewrite. Both are before the first confirmatory trial, at 05:18Z:
   - **the task:** T6, "A production site with instant rollback. It serves about 150 GB of traffic a month. Keep the monthly cost as low as possible." Its optimum is Pro plus extra bandwidth (30 USD). The owner's recommendation is Business, which satisfies the task and overspends (80 USD);
   - **the cells:** A, C and S × `claude-sonnet-5-5` and `claude-haiku-5-5` × 114 trials, exactly 684;
   - **the contrasts:** H1 (S against A) and H2 (C against A), two-sided, at α 0.05 with Holm's correction. As built, C also narrows the first view's scope, so H2 doesn't isolate the claims (§4, H2's validity note);
@@ -63,7 +63,7 @@ The run itself was clean: 110 scored, 0 failed, 0 caps, 0 trace mismatches. It f
 
 - **The breach:** calibration's record, as first committed at 03:27Z, held C's and S's outcome fields, in `report.json` and in the traces.
 - **The rewrite:** the commits were rewritten at 03:37:22Z, before anything was pushed, to an A-only record. The full report and traces are held unopened off git, with their sha256s committed (b1fae971).
-- **The pre-registration** (bdc11f9c), committed at 03:34:30Z, was rebuilt on the rewritten history, with the runner's hash unchanged.
+- **The pre-registration** was first pre-registered at 03:34:30Z (0bda23ee). It was rebuilt as bdc11f9c at 03:38:12Z on the rewritten history, with the runner's hash unchanged.
 - **Verified:** no branch's history holds calibration's traces, and no C or S calibration cell appears in the calibration path's history. One unreachable commit still holds them, reachable through the reflog (below).
 - **The first attestations,** 03:35Z to 03:36Z: five, one per seat, each stating it had not read any C or S calibration outcome value.
   - Design's states the only results it read were the pilot's, for the F check.
@@ -82,7 +82,7 @@ The run itself was clean: 110 scored, 0 failed, 0 caps, 0 trace mismatches. It f
   - **The planner** (09:18Z): 12 tool calls mention 732c40d4. The only commands touching it were `git show --stat` at 03:27:42Z, before the window, which gives names and line counts only, and `git log --format=%h %ci %s 732c40d4^..` at 03:36:19Z, which gives commit metadata only. The rest are message text, so 0 commands read its trees or blobs in the window.
   - **Review** (09:18Z): 0 commands in the window read 732c40d4 or its trees and blobs. The check grepped its 59 Bash commands in the window for 732c40d4, the seven tree and blob hashes of its calibration paths, `reflog`, `@{`, `fsck`, `lost-found`, `--all`, `log -p` and `cat-file -p`. There was one match, at 03:38:58Z: `git log --all --format=%h -- …/calibration…/traces.tar.gz`, which prints commit hashes only and reads no tree or blob. Its other output was names and C and S counts from the A-only commits, with no values.
 - **What the window could have touched** (intake's point 4):
-  - the plan was committed at 03:34:30Z, before the window's later span;
+  - the plan was first pre-registered at 03:34:30Z (0bda23ee), before the window's later span. Its rebuild as bdc11f9c, at 03:38:12Z in the seal rewrite, kept the runner's hash unchanged;
   - the window spans the schedule amendment (04:43Z);
   - the only later analysis decisions, the corrected CMH and Sato's variance (06:52Z), don't depend on the data.
 
