@@ -180,6 +180,8 @@ const ALONG = new Set<string>([
   'contains',
   'enables',
   'more',
+  // a choice set whole, as RFC 0002 §6.6 has it (code review of M8, #1)
+  'comparison',
 ])
 
 type Params = Record<string, unknown>

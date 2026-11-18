@@ -1,5 +1,6 @@
+import { httpAdapter } from '@affordances/runtime/agent'
 import { beforeEach, expect, test } from 'vitest'
-import { serveExpand, serveInspect, serveView } from '../src/lib/serve.ts'
+import { serveExecute, serveExpand, serveInspect, serveView } from '../src/lib/serve.ts'
 import * as store from '../src/lib/store.ts'
 
 // the agent-facing projection route answers with a view, for the caller its credentials name, and nothing more
@@ -116,6 +117,41 @@ test('every expansion a view lists answers with a view, never a projection', asy
     const more = await response.json()
     expect(Object.keys(more).toSorted()).toEqual(Object.keys(view).toSorted())
   }
+})
+
+// code review of M8 (#1): RFC 0002 §6.6's expand along 'comparison' returns a choice set whole, over HTTP as in process,
+// so the shared tool core that MCP and WebMCP run over httpAdapter can fetch it
+test("a choice set expands along 'comparison' over HTTP, through the route and through httpAdapter", async () => {
+  const auth = { authorization: 'Bearer s_compare' }
+  const id = store.account('s_compare').project.id
+  const view = await (await get(`?start=hosting.project:${id}`, auth)).json()
+  const set = view.choiceSets[0]
+  expect(set).toBeDefined()
+  const response = await post(
+    { start: `hosting.project:${id}`, from: set.id, along: 'comparison' },
+    auth,
+  )
+  expect(response.status).toBe(200)
+  const whole = await response.json()
+  const expanded = whole.choiceSets.find((c: { id: string }) => c.id === set.id)
+  expect(expanded.members).toEqual(set.members)
+  expect(expanded.comparison.omitted.attributes).toEqual([])
+
+  const routes: Record<string, (r: Request) => Promise<Response>> = {
+    view: serveView,
+    inspect: serveInspect,
+    expand: serveExpand,
+    execute: serveExecute,
+  }
+  const fetcher = (async (url: string, init?: RequestInit) =>
+    routes[new URL(url).pathname.split('/').at(-1)!]!(
+      new Request(url, { ...init, headers: { ...init?.headers, ...auth } }),
+    )) as typeof fetch
+  const adapter = httpAdapter('https://hosting.test/api/projection', fetcher, {
+    start: { type: 'hosting.project', key: id },
+  })
+  const over = (await adapter.expand({ from: set.id, along: 'comparison' })) as typeof whole
+  expect(over).toEqual(whole)
 })
 
 test('expansion refuses what it cannot do, with a reason', async () => {
