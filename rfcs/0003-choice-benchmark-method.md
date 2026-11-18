@@ -350,7 +350,7 @@ The budget (§8) allows two confirmatory contrasts, sized to detect a 20-point s
 
 **What A is for H2.** A omits claims from its views, but it doesn't withhold them: a conformant runtime never does, and `inspect` returns them (§3.1). So H2 contrasts advocacy shown up front with advocacy available on request, not with no advocacy at all. That's the question that matters for a conformant runtime, where a claim can be left out of a view and counted, but never hidden. How often A's trials actually reach a claim is measured (`claimExposure`, `inspected`). If they rarely call `inspect`, A is close to "no advocacy" in practice, and the pilot reports that rate (§8).
 
-**Reading H2 on the primary task.** On T6 and T7 the recommendation points away from the optimum: Business has the bandwidth and priority support, and costs 80, against 30 or 45. The bundle's saving estimate, on T7, favors Pro Plus, part of the optimum. So H2 measures advocacy as the publisher actually presents it, every claim together. The claims can be separated in exploratory analysis, by which one the agent's trace inspected or cited. On T3 the recommendation was wrong too, but at the pilot's ceiling it had no room to show (§2.2).
+**Reading H2 on the primary task.** On T6 and T7 the recommendation points away from the optimum: Business has the bandwidth and priority support, and costs 80, against 30 or 45. The bundle's saving estimate, on T7, favors Pro Plus, part of the optimum. So H2 measures advocacy as the publisher actually presents it, every claim together. The claims can be separated in exploratory analysis, by which one the agent's trace inspected or cited. On T3 the recommendation was wrong too, but at the pilot's ceiling it had no room to show (§2.2). As built in M5, C also differed from A in scope, so H2 measured more than the claims (§16).
 
 ### 7.2 Statistics
 
@@ -574,6 +574,21 @@ Only the tools differ. Three surfaces use the benchmark's four tools (§5.1):
 1. **Seeds.** Neither CLI may accept a sampling seed. If not, each trial is a sample from the model's distribution, which is what's measured anyway. The trace records whatever the CLI does accept.
 2. **The bundle's price.** Pro Plus at 35 USD is the optimum in T3 by construction. Whether a second bundle that's never optimal is worth adding, to test the bundled default more fully, is open until the pilot.
 3. **Multi-turn users.** A trial has no user replies. An agent that asks the user a question ends the trial (§5.2, ending 2). Simulated replies are a separate design.
+
+## 16. Results
+
+The record is [`confirmatory-2026-11-18/`](../apps/choice-bench/results/confirmatory-2026-11-18/README.md): 684 trials, on T6, with Sonnet and Haiku. Its pre-registered numbers stand as analyzed.
+
+- **H1, S against A:** not rejected.
+- **H2, C against A:** rejected, with C lower. The effect differs between the models: −73.7 points on Sonnet and −7.9 on Haiku.
+  - **Validity note** (intake, 2026-11-18). As built, C differs from A in two ways: the owner's claims, and the `advocated` policy's scope (neighborhood depth 1). That scope leaves out `hosting.plan.list`, the only offer carrying the plans' allowances.
+  - **So H2 measures the advocated policy as a whole** against exhaustive disclosure. It doesn't isolate the claims, and no claim that advocacy steers agents is made.
+  - **What the audit found** (post hoc, descriptive): conditional on seeing Pro's allowance before the first approval request, C on Sonnet was optimal in 17 of 19 trials. Without it, 0 of 95 were.
+  - **What's next:** exploratory cells separate the two factors. RFC 0002 §6.6 proposes the runtime rule this case calls for.
+- **A lesson for condition construction:**
+  - **The rule:** a condition differs from its control only in the factor it manipulates, and that's checked mechanically, not by reading the condition's definition.
+  - **The check:** before any confirmatory run, each condition's first-view offer set is diffed against its control's, and the harness preflight refuses a difference beyond the manipulated factor.
+  - **Why:** RFC 0002 §6.1 maps C to a policy whose scope differs from A's, and nothing compared the two first views before the run.
 
 ## References
 

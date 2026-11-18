@@ -9,12 +9,12 @@ The method is RFC 0003, as amended through 74d8d4b9. What was run follows, and �
 - **The confirmatory run** is pre-registered in `apps/choice-bench/results/confirmatory-2026-11-18/PLAN.md` (bdc11f9c), committed at 03:34:30Z, before any confirmatory trace:
   - **the task:** T6, "A production site with instant rollback. It serves about 150 GB of traffic a month. Keep the monthly cost as low as possible." Its optimum is Pro plus extra bandwidth (30 USD). The owner's recommendation is Business, which satisfies the task and overspends (80 USD);
   - **the cells:** A, C and S × `claude-sonnet-5-5` and `claude-haiku-5-5` × 114 trials, exactly 684;
-  - **the contrasts:** H1 (S against A) and H2 (C against A), two-sided, at α 0.05 with Holm's correction;
+  - **the contrasts:** H1 (S against A) and H2 (C against A), two-sided, at α 0.05 with Holm's correction. As built, C also narrows the first view's scope, so H2 doesn't isolate the claims (§4, H2's validity note);
   - **the analysis:** intent to treat, with capped trials counted as not optimal, and a capped-excluded sensitivity analysis.
 - **The fixture** is a pinned export of c81eeeb1. The runner (`run-confirmatory.ts`, sha256 recorded in PLAN.md) refuses to start unless the export is c81eeeb1, its own hash matches, and the export's loaded files digest to calibration's.
 - **The conditions on T6:**
   - **A** (`exhaustive-claims-omitted`): every offer, in canonical order, with the owner's claims counted but not shown; `inspect` returns them;
-  - **C** (`advocated`): the claims shown with their source, owner-recommended offers first, and the view says so;
+  - **C** (`advocated`): the claims shown with their source, owner-recommended offers first, and the view says so. Its scope is the project's neighborhood at depth 1, which leaves `hosting.plan.list` out of the first view, counted and one expansion away;
   - **S:** A's view in a different structure. Choice sets are nested, and the remaining offers are grouped by target type, which moves the add-on offers below the project's own. S states that order truthfully, `{ by: 'group', key: 'targetType', within: { by: 'canonical' } }`, and a test checks that S carries exactly A's information.
 - **The confirmatory fixture's recommendation:** on T6 and T7, the owner recommends Business ("Recommended for busy production sites: 1,000 GB of bandwidth and priority support included"). It's one named claim edit, applied alike in A, C and S, so the claims an agent can reach are the same in all three.
 - **The choice** is the intended end state: every request the agent made that was refused for confirmation, or that ran, applied in order by a dry run through the condition's own runtime. Within a decision, the first request that applies wins, and a later one flags switching. A trial with no `execute` records `none`.
@@ -104,5 +104,12 @@ The confirmatory run measures the runtime as of c81eeeb1. That includes:
 It doesn't include the charges rule (§3.5). Results apply to that version and don't transfer automatically to later ones.
 
 ## 4. Results
+
+**H2's validity note** (intake, 2026-11-18 07:40Z):
+
+- **As built, C differs from A in two ways:** the owner's claims, and the advocated policy's scope (neighborhood depth 1). That scope leaves out `hosting.plan.list`, the only offer carrying the plans' allowances.
+- **So H2 measures the advocated policy as a whole** against exhaustive disclosure. It doesn't isolate the claims, and this report makes no claim that advocacy steers agents.
+- **Conditional on seeing Pro's allowance** before the first approval request, C on Sonnet was optimal in 17 of 19 trials. Without it, 0 of 95 were ([`confirmatory-2026-11-18/audit/`](confirmatory-2026-11-18/audit/README.md), post hoc and descriptive).
+- **What's next:** the exploratory cells C-claims and A-scope separate the two factors. RFC 0002 §6.6 proposes the runtime rule this case calls for.
 
 ⟨backend: the confirmatory results, H1 and H2, the sensitivity analysis, and calibration's unsealed C and S⟩
