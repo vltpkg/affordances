@@ -160,3 +160,59 @@ describe("rule 5: every declared precondition is enforced (the manifest's half)"
     )
   })
 })
+
+// boundary review #3 (2026-11-18): fitting a case to the declared schemas mapped every wrongly typed fresh value to one
+// constant, so two paths the search told apart came out equal, and the case no longer falsified its condition
+// one capability whose only precondition compares two number attributes with each other, with no literal to type
+// the search's values, so its fresh values are strings and fitting has to make them numbers
+const compared = (op: 'eq' | 'ne' | 'lt') => {
+  const m = plans()
+  m.resources.find((r: { id: string }) => r.id === 'hosting.plan').attributes.properties.limit = {
+    type: 'number',
+  }
+  const c = m.capabilities.find((x: { id: string }) => x.id === 'hosting.plan.subscribe')
+  c.preconditions = [
+    {
+      id: 'compared',
+      description: 'Compared',
+      expr: { [op]: [{ path: 'target.priceUsd' }, { path: 'target.limit' }] },
+    },
+  ]
+  c.authorization = { ...c.authorization, conditions: [] }
+  return m as CapabilityManifest
+}
+
+describe('fitting a case keeps it falsifying', () => {
+  test.each(['eq', 'ne', 'lt'] as const)(
+    '%s between two number attributes: the fitted context still makes it false',
+    (op) => {
+      const m = compared(op)
+      const [k] = conformanceCases(m).filter((x) => x.condition === 'compared')
+      const target = k!.context!.target!
+      expect([typeof target.priceUsd, typeof target.limit]).toEqual(['number', 'number'])
+      expect(
+        evaluate(
+          { [op]: [{ path: 'target.priceUsd' }, { path: 'target.limit' }] } as never,
+          k!.context!,
+        ),
+      ).toBe(false)
+    },
+  )
+  test('a case fitting can’t keep false is failed with a reason, never run as if it were', () => {
+    // n is declared a string but compared with a number: the search falsifies eq with another number, and fitting n to
+    // a string leaves a comparison that's unknown, not false
+    const m = plans()
+    m.resources.find((r: { id: string }) => r.id === 'hosting.plan').attributes.properties = {
+      n: { type: 'string' },
+    }
+    const s = m.capabilities.find((x: { id: string }) => x.id === 'hosting.plan.subscribe')
+    s.preconditions = [
+      { id: 'five', description: 'Five', expr: { eq: [{ path: 'target.n' }, { value: 5 }] } },
+    ]
+    s.authorization = { ...s.authorization, conditions: [] }
+    const [k] = conformanceCases(m as CapabilityManifest)
+    expect(k!.reason).toMatch(
+      /fitting the falsifying state to the declared schemas makes five hold again/,
+    )
+  })
+})

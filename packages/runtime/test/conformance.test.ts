@@ -247,6 +247,23 @@ describe('rule 5’s conformance kit (§9, R5)', () => {
       }),
     )
   })
+  test('a case fitting to the schemas can’t keep false is a failure with its reason, and isn’t run', async () => {
+    const { fixture, runs } = await application(honest)
+    const subscribe = fixture.options.manifest.capabilities[1]!
+    // slug is a string, compared with a number: the search falsifies it with a number, which slug can't hold
+    subscribe.preconditions = [
+      { id: 'five', description: 'Plan 5', expr: { eq: [{ path: 'target.slug' }, { value: 5 }] } },
+    ]
+    const before = runs.length
+    const results = await conformance(fixture)
+    expect(results.find((r) => r.condition === 'five')).toMatchObject({
+      pass: false,
+      reason: expect.stringMatching(
+        /^untested: fitting the falsifying state to the declared schemas makes five/,
+      ),
+    })
+    expect(runs.length).toBe(before)
+  })
   test('a guard no state lets act alone is a failure with its reason', async () => {
     const { fixture } = await application(honest)
     const subscribe = fixture.options.manifest.capabilities[1]!

@@ -184,6 +184,19 @@ export const conformance = async (fixture: ConformanceFixture): Promise<Conforma
       })
       continue
     }
+    // a state that fitting to the declared schemas no longer makes false: run, it could pass on the wrong refusal, or
+    // fail for the wrong reason (boundary review #3)
+    if (k.reason) {
+      results.push({
+        capability: c.id,
+        condition: k.condition,
+        kind: 'declarative',
+        isolated: k.isolated,
+        pass: false,
+        reason: `untested: ${k.reason}`,
+      })
+      continue
+    }
     // a case that isn't isolated: the condition false, and as many of the others true as can be with it, so what
     // refuses is the condition or one it takes down with it
     const context = k.isolated ? k.context : (alongside(c, k.condition) ?? k.context)

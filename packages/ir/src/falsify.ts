@@ -426,6 +426,9 @@ export type ConformanceCase = {
   condition: string
   context: Context | undefined
   isolated: boolean
+  // why the case can't be run as it should, when its context, fitted to the declared schemas, no longer falsifies it:
+  // the kit fails it with this, never a pass on the wrong refusal (boundary review #3)
+  reason?: string
 }
 // a count's witness is an array of empty placeholders. Fitted to the schema the root is declared by, each becomes a
 // value of the item's type, so an application's own resolver accepts the state the kit arranges (code review 7)
@@ -459,32 +462,91 @@ const fits = (kind: string, type: string) =>
   kind === type ||
   (type === 'integer' && kind === 'number') ||
   (type === 'number' && kind === 'number')
-// a value of the declared type for a leaf the search gave another type: a search's fresh value only had to be some
-// other value, and a resolver's attributes must fit their schema or the instance loads as unknown (review of bb61e4e2).
-// Numbers take the search's own fresh number, so it can't meet a literal; null stays, since it's what makes exists false
-const coerce = (value: unknown, s: Schemaish): unknown => {
+// the declared type a leaf the search gave another type must take, or undefined when its value fits: a search's fresh
+// value only had to be some other value, and a resolver's attributes must fit their schema or the instance loads as
+// unknown (review of bb61e4e2). null stays, since it's what makes exists false
+const retype = (value: unknown, s: Schemaish): string | undefined => {
   const declared = Array.isArray(s.type) ? (s.type as string[]) : s.type ? [s.type as string] : []
   const kind = kindOf(value)
-  if (!declared.length || kind === 'null' || declared.some((d) => fits(kind, d))) return value
-  const type = declared[0]
-  if (type === 'number' || type === 'integer') return 7919
-  if (type === 'string') return '~fresh'
-  return placeholder(s)
+  if (!declared.length || kind === 'null' || declared.some((d) => fits(kind, d))) return undefined
+  return declared[0]
 }
-const fit = (raw: unknown, schema: unknown): unknown => {
+// a coercion: for each declared type, each distinct value the search gave there, to a value of that type
+type Coercion = (value: unknown, type: string, s: Schemaish) => unknown
+const fit = (raw: unknown, schema: unknown, coerce: Coercion): unknown => {
   const s = (schema ?? {}) as Schemaish
-  const value = coerce(raw, s)
+  const type = retype(raw, s)
+  const value = type === undefined ? raw : coerce(raw, type, s)
   if (Array.isArray(value)) {
     const items = s.items as Schemaish | undefined
     return value.map((v) =>
       v !== null && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0
         ? placeholder(items)
-        : fit(v, items),
+        : fit(v, items, coerce),
     )
   }
   if (value !== null && typeof value === 'object')
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, fit(v, s.properties?.[k])]))
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, fit(v, s.properties?.[k], coerce)]),
+    )
   return value
+}
+
+// every scalar in a context, so a coerced value is never one that's already there
+const scalars = (value: unknown, out = new Set<unknown>()): Set<unknown> => {
+  if (Array.isArray(value)) for (const v of value) scalars(v, out)
+  else if (value !== null && typeof value === 'object')
+    for (const v of Object.values(value)) scalars(v, out)
+  else out.add(value)
+  return out
+}
+// the search's own order between values, where it has one: a number before a string, then each by its own order
+const searchOrder = (a: unknown, b: unknown) => {
+  const [ka, kb] = [kindOf(a), kindOf(b)]
+  if (ka !== kb) return ka < kb ? -1 : 1
+  return compareValues('lt', a, b) === true ? -1 : compareValues('gt', a, b) === true ? 1 : 0
+}
+// distinct values stay distinct, in the order the search gave them, so two paths it told apart, or ordered, still are
+// (boundary review #3): numbers from 7919 up and strings from '~fresh-0000' up, past any value the context holds, and
+// booleans false then true. More distinct values than a boolean holds repeat, and the re-check says so
+const coercionFor = (
+  raw: Record<string, unknown>,
+  collect: (coerce: Coercion) => void,
+): Coercion => {
+  const wanted = new Map<string, unknown[]>()
+  collect((value, type) => {
+    const seen = wanted.get(type) ?? []
+    if (!seen.some((v) => canonicalJson(v) === canonicalJson(value))) seen.push(value)
+    wanted.set(type, seen)
+    return value
+  })
+  const used = scalars(raw)
+  const assigned = new Map<string, Map<string, unknown>>()
+  for (const [type, values] of wanted) {
+    let n = 7919
+    let i = 0
+    const next = () => {
+      if (type === 'number' || type === 'integer') {
+        while (used.has(n)) n++
+        return n++
+      }
+      if (type === 'boolean') return i++ % 2 === 1
+      for (;;) {
+        const s = `~fresh-${String(i++).padStart(4, '0')}`
+        if (!used.has(s)) return s
+      }
+    }
+    assigned.set(
+      type,
+      new Map(
+        values.toSorted(searchOrder).map((v) => [canonicalJson(v), next()] as [string, unknown]),
+      ),
+    )
+  }
+  return (value, type, s) =>
+    type === 'number' || type === 'integer' || type === 'string' || type === 'boolean'
+      ? assigned.get(type)!.get(canonicalJson(value))
+      : placeholder(s)
 }
 export const fitContext = (
   m: CapabilityManifest,
@@ -493,23 +555,30 @@ export const fitContext = (
 ) => {
   if (!context) return context
   const resource = (id?: string) => m.resources.find((r) => r.id === id)?.attributes
-  const out: Context = {}
-  if (context.target)
-    out.target = fit(context.target, resource(c.target)) as Record<string, unknown>
-  if (context.principal)
-    out.principal = fit(context.principal, m.principal?.attributes) as Record<string, unknown>
-  if (context.input) out.input = fit(context.input, c.input) as Record<string, unknown>
-  if (context.references)
-    out.references = Object.fromEntries(
-      Object.entries(context.references).map(([name, v]) => [
-        name,
-        fit(v, resource(c.references?.find((r) => r.name === name)?.resource)) as Record<
-          string,
-          unknown
-        >,
-      ]),
-    )
-  return out
+  // one pass to learn every value that needs a type, then one to give each its own, so the coercion is the context's
+  const fitAll = (coerce: Coercion) => {
+    const out: Context = {}
+    if (context.target)
+      out.target = fit(context.target, resource(c.target), coerce) as Record<string, unknown>
+    if (context.principal)
+      out.principal = fit(context.principal, m.principal?.attributes, coerce) as Record<
+        string,
+        unknown
+      >
+    if (context.input) out.input = fit(context.input, c.input, coerce) as Record<string, unknown>
+    if (context.references)
+      out.references = Object.fromEntries(
+        Object.entries(context.references).map(([name, v]) => [
+          name,
+          fit(v, resource(c.references?.find((r) => r.name === name)?.resource), coerce) as Record<
+            string,
+            unknown
+          >,
+        ]),
+      )
+    return out
+  }
+  return fitAll(coercionFor(context as Record<string, unknown>, fitAll))
 }
 
 export const conformanceCases = (m: CapabilityManifest): ConformanceCase[] =>
@@ -518,35 +587,33 @@ export const conformanceCases = (m: CapabilityManifest): ConformanceCase[] =>
       ...(c.preconditions ?? []),
       ...(c.authorization?.conditions ?? []),
     ].flatMap((x) => ('expr' in x ? [{ id: x.id, expr: x.expr }] : []))
-    return declarative.map((p) => {
+    return declarative.map((p): ConformanceCase => {
+      const others = declarative.filter((q) => q.id !== p.id).map((q) => q.expr)
+      // an isolated case must make p false and every other condition true: exactly what makes this false
+      const isolating: Expr = others.length ? { any: [p.expr, { not: { all: others } }] } : p.expr
+      // the case, fitted to the declared schemas, re-checked against what it must falsify
+      const fitted = (raw: Context | undefined, isolated: boolean): ConformanceCase => {
+        const context = fitContext(m, c, raw)
+        const base = { capability: c.id, condition: p.id, context, isolated }
+        if (!context || evaluate(isolated ? isolating : p.expr, context) === false) return base
+        return {
+          ...base,
+          reason: `fitting the falsifying state to the declared schemas makes ${p.id} ${isolated && others.length ? 'or another condition ' : ''}hold again, so no conformant state isolates it`,
+        }
+      }
       const alone = merge([
         witness(p.expr, false),
         ...declarative.filter((q) => q.id !== p.id).map((q) => witness(q.expr, true)),
       ])
-      if (alone)
-        return {
-          capability: c.id,
-          condition: p.id,
-          context: fitContext(m, c, contextOf(alone)),
-          isolated: true,
-        }
-      // the witnesses don't combine: search for a state where p alone is false, every other condition true
-      const others = declarative.filter((q) => q.id !== p.id).map((q) => q.expr)
-      const searched = searchFalsifying(
-        others.length ? { any: [p.expr, { not: { all: others } }] } : p.expr,
-      )
-      if ('context' in searched)
-        return {
-          capability: c.id,
-          condition: p.id,
-          context: fitContext(m, c, searched.context),
-          isolated: true,
-        }
-      return {
-        capability: c.id,
-        condition: p.id,
-        context: fitContext(m, c, falsifying(p.expr)),
-        isolated: false,
-      }
+      const merged = alone ? fitted(contextOf(alone), true) : undefined
+      if (merged && !merged.reason) return merged
+      // the witnesses don't combine, or fitting undid them: search for a state where p alone is false, every other
+      // condition true
+      const searched = searchFalsifying(isolating)
+      const found = 'context' in searched ? fitted(searched.context, true) : undefined
+      if (found && !found.reason) return found
+      const lone = fitted(falsifying(p.expr), false)
+      // what failed first is what's said, when nothing fits
+      return lone.reason ? (merged ?? found ?? lone) : lone
     })
   })
