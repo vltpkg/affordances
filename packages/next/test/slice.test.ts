@@ -95,6 +95,16 @@ test('consts follow, and a function parameter shadows a top-level let of the sam
   ).toMatchObject(CONVERTED)
 })
 
+// review's boundary #2 (2026-11-18): a destructured const binds several names to one declarator, emitted once
+test('a destructured const converts, its declarator written once', () => {
+  expect(summary(slice(`${Z}\nconst { string, object } = z`, 'object({ a: string() })'))).toEqual({
+    status: 'converted',
+    lossy: [],
+    type: 'object',
+    fields: ['a'],
+  })
+})
+
 test('a recursive schema, through lazy, converts', () => {
   const r = slice(
     `${Z}\nconst Node: z.ZodType<unknown> = z.lazy(() => z.object({ children: z.array(Node) }))`,

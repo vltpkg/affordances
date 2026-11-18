@@ -498,11 +498,16 @@ const emit = (plan: Plan, dir: string) => {
       }
     }
     // the consts, each once, in source order, so a declaration reads only what came before it, as in the source
+    // deduped by declarator, not binding: a destructuring const binds several names to one declarator, which is
+    // written once (review's boundary #2)
     const declarators = [
-      ...new Set([...locals].map((n) => m.bindings.get(n)).filter((b) => b?.kind === 'const')),
-    ]
-      .map((b) => (b as Extract<Binding, { kind: 'const' }>).declarator)
-      .toSorted((a, b) => a.start - b.start)
+      ...new Set(
+        [...locals]
+          .map((n) => m.bindings.get(n))
+          .filter((b): b is Extract<Binding, { kind: 'const' }> => b?.kind === 'const')
+          .map((b) => b.declarator),
+      ),
+    ].toSorted((a, b) => a.start - b.start)
     for (const d of declarators) lines.push(`const ${m.source.slice(d.start, d.end)}`)
     for (const [exportedName, e] of m.exports)
       if ('local' in e && locals.has(e.local))
