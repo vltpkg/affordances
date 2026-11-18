@@ -33,6 +33,10 @@
     "./codegen": {
       "types": "./dist/codegen.d.ts",
       "default": "./dist/codegen.js"
+    },
+    "./diagnostics": {
+      "types": "./dist/diagnostics.d.ts",
+      "default": "./dist/diagnostics.js"
     }
   },
   "scripts": {

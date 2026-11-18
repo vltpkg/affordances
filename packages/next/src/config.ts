@@ -65,6 +65,70 @@ export type AffordancesConfig = {
   root?: string
   // more Affordances capabilities on the same app, applied in order after the graph, e.g. [md()] from @affordances/md/next
   plugins?: AffordancesPlugin[]
+  /**
+   * @experimental The capability manifest's namespace (RFC 0005 §1), and the prefix suggested ids take. An RFC 0001
+   * §6.1 identifier, such as `acme`. Without one, it's inferred from `name`.
+   */
+  namespace?: string
+  /**
+   * @experimental The manifest's owner source (RFC 0005 §1). Only the configured owner's declarations are
+   * `declared`; without one, the compiler reports `W_NO_OWNER`.
+   */
+  owner?: { id: string; name: string }
+  /** @experimental Strict mode (RFC 0005 §3): `W_NO_ID`, `W_INPUT_OPAQUE` and `W_INPUT_LOSSY` become errors. */
+  strict?: boolean
+}
+
+// RFC 0001 §6.1's identifier
+const ID = /^[a-z][A-Za-z0-9]*(\.[a-z][A-Za-z0-9]*)*$/
+
+/** @experimental What the capability compiler reads from withAffordances' options (RFC 0005 §1). */
+export type Identity = {
+  namespace: string
+  // how the namespace was found: written in the config, or inferred from the site's name
+  namespaceFrom: 'config' | 'name'
+  owner?: { id: string; name: string }
+  strict: boolean
+}
+
+// a site name as an identifier: 'Acme Store' is 'acmeStore'. It's inferred, so it's said to be
+const fromName = (name: string) => {
+  const words = name
+    .normalize('NFKD')
+    .replaceAll(/[^A-Za-z0-9]+/g, ' ')
+    .trim()
+    .split(' ')
+  const id = words
+    .map((w, i) => (i === 0 ? w.toLowerCase() : w[0]!.toUpperCase() + w.slice(1).toLowerCase()))
+    .join('')
+  return /^[a-z]/.test(id) ? id : undefined
+}
+
+/**
+ * @experimental The capability manifest's identity, from withAffordances' options, checked: a namespace and an
+ * owner id must be RFC 0001 §6.1 identifiers. Returns undefined when there's neither a namespace nor a name to infer
+ * one from.
+ */
+export const resolveIdentity = (options: AffordancesConfig = {}): Identity | undefined => {
+  if (options.namespace !== undefined && !ID.test(options.namespace))
+    throw new TypeError(
+      `withAffordances: namespace '${options.namespace}' isn't an identifier (lowercase first, then letters and digits, dot-separated)`,
+    )
+  if (options.owner !== undefined) {
+    if (!ID.test(options.owner.id))
+      throw new TypeError(`withAffordances: owner.id '${options.owner.id}' isn't an identifier`)
+    if (!options.owner.name.trim()) throw new TypeError('withAffordances: owner.name is empty')
+  }
+  const inferred =
+    options.namespace === undefined && options.name ? fromName(options.name) : undefined
+  const namespace = options.namespace ?? inferred
+  if (namespace === undefined) return undefined
+  return {
+    namespace,
+    namespaceFrom: options.namespace === undefined ? 'name' : 'config',
+    ...(options.owner && { owner: options.owner }),
+    strict: options.strict ?? false,
+  }
 }
 
 // the slice of NextConfig withAffordances touches; generic so it accepts whichever copy of next the app has
@@ -79,6 +143,8 @@ export const withAffordances = <C extends Config>(
   options: AffordancesConfig = {},
 ): C => {
   const root = options.root ?? process.cwd()
+  // a bad namespace or owner fails here, as the config loads, not later in the capability compiler
+  resolveIdentity(options)
   const entries = generate(root, options)
 
   // dev: regenerate when an actions or state file changes; turbopack picks up the new manifest
