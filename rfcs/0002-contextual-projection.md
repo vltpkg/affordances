@@ -429,6 +429,7 @@ type Omitted = {
    - **The expansion:** if any partner isn't in the view, one expansion `along: 'alternatives'` returns all of them. An alternative is never more than one call from an offer that was shown.
 4. **Exhaustive enumeration is always allowed.** A request with policy `exhaustive` is always honored, under any configured default. It's paginated by budget, but never refused for discovery reasons.
 5. **Unavailable is not omitted.** An unavailable offer that's in scope is in the view with its reason. A policy can't treat "unavailable" as a reason to leave something out, because "exists but not now" is what the agent may need to act on (§4.2).
+6. **A choice set carries its comparison.** This rule is proposed, not implemented (§6.6).
 
 **What this permits.** A policy may:
 
@@ -511,6 +512,94 @@ type Expansion = {
 
 - **`projection.inspect(offer)`** returns the capability's definition, the conditions with their results, the effects, the claims, and the provenance of each part (RFC 0001 §8). It's how an agent reads consequences before it commits.
 - **Derived edges are marked.** A derived `enables` or prerequisite (RFC 0001 §5.5) is returned with basis `inferred` and what it was derived from.
+
+### 6.6 A choice set carries its comparison (proposed amendment)
+
+**Status:** proposed on 2026-11-18, from M5's audit, and not implemented. The runtime at dbc947e0 doesn't do this, and neither does any benchmark fixture.
+
+**The finding.** M5's confirmatory run met the disclosure invariant (§6.3) and still failed its purpose.
+
+- **What C's view left out:** condition C's `advocated` policy, at neighborhood depth 1, left `hosting.plan.list` out of the first view, counted and one expansion away. It was the only offer that returned the plans' `bandwidthGb`.
+- **What the view showed:** the plan choice set was in the view whole, and so was a claim citing Business's 1,000 GB. No member said what its own bandwidth was.
+- **What the agents did:** on the primary task, Sonnet agents under C that saw Pro's allowance before their first approval request were optimal in 17 of 19 trials. Those that didn't see it were optimal in 0 of 95. Haiku agents under the neutral policy that didn't reach the list were optimal in 0 of 14 ([`audit/`](../apps/choice-bench/results/confirmatory-2026-11-18/audit/README.md), post hoc and descriptive).
+- **So:** an omission that's counted and reachable can still hide the fact that decides a choice. A choice set guaranteed every member's offer, never what tells the members apart.
+
+**Proposal: rule 6 of the disclosure invariant.** Every choice set a view carries comes with its comparison: the target attributes of every member, as the resolvers returned them for this principal.
+
+```ts
+type ChoiceSet = {
+  // … as in §5, plus:
+  comparison: Comparison
+}
+
+type Comparison = {
+  differ: string[] // the declared attributes on which the members differ, in the order below
+  rows: Record<string, unknown>[] // one per member, in `members` order: each holds every attribute in `differ` that its resolver supplied
+  shared: Record<string, unknown> // attributes every member supplied with an equal value: stated once
+  unsupplied: { member: OfferId; attributes: string[] }[] // declared attributes a member's resolver left out (§2.1)
+  omitted: { attributes: string[] } // columns cut by the request's own budget, named
+}
+```
+
+- **Every declared attribute is in it,** except the resource's key, which the member's offer id already carries:
+  - **in `differ`:** an attribute on which the members differ, by RFC 8785 bytes, with one row per member;
+  - **in `shared`:** an attribute every member supplied with the same value, stated once. Leaving it out would save little, and the agent couldn't tell "the same for every plan" from "not shown", though a requirement such as "instant rollback" can turn on exactly that;
+  - **in `unsupplied`:** an attribute a resolver didn't supply for a member. It's named, and counted as differing, so an asymmetry between members shows instead of being silent.
+- **It sits on the choice set,** a table, not repeated on each offer. The offers stay as §4.1 defines them.
+- **No policy can remove it.** A policy decides whether a choice set is in the first view. If the set is in, its comparison is too. `claims: 'omitted'` doesn't touch it, because attributes are the application's state, not claims (§4.5).
+- **Only the request can cut it.** `Budget` gains `facts?: number`, a limit in cells.
+  - **What gets cut:** columns, never rows, so no member carries less than another. Each cut column is named in `omitted.attributes`, and `expand({ from: choiceSetId, along: 'comparison' })` returns the whole table.
+  - **The column order is fixed by the runtime:**
+    - first, attributes that a shown claim on the capability cites (this needs `cites`, below);
+    - then attributes the capability's conditions, effects or input read, such as the price;
+    - then the rest, in declared order.
+  - **What's never cut:** the first two groups. If they don't fit, the choice set is summarized whole, as §5 already does.
+  - **A policy's default budget never applies here.** Only a `facts` limit the request states can cut the comparison. Otherwise a policy could truncate the facts it prefers the agent not to compare.
+- **Claims name what they cite (an RFC 0001 §9 amendment, for backend).**
+  - **The field:** a claim gains `cites?: string[]`, the target attributes its statement relies on. `businessRecommended` would cite `bandwidthGb` and `support`.
+  - **What it does:** a cited attribute is always in the comparison for every member, and survives any cut.
+  - **What validation checks:** that each cited name is a declared attribute of the claim's target type (`E_PATH` otherwise).
+  - **What it can't check:** whether a claim's free text cites a fact without declaring it. With every declared attribute already in the comparison, `cites` matters only under a cut.
+
+**Tested against the audit's case.** At c81eeeb1, Hobby, Pro and Business differ on all seven of their non-key attributes:
+
+| Rule                                                                                          | Pro's `bandwidthGb` on C's first view?                                                                                                  | Can a policy or publisher still hide a distinguishing fact?                                                                            | View size, this fixture; a wide set                                                                 |
+| --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Price, and each allowance the capability's input or effects depend on (the first framing)     | **No.** Only `priceUsd` is read, as the financial effect's amount, and every summary already stated it. Nothing reads `bandwidthGb`     | Yes: the publisher hides any fact by not referencing it, and "allowance" isn't a manifest concept                                      | 3 cells; one column per referenced attribute                                                        |
+| (a) Every declared attribute on which the members differ                                      | **Yes**                                                                                                                                 | Not through a policy. An attribute equal across all members is dropped, so "the same everywhere" reads as "not shown"                  | 21 cells; members × differing attributes                                                            |
+| (b) Every attribute a task requirement or a claim refers to                                   | **No.** The task's text ("150 GB of traffic") names no attribute, and the claim cites 1,000 GB in free text. Under A, no claim is shown | Yes: the publisher picks which facts surface by what its claims cite. That's this failure                                              | from 0 cells up                                                                                     |
+| (c) (a), plus the attributes a claim cites, for every member                                  | **Yes**                                                                                                                                 | Not through a policy. As (a) for shared values, except those a claim cites                                                             | 21 cells                                                                                            |
+| **Proposed:** (c), plus shared values once, unsupplied attributes named, cuts only by request | **Yes**                                                                                                                                 | Not through a policy or a policy's budget. Only by not declaring the attribute, which is outside the invariant, like visibility (§6.3) | 21 cells, plus shared ones once. Members × differing attributes, plus one cell per shared attribute |
+
+**What it costs.**
+
+- **For this fixture:** 21 cells, about 400 bytes of canonical JSON. That's an estimate, not a measurement. It's small next to the 14 or 15 offers in each first view.
+- **For a wide set:** a choice set is already atomic, so every member's offer is in the view, and the comparison adds one row per member alongside it. 50 members with 12 differing attributes come to 600 cells, roughly the size of the 50 offers themselves.
+- **What bounds it:** a request that can't afford the table states a `facts` limit and gets the named cut. It never gets a silent one.
+
+**Against the safety rules (§9).**
+
+- **R1:** the comparison is data, and grants nothing. Execution re-checks everything, whatever the table said.
+- **R2:** it carries no confirmation state and can't satisfy one.
+- **R3:** attributes come from the resolvers alone. `task`, `start`, `policy` and `seen` change whether a set appears, never its comparison. R3's test extends to that, with the request's `facts` limit as the one input that can cut columns, and only by name.
+- **R4:** this is R4 strengthened. Every alternative is reachable, and so is what tells it from the others.
+- **R5:** unaffected. A fact in the table enforces nothing, and preconditions are evaluated as before.
+- **R6, influence is explicit:**
+  - attribute values are the application's own state, the same data conditions read, so they carry no claim source;
+  - an attribute can still carry framing text, as `name` already can. The rule doesn't create that: it shows what the resolver returns;
+  - preference stays in claims, and a claim's `cites` makes its basis comparable across members.
+- **R7:** the columns' order is fixed, the rows follow `members`, and equality is by RFC 8785 bytes, so the same inputs give the same table.
+- **Revisions (§7) are unchanged:** every member's target is already loaded to evaluate its offer, so both digests already cover the attributes.
+
+**For the benchmark.**
+
+- **Which runs this applies to:** none yet. M5's confirmatory run and its exploratory cells are pinned to c81eeeb1, which predates this rule, and they measure that runtime.
+- **What changes once it's implemented:** every condition's choice set carries the plans' allowances, so `hosting.plan.list` stops being the only source. A fixture on the amended runtime names its commit and isn't pooled with M5.
+
+**Open.**
+
+- **`alternativeTo` pairs,** such as the bundle against a plan with separate add-ons, compare instances of different types, so there are no common columns. Whether a shown pair carries each partner's target attributes is left open.
+- **The conformance kit can't see an undeclared attribute,** such as a query output that returns a fact the resource never declares. A check that each query's output fields are declared attributes of its target type would narrow that gap.
 
 ## 7. Revisions
 
