@@ -1,0 +1,111 @@
+{
+  "label": "POST HOC, DESCRIPTIVE",
+  "orderA": [
+    "hosting.addOn.add@hosting.addOn:daily-backups?project=proj_X",
+    "hosting.addOn.add@hosting.addOn:extra-bandwidth?project=proj_X",
+    "hosting.addOn.add@hosting.addOn:priority-support?project=proj_X",
+    "hosting.addOn.remove@hosting.addOn:daily-backups?project=proj_X",
+    "hosting.addOn.remove@hosting.addOn:extra-bandwidth?project=proj_X",
+    "hosting.addOn.remove@hosting.addOn:priority-support?project=proj_X",
+    "hosting.bundle.subscribe@hosting.bundle:pro-plus?project=proj_X",
+    "hosting.deployment.create@hosting.project:proj_X",
+    "hosting.plan.list",
+    "hosting.plan.subscribe@hosting.plan:p1?project=proj_X",
+    "hosting.plan.subscribe@hosting.plan:p2?project=proj_X",
+    "hosting.plan.subscribe@hosting.plan:p3?project=proj_X",
+    "hosting.project.read@hosting.project:proj_X",
+    "hosting.subscription.cancel@hosting.project:proj_X",
+    "hosting.plan.subscribe@hosting.plan"
+  ],
+  "orderC": [
+    "hosting.plan.subscribe@hosting.plan:p3?project=proj_X",
+    "hosting.plan.subscribe@hosting.plan:p1?project=proj_X",
+    "hosting.plan.subscribe@hosting.plan:p2?project=proj_X",
+    "hosting.addOn.add@hosting.addOn:daily-backups?project=proj_X",
+    "hosting.addOn.add@hosting.addOn:extra-bandwidth?project=proj_X",
+    "hosting.addOn.add@hosting.addOn:priority-support?project=proj_X",
+    "hosting.addOn.remove@hosting.addOn:daily-backups?project=proj_X",
+    "hosting.addOn.remove@hosting.addOn:extra-bandwidth?project=proj_X",
+    "hosting.addOn.remove@hosting.addOn:priority-support?project=proj_X",
+    "hosting.bundle.subscribe@hosting.bundle:pro-plus?project=proj_X",
+    "hosting.deployment.create@hosting.project:proj_X",
+    "hosting.project.read@hosting.project:proj_X",
+    "hosting.subscription.cancel@hosting.project:proj_X",
+    "hosting.plan.subscribe@hosting.plan"
+  ],
+  "onlyInA": [
+    "hosting.plan.list"
+  ],
+  "onlyInC": [],
+  "sharedOfferFieldsDiffering": [
+    "relevance",
+    "revision"
+  ],
+  "claimsA": [],
+  "claimsC": [
+    "bundleSaves",
+    "businessRecommended",
+    "rollbackBenefit"
+  ],
+  "topLevelDiffering": {
+    "omitted": {
+      "A": {
+        "choiceSets": 0,
+        "claims": 4,
+        "expand": [],
+        "offers": 0
+      },
+      "C": {
+        "choiceSets": 0,
+        "claims": 0,
+        "expand": [
+          {
+            "along": "relations",
+            "count": 1,
+            "from": {
+              "key": "proj_X",
+              "type": "hosting.project"
+            }
+          }
+        ],
+        "offers": 1
+      }
+    },
+    "order": {
+      "A": {
+        "by": "canonical"
+      },
+      "C": {
+        "by": "claim",
+        "kind": "recommendation",
+        "source": "hosting-lab"
+      }
+    },
+    "policy": {
+      "A": "exhaustive-claims-omitted",
+      "C": "advocated"
+    }
+  },
+  "omittedOffersInA": [
+    {
+      "alternatives": {
+        "count": 0
+      },
+      "availability": {
+        "status": "available"
+      },
+      "capability": "hosting.plan.list",
+      "claims": [],
+      "conditions": [],
+      "consequential": false,
+      "id": "hosting.plan.list",
+      "relevance": {
+        "level": "undetermined"
+      },
+      "requirements": {
+        "authorization": "met"
+      },
+      "revision": "sha256-Qjp2pVYGXJllg9LvRZ5bL9dqivCCM2gWRoQAhJZpVt8"
+    }
+  ]
+}
