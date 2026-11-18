@@ -234,3 +234,18 @@ test('the signal reaches every registerTool, where Chromium unregisters the tool
   })
   expect(bare.every((o) => o.signal === undefined)).toBe(true)
 })
+
+test("a browser's rejected registerTool, as a duplicate name is where signal is ignored, is never an unhandled rejection", async () => {
+  const context = {
+    registerTool: () => Promise.reject(new Error('InvalidStateError: Duplicate tool name')),
+  }
+  const names = registerWebMcp({
+    base: '/api/projection',
+    ask: yes,
+    context,
+    fetcher: server().fetcher,
+  })
+  expect(names).toEqual(['project', 'expand', 'inspect', 'execute'])
+  // let the rejections settle: vitest fails the run on any left unhandled
+  await new Promise((r) => setTimeout(r, 10))
+})

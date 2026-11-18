@@ -97,8 +97,8 @@ export const registerWebMcp = (options: WebMcpOptions): string[] => {
     mode: options.mode ?? 'generic',
     ...(options.manifest && { manifest: options.manifest }),
   })
-  for (const tool of toolset.tools)
-    context.registerTool(
+  for (const tool of toolset.tools) {
+    const registered = context.registerTool(
       {
         name: tool.name,
         description: tool.description,
@@ -108,5 +108,9 @@ export const registerWebMcp = (options: WebMcpOptions): string[] => {
       },
       { ...(options.signal && { signal: options.signal }) },
     )
+    // a browser that ignores the signal rejects a re-registration as a duplicate name, and keeps the first: that
+    // registration stays live, so the rejection is expected, and is caught rather than left unhandled
+    if (registered instanceof Promise) registered.catch(() => {})
+  }
   return toolset.tools.map((t) => t.name)
 }
