@@ -1035,6 +1035,7 @@
     "workspace~apps+choice-bench @affordances/hosting-lab": "prod workspace:* workspace~apps+hosting-lab",
     "workspace~apps+choice-bench @affordances/ir": "prod workspace:* workspace~packages+ir",
     "workspace~apps+choice-bench @affordances/mcp": "prod workspace:* workspace~packages+mcp",
+    "workspace~apps+choice-bench @affordances/mcp-v1": "prod workspace:* workspace~packages+mcp-v1",
     "workspace~apps+choice-bench @affordances/runtime": "prod workspace:* workspace~packages+runtime",
     "workspace~apps+demo @tailwindcss/postcss": "dev ^4.3.3 ~npm~@tailwindcss+postcss@4.3.3",
     "workspace~apps+demo @types/react-dom": "dev ^19.3.0 ~npm~@types+react-dom@19.3.0~peer.f18d9ecf01787eaa",

@@ -8,6 +8,7 @@ import { askedToConfirm } from './response.ts'
 import type { ServerRecord } from './server.ts'
 import type { SurfaceServerRecord } from './surface-server.ts'
 import { browserRequestsOf, type BrowserTrial } from './browser.ts'
+import { mcpRequestsOf, type McpTrial } from './mcp.ts'
 import { surfaces, type SurfaceId } from './surfaces.ts'
 import { setupTrial } from './trial.ts'
 import { v0RequestsOf, type CapabilityRequest, type V0Trial } from './v0.ts'
@@ -132,11 +133,17 @@ const replayOnce = async (record: Base, given: (Request | CapabilityRequest)[]) 
 }
 
 const replay = async (
-  record: ServerRecord | SurfaceServerRecord | V0Trial | BrowserTrial,
+  record: ServerRecord | SurfaceServerRecord | V0Trial | BrowserTrial | McpTrial,
 ): Promise<Intended> => {
   // 'none' is an agent that never executed anything: on v0, never called an action; on the browser, never loaded the
   // review step with a selection. One that did, though nothing applied, replays to the starting state
   const surface = 'surface' in record ? record.surface : undefined
+  if (surface === 'mcp') {
+    const mcp = record as McpTrial
+    if (!mcp.calls.some((c) => c.tool === 'execute'))
+      return { state: undefined, replayed: [], skipped: [], alternatives: [] }
+    return replayAll(mcp, mcpRequestsOf(mcp))
+  }
   if (surface === 'browser') {
     const browser = record as BrowserTrial
     if (!browserRequestsOf(browser, 'first-load').length)

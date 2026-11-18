@@ -320,3 +320,48 @@ test.skipIf(!build)(
   },
   600_000,
 )
+
+// the MCP pilot (the planner, 15:55Z): mcp-v1's own server over protocol 1 to the trial's server. Without
+// elicitation, execute's refusal is the request event and the trial ends unconfirmed; with it accepted, the purchase
+// completes, the person's approval through MCP
+test.skipIf(!build)(
+  'the MCP pilot: no elicitation ends unconfirmed with the intended measure; an accepted one completes',
+  async () => {
+    const at = path.join(dir, 'mcp')
+    const results: Record<string, any> = {}
+    for (const elicitation of [undefined, 'accept'] as const) {
+      const s = spec('mcp', `mcp-${elicitation ?? 'none'}`)
+      const r = await runSurfaceTrial(
+        s,
+        fakeDriver(1, path.join(at, `${s.id}.raw.json`), elicitation),
+        at,
+        {
+          labBuild: build!,
+          port: PORT,
+        },
+      )
+      expect(r).not.toHaveProperty('fault')
+      const lines = readFileSync(path.join(at, `${s.id}.jsonl`), 'utf8')
+        .trim()
+        .split('\n')
+        .map((l) => JSON.parse(l))
+      results[elicitation ?? 'none'] = { trial: lines[0], metrics: lines.at(-1) }
+    }
+    const unconfirmed = results.none
+    expect(unconfirmed.trial.mcp).toMatchObject({ declaresElicitation: false, elicitations: [] })
+    expect(unconfirmed.metrics).toMatchObject({
+      elicitationDeclared: false,
+      completed: false,
+      choseNone: false,
+      endChoice: 'hobby',
+    })
+    const accepted = results.accept
+    expect(accepted.trial.mcp.declaresElicitation).toBe(true)
+    expect(accepted.trial.mcp.elicitations).toHaveLength(1)
+    expect(accepted.metrics).toMatchObject({ elicitationDeclared: true, completed: true })
+    expect(accepted.metrics.endChoice).toBe(accepted.metrics.choice)
+    // the same request either way: the intended state doesn't depend on the confirmation
+    expect(accepted.metrics.choice).toBe(unconfirmed.metrics.choice)
+  },
+  600_000,
+)

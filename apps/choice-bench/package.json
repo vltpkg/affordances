@@ -13,6 +13,7 @@
     "@affordances/hosting-lab": "workspace:*",
     "@affordances/ir": "workspace:*",
     "@affordances/mcp": "workspace:*",
+    "@affordances/mcp-v1": "workspace:*",
     "@affordances/runtime": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "playwright": "^1.64.1",

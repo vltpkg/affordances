@@ -1,5 +1,6 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { writeFileSync } from 'node:fs'
 import type { Driver, DriverResult } from './types.ts'
 
@@ -22,12 +23,26 @@ const offersOf = (v: View): Offer[] => [
 
 const parse = (text: string) => JSON.parse(text) as Record<string, any>
 
-export const fakeDriver = (seed: number, raw: string): Driver => ({
+// elicitation: whether the fake client declares MCP's elicitation, and how its person answers; by default it doesn't,
+// as a client that can't ask
+export const fakeDriver = (
+  seed: number,
+  raw: string,
+  elicitation?: 'accept' | 'decline',
+): Driver => ({
   id: 'fake',
   async run(trial): Promise<DriverResult> {
     const t0 = performance.now()
     if ('url' in trial.mcp) throw new Error('the fake driver takes a stdio server')
-    const client = new Client({ name: 'fake-agent', version: '0.0.0' })
+    const client = new Client(
+      { name: 'fake-agent', version: '0.0.0' },
+      elicitation ? { capabilities: { elicitation: {} } } : undefined,
+    )
+    if (elicitation)
+      client.setRequestHandler(ElicitRequestSchema, async () => ({
+        action: elicitation,
+        content: {},
+      }))
     await client.connect(
       new StdioClientTransport({
         command: trial.mcp.command,
