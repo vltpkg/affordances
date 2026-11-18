@@ -21,8 +21,7 @@ const POLICY = 'exhaustive' // the page's view request (apps/hosting-lab/src/com
 const browser = await chromium.launch({ headless: true, args: ['--enable-features=WebMCP'] })
 const page = await browser.newPage()
 await page.goto(`${site}/plans`)
-// getTools() is async, so waitForFunction can't wait on it: its predicate would return a Promise, which is truthy at
-// once. Poll it instead, until the page has registered its tools (after hydration)
+// wait until the page has registered its tools, after hydration, polling getTools() every 100 ms
 for (let i = 0; ; i++) {
   if ((await page.evaluate(async () => (await document.modelContext.getTools()).length)) > 0) break
   if (i === 150) throw new Error('the page registered no WebMCP tools within 15 s')
