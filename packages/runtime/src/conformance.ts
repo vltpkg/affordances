@@ -47,7 +47,7 @@ export type ConformanceResult = {
 const KEY = 'conformance'
 
 // q goes down with p: no state makes p false and q true, so a refusal for q can be pinned on p. A condition the
-// greedy drop gave up for some other reason can't stand in for p (review of the code-review fixes, a)
+// greedy drop gave up for some other reason can't stand in for p
 const implied = (c: CapabilityDefinition, p: string, q: string) => {
   if (p === q) return true
   const exprOf = (id: string) =>
@@ -185,7 +185,7 @@ export const conformance = async (fixture: ConformanceFixture): Promise<Conforma
       continue
     }
     // a state that fitting to the declared schemas no longer makes false: run, it could pass on the wrong refusal, or
-    // fail for the wrong reason (boundary review #3)
+    // fail for the wrong reason
     if (k.reason) {
       results.push({
         capability: c.id,
@@ -202,7 +202,7 @@ export const conformance = async (fixture: ConformanceFixture): Promise<Conforma
     const context = k.isolated ? k.context : (alongside(c, k.condition) ?? k.context)
     const { got, named, refusedBy, falseIds } = await attempt(c, k.condition, context)
     // it passes when a condition that's false there refuses it: never on not_found from an arrange that did nothing,
-    // a leftover confirmation (review of M3d), or an unauthorized that names no condition (code review 6)
+    // a leftover confirmation, or an unauthorized that names no condition
     results.push({
       capability: c.id,
       condition: k.condition,
@@ -248,7 +248,7 @@ export const conformance = async (fixture: ConformanceFixture): Promise<Conforma
   return results
 }
 
-// RFC 0002 §2.1 (intake, 2026-11-18 16:33Z): a resolver MUST scope its reads to the principal, since the runtime
+// RFC 0002 §2.1: a resolver MUST scope its reads to the principal, since the runtime
 // evaluates conditions on whatever it returns and a host-set start can name any resource. The kit can't know an
 // application's access policy, so the application states it: two principals, each with the private resources it may
 // read. The kit checks every one of them under its owner, the other principal and an anonymous one

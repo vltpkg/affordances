@@ -9,7 +9,7 @@ import { sliceInput } from './slice.ts'
 // A v0 field is `imported` (the developer's v0 declaration, carried across formats), with the file and line as its
 // evidence; what the compiler derives is `inferred`. Nothing here is ever `declared`, and nothing is guessed: a value
 // that isn't a literal is read as absent. A capability-bound action extracts nothing but its binding (E1). The
-// output is IR-shaped definitions for M6c's pipeline, which composes them with the capability modules and validates
+// output is IR-shaped definitions for the compiler's pipeline (compile.ts), which composes them with the capability modules and validates
 
 export { SOURCE } from './source.ts'
 import { SOURCE } from './source.ts'
@@ -35,7 +35,7 @@ export type ExtractedCapability = {
   fieldProvenance: Record<string, Provenance>
 }
 
-/** @experimental What M6c needs to call an extracted capability: its export, its binding and its params (RFC 0005 §4). */
+/** @experimental What the compiler needs to call an extracted capability: its export, its binding and its params (RFC 0005 §4). */
 export type ExtractedBinding = {
   capability: string
   protocol: 'affordances/v0'
@@ -45,7 +45,7 @@ export type ExtractedBinding = {
   guards: Record<string, { file: string; local: string }>
 }
 
-/** @experimental A defineAction({ capability }): only its binding, checked against the capability in M6c. */
+/** @experimental A defineAction({ capability }): only its binding, checked against the capability by the compiler. */
 export type BoundAction = {
   route: string
   action: string
@@ -53,7 +53,7 @@ export type BoundAction = {
   // the capability it's bound to: the local name it's written with, the module it's imported from, and the name that
   // module exports it as (a rename, or a namespace import's member)
   capability: { local: string; from?: string; imported?: string }
-  // the v0 fields it also sets: M6c reports E_BOUND_REDEFINES for any its capability defines
+  // the v0 fields it also sets: the compiler reports E_BOUND_REDEFINES for any its capability defines
   alsoSets: string[]
 }
 
@@ -158,7 +158,7 @@ export const segmentResource = (route: string): { id: string; key: string } | un
 const byId = <T extends { id: string }>(xs: T[]) => xs.toSorted((a, b) => byCodeUnit(a.id, b.id))
 
 /**
- * @experimental RFC 0005 §2.1's rules E1 to E9 over a v0 app, for M6c's pipeline. Throws only codegen's own errors
+ * @experimental RFC 0005 §2.1's rules E1 to E9 over a v0 app, for the compiler's pipeline. Throws only codegen's own errors
  * from its scan, which v0's build already fails on; everything it reads itself is a result or a diagnostic.
  */
 export const extract = (

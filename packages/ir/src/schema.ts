@@ -170,7 +170,7 @@ export const StateEffect = z
     establishes: Expr.optional(),
   })
   .meta({ id: 'StateEffect' })
-// what a charge costs (intake, 2026-11-18): a path into the target, references or input, or a literal, with its unit
+// what a charge costs: a path into the target, references or input, or a literal, with its unit
 // and period. The IR does no arithmetic: a summary lists each charge as declared, and never totals them
 export const Amount = z
   .strictObject({
@@ -382,7 +382,7 @@ export type Claim = z.infer<typeof Claim>
 export type Binding = z.infer<typeof Binding>
 export type CapabilityManifest = z.infer<typeof CapabilityManifest>
 
-// what validate reports (RFC 0001 §7.3); validate itself is M2b
+// what validate reports (RFC 0001 §7.3); validate itself is validate.ts
 export type ValidationIssue = {
   code: `E_${string}` | `W_${string}`
   message: string

@@ -28,7 +28,7 @@ const TS = ['.ts', '/index.ts']
 registerHooks({
   resolve(specifier, context, next) {
     // @affordances/ir, next's optional peer, resolves from the app's root, where the app installed it, never from
-    // next's own location (intake, 2026-11-18)
+    // next's own location
     if (specifier === '@affordances/ir' || specifier.startsWith('@affordances/ir/'))
       return next(specifier, {
         ...context,

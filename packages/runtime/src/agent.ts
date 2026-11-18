@@ -3,7 +3,7 @@ import { ALONG } from './along.ts'
 import { encodeStart } from './start.ts'
 import type { ExecutionResult, OfferDetails, ProjectionRequest, View } from './types.ts'
 
-// RFC 0004 §3 and §4's agent tools, transport-free and browser-safe (intake, 2026-11-18 13:43Z; design's split): the
+// RFC 0004 §3 and §4's agent tools, transport-free and browser-safe: the
 // generic mode's four tools, the per-capability mode's tools, and the one boundary every result passes on its way to
 // the model. A transport (MCP, WebMCP) maps its own tool calls onto call(), and brings two things: an adapter that
 // reaches the capabilities (in process: ./agent-runtime; in a browser, the HTTP endpoints of RFC 0004 §2), and how to
@@ -127,7 +127,7 @@ export const GENERIC_TOOLS: AgentTool[] = [
   {
     name: 'execute',
     description:
-      // transport-neutral (design's M7d measurement): over MCP the person is asked by elicitation; on WebMCP no browser
+      // transport-neutral: over MCP the person is asked by elicitation; on WebMCP no browser
       // can ask yet, so the call is refused and the person confirms in the app
       'Do an offer’s action. If it needs the user’s approval, it runs only once they approve it; otherwise this returns the refusal, with its summary for them.',
     inputSchema: {
@@ -284,7 +284,7 @@ const read = (op: string) => async (response: Response) => {
 /**
  * @experimental The page's view request, sent with every call: its policy, the app's choice (RFC 0002 §6). The route
  * takes a budget only on expand, whose own arguments carry it. `start` is the connection's own start, the host's
- * choice (intake, 2026-11-18 16:27Z): a project() that names none starts there, as an in-process connection's
+ * choice: a project() that names none starts there, as an in-process connection's
  * request.start does. It's a view parameter only, and grants nothing: every call is still authorized as the caller's.
  * Without it, a view is site-wide.
  */

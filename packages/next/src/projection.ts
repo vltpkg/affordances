@@ -12,7 +12,7 @@ import type {
 import { PROTOCOL_1_MEDIA_TYPE } from './constants.ts'
 
 // RFC 0005 §5's projection route: serves RFC 0002's views from the compiled manifest, with the app's resolvers and the
-// handlers bindings.ts names. @affordances/runtime is next's optional peer (intake, 2026-11-18), and only this entry
+// handlers bindings.ts names. @affordances/runtime is next's optional peer, and only this entry
 // imports it, as a bare import the app resolves. The surface is hosting-lab's (apps/hosting-lab/src/lib/serve.ts),
 // @experimental until RFC 0004 fixes the wire: views only, never a projection; an Origin check for cookie calls; per-
 // caller caching; and RFC 0004 §2.3's statuses, from the runtime's statusOf
@@ -68,7 +68,7 @@ const loadRuntime = () =>
     loaded = undefined
     if (
       // only when runtime itself is what's missing: an installed runtime's own missing import names runtime's path
-      // too, and is rethrown as it is (review of b96dee48)
+      // too, and is rethrown as it is
       (error as { code?: string }).code === 'ERR_MODULE_NOT_FOUND' &&
       /Cannot find (package|module) '@affordances\/runtime'/.test((error as Error).message)
     )
@@ -147,7 +147,7 @@ const json = (body: unknown, status = 200, extra: Record<string, string> = {}) =
       ...extra,
     },
   })
-// a refusal made before the runtime, in the runtime's shape (RFC 0004 §2.3; code review of M8): the Origin's 403 is
+// a refusal made before the runtime, in the runtime's shape (RFC 0004 §2.3): the Origin's 403 is
 // unauthorized, a malformed body's 400 is invalid_input (the schema's own is 422), and a missing offer or operation's
 // 404 is not_found
 const REFUSED_AS: Record<number, RefusalCode> = {
@@ -359,7 +359,7 @@ export const createProjectionRoute = <Session = unknown>(
           )
         if (typeof along !== 'string' || !(ALONG as readonly string[]).includes(along))
           return refuse(400, `along is one of ${ALONG.join(', ')}`)
-        // the view's rule (code review of M8, #5): offers and facts, each a positive whole number, and nothing else
+        // the view's rule: offers and facts, each a positive whole number, and nothing else
         if (
           budget !== undefined &&
           (budget === null ||

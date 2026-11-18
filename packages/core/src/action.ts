@@ -166,7 +166,7 @@ export const createAffordances = <Session = never>(options: AffordancesOptions<S
   // a capability-bound action (RFC 0001 §12.1): the capability's data, and this action's code
   /**
    * @experimental Binding a capability from `@affordances/ir`, which isn't published yet. It may change before it is,
-   * and its fail-closed refusal on v0's agent path is interim (M3d).
+   * and its fail-closed refusal on v0's agent path is interim.
    */
   function defineAction<C extends BindableCapability, Output, State extends Entities = Entities>(
     config: CapabilityActionConfig<C, Output, Session, State>,

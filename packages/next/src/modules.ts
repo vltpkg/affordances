@@ -17,7 +17,7 @@ const NOT_ERASABLE = ['capabilities.tsx', 'capabilities.js', 'capabilities.jsx',
 const AUTHORING = ['@affordances/ir', '@affordances/next/author']
 // the globals a module may read: values that are the same on every machine and at every moment. Anything else free is
 // ambient (RFC 0005 §1): an allowlist, as the slice's, since a denylist let globalThis.process.platform and Intl's time
-// zone through (review of 299c02d4). Math is a value, but Math.random is checked as a member
+// zone through. Math is a value, but Math.random is checked as a member
 const VALUE_GLOBALS = new Set([
   'undefined',
   'NaN',
@@ -79,9 +79,9 @@ const stringEnd = (text: string, start: number) => {
 
 // tsconfig's JSONC as JSON, in two passes outside strings, since a string holds globs like "**/*.ts" and URLs that a
 // plain regex reads as comments (hosting-lab's real build, 2026-11-18): comments first, so a trailing comma followed
-// by a comment is still seen as trailing (review of 65d47ddb), then trailing commas
+// by a comment is still seen as trailing, then trailing commas
 export const jsonc = (source: string): unknown => {
-  // a leading byte order mark, which tsc accepts (review of 9f30e30c)
+  // a leading byte order mark, which tsc accepts
   const text = source.startsWith('\uFEFF') ? source.slice(1) : source
   let bare = ''
   for (let i = 0; i < text.length; i++) {

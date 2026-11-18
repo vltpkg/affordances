@@ -65,12 +65,12 @@ export const compileSync = (
   })
 
   const found = findModules(root)
-  // what the walk found is reported first, so a missing peer never hides a module's own error (review of 917a50b6)
+  // what the walk found is reported first, so a missing peer never hides a module's own error
   diagnostics.push(...found.diagnostics)
-  // an app with no capability modules and no namespace is a v0 app: nothing here loads, ir included (intake)
+  // an app with no capability modules and no namespace is a v0 app: nothing here loads, ir included
   if (found.modules.length === 0 && found.diagnostics.length === 0 && !options.namespace)
     return done({ bindings: [] })
-  // an unreadable tsconfig is said, never a silent loss of every alias (review of 65d47ddb); a v0 app
+  // an unreadable tsconfig is said, never a silent loss of every alias; a v0 app
   // resolves no aliases, so it's never asked
   const { unreadable } = readAliases(root)
   if (unreadable)
@@ -161,7 +161,7 @@ export const renderBindings = (bindings: CompiledBinding[]) => {
 
 /**
  * @experimental Write the compiler's output to .affordances/: manifest.json only when there's a manifest, and removed
- * when there isn't, so it always agrees with capabilities.ts and diagnostics.json (code review of M8, #8).
+ * when there isn't, so it always agrees with capabilities.ts and diagnostics.json.
  */
 export const writeCompiled = (root: string, compiled: Compiled) => {
   const dir = path.join(root, '.affordances')

@@ -12,7 +12,7 @@ export { API_PATH }
 
 // set to the index's path on an app withAffordances wraps
 export const INDEX_ENV = 'AFFORDANCES_INDEX'
-// whether the capability manifest is listed and served (RFC 0005 §1, M7b2), and where the projection route is mounted:
+// whether the capability manifest is listed and served (RFC 0005 §1), and where the projection route is mounted:
 // set from withAffordances' options, and read by next's routes. Next inlines env at build, so each is fixed per build
 export const MANIFEST_ENV = 'AFFORDANCES_MANIFEST'
 export const PROJECTION_ENV = 'AFFORDANCES_PROJECTION_BASE'

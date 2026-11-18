@@ -199,7 +199,7 @@ export type Expansion = {
 // §11
 export type Projection = {
   revision: Revision
-  // every offer the principal may see, in canonical order: what views and expansions draw from (M3c)
+  // every offer the principal may see, in canonical order: what views and expansions draw from
   offers: CapabilityOffer[]
   choiceSets: ChoiceSet[]
   view(): View // the first view, under the request's policy and budget
@@ -240,7 +240,7 @@ export type ExecutionRequest = {
   approval?: ApprovalToken
   ifRevision?: OfferRevision
   // the caller's projection request, whole: changes are of the view it shows (§8.3). Its start is the target's when
-  // it names none (simplify C2)
+  // it names none
   view?: Omit<ProjectionRequest, 'principal'>
 }
 export type RefusalCode =
@@ -289,7 +289,7 @@ export type ExecutionResult =
   // the handler threw, or returned off its output schema, after the checks passed: what changed anyway is reported
   | ({ status: 'failed'; message: string } & Observed)
 
-// §8.1 steps 1-7 without running, for a binding that runs its own handler, as v0's agent path does (M3d, C3.1).
+// §8.1 steps 1-7 without running, for a binding that runs its own handler, as v0's agent path does.
 // It never makes, reads or takes an approval token: v0's confirm is v0's own, recorded with its basis
 export type CheckRequest = Omit<ExecutionRequest, 'approval' | 'view'> & {
   confirmed?: { basis: 'v0-client-flag' }

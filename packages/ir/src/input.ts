@@ -5,7 +5,7 @@ import { encodePointer } from './pointer.ts'
 export type InputIssue = { at: string; message: string }
 
 // a schema zod can't read can't vouch for any input, so it fails closed
-// each schema object is compiled once (simplify D5): a manifest's schemas don't change while it's in use. null for one
+// each schema object is compiled once: a manifest's schemas don't change while it's in use. null for one
 // that can't be compiled
 const compiled = new WeakMap<object, z.ZodType | null>()
 const compile = (schema: unknown): z.ZodType | null => {
@@ -31,7 +31,7 @@ export const inputIssues = (schema: unknown, input: unknown): InputIssue[] => {
     : result.error.issues.map((i) => ({ at: encodePointer(i.path), message: i.message }))
 }
 
-// the effective input (intake, 2026-11-18): the input with its schema's declared defaults applied wherever a property
+// the effective input: the input with its schema's declared defaults applied wherever a property
 // is omitted, at any depth of object properties. What's approved, summarized and run is this one value, so a handler
 // never defaults on its own. A copy: the input passed in is left as it was
 type SchemaNode = { type?: unknown; properties?: Record<string, SchemaNode>; default?: unknown }
@@ -43,7 +43,7 @@ export const applyDefaults = (schema: unknown, input: unknown): unknown => {
   const out: Record<string, unknown> = { ...(input as Record<string, unknown> | undefined) }
   for (const [key, prop] of Object.entries(s.properties)) {
     // own keys only, never the prototype's: a property named toString or constructor gets its default, not an
-    // inherited function, and a __proto__ key is never assigned (review of 89799a3e)
+    // inherited function, and a __proto__ key is never assigned
     if (key === '__proto__') continue
     if (
       !Object.hasOwn(out, key) &&

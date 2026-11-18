@@ -1,10 +1,10 @@
 import type { OrderBasis } from './types.ts'
 
 // §6.4: whether a value is an order basis the runtime can state truthfully. A group's key must be one of the closed
-// set of manifest-derived attributes, and a group's order within never names a claim (intake, 2026-11-18)
+// set of manifest-derived attributes, and a group's order within never names a claim
 const GROUP_KEYS = new Set(['targetType'])
 // the relevance methods the runtime implements: a method is named, never free text, so it can't carry framing either
-// (review of 1615e7f3)
+//
 export const RELEVANCE_METHODS = new Set(['basic'])
 const fail = (problem: string) => ({ ok: false as const, problem })
 

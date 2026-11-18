@@ -10,7 +10,7 @@ import {
 } from './schema.ts'
 
 // rule 5's manifest half (RFC 0001 §8.2, §12.2): for a declarative condition, a context that makes it false. The
-// conformance kit (M3) arranges that context, calls the capability and expects the declared refusal. Undefined
+// conformance kit arranges that context, calls the capability and expects the declared refusal. Undefined
 // when the expression can't be made false (a contradiction such as `any [eq x 1, ne x 1]`)
 
 type Assignment = [path: string, value: unknown]
@@ -207,7 +207,7 @@ const listsOf = (items: unknown[], extra: number[] = []): { lists: unknown[]; ca
   return { lists: out, capped }
 }
 // an item for a quantifier: every combination of its where's item.* fields, each one of its candidates or absent, so
-// a where over two fields of one item (review of the kit rework) is reachable
+// a where over two fields of one item is reachable
 const itemsFor = (wheres: Expr[], pools: Pools): { items: unknown[]; capped: boolean } => {
   const inner = slotsOf({ all: wheres.length ? wheres : [{ exists: 'item' }] }, true, pools)
   const fields = inner.filter((s) => s.path.startsWith('item.') && !s.path.slice(5).includes('.'))
@@ -231,7 +231,7 @@ const isItem = (path: string) => /^item(\.|$)/.test(path)
 // the literals each path is compared with, and the paths compared with each other
 type Pools = { literals: Map<string, Scalar[]>; peers: Map<string, Set<string>> }
 // pools: the whole expression's, for a where's slots, so an item field compared with an outer path takes that path's
-// literals too (review of the kit rework: eq(item.k, target.s) with target.s in [x, z])
+// literals too, as in eq(item.k, target.s) with target.s in [x, z]
 const slotsOf = (expr: Expr, inItem = false, pools?: Pools): Slot[] => {
   // per path, the literals it's compared with; paths compared with each other share theirs
   const literals = new Map<string, Scalar[]>()
@@ -427,11 +427,11 @@ export type ConformanceCase = {
   context: Context | undefined
   isolated: boolean
   // why the case can't be run as it should, when its context, fitted to the declared schemas, no longer falsifies it:
-  // the kit fails it with this, never a pass on the wrong refusal (boundary review #3)
+  // the kit fails it with this, never a pass on the wrong refusal
   reason?: string
 }
 // a count's witness is an array of empty placeholders. Fitted to the schema the root is declared by, each becomes a
-// value of the item's type, so an application's own resolver accepts the state the kit arranges (code review 7)
+// value of the item's type, so an application's own resolver accepts the state the kit arranges
 type Schemaish = {
   type?: unknown
   items?: unknown
@@ -441,7 +441,7 @@ type Schemaish = {
   const?: unknown
 }
 const placeholder = (schema: Schemaish | undefined): unknown => {
-  // a value the schema allows, so a conformant resolver accepts it (review of the code-review fixes, b)
+  // a value the schema allows, so a conformant resolver accepts it
   if (schema?.const !== undefined) return schema.const
   if (Array.isArray(schema?.enum) && schema.enum.length) return schema.enum[0]
   const type = Array.isArray(schema?.type) ? schema.type[0] : schema?.type
@@ -464,7 +464,7 @@ const fits = (kind: string, type: string) =>
   (type === 'number' && kind === 'number')
 // the declared type a leaf the search gave another type must take, or undefined when its value fits: a search's fresh
 // value only had to be some other value, and a resolver's attributes must fit their schema or the instance loads as
-// unknown (review of bb61e4e2). null stays, since it's what makes exists false
+// unknown. null stays, since it's what makes exists false
 const retype = (value: unknown, s: Schemaish): string | undefined => {
   const declared = Array.isArray(s.type) ? (s.type as string[]) : s.type ? [s.type as string] : []
   const kind = kindOf(value)
@@ -506,8 +506,8 @@ const searchOrder = (a: unknown, b: unknown) => {
   if (ka !== kb) return ka < kb ? -1 : 1
   return compareValues('lt', a, b) === true ? -1 : compareValues('gt', a, b) === true ? 1 : 0
 }
-// distinct values stay distinct, in the order the search gave them, so two paths it told apart, or ordered, still are
-// (boundary review #3): numbers from 7919 up and strings from '~fresh-0000' up, past any value the context holds, and
+// distinct values stay distinct, in the order the search gave them, so two paths it told apart, or ordered, still are:
+// numbers from 7919 up and strings from '~fresh-0000' up, past any value the context holds, and
 // booleans false then true. More distinct values than a boolean holds repeat, and the re-check says so
 const coercionFor = (
   raw: Record<string, unknown>,

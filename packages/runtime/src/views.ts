@@ -59,14 +59,14 @@ const sameRef = (a: ResourceRef | undefined, b: ResourceRef) =>
 
 // where a sequence of offers comes from (the first view, or one expansion), and a 'more' cursor: its origin and the
 // budget of every cut since, under a projection revision, as base64url of its RFC 8785 text. Any projection of the
-// same revision and request rebuilds the page, and the same view asked for twice has the same bytes (simplify C4)
+// same revision and request rebuilds the page, and the same view asked for twice has the same bytes
 type Origin =
   | { view: true }
   | { from: Expansion['from']; along: Exclude<Expansion['along'], 'more'> }
 type Cursor = { r: string; o: Origin; b: (number | null)[] }
 const encode = (cursor: Cursor) =>
   `more:${base64url(new TextEncoder().encode(canonicalJson(cursor)))}`
-// a cursor's shape, checked whole: anything an agent sends is untrusted (review of C)
+// a cursor's shape, checked whole: anything an agent sends is untrusted
 const ALONG = ['alternatives', 'members', 'relations', 'contains', 'enables']
 const isRef = (v: unknown): v is ResourceRef =>
   v !== null &&
@@ -127,7 +127,7 @@ export const views = (args: {
   const sets = new Map(choiceSets.map((s) => [s.id, s]))
   const start = request.start
 
-  // relations between capabilities, declared and derived, both ways, found once for the manifest (simplify D1)
+  // relations between capabilities, declared and derived, both ways, found once for the manifest
   const { derived, edges, neighbors, partners } = facts
   const byCapability = new Map<Id, OfferId[]>()
   for (const o of args.offers)
@@ -427,7 +427,7 @@ export const views = (args: {
     const cursor = decode(from) ?? fail()
     if (cursor.r !== revision) fail('a cursor from another revision')
     let ids = (sequenceOf(cursor.o) ?? fail()).ids
-    // each cut takes at least one offer, so a cursor can't have more cuts than its sequence has offers (review of D)
+    // each cut takes at least one offer, so a cursor can't have more cuts than its sequence has offers
     if (cursor.b.length > ids.length) fail()
     for (const offers of cursor.b) ids = split(ids, offers ?? Infinity).cut
     if (!ids.length) fail()

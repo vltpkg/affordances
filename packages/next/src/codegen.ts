@@ -18,7 +18,7 @@ export type RouteEntry = {
 
 // an action as codegen reads it from source: its export, its route-local name, and its capability id when it has
 // one (RFC 0001 §10.1's migration form). bound: it's defineAction({ capability }), whose identity is its
-// capability's, so it never needs an id (code review 9)
+// capability's, so it never needs an id
 export type ActionExport = { local: string; name: string; id?: string; bound?: true }
 // and where its `name` property starts in the source, which writeIds splices before
 type ParsedAction = ActionExport & { nameAt: number }
@@ -250,7 +250,7 @@ export const missingIds = (
   const out: MissingId[] = []
   for (const { route, actions } of entries)
     for (const x of actions?.exports ?? []) {
-      // a capability-bound action is identified by its capability (code review 9)
+      // a capability-bound action is identified by its capability
       if (x.id || x.bound) continue
       // two routes with the same static segments: name the params too, then number what's left
       let suggested = suggestId(route, x.name, false, idPrefix)

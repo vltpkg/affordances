@@ -22,7 +22,7 @@ export const summaryPaths = (template: string): string[] =>
     m[1] === undefined ? [] : [m[1]],
   )
 
-// RFC 0001 §3.2 and §4 (intake, 2026-11-18): a summary ends by listing every charge its financial effects make, each
+// RFC 0001 §3.2 and §4: a summary ends by listing every charge its financial effects make, each
 // with its amount, in declaration order and never totalled. A charge whose applies is false isn't made, so it isn't
 // listed; one whose applies is unknown is listed as one that may apply, since a charge is never hidden. An amount that
 // can't be resolved says so

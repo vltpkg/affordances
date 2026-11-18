@@ -1,7 +1,7 @@
 import type { ExecutionResult } from './types.ts'
 
-// RFC 0004 §2.3's statuses for the runtime's results, in HTTP's own meanings, for any host that serves them over HTTP
-// (boundary review #12, 2026-11-18): one mapping, so hosts can't drift. unauthorized is 401 for a caller who isn't
+// RFC 0004 §2.3's statuses for the runtime's results, in HTTP's own meanings, for any host that serves them over HTTP:
+// one mapping, so hosts can't drift. unauthorized is 401 for a caller who isn't
 // signed in, with a challenge, and 403 for one who is; input that fails the schema is 422; a precondition, a stale
 // revision and a confirmation still owed are 409; rate_limited is 429, with Retry-After when the refusal says when.
 // A body that isn't a call at all is the host's own 400, before the runtime. v0's responses keep v0's statuses

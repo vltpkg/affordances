@@ -129,7 +129,7 @@ export const evaluateUnchecked = (
       first.error?.message ?? (first.stderr.trim().split('\n').at(-1) || `exit ${first.status}`),
     )
   const second = run()
-  // the second run is checked as the first is: a crash there is no evidence of determinism (review of 3959720b)
+  // the second run is checked as the first is: a crash there is no evidence of determinism
   if (second.error || second.status !== 0)
     return failed(
       second.error?.message ?? (second.stderr.trim().split('\n').at(-1) || `exit ${second.status}`),
@@ -166,7 +166,7 @@ export const evaluateUnchecked = (
 }
 
 /** @experimental Evaluate the capability modules twice, each in a fresh child, and compare (RFC 0005 §1). The static
- * checks run first, here, so no caller can evaluate a module that hasn't passed them (review of 917a50b6) */
+ * checks run first, here, so no caller can evaluate a module that hasn't passed them */
 export const evaluateModules = (
   root: string,
   modules: string[],

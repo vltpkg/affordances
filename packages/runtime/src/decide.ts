@@ -1,7 +1,7 @@
 import { evaluate, type Condition, type Context, type Id, type Truth } from '@affordances/ir'
 import type { GuardImpl, Principal, ResourceResolver } from './types.ts'
 
-// what projection and execution share in deciding a condition (simplify C1)
+// what projection and execution share in deciding a condition
 
 export type GuardArgs = Parameters<GuardImpl>[0]
 

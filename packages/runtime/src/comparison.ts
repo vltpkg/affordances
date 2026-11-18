@@ -83,7 +83,7 @@ export const comparisonOf = (
 }
 
 // the target attributes a capability's confirmation summary renders, by each {target.x} path's first segment: what a
-// person approves names them, so they're never cut (intake, 2026-11-18 12:06Z)
+// person approves names them, so they're never cut
 export const summaryReads = (template: string | undefined): Set<string> =>
   new Set(
     summaryPaths(template ?? '').flatMap((p) => {
@@ -110,7 +110,7 @@ export const targetReads = (definition: unknown): Set<string> => {
  * @experimental The comparison columns a choice set can't cut (RFC 0002 §6.6), from the set's capability and the
  * claims shown on its members: what those claims cite, and what the capability's conditions and effects read and its
  * confirmation summary renders. The runtime's views keep exactly these; the inspector marks them by the same rule
- * (code review of M8, #9). Under a policy that omits claims, no claim is shown, so pass none.
+ *. Under a policy that omits claims, no claim is shown, so pass none.
  */
 export const keptColumns = (
   capability: CapabilityDefinition | undefined,

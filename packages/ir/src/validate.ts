@@ -370,7 +370,7 @@ export const validate = (input: unknown): Validation => {
       const eat = `${at}/effects/${j}`
       if (e.compensatedBy) resolves(e.compensatedBy, `${eat}/compensatedBy`, 'capability')
       // a charge's amount and its applies read what a summary reads: target, input or a reference, never the
-      // principal (§3.2, §4). A confirmed charge with no amount can't be listed with one, so it's a warning (intake)
+      // principal (§3.2, §4). A confirmed charge with no amount can't be listed with one, so it's a warning
       if (e.category === 'financial') {
         if (typeof e.amount?.value === 'string') {
           if (e.amount.value.startsWith('principal.'))

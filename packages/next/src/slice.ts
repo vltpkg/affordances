@@ -23,7 +23,7 @@ export const SCHEMA_LIBRARIES = [
   '@effect/schema',
 ]
 // what survives evaluation but not JSON Schema, so the IR's schema would accept what the app's rejects: each schema
-// library's own methods (boundary review #4), checked against the libraries the slice imports, so an Array's filter
+// library's own methods, checked against the libraries the slice imports, so an Array's filter
 // isn't Effect's
 export const LOSSY: Record<string, readonly string[]> = {
   zod: [
@@ -209,19 +209,19 @@ const parseModule = (file: string, source: string): Module => {
 // the free identifiers an expression reads, with nested functions' parameters and locals in scope, and type
 // positions skipped. Also returns what can't be in a slice whatever it reads: import(), import.meta
 // members that reach the language's machinery rather than a schema: Object.constructor('return process')() would
-// read the environment through a value global (review of aef81dc1)
+// read the environment through a value global
 const BANNED_MEMBERS = new Set([
   'constructor',
   '__proto__',
   'prototype',
-  // the reflection that reaches the same machinery through a value global (review of bab4b5cf)
+  // the reflection that reaches the same machinery through a value global
   'getOwnPropertyDescriptor',
   'getOwnPropertyDescriptors',
   'getPrototypeOf',
   'setPrototypeOf',
   'defineProperty',
   'defineProperties',
-  // their legacy aliases on every object (code review of M8): __lookupGetter__('__proto__') is getPrototypeOf, and
+  // their legacy aliases on every object: __lookupGetter__('__proto__') is getPrototypeOf, and
   // __defineGetter__ and __defineSetter__ are defineProperty
   '__lookupGetter__',
   '__lookupSetter__',
@@ -258,7 +258,7 @@ export const freeIdentifiers = (root: Node, outer: Set<string>[] = []) => {
     else if (p.type === 'AssignmentPattern') patternNames(p.left as Node, into)
     else if (p.type === 'RestElement') patternNames(p.argument as Node, into)
   }
-  // every key in a slice is static and allowed (code review of M8, #3; intake's allowlist, 22:19Z): in a member
+  // every key in a slice is static and allowed: in a member
   // expression, an object literal, a destructuring pattern or a class, it's an identifier, or a plain string or number
   // literal, never computed, and never one of the banned members. A computed key could name anything, whatever it
   // computes to, so it's refused without being read; a real schema needs none
@@ -279,7 +279,7 @@ export const freeIdentifiers = (root: Node, outer: Set<string>[] = []) => {
       if (q.type !== 'RestElement') staticKey(q, q.key as Node)
   }
   // the expressions inside a binding pattern: each default, at any depth, with its keys checked. They run when the
-  // binding does, so they're read as the initializer is (review of aef81dc1)
+  // binding does, so they're read as the initializer is
   const patternExpressions = (p: Node | null | undefined): Node[] => {
     if (!p) return []
     if (p.type === 'AssignmentPattern')
@@ -598,7 +598,7 @@ try {
 
 // what the child may read: the slice's own dir, where emit wrote everything it runs, and every node_modules from it
 // up, where its schema libraries resolve, through any symlinks into a package store. Not the app root: an escaped
-// slice could otherwise read .env files into the published schema (review of bab4b5cf)
+// slice could otherwise read .env files into the published schema
 /** The child's Node flags: the permission model, reading only the slice's own dir and the node_modules above it. */
 export const childArgs = (dir: string) => [
   '--permission',
@@ -647,10 +647,10 @@ export const sliceInput = (
     const runner = path.join(dir, 'run.mjs')
     writeFileSync(runner, RUNNER)
     // an empty environment: the slice can't read secrets or configuration (RFC 0005 §1)
-    // Node's permission model (review of aef81dc1): reads only the app and the node_modules it resolves from, and no
+    // Node's permission model: reads only the app and the node_modules it resolves from, and no
     // writes, network, child processes or workers. The slice rule is a lint, not a sandbox; this is the sandbox
     // two evaluations, each in a fresh child: a slice whose output differs between them read a clock or chance the
-    // lint missed (review of bab4b5cf), so it's opaque rather than published
+    // lint missed, so it's opaque rather than published
     const run = () =>
       spawnSync(process.execPath, [...childArgs(dir), runner, entry], {
         cwd: dir,

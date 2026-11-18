@@ -81,7 +81,7 @@ export const createRouteHandler = (options: RouteHandlerOptions = {}) => {
     // GET {manifest}: the canonical IR, ETag its digest, cacheable by anyone, since it holds no principal's data. A
     // private or absent manifest falls through, to the same 404 as any path that has no graph
     // behind withAffordances' rewrite a route handler's request keeps the url it was asked for, so the path is matched
-    // with API_PATH stripped when it's there, as core's handler does for the index (design's real path, M7b2)
+    // with API_PATH stripped when it's there, as core's handler does for the index
     const { pathname } = new URL(request.url)
     const path = pathname.startsWith(API_PATH) ? pathname.slice(API_PATH.length) || '/' : pathname
     if (published && request.method === 'GET' && path === MANIFEST_PATH) {

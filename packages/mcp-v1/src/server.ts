@@ -8,7 +8,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 
 // RFC 0004 §4: version 1's capabilities over MCP. The tools, and the boundary every result passes on its way to the
-// model, are @affordances/runtime/agent's, shared with WebMCP (intake, 2026-11-18 13:43Z): this is MCP's adapter
+// model, are @affordances/runtime/agent's, shared with WebMCP: this is MCP's adapter
 // only. Its tool list and calls map onto the toolset's, over an in-process runtime, and the person confirms through
 // MCP's elicitation
 
@@ -42,7 +42,7 @@ export const createMcpServer = (options: McpServerOptions | McpAdapterOptions) =
   const toolset = createToolset({ adapter, mode, manifest: options.manifest })
   const server = new Server(
     { name: 'affordances-v1', version: '0.0.0' },
-    // no instructions: they'd be prompt text outside every view (M7f's PLAN)
+    // no instructions: they'd be prompt text outside every view
     { capabilities: { tools: {} } },
   )
   // the person's answer, through MCP's elicitation, when the client can ask; exactly the summary the token binds

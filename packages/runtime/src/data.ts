@@ -1,7 +1,7 @@
 import { inputIssues, type CapabilityManifest, type Id } from '@affordances/ir'
 
 // I-JSON (RFC 7493) plain data: what an attribute value can be. A non-finite number, a BigInt, undefined, a hole, a
-// Date or any other object that isn't plain can't be compared or digested, so it's no value (code review 7)
+// Date or any other object that isn't plain can't be compared or digested, so it's no value
 export const plainData = (value: unknown): boolean => {
   if (value === null || typeof value === 'boolean' || typeof value === 'string') return true
   if (typeof value === 'number') return Number.isFinite(value)

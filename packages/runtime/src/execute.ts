@@ -60,7 +60,7 @@ export type ExecutionDeps = {
  * @experimental What a handler throws to refuse a call the application's own state no longer allows, though every
  * declared check passed: approving the bundle a project already has, say. It's the caller's to correct, so the result
  * is a `precondition` refusal with this message as its detail, never a failure. Thrown before the handler changes
- * anything: a refusal observes nothing (code review of M8, #2)
+ * anything: a refusal observes nothing
  */
 export class HandlerRefusal extends Error {}
 
@@ -80,7 +80,7 @@ const sign = async (key: CryptoKey, call: Obj) =>
   )
 
 // §8.3: the offers whose existence or availability changed, in the caller's view: a result goes on the wire, so it
-// carries only what that view shows, shaped as it shows it (review of M3e; §11)
+// carries only what that view shows, shaped as it shows it (§11)
 const compare = (before: View, after: View): OfferChanges => {
   const was = new Map(before.offers.map((o) => [o.id, o]))
   const now = new Map(after.offers.map((o) => [o.id, o]))
@@ -123,7 +123,7 @@ export const executor = (deps: ExecutionDeps) => {
       return undefined
     }
     const bytes = new TextEncoder().encode(canonicalJson({ ...call, expiresAt, nonce }))
-    // crypto.subtle.verify compares in constant time (review of M3d), so a MAC isn't guessed byte by byte
+    // crypto.subtle.verify compares in constant time, so a MAC isn't guessed byte by byte
     for (const key of [approval.keys!.current, approval.keys!.previous])
       if (key && (await crypto.subtle.verify('HMAC', key, given, bytes)))
         return { nonce, expiresAt: new Date(expiresAt) }
@@ -201,7 +201,7 @@ export const executor = (deps: ExecutionDeps) => {
 
     // a guard at execution: with the input, execution-only ones included
     const refs: Record<string, { key: string; attributes: Obj } | undefined> = {}
-    // authorization never reads the input (RFC 0001 §3.2), so its guards get none, as at projection (code review 5)
+    // authorization never reads the input (RFC 0001 §3.2), so its guards get none, as at projection
     const decide = async (x: Condition, authorizing = false) => {
       const d = await decideCondition(
         x,
@@ -271,7 +271,7 @@ export const executor = (deps: ExecutionDeps) => {
       const issues = inputIssues(c.input, input)
       if (issues.length) return refuse('invalid_input', { issues })
       // the effective input: the schema's declared defaults applied. It's the one value the summary renders, the
-      // approval binds and the handler runs, so a handler never defaults on its own (intake, 2026-11-18; RFC 0002 §8.1)
+      // approval binds and the handler runs, so a handler never defaults on its own (RFC 0002 §8.1)
       input = applyDefaults(c.input, input)
     }
     context.input = (input ?? {}) as Obj
@@ -310,7 +310,7 @@ export const executor = (deps: ExecutionDeps) => {
       // with every charge it makes, each with its amount (RFC 0001 §3.2 and §4)
       const summary = render(c.confirmation.summary, c.effects, context)
       if (mode === 'check') {
-        // v0's own confirm, recorded with its basis: never an approval (C3.1)
+        // v0's own confirm, recorded with its basis: never an approval
         if (!request.confirmed)
           return refuse('confirmation_required', { confirmation: { summary } })
         return {

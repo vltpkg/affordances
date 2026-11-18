@@ -29,7 +29,7 @@ export const words = (text: string) =>
 
 export type Edge = { from: Id; to: Id; relation: string }
 
-// what depends on the manifest alone, found once when the runtime starts, not on every request (simplify D1)
+// what depends on the manifest alone, found once when the runtime starts, not on every request
 export type Facts = ReturnType<typeof factsOf>
 export const factsOf = (manifest: CapabilityManifest) => {
   const local = (ref: string) => localId(manifest, ref)

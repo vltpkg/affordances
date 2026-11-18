@@ -99,7 +99,7 @@ const canonically = (a: CapabilityOffer, b: CapabilityOffer) => {
 
 // §4.2: a capability takes input when its input schema declares a property, or isn't an object schema
 // what the runtime fills in itself is never the caller's to give: the target's key at targetAt, and each bound
-// reference's key at its at (§8.1 step 4; code review 8). Only a top-level property can be left out this way
+// reference's key at its at (§8.1 step 4). Only a top-level property can be left out this way
 const topLevel = (pointer: string) => {
   const keys = decodePointer(pointer)
   return keys.length === 1 ? keys[0] : undefined
@@ -171,7 +171,7 @@ export const createRuntime = ({
       `${confirming.id} requires confirmation: give createRuntime approvalKeys and seenTokens`,
     )
   // a definition's own id, for a Ref that may name it with the manifest's namespace (RFC 0001 §2)
-  // what depends on the manifest alone, found once (simplify D1)
+  // what depends on the manifest alone, found once
   const facts = factsOf(manifest)
   const types = new Map(manifest.resources.map((r) => [r.id, r]))
   const attributesOf = attributesFor(manifest)
@@ -195,7 +195,7 @@ export const createRuntime = ({
     }
 
     // each instance this request reads: loaded once, and read for a revision (its version or its attributes' digest)
-    // once (simplify D4)
+    // once
     const entries = new Map<
       string,
       { type: Id; key: string; loaded: Promise<Loaded>; read?: Promise<Read | undefined> }
@@ -232,7 +232,7 @@ export const createRuntime = ({
       return (e.read ??= e.loaded.then((loaded) => read(type, key, loaded)))
     }
     // the instances each offer read, so a projection's revision is over what its own offers read, whatever else a
-    // shared session has loaded (simplify D3)
+    // shared session has loaded
     const readsOf = new WeakMap<CapabilityOffer, Read[]>()
     const readsFor = (offers: CapabilityOffer[]) => {
       const union = new Map<string, Read>()
@@ -299,7 +299,7 @@ export const createRuntime = ({
         r.value = d.value
         if (d.detail !== undefined) r.detail = d.detail
         if ('expr' in x) {
-          // needs-input only when every path that's missing is on the input (review of M3a)
+          // needs-input only when every path that's missing is on the input
           const pathsRead = paths(x.expr)
           if (
             r.value === 'unknown' &&
@@ -356,7 +356,7 @@ export const createRuntime = ({
       }
       if (c.confirmation)
         // the effective input as far as it's known before the agent supplies any: the schema's defaults, so a default's
-        // charge shows before it's approved (intake, 2026-11-18). Known only in part: a key the agent hasn't given is
+        // charge shows before it's approved. Known only in part: a key the agent hasn't given is
         // missing, so a charge conditioned on it shows as may apply, never dropped (review's boundary #1)
         requirements.confirmation = {
           summary: render(c.confirmation.summary, c.effects, {
@@ -435,7 +435,7 @@ export const createRuntime = ({
     }
 
     // an offer's revision alone (§7), as offerOn computes it but without the rest of the offer, and without adding to
-    // the projection's guard log: for execution's refusals and freshness (simplify D3)
+    // the projection's guard log: for execution's refusals and freshness
     const revisionOf = async (
       c: CapabilityDefinition,
       target: ResourceRef | undefined,
@@ -490,7 +490,7 @@ export const createRuntime = ({
     return { attributes, base, load, reading, readAll, readsFor, guardLog, offerOn, revisionOf }
   }
 
-  // a projection, in its own session or one an execution shares with it (simplify D3)
+  // a projection, in its own session or one an execution shares with it
   const project = async (request: ProjectionRequest, shared?: Session): Promise<Projection> => {
     const { principal } = request
     const { base, readsFor, guardLog, offerOn, load } = shared ?? (await session(principal))
@@ -505,7 +505,7 @@ export const createRuntime = ({
         (c.references ?? []).flatMap((r) => {
           if (start?.type === r.resource) return [[r.name, start.key]]
           // exactly one bind instance of the type binds; two of one type bind neither, so the list's order never
-          // decides which (design's check of the §2 amendment)
+          // decides which
           const ofType = (request.bind ?? []).filter((b) => b.type === r.resource)
           return ofType.length === 1 ? [[r.name, ofType[0]!.key]] : []
         }),
@@ -514,7 +514,7 @@ export const createRuntime = ({
     // every offer the principal may see: a global capability once, a targeted one on each instance its resolver lists,
     // and on the start instance. events are announced, not invoked, so they have no offers
     // the resolvers are called concurrently, and the offers sorted after, so the bytes don't depend on which answered
-    // first (simplify D6)
+    // first
     const lists = await Promise.all(
       manifest.capabilities.map(async (c) => {
         if (c.kind === 'event') return []

@@ -19,7 +19,7 @@ import type {
 // that order a set are already canonical. normalize(normalize(m)) equals normalize(m)
 
 // a set: sorted by its key, ties broken by the element's canonical bytes, exact duplicates removed (§7.2 step 4)
-// each item's key and RFC 8785 text are computed once, then the items sorted on them (simplify D8)
+// each item's key and RFC 8785 text are computed once, then the items sorted on them
 const set = <T>(items: T[], key: (item: T) => string[] = () => []): T[] => {
   const decorated = items
     .map((item) => ({ item, keys: key(item), text: canonicalJson(item) }))
