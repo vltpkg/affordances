@@ -12,8 +12,15 @@ const request = async () => {
   return new Request(`${proto}://${host}/`, { headers: list })
 }
 
+// the API's types are core's own, named, not inferred: an inferred type is inlined whole into next's .d.ts, with core's
+// import of @standard-schema/spec, a package next doesn't declare. A strict install (vlt, pnpm) or skipLibCheck: false
+// then fails on it. Named, the .d.ts refers only to @affordances/core, and the types are the same ones
+type Core<Session> = ReturnType<typeof createCore<Session>>
+
 export const createAffordances = <Session = never>(
   options: Pick<AffordancesOptions<Session>, 'auth'> = {},
-) => createCore<Session>({ ...options, request, redirect: nextRedirect })
+): Core<Session> => createCore<Session>({ ...options, request, redirect: nextRedirect })
 
-export const { defineAction, defineState } = createAffordances()
+const affordances: Core<never> = createAffordances()
+export const defineAction: Core<never>['defineAction'] = affordances.defineAction
+export const defineState: Core<never>['defineState'] = affordances.defineState
