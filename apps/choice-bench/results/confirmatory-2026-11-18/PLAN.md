@@ -2,6 +2,25 @@
 
 This plan is committed before any confirmatory trial. Its commit's timestamp precedes the first trial's `startedAt`. Intake approved it at 2026-11-18 03:27Z, with the planner's additions at 03:28Z.
 
+## Amendment: the order of running (intake, 2026-11-18 04:28Z), before any trial
+
+- **What changed:** the runner ran the 684 in **blocks**: model, then condition, then index. It now runs them **interleaved and rotated**.
+  - **The order:** by index i = 0..113, with each i's six specs side by side.
+  - **Models alternate:** Sonnet first when i is even, Haiku first when it's odd.
+  - **Conditions rotate** within each model (i mod 3: A C S, C S A, S A C), so each condition leads 38 indexes.
+  - **The two workers** take the next specs from this one ordered queue.
+  - **What didn't change:** the specs, their ids and their plan-id orders.
+- **Why:** blocks confound every arm with time. Each arm's trials would run in a different stretch of the run's hours, so a drift in host load, the provider's latency or the model's behaviour would fall on one arm, and the stratified test couldn't separate it from the condition. Interleaving puts every arm at the same moments.
+- **When:** in this plan's amendment commit, whose time is recorded in git.
+- **No trial had run.** The first invocation waited at its load gate from 03:56Z, and was stopped by its PID at 04:28Z before it started:
+  - its wrapper log holds no START line;
+  - its results directory (`…/trials/confirmatory-2026-11-18`) was never created;
+  - so 0 trials and 0 traces.
+- **The runner:** its sha256 was `557df5c4d863064d93b516e081d809272ecdc33142a1f3d56397c88fbd659c04`, and is now `e4e0332b0068b4377bae67541875a9b3c36c23b91b221dc057ce7a27c20cbeab`.
+  - **Order tests** (`apps/choice-bench/test/confirmatory.test.ts`): the order is a permutation of the 684 specs, with their ids and indexes unchanged; each index's six specs are adjacent, with both rotations; each condition leads a third of the indexes.
+  - **The fake-driver equivalence check, redone** on the same 24-spec sample: 0 of 24 unequal against c81eeeb1's own `runTrial`, and 0 of 24 between two reference runs (248 lines). The manifest and base digests are single-valued and equal across all three runs (`sha256-4ei29Au…`, `sha256-5wGv2c…`).
+- **The load gate,** under intake's (a)-and-(b) rule (04:27Z): with the arms interleaved, (a) holds, and (b) holds, since the longest calibration trial used 3.7% of the time cap. So the gate is a 1-minute load under 32 (2× cores). Load is recorded per trial, and the optimal rate by load tercile is reported as a secondary check.
+
 ## The calibration seal, and its breach
 
 - **The breach:** calibration's C and S outcomes are sealed until this run's results are in (intake). The calibration record's first commit (732c40d4) was made at 03:27Z, before the sealing instruction of 03:28Z, and held C's and S's per-cell values and the full traces.
@@ -44,7 +63,7 @@ This plan is committed before any confirmatory trial. Its commit's timestamp pre
 ## What runs
 
 - **The fixture is c81eeeb1a61e0330be34ce170169c8d9a77292cc,** calibration's: its pinned, git-free export is the only code a trial runs.
-- **The runner is `run-confirmatory.ts`, committed with this plan:** sha256 `557df5c4d863064d93b516e081d809272ecdc33142a1f3d56397c88fbd659c04`. It's copied byte-identical beside the export, and it imports the export's own modules: the harness, drivers, canary and isolation. So every trial is c81eeeb1's own `runTrial`, and the runner only selects and schedules the 684. It refuses to start unless:
+- **The runner is `run-confirmatory.ts`, committed with this plan:** sha256 `e4e0332b0068b4377bae67541875a9b3c36c23b91b221dc057ce7a27c20cbeab`. It's copied byte-identical beside the export, and it imports the export's own modules: the harness, drivers, canary and isolation. So every trial is c81eeeb1's own `runTrial`, and the runner only selects and schedules the 684. It refuses to start unless:
   - the export's `.export-sha` is c81eeeb1;
   - its own sha256 is this one;
   - the export's loaded files digest to calibration's (`7e6da386b85f5c05328e22194177d756289039bbace41281f3104135fedb5b35`).
@@ -60,7 +79,7 @@ This plan is committed before any confirmatory trial. Its commit's timestamp pre
 
 ## Which runs count
 
-- **A run counts only if its `preflight.json` records `runner` as `557df5c4d863064d93b516e081d809272ecdc33142a1f3d56397c88fbd659c04`**, this plan's runner (review of bdc11f9c). A file can't hold its own hash, so the runner's self-check holds only when the operator passes the pre-registered sha256. An edited runner given its own sha256 would run, and would record a different one. Such a run doesn't count.
+- **A run counts only if its `preflight.json` records `runner` as `e4e0332b0068b4377bae67541875a9b3c36c23b91b221dc057ce7a27c20cbeab`**, this plan's runner (review of bdc11f9c). A file can't hold its own hash, so the runner's self-check holds only when the operator passes the pre-registered sha256. An edited runner given its own sha256 would run, and would record a different one. Such a run doesn't count.
 
 ## Stopping and re-runs (intake, 2026-11-18 03:54Z)
 
@@ -70,7 +89,7 @@ This plan is committed before any confirmatory trial. Its commit's timestamp pre
   - **If both fail,** the spec is scored "failed": not optimal under intent to treat, and reported.
   - **Capped trials are never retried.**
 - **If more than 5% of specs (35) need a retry,** the run pauses and intake is told before it continues, since that indicates a systematic infrastructure problem rather than chance.
-- **The operating rules** (the planner, 03:55Z; the runner is unchanged, sha256 `557df5c4d863064d93b516e081d809272ecdc33142a1f3d56397c88fbd659c04`): Retry = a second invocation of the same command (resume): it reruns only specs with no complete trace, with the same pre-assigned specs, and partials are kept in interrupted/. The command runs at most twice, each run with its own recorded preflight. After the first run, if more than 35 specs (5%) are failed, the second run does NOT start; intake is told first.
+- **The operating rules** (the planner, 03:55Z; they're operating rules, not code): Retry = a second invocation of the same command (resume): it reruns only specs with no complete trace, with the same pre-assigned specs, and partials are kept in interrupted/. The command runs at most twice, each run with its own recorded preflight. After the first run, if more than 35 specs (5%) are failed, the second run does NOT start; intake is told first.
 - **A capped trial has a complete trace,** so no invocation ever re-runs it.
 
 ## After the run

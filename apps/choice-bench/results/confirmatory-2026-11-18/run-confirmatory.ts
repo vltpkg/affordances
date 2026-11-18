@@ -27,19 +27,31 @@ export const PER_CELL = 114
 export const TASK = 'T6'
 
 // the 684, each with its index within its cell, which fixes its plan-id order (RFC 0003 §4)
+const specOf = (condition: string, model: string, index: number) => ({
+  condition,
+  task: TASK,
+  model,
+  driver: 'claude-cli',
+  index,
+  id: `conf-${condition}-${TASK}-${model}-${index}`.replace(/[^\w.-]/g, '_'),
+})
+// the conditions' rotation, by index: so no arm always runs first
+export const ROTATIONS = [
+  ['A', 'C', 'S'],
+  ['C', 'S', 'A'],
+  ['S', 'A', 'C'],
+]
+// the order the 684 run in (the pre-registration's amendment, intake 2026-11-18 04:28Z): by index i = 0..113, and for
+// each i its six specs side by side. Sonnet first when i is even and Haiku first when it's odd, and the conditions
+// within each model rotate (i mod 3: A C S, C S A, S A C). The two workers take the next specs from this one queue,
+// so neighbouring specs run at nearly the same moment, and a drift in load, latency or the model over the run's hours
+// falls on every arm alike. Only the order is new: the specs, their ids and their plan-id orders are as before
 export const confirmatoryPlan = () =>
-  MODELS.flatMap((model) =>
-    CONDITIONS.flatMap((condition) =>
-      Array.from({ length: PER_CELL }, (_, index) => ({
-        condition,
-        task: TASK,
-        model,
-        driver: 'claude-cli',
-        index,
-        id: `conf-${condition}-${TASK}-${model}-${index}`.replace(/[^\w.-]/g, '_'),
-      })),
+  Array.from({ length: PER_CELL }, (_, index) =>
+    (index % 2 === 0 ? MODELS : [...MODELS].toReversed()).flatMap((model) =>
+      ROTATIONS[index % 3]!.map((condition) => specOf(condition, model, index)),
     ),
-  )
+  ).flat()
 // the review check's sample: in every cell, the first two, a middle one and the last
 export const SAMPLE_INDEXES = new Set([0, 1, 57, PER_CELL - 1])
 
