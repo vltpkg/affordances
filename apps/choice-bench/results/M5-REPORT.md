@@ -112,4 +112,9 @@ It doesn't include the charges rule (§3.5). Results apply to that version and d
 - **Conditional on seeing Pro's allowance** before the first approval request, C on Sonnet was optimal in 17 of 19 trials. Without it, 0 of 95 were ([`confirmatory-2026-11-18/audit/`](confirmatory-2026-11-18/audit/README.md), post hoc and descriptive).
 - **What's next:** the exploratory cells C-full-scope and A-scope separate the two factors. RFC 0002 §6.6 proposes the runtime rule this case calls for.
 
+**The outcome is the intended end state,** not a completed purchase (§1). Completed purchases, from the record's README:
+
+- **Sonnet:** 295 of 342 (102, 93 and 100 of 114 in A, C and S);
+- **Haiku:** 1 of 342 (0, 1 and 0).
+
 ⟨backend: the confirmatory results, H1 and H2, the sensitivity analysis, and calibration's unsealed C and S⟩
