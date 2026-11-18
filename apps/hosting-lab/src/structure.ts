@@ -2,11 +2,15 @@
 //   1. every choice set's member offers move out of the view's `offers` and into their choice set, in its order;
 //   2. the view's other offers are grouped by their target's resource type, in the manifest's resource order
 //      (offers with no target first), keeping A's order within each group.
-// Nothing is added, dropped or relabelled, and the order basis is A's. So S is information-constant, and checkably
-// so: undoing the moves gives back A's view in the same arrangement. On this fixture the second move takes the
+// Nothing is added, dropped or relabelled. S states its own order truthfully (RFC 0002 R6): { by: 'group', key:
+// 'targetType', within: A's basis }. That basis is structural, naming only a manifest-derived attribute, so it isn't
+// information: sameInformation lets a claim-free basis differ, and fails any that names a claim, recommendation or
+// source (intake, 2026-11-18). So S is information-constant, and checkably so: undoing the moves gives back A's view
+// in the same arrangement. On this fixture the second move takes the
 // add-on offers, which A's canonical order puts first, below the project's own
 
 import { canonicalJson } from '@affordances/ir'
+import { checkOrderBasis, claimFree, type ClaimFreeOrderBasis } from '@affordances/runtime'
 import { manifest } from './manifest.ts'
 
 type Offer = { id: string; target?: { type: string }; [field: string]: unknown }
@@ -26,12 +30,23 @@ const inSets = (view: ViewData) => new Set(view.choiceSets.flatMap((c) => c.memb
 const RESOURCES = manifest.resources.map((r) => r.id)
 const rank = (o: Offer) => (o.target ? 1 + RESOURCES.indexOf(o.target.type) : 0)
 const grouped = (offers: Offer[]) => offers.toSorted((a, b) => rank(a) - rank(b))
+// S's order basis (RFC 0002 §6.4): grouped by target type, with A's order within each group
+const groupedOrder = (within: unknown) =>
+  ({ by: 'group', key: 'targetType', within }) as ClaimFreeOrderBasis
+
+// an order basis that carries no claim, recommendation or source, only how the offers are arranged: the runtime's
+// check (a known variant, no field it doesn't name, a group key from the closed set) and no claim anywhere in it
+const structural = (order: unknown): boolean => {
+  const checked = checkOrderBasis(order)
+  return checked.ok && claimFree(checked.basis)
+}
 
 export const nestChoiceSets = (view: ViewData): NestedView => {
   const byId = new Map(view.offers.map((o) => [o.id, o]))
   const nested = inSets(view)
   return {
     ...view,
+    order: groupedOrder(view.order),
     offers: grouped(view.offers.filter((o) => !nested.has(o.id))),
     choiceSets: view.choiceSets.map((c) => ({
       ...c,
@@ -67,5 +82,9 @@ const arranged = (view: ViewData): ViewData => {
 
 // whether an S rendering carries exactly A's information: undo the named transform, and compare as data. Any
 // added label, claim, detail or field, or a changed order basis, makes it unequal
-export const sameInformation = (a: ViewData, s: NestedView): boolean =>
-  canonicalJson(arranged(a)) === canonicalJson(unnestChoiceSets(s))
+export const sameInformation = (a: ViewData, s: NestedView): boolean => {
+  // S's own basis is structural if it's claim-free and S's grouping of A's: then it's set aside, as A's
+  if (!structural(s.order) || canonicalJson(s.order) !== canonicalJson(groupedOrder(a.order)))
+    return false
+  return canonicalJson(arranged(a)) === canonicalJson(unnestChoiceSets({ ...s, order: a.order }))
+}

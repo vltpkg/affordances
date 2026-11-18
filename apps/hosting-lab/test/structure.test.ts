@@ -71,8 +71,8 @@ test('S moves only the choice set members, and undoing it gives back A', () => {
   ])
   expect(s.choiceSets[0]!.members.map((o) => o.id)).toEqual(viewA.choiceSets[0]!.members)
   expect(sameInformation(viewA, s)).toBe(true)
-  // the order basis is A's, untouched
-  expect(s.order).toEqual({ by: 'canonical' })
+  // S states its own order truthfully: grouped by target type, with A's order within each group
+  expect(s.order).toEqual({ by: 'group', key: 'targetType', within: { by: 'canonical' } })
   expect(unnestChoiceSets(s).choiceSets).toEqual(viewA.choiceSets)
 })
 
@@ -97,6 +97,34 @@ test('anything S adds or changes beyond the named move is caught', () => {
   expect(tampered((s) => (s.highlight = 'hosting.plan.subscribe@hosting.plan:p2'))).toBe(false)
   // a changed order basis, on the view or the choice set
   expect(tampered((s) => (s.order = { by: 'relevance', method: 'basic' }))).toBe(false)
+  // a basis that names a claim or a recommendation, even inside a group
+  expect(
+    tampered(
+      (s) =>
+        (s.order = {
+          by: 'group',
+          key: 'targetType',
+          within: { by: 'claim', kind: 'recommendation' },
+        }),
+    ),
+  ).toBe(false)
+  // a group keyed by free text, or a basis with a field that could carry it
+  expect(
+    tampered((s) => (s.order = { by: 'group', key: 'best value', within: { by: 'canonical' } })),
+  ).toBe(false)
+  expect(
+    tampered(
+      (s) =>
+        (s.order = {
+          by: 'group',
+          key: 'targetType',
+          within: { by: 'canonical' },
+          note: 'Best value first',
+        }),
+    ),
+  ).toBe(false)
+  // S claiming a different order than the one it shows
+  expect(tampered((s) => (s.order = { by: 'canonical' }))).toBe(false)
   expect(tampered((s) => (s.choiceSets[0]!.order = { by: 'claim' }))).toBe(false)
   // the members reordered
   expect(tampered((s) => (s.choiceSets[0]!.members = s.choiceSets[0]!.members.toReversed()))).toBe(
