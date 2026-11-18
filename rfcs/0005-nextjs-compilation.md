@@ -161,28 +161,28 @@ These are never extracted, because code doesn't state them. Each one missing is 
   - is collected in `.affordances/diagnostics.json`, and printed once per build.
   - In strict mode (`withAffordances({ strict: true })`), `W_NO_ID`, `W_INPUT_OPAQUE` and `W_INPUT_LOSSY` are errors.
 
-| Code                            | When                                                                                                                     |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `W_NO_ID`                       | an action without an `id` literal or a capability                                                                        |
-| `W_INPUT_OPAQUE`                | E3's slice reaches beyond schemas                                                                                        |
-| `W_SUMMARY_GENERIC`             | a confirm action whose summary is v0's function                                                                          |
-| `W_OPAQUE`                      | a v0 guard, which can't be evaluated outside the app                                                                     |
-| `W_EFFECTS_UNKNOWN`             | no effects declared                                                                                                      |
-| `W_AMOUNT_MISSING`              | a financial effect with no amount                                                                                        |
-| `W_ATTRIBUTES_UNKNOWN`          | a resource type inferred from a segment, with no `defineResource`                                                        |
-| `W_NO_NAMESPACE`                | no namespace configured, so no `manifest.json`; it names the line to paste, with a suggested value where one is readable |
-| `W_NO_OWNER`                    | no owner configured                                                                                                      |
-| `W_INPUT_LOSSY`                 | E3's slice converts, but drops a refinement or transform; each is named                                                  |
+| Code                            | When                                                                                                                                              |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `W_NO_ID`                       | an action without an `id` literal or a capability                                                                                                 |
+| `W_INPUT_OPAQUE`                | E3's slice reaches beyond schemas                                                                                                                 |
+| `W_SUMMARY_GENERIC`             | a confirm action whose summary is v0's function                                                                                                   |
+| `W_OPAQUE`                      | a v0 guard, which can't be evaluated outside the app                                                                                              |
+| `W_EFFECTS_UNKNOWN`             | no effects declared                                                                                                                               |
+| `W_AMOUNT_MISSING`              | a financial effect with no amount                                                                                                                 |
+| `W_ATTRIBUTES_UNKNOWN`          | a resource type inferred from a segment, with no `defineResource`                                                                                 |
+| `W_NO_NAMESPACE`                | no namespace configured, so no `manifest.json`; it names the line to paste, with a suggested value where one is readable                          |
+| `W_NO_OWNER`                    | no owner configured                                                                                                                               |
+| `W_INPUT_LOSSY`                 | E3's slice converts, but drops a refinement or transform; each is named                                                                           |
 | `W_NOT_LITERAL`                 | a field an extraction rule reads (`name`, `expose`, `description`, `readOnly`, `requires`) isn't a literal; a non-literal `name` skips the action |
 | `W_SEGMENT_CONFLICT`            | two routes infer one resource type from their segments with different keys (`/products/[slug]`, `/products/[id]`); neither is used                |
-| `E_CAPABILITY_IMPORT`           | a capability module imports application code                                                                             |
-| `E_CAPABILITY_SYNTAX`           | a capability module or slice uses syntax Node can't erase (an `enum`, a `namespace`)                                     |
-| `E_CAPABILITY_AMBIENT`          | a capability module uses a dynamic `import()`, `require`, `process`, `Date`, `Math.random`, `crypto`, `fetch` or a timer |
-| `E_CAPABILITY_NONDETERMINISTIC` | two evaluations, in fresh processes with an empty environment, give different manifests                                  |
-| `E_CAPABILITY_DUPLICATE`        | two capability modules define one id differently                                                                         |
-| `E_CAPABILITY_MANIFEST`         | a definition exported beside a `defineManifest` export that doesn't hold it                                              |
-| `E_CLAIMS_NO_OWNER`             | a capability module makes claims, and no owner is configured                                                             |
-| `E_BOUND_REDEFINES`             | a bound action also sets a v0 field its capability defines                                                               |
+| `E_CAPABILITY_IMPORT`           | a capability module imports application code                                                                                                      |
+| `E_CAPABILITY_SYNTAX`           | a capability module or slice uses syntax Node can't erase (an `enum`, a `namespace`)                                                              |
+| `E_CAPABILITY_AMBIENT`          | a capability module uses a dynamic `import()`, `require`, `process`, `Date`, `Math.random`, `crypto`, `fetch` or a timer                          |
+| `E_CAPABILITY_NONDETERMINISTIC` | two evaluations, in fresh processes with an empty environment, give different manifests                                                           |
+| `E_CAPABILITY_DUPLICATE`        | two capability modules define one id differently                                                                                                  |
+| `E_CAPABILITY_MANIFEST`         | a definition exported beside a `defineManifest` export that doesn't hold it                                                                       |
+| `E_CLAIMS_NO_OWNER`             | a capability module makes claims, and no owner is configured                                                                                      |
+| `E_BOUND_REDEFINES`             | a bound action also sets a v0 field its capability defines                                                                                        |
 
 ## 4. Output
 
