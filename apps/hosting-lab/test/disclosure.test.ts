@@ -25,6 +25,25 @@ test('the financial capabilities are derived from the effects, and there are som
   ])
 })
 
+test('every financial effect declares its amount, so a summary never says "amount unknown"', () => {
+  const effects = manifest.capabilities.flatMap((c) =>
+    (c.effects ?? []).filter((e) => e.category === 'financial').map((e) => ({ id: c.id, e })),
+  )
+  // two per priced capability: the first month, and the renewal
+  expect(effects).toHaveLength(2 * financial.size)
+  for (const { id, e } of effects) {
+    const amount = (e as { amount?: { value: unknown; currency: string; per?: string } }).amount
+    expect({ id, amount }).toEqual({
+      id,
+      amount: {
+        value: 'target.priceUsd',
+        currency: 'USD',
+        ...(e.reversibility === 'compensable' && { per: 'month' }),
+      },
+    })
+  }
+})
+
 test("every financial offer's amount is visible in each policy's view and in inspect", async () => {
   const sid = 's_priced'
   const { id } = store.account(sid).project
