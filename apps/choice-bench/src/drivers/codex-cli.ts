@@ -164,9 +164,8 @@ export const parse = (
     exitCode: ran.timedOut ? 124 : ran.exitCode,
     cli: { name: 'codex', version },
     turns: trace.length + 1,
-    ...((errors.length || ran.stderr) && {
-      error: [...errors, ran.stderr ?? ''].join('\n').trim(),
-    }),
+    ...(errors.length && { error: errors.join('\n') }),
+    ...(ran.stderr && { stderr: ran.stderr }),
     raw: ran.raw,
   }
 }

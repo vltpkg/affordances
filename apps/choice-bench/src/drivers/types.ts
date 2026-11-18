@@ -26,9 +26,12 @@ export type DriverResult = {
   // the CLI's own signal that it stopped at its turn limit: claude's result subtype error_max_turns. Codex has no turn
   // flag, so its limit is the tool server's calls cap (boundary review #8)
   stopped?: 'turns'
-  // the CLI's own error text when it failed: its error result or events, then stderr. The harness classifies a failure
-  // by it, as auth, overloaded or a crash
+  // the CLI's own structured error when it failed: claude's is_error result, codex's error and turn.failed events. The
+  // harness classes a failure as auth or overloaded by this alone (review of 006e2902)
   error?: string
+  // what the CLI wrote to stderr: kept for the record, never classed by, since it can echo tool output, and the
+  // benchmark's own refusals say 'unauthorized'
+  stderr?: string
   // what the run left in the real config dirs, listed and never deleted (isolation.ts)
   footprint?: import('./isolation.ts').Footprint
   raw: string // the path of the stored stdout

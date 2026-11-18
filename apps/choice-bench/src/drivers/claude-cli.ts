@@ -148,9 +148,8 @@ export const parse = (
     ...(resolvedModel && { resolvedModel }),
     ...(turns !== undefined && { turns }),
     ...(stopped && { stopped }),
-    ...((errors.length || ran.stderr) && {
-      error: [...errors, ran.stderr ?? ''].join('\n').trim(),
-    }),
+    ...(errors.length && { error: errors.join('\n') }),
+    ...(ran.stderr && { stderr: ran.stderr }),
     raw: ran.raw,
   }
 }

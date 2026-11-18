@@ -283,6 +283,12 @@ describe('driver failures, by class', () => {
     )
     expect(failureOf(exited({ error: 'Invalid API key · Please run /login' }))?.kind).toBe('auth')
     expect(failureOf(exited({ error: 'API Error: 401 authentication_error' }))?.kind).toBe('auth')
+    // stderr, and a thrown message, never class a failure: they can echo tool output, and the benchmark's refusals say
+    // unauthorized (review of 006e2902)
+    expect(
+      failureOf(exited({ stderr: 'tool said: {"code":"unauthorized"}, 529 overloaded' }))?.kind,
+    ).toBe('crash')
+    expect(failureOf(undefined, 'spawn failed: unauthorized 401')?.kind).toBe('crash')
   })
 
   test('a cap signal: capped at turns, scored, never a driver failure', async () => {

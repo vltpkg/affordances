@@ -71,11 +71,14 @@ export const failureOf = (
   // an exit 0, the timeout's 124 (the time cap) and the CLI's own turn-limit signal are no driver failure
   if (!thrown && result && (result.exitCode === 0 || result.exitCode === 124 || result.stopped))
     return
+  // classed by the CLI's structured error alone: stderr and a thrown message can echo tool output, so they only ever
+  // make a crash (review of 006e2902)
+  const structured = result?.error ?? ''
   const detail = (
-    [thrown, result?.error].filter(Boolean).join('\n') || `exit ${result?.exitCode}`
+    [thrown, result?.error, result?.stderr].filter(Boolean).join('\n') || `exit ${result?.exitCode}`
   ).slice(0, 2000)
   return {
-    kind: AUTH.test(detail) ? 'auth' : OVERLOADED.test(detail) ? 'overloaded' : 'crash',
+    kind: AUTH.test(structured) ? 'auth' : OVERLOADED.test(structured) ? 'overloaded' : 'crash',
     detail,
   }
 }
