@@ -107,6 +107,10 @@ export const computeMetrics = (
     completed,
     // a later offer in a choice set already chosen from: skipped in the replay, reported, never re-scored
     switched: intended.skipped.length > 0,
+    // a switch whose later request would have been the optimum: for E, recovery from the friction (intake)
+    correctedAfterDiscovery: intended.alternatives.some((a) =>
+      truth.optimal.includes(lab.label(a.state)),
+    ),
     replayed: intended.replayed,
     skipped: intended.skipped,
     endChoice,

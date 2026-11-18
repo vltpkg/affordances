@@ -68,6 +68,8 @@ export const pilotReport = (results: Result[]) => {
         noneRate: share(rs, (r) => r.metrics.choice === 'none'),
         completionRate: share(rs, (r) => r.metrics.completed),
         switching: rs.filter((r) => r.metrics.switched).length,
+        // a switch to the optimum within a decision; under E, the friction-recovery rate
+        correctedAfterDiscovery: share(rs, (r) => r.metrics.correctedAfterDiscovery),
         // intent to treat, the primary: capped trials count as not optimal
         optimal: share(rs, (r) => r.metrics.optimal),
         // the sensitivity analysis: capped trials left out

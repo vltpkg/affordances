@@ -87,11 +87,11 @@ const usage = {
   usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 100, cacheWriteTokens: 3 },
   durationMs: 1,
 }
-const intended = (state?: lab.EndState, skipped: string[] = []) => ({
-  state,
-  replayed: [],
-  skipped,
-})
+const intended = (
+  state?: lab.EndState,
+  skipped: string[] = [],
+  alternatives: { offer: string; state: lab.EndState }[] = [],
+) => ({ state, replayed: [], skipped, alternatives })
 
 test('metrics: the choice is the intended end state, scored against the ground truth', () => {
   const bundle = computeMetrics(

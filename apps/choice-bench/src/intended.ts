@@ -10,14 +10,16 @@ import { setupTrial } from './trial.ts'
 // the choice (the planner and intake, 2026-11-18): the intended end state. The agent's offers that came back
 // confirmation_required or ran are replayed, in order and each once, through the condition's own runtime on a fresh
 // copy of the trial's starting store, approving each, and the result is labelled as tasks.ts labels end states. So
-// the app's own transitions make the state, never a label composed from offer ids. Within one choice set only the
-// first offer is replayed: a later one is skipped and the trial is flagged as switching, never re-scored
+// the app's own transitions make the state, never a label composed from offer ids. Within one decision (decisionsOf)
+// only the first request is replayed: a later one is skipped and the trial is flagged as switching, never re-scored
 
 export type Intended = {
   // undefined: the agent never executed anything ('none')
   state: lab.EndState | undefined
   replayed: string[]
-  skipped: string[] // later offers in a choice set already chosen from
+  skipped: string[] // later requests in a decision already made
+  // each skipped request's state had it been its decision's winner
+  alternatives: { offer: string; state: lab.EndState }[]
 }
 
 // the replay runs in a process of its own: hosting-lab's store is module state, so a fresh process is the clean copy
@@ -37,44 +39,103 @@ export const intendedEndStates = (recordPaths: string[]): Promise<Intended[]> =>
 export const intendedEndState = async (recordPath: string) =>
   (await intendedEndStates([recordPath]))[0]!
 
-const replay = async (record: ServerRecord): Promise<Intended> => {
-  const executes = record.calls.flatMap((c) => {
-    if (c.tool !== 'execute') return []
-    const asked = /"code": "confirmation_required"/.test(c.response)
-    return asked || c.state ? [c.input as { offer: string; input?: unknown }] : []
-  })
-  if (!record.calls.some((c) => c.tool === 'execute'))
-    return { state: undefined, replayed: [], skipped: [] }
+// a decision (intake, 2026-11-18): a connected component of the capabilities whose offers form a choice set, joined by
+// the manifest's alternativeTo relations, either way they're declared. Built from the condition's own manifest, with
+// nothing hard-coded. A capability in no decision (an add-on, a deploy) is outside them, and always applies
+export const decisionsOf = (
+  manifest: { relations?: readonly { type: string; from: string; to: string }[] },
+  choiceSets: Iterable<string>,
+): Map<string, string> => {
+  const parent = new Map<string, string>()
+  const find = (x: string): string => {
+    const p = parent.get(x) ?? x
+    if (p === x) return x
+    const root = find(p)
+    parent.set(x, root)
+    return root
+  }
+  const join = (a: string, b: string) => {
+    for (const x of [a, b]) if (!parent.has(x)) parent.set(x, x)
+    parent.set(find(a), find(b))
+  }
+  for (const c of choiceSets) join(c, c)
+  for (const r of manifest.relations ?? []) if (r.type === 'alternativeTo') join(r.from, r.to)
+  // each capability's decision, named by its component's least capability id, so the name is stable
+  const members = new Map<string, string[]>()
+  for (const c of parent.keys()) members.set(find(c), [...(members.get(find(c)) ?? []), c])
+  const out = new Map<string, string>()
+  for (const group of members.values()) {
+    const name = group.toSorted()[0]!
+    for (const c of group) out.set(c, name)
+  }
+  return out
+}
+
+type Request = { offer: string; input?: unknown }
+const keyOf = (r: Request) => canonicalJson({ offer: r.offer, input: r.input ?? null })
+
+// one replay of requests on a fresh store: within a decision, the first that applies wins and a later one is skipped
+const replayOnce = async (record: ServerRecord, requests: Request[]) => {
   const condition = conditions[record.condition]
   const trial = await setupTrial(condition, record.index)
   // the fresh account's project key stands in for the trial's in every offer id and input
   const rekey = <T>(v: T): T =>
     JSON.parse(JSON.stringify(v).replaceAll(record.project, trial.project.key)) as T
   const projection = await trial.runtime.project({ principal: trial.principal, ...trial.request })
-  const sets = new Set(projection.choiceSets.map((c) => c.capability))
-  const chosenSets = new Set<string>()
-  const seen = new Set<string>()
-  const replayed: string[] = []
-  const skipped: string[] = []
-  for (const e of executes) {
-    // an offer with its input: add-on offers share an id, and the add-on is in the input
-    const key = canonicalJson({ offer: e.offer, input: e.input ?? null })
-    if (seen.has(key)) continue
-    seen.add(key)
-    const capability = e.offer.split('@')[0]!
-    if (sets.has(capability) && chosenSets.has(capability)) {
-      skipped.push(e.offer)
+  const decisions = decisionsOf(
+    trial.runtime.manifest,
+    projection.choiceSets.map((c) => c.capability),
+  )
+  const decided = new Set<string>()
+  const replayed: Request[] = []
+  const skipped: Request[] = []
+  for (const r of requests) {
+    const decision = decisions.get(r.offer.split('@')[0]!)
+    if (decision && decided.has(decision)) {
+      skipped.push(r)
       continue
     }
-    const call = { principal: trial.principal, ...rekey({ offer: e.offer, input: e.input }) }
+    const call = { principal: trial.principal, ...rekey({ offer: r.offer, input: r.input }) }
     let result = await trial.runtime.execute(call)
     if (result.status === 'refused' && result.code === 'confirmation_required')
       result = await trial.runtime.execute({ ...call, approval: result.confirmation?.approval })
     if (result.status !== 'succeeded') continue
-    if (sets.has(capability)) chosenSets.add(capability)
-    replayed.push(e.offer)
+    if (decision) decided.add(decision)
+    replayed.push(r)
   }
-  return { state: lab.endState(trial.sid), replayed, skipped }
+  return { state: lab.endState(trial.sid), replayed, skipped, decisions }
+}
+
+const replay = async (record: ServerRecord): Promise<Intended> => {
+  if (!record.calls.some((c) => c.tool === 'execute'))
+    return { state: undefined, replayed: [], skipped: [], alternatives: [] }
+  const seen = new Set<string>()
+  // identical requests (same offer and input) count once: an approved choice is two, and add-on offers share an id
+  const requests = record.calls.flatMap((c) => {
+    if (c.tool !== 'execute') return []
+    const asked = /"code": "confirmation_required"/.test(c.response)
+    const r = c.input as Request
+    if (!(asked || c.state) || seen.has(keyOf(r))) return []
+    seen.add(keyOf(r))
+    return [r]
+  })
+  const first = await replayOnce(record, requests)
+  // what each skipped request would have led to as its decision's winner: the same requests, with its decision's
+  // others left out. 'Corrected after discovery' reads these (metrics.ts)
+  const alternatives: Intended['alternatives'] = []
+  for (const s of first.skipped) {
+    const decision = first.decisions.get(s.offer.split('@')[0]!)
+    const variant = requests.filter(
+      (r) => r === s || first.decisions.get(r.offer.split('@')[0]!) !== decision,
+    )
+    alternatives.push({ offer: s.offer, state: (await replayOnce(record, variant)).state })
+  }
+  return {
+    state: first.state,
+    replayed: first.replayed.map((r) => r.offer),
+    skipped: first.skipped.map((r) => r.offer),
+    alternatives,
+  }
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
