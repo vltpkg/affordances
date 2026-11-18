@@ -51,7 +51,7 @@ What's needed is a build step that reads what's already written, asks for only w
   - **One manifest:** `fromModules`, in the authoring API, merges every module's branded exports, wherever the modules sit. A value exported twice is one value. The result is normalized, so the order the modules are found in never shows.
   - **What it refuses:**
     - two different definitions with one id, including a resource and a capability, `E_CAPABILITY_DUPLICATE`, naming both places;
-    - anything beside a `defineManifest` export, `E_CAPABILITY_MANIFEST`;
+    - an export beside a `defineManifest` export that the manifest doesn't hold, `E_CAPABILITY_MANIFEST`. The manifest's own parts may be exported beside it, since bound actions import them;
     - claims with no owner, `E_CLAIMS_NO_OWNER`.
   - **It reports, it doesn't throw:** `validate`'s issues are reported the same way.
 - **What they may import:** `@affordances/ir`, a Standard Schema library, and other capability modules, nothing else.
@@ -175,7 +175,7 @@ These are never extracted, because code doesn't state them. Each one missing is 
 | `E_CAPABILITY_AMBIENT`          | a capability module uses a dynamic `import()`, `require`, `process`, `Date`, `Math.random`, `crypto`, `fetch` or a timer |
 | `E_CAPABILITY_NONDETERMINISTIC` | two evaluations, in fresh processes with an empty environment, give different manifests                                  |
 | `E_CAPABILITY_DUPLICATE`        | two capability modules define one id differently                                                                         |
-| `E_CAPABILITY_MANIFEST`         | a `defineManifest` export, with other definitions beside it                                                              |
+| `E_CAPABILITY_MANIFEST`         | a definition exported beside a `defineManifest` export that doesn't hold it                                              |
 | `E_CLAIMS_NO_OWNER`             | a capability module makes claims, and no owner is configured                                                             |
 | `E_BOUND_REDEFINES`             | a bound action also sets a v0 field its capability defines                                                               |
 

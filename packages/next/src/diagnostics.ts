@@ -111,8 +111,9 @@ export const CATALOG = {
   },
   E_CAPABILITY_MANIFEST: {
     severity: 'error',
-    means: 'A defineManifest export is used whole, and other definitions sit beside it',
-    fix: 'Move them into the defineManifest, or drop the defineManifest and export each definition',
+    means:
+      "A defineManifest export is used whole, and a definition exported beside it isn't in it, so it would be left out",
+    fix: 'Add it to the defineManifest, or drop the defineManifest and export each definition',
   },
   E_CLAIMS_NO_OWNER: {
     severity: 'error',
