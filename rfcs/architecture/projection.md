@@ -113,10 +113,12 @@ them, side by side. It was added after M5's run met rules 1 to 5 and still hid t
 - **Values are checked before they're used:** a resolver's attributes that aren't plain data fitting the declared schema
   are taken as none, so the load fails and the member reads as unknown, never a throw (`data.ts`, `attributesFor`). The
   RFC said the opposite until bf21c76a corrected it.
-- **The limit, as built:** the comparison covers a member's own attributes only. A deciding fact that lives on a related
-  resource, rather than on the member, is in no comparison. It's reachable by expansion, but no view lines it up with the
-  choices. M8e's T8 plan (`apps/choice-bench/results/surfaces-t8/PLAN.md`) uses exactly that limit, and it's open in
-  the specification roadmap.
+- **The limit, as built:** a view carries an offer's target only by reference, so a resource's attributes reach a view
+  only through a choice set's comparison, and a comparison covers its members' own attributes. A deciding fact on a
+  related resource that isn't an `alternatives` type is in no view at all: it's reachable only by running a capability
+  whose output carries it. One that is has it in its own set's comparison, never in the deciding set's. Measured on
+  hosting-lab with a region resource (`apps/hosting-lab/test/t8-fixture-depth.test.ts`); M8e's T8 plan
+  (`apps/choice-bench/results/surfaces-t8/PLAN.md`) uses it, and it's open in the specification roadmap.
 
 ## Where the RFC and the code differ
 
