@@ -8,6 +8,8 @@ import type { DriverResult, Trial } from '../src/drivers/types.ts'
 import {
   canaryPlan,
   DriverFailure,
+  faultPause,
+  faultsByCell,
   failureOf,
   INSTRUCTIONS,
   missingLogins,
@@ -15,6 +17,7 @@ import {
   pilotPlan,
   priorFailures,
   promptFor,
+  recordFault,
   retiredMode,
   runTrial,
   type TrialSpec,
@@ -400,3 +403,41 @@ test('the pilot and calibration modes refuse, naming the commit their plan is on
     expect([run.status, run.stderr.trim()]).toEqual([3, retiredMode(mode)])
   }
 }, 60_000)
+
+// intake (2026-11-18 14:24Z): a harness fault is excluded from scoring and rerun, counted per cell, and the run pauses
+// past 2% of the trials run, or 2 in the pilot
+// a surface trial's spec, for the fault tests
+const surfaceSpec = (id: string) =>
+  ({
+    id,
+    condition: 'A',
+    surface: 'full',
+    task: 'T6',
+    model: 'm',
+    driver: 'fake',
+    index: 0,
+  }) as unknown as TrialSpec
+describe('harness faults', () => {
+  test('a fault is set aside, so it’s never scored and the resume reruns it, and counted per cell', () => {
+    const at = mkdtempSync(path.join(dir, 'faults-'))
+    writeFileSync(path.join(at, 'f1.server.json'), '{}')
+    recordFault(at, surfaceSpec('f1'), { kind: 'cross-check', detail: 'they disagree' })
+    // no trace, so nothing is scored, and the resume runs it again
+    expect(existsSync(path.join(at, 'f1.jsonl'))).toBe(false)
+    expect(existsSync(path.join(at, 'f1.server.json'))).toBe(false)
+    recordFault(at, surfaceSpec('f2'), { kind: 'stall', detail: 'a 5xx' })
+    expect(faultsByCell(at)).toEqual({ 'full T6 m': 2 })
+  })
+  test('the run pauses past 2% of the trials run, or 2 in the pilot', () => {
+    const at = mkdtempSync(path.join(dir, 'pause-faults-'))
+    for (const id of ['a', 'b']) recordFault(at, surfaceSpec(id), { kind: 'stall', detail: 'x' })
+    expect(faultPause(at, 60, true)).toBeUndefined()
+    expect(faultPause(at, 100, false)).toBeUndefined()
+    recordFault(at, surfaceSpec('c'), { kind: 'stall', detail: 'x' })
+    expect(faultPause(at, 60, true)).toMatch(
+      /3 harness faults in 60 trials run, more than the pilot’s 2/,
+    )
+    expect(faultPause(at, 100, false)).toMatch(/more than 2% \(2\)/)
+    expect(faultPause(at, 200, false)).toBeUndefined()
+  })
+})

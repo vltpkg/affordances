@@ -4,6 +4,7 @@ import { handlers } from './handlers.ts'
 import { principalOf } from './principal.ts'
 import { resolvers } from './resolvers.ts'
 import { approvals } from './runtime.ts'
+import { forTrial } from './trial-env.ts'
 
 // what the agent-facing routes answer: RFC 0004 §2's protocol 1, through next's projection route (M7d: design's
 // WebMCP calls {base}/view, /expand, /inspect, /check and /execute). The app keeps its own runtime handlers and their
@@ -11,7 +12,8 @@ import { approvals } from './runtime.ts'
 // signs verifies in any other. Views, never a projection (RFC 0002 §11); per caller, never cached by anything shared;
 // a cookie call needs the site's Origin; RFC 0004 §2.3's statuses
 const route = createProjectionRoute({
-  manifest,
+  // a trial's server reads its task's claim edit (src/lib/trial-env.ts)
+  manifest: forTrial(manifest),
   bindings: {},
   handlers,
   resources: resolvers,

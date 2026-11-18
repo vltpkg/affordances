@@ -11,6 +11,7 @@ import {
 import { loadavg } from 'node:os'
 import path from 'node:path'
 import { conditions, type ConditionId } from './conditions.ts'
+import type { SurfaceId } from './surfaces.ts'
 import type { Driver, DriverResult } from './drivers/types.ts'
 import { intendedEndState } from './intended.ts'
 import { computeMetrics, type EndReason } from './metrics.ts'
@@ -30,6 +31,8 @@ export const CAPS = { calls: MAX_CALLS, turns: 40, tokens: 150_000, ms: 10 * 60_
 export type TrialSpec = {
   id: string
   condition: ConditionId
+  // M7f's surface, for a surface trial (src/surfaces.ts)
+  surface?: SurfaceId
   task: string
   model: string
   driver: string
@@ -46,6 +49,7 @@ const TRIAL_FILES = [
   '.raw.json',
   '.jsonl',
   '.failure.json',
+  '.fault.json',
 ]
 // what an earlier, unfinished attempt left of a trial: moved into interrupted/, never deleted (intake), so a rerun is
 // scored only from its own record (review of 4893655c: a stale server record would have passed the started check)
@@ -125,6 +129,53 @@ export const missingLogins = (
   [...new Set(specs.flatMap((s) => (LOGIN_OF[s.driver] ? [LOGIN_OF[s.driver]!] : [])))]
     .toSorted()
     .filter((l) => !logins[l])
+
+// harness faults (intake, 2026-11-18 14:24Z): a cross-check disagreement or a harness stall (surfaces/PLAN.md §5) is
+// the harness's, not the agent's. The trial is set aside, never scored, and rerun by the resume; each is counted, and
+// reported per cell; and the run pauses, with intake told, past 2% of the trials run, or 2 in the pilot
+export const recordFault = (
+  dir: string,
+  spec: TrialSpec,
+  fault: { kind: string; detail: string },
+) => {
+  writeFileSync(
+    path.join(dir, `${spec.id}.fault.json`),
+    JSON.stringify({ ...fault, spec, at: new Date().toISOString() }),
+  )
+  setAside(dir, spec.id)
+}
+// every fault recorded, by trial and cell (condition or surface, task and model)
+export const faultsOf = (dir: string) => {
+  const root = path.join(dir, 'interrupted')
+  if (!existsSync(root)) return []
+  return readdirSync(root).flatMap((d) =>
+    readdirSync(path.join(root, d))
+      .filter((f) => f.endsWith('.fault.json'))
+      .map(
+        (f) =>
+          JSON.parse(readFileSync(path.join(root, d, f), 'utf8')) as {
+            kind: string
+            detail: string
+            spec: TrialSpec
+          },
+      ),
+  )
+}
+export const faultsByCell = (dir: string) => {
+  const out: Record<string, number> = {}
+  for (const f of faultsOf(dir)) {
+    const cell = `${f.spec.surface ?? f.spec.condition} ${f.spec.task} ${f.spec.model}`
+    out[cell] = (out[cell] ?? 0) + 1
+  }
+  return out
+}
+// whether the run must pause: more than 2% of the trials run were faults, or more than 2 in the pilot
+export const faultPause = (dir: string, run: number, pilot: boolean): string | undefined => {
+  const faults = faultsOf(dir).length
+  const limit = pilot ? 2 : Math.floor(run * 0.02)
+  if (faults > limit)
+    return `${faults} harness faults in ${run} trials run, more than ${pilot ? 'the pilot’s 2' : `2% (${limit})`}: the run pauses, and intake is told`
+}
 
 // codex's default: the first listed model in its cache, as codex exec with no -m takes it
 const codexDefault = () => {

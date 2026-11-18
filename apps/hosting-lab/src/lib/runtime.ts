@@ -1,6 +1,7 @@
 import type { CapabilityManifest } from '@affordances/ir'
 import { createRuntime, type TokenStore } from '@affordances/runtime'
 import { manifest } from '../app/capabilities.ts'
+import { forTrial } from './trial-env.ts'
 import { handlers, memoryTokens } from './handlers.ts'
 import { principalFor, resolvers } from './resolvers.ts'
 
@@ -34,7 +35,8 @@ export const runtimeFor = (m: CapabilityManifest) => {
   return made
 }
 
-export const runtime = runtimeFor(manifest)
+// a trial's server reads its task's claim edit (src/lib/trial-env.ts); otherwise the manifest as it is
+export const runtime = runtimeFor(forTrial(manifest))
 
 // what a v0 action needs to have the runtime check its capability on the agent path (RFC 0001 §12.1)
 export const checkedBy = {

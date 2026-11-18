@@ -7,6 +7,8 @@ import {
   type Bundle,
   type Plan,
 } from '../catalog.ts'
+import { renameSync, writeFileSync } from 'node:fs'
+import { trialEnv } from './trial-env.ts'
 
 // the hosting provider's state, in memory: one account per session, each with one project. Every change the
 // manifest declares is observable here: the project's plan and renewal, its add-ons and bundle, its deployments,
@@ -128,7 +130,7 @@ const fresh = (id: string, projectId: string): Account => ({
 })
 
 // the session's account, made on first use: for what a session does, never for what it reads
-export const account = (sid: string): Account => {
+const accountUnwritten = (sid: string): Account => {
   const found = findAccount(sid)
   if (found) return found
   const id = newAccountId()
@@ -194,7 +196,7 @@ const owned = (accountId: string, projectId: string): Account => {
 // `withAddOns` is condition G's bundled default (RFC 0003 §3.1): only its manifest edit declares the input, so without
 // it subscribing is unchanged. Each add-on is checked before anything changes, so an unknown one refuses the whole
 // call; one already bought is kept and not charged again; a new one is charged its first month as adding it would
-export const subscribePlan = (
+const subscribePlanUnwritten = (
   accountId: string,
   projectId: string,
   planId: string,
@@ -227,7 +229,7 @@ export const subscribePlan = (
   return { plan: slug, monthlyUsd: monthlyUsd(a.project) }
 }
 
-export const subscribeBundle = (accountId: string, projectId: string, slug: string) => {
+const subscribeBundleUnwritten = (accountId: string, projectId: string, slug: string) => {
   const a = owned(accountId, projectId)
   const bundle = bundleBySlug(slug)
   if (!bundle) throw new Refused(`No bundle ${slug}`)
@@ -239,7 +241,7 @@ export const subscribeBundle = (accountId: string, projectId: string, slug: stri
   return { bundle: slug, monthlyUsd: monthlyUsd(a.project) }
 }
 
-export const cancel = (accountId: string, projectId: string) => {
+const cancelUnwritten = (accountId: string, projectId: string) => {
   const a = owned(accountId, projectId)
   if (a.project.renewsAs === 'hobby') throw new Refused('The project already renews as Hobby')
   // the plan stays until the end of the month; it renews as Hobby
@@ -247,7 +249,7 @@ export const cancel = (accountId: string, projectId: string) => {
   return { renewsAs: 'hobby' as const }
 }
 
-export const addAddOn = (accountId: string, projectId: string, slug: string) => {
+const addAddOnUnwritten = (accountId: string, projectId: string, slug: string) => {
   const a = owned(accountId, projectId)
   const addOn = addOnBySlug(slug)
   if (!addOn) throw new Refused(`No add-on ${slug}`)
@@ -261,7 +263,7 @@ export const addAddOn = (accountId: string, projectId: string, slug: string) => 
   return { addOns: a.project.addOns }
 }
 
-export const removeAddOn = (accountId: string, projectId: string, slug: string) => {
+const removeAddOnUnwritten = (accountId: string, projectId: string, slug: string) => {
   const a = owned(accountId, projectId)
   const addOn = addOnBySlug(slug)
   if (addOn && includedIn(a.project).includes(addOn.slug) && !a.project.addOns.includes(addOn.slug))
@@ -273,7 +275,7 @@ export const removeAddOn = (accountId: string, projectId: string, slug: string) 
   return { removing: a.project.removing }
 }
 
-export const deploy = (accountId: string, projectId: string, ref: string) => {
+const deployUnwritten = (accountId: string, projectId: string, ref: string) => {
   const a = owned(accountId, projectId)
   if (a.project.buildMinutesUsed >= planBySlug(a.project.plan).buildMinutes)
     throw new Refused("The plan's build minutes for this month are used up")
@@ -307,13 +309,57 @@ export const rollbackRefusal = (accountId: string, id: string): string | undefin
   return undefined
 }
 
-export const rollback = (accountId: string, id: string) => {
+const rollbackUnwritten = (accountId: string, id: string) => {
   const a = state.accounts.get(accountId)
   const refusal = rollbackRefusal(accountId, id)
   if (!a) throw new Refused(`No deployment ${id}`)
   if (refusal) throw new Refused(refusal)
   for (const d of a.project.deployments.values()) d.current = d.id === id
   return { current: id }
+}
+
+// a session's end state, as the ground truth reads it (choice-bench's outcome, M5's and M7f's): its plan, bundle and
+// effective add-ons. One definition, for the in-process read (src/trial.ts) and a trial server's state file
+export const endStateOf = (sid: string) => {
+  const project = findAccount(sid)?.project
+  return project
+    ? { plan: project.plan, bundle: project.bundle, addOns: effectiveAddOns(project).toSorted() }
+    : undefined
+}
+
+// a trial's server writes every session's end state after each store change, atomically (temp, then rename), only
+// when its state file was set at boot (src/lib/trial-env.ts). Every function that changes the store is wrapped here,
+// once, so a new caller can't skip it
+const written = <F extends (...args: never[]) => unknown>(f: F): F =>
+  ((...args: Parameters<F>) => {
+    const result = f(...args)
+    if (trialEnv?.stateFile) {
+      const sessions = Object.fromEntries(
+        [...state.sessions.keys()].flatMap((sid) => {
+          const s = endStateOf(sid)
+          return s ? [[sid, s]] : []
+        }),
+      )
+      const temporary = `${trialEnv.stateFile}.${process.pid}.tmp`
+      writeFileSync(temporary, `${JSON.stringify({ sessions })}\n`)
+      renameSync(temporary, trialEnv.stateFile)
+    }
+    return result
+  }) as F
+export const account = written(accountUnwritten)
+export const subscribePlan = written(subscribePlanUnwritten)
+export const subscribeBundle = written(subscribeBundleUnwritten)
+export const cancel = written(cancelUnwritten)
+export const addAddOn = written(addAddOnUnwritten)
+export const removeAddOn = written(removeAddOnUnwritten)
+export const deploy = written(deployUnwritten)
+export const rollback = written(rollbackUnwritten)
+
+// a trial's server (src/lib/trial-env.ts): its plan-id order and its session's account, once, at the first load
+if (trialEnv && !(shared as { hostingLabTrialApplied?: true }).hostingLabTrialApplied) {
+  ;(shared as { hostingLabTrialApplied?: true }).hostingLabTrialApplied = true
+  if (trialEnv.plans) setPlanIds(trialEnv.plans)
+  if (trialEnv.session) account(trialEnv.session)
 }
 
 // for tests: forget every account

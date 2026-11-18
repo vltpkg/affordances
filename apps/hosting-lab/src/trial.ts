@@ -8,6 +8,7 @@ export { resolvers, principalFor } from './lib/resolvers.ts'
 // key the trial makes
 export { handlers, memoryTokens } from './lib/handlers.ts'
 export { account, reset, setPlanIds } from './lib/store.ts'
+export { TASK_EDITS, type TaskEdit } from './lib/task-edits.ts'
 export { withPlanIds } from './catalog.ts'
 export {
   tasks,
@@ -22,10 +23,11 @@ export {
 export { nestChoiceSets, sameInformation } from './structure.ts'
 
 import type { EndState } from './tasks.ts'
-import { account, effectiveAddOns } from './lib/store.ts'
+import { account, endStateOf } from './lib/store.ts'
 
 // the trial's end state, as the ground truth scores it (RFC 0003 §6)
 export const endState = (sid: string): EndState => {
-  const { project } = account(sid)
-  return { plan: project.plan, bundle: project.bundle, addOns: effectiveAddOns(project).toSorted() }
+  // the account exists, as before: reading a trial's state made it if it didn't
+  account(sid)
+  return endStateOf(sid)! as EndState
 }
