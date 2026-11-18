@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { afterAll, beforeAll, expect, test } from 'vitest'
-import { findInputs, MAX_DEPTH, sliceInput, type SliceResult } from '../src/slice.ts'
+import { spawnSync } from 'node:child_process'
+import { childArgs, findInputs, MAX_DEPTH, sliceInput, type SliceResult } from '../src/slice.ts'
 
 // RFC 0005 §2.1's E3 slice, under intake's binding notes (2026-11-18): every schema file either converts or is opaque
 // with its reason, none crashes, and no app code is ever evaluated. A sentinel module records any import of it, and
@@ -144,6 +145,48 @@ test('app code, a let, a function, ambient reads and other packages make the inp
   ]
   for (const [preamble, input, reason, helpers] of cases)
     expect(summary(slice(preamble, input, helpers))).toMatchObject(opaque(reason))
+})
+
+// review of aef81dc1: two ways past the rule, both closed
+test('a default or computed key inside a binding pattern is read as the initializer is', () => {
+  const cases: [string, string, RegExp][] = [
+    [`${Z}\nconst { max = Date.now() } = {}`, 'z.number().max(max)', /reads Date/],
+    [`${Z}\nconst [first = Math.random()] = []`, 'z.number().default(first)', /reads Math/],
+    [Z, 'z.string().default((({ a = process.env.X } = {}) => a ?? "")())', /reads process/],
+    [Z, 'z.string().default((({ a: { b = Date.now() } = {} }) => String(b))({}))', /reads Date/],
+  ]
+  for (const [preamble, input, reason] of cases)
+    expect(summary(slice(preamble, input))).toMatchObject(opaque(reason))
+})
+
+test('the language’s machinery is out of reach: constructor, __proto__, prototype, and non-literal computed keys', () => {
+  const cases: [string, RegExp][] = [
+    ["z.string().default(Object.constructor('return process')()())", /the constructor property/],
+    ["z.string().default(String(({})['__proto__']))", /the __proto__ property/],
+    ['z.string().default(String(Object.prototype))', /the prototype property/],
+    ["z.string().default(String(({})['constr' + 'uctor']))", /computed key that isn’t a literal/],
+  ]
+  for (const [input, reason] of cases)
+    expect(summary(slice(Z, input))).toMatchObject(opaque(reason))
+  // a literal computed key is a name like any other
+  expect(summary(slice(Z, "z['object']({ a: z['string']() })"))).toMatchObject(CONVERTED)
+})
+
+test('the child runs under Node’s permission model: it can read the app, and can’t write, spawn or reach the network', () => {
+  const args = childArgs(root)
+  expect(args[0]).toBe('--permission')
+  expect(args.some((a) => /allow-(fs-write|child-process|net|worker|addons)/.test(a))).toBe(false)
+  const write = spawnSync(
+    process.execPath,
+    [
+      ...args,
+      '-e',
+      `require('node:fs').writeFileSync(${JSON.stringify(path.join(root, 'x'))}, 'x')`,
+    ],
+    { env: {} as NodeJS.ProcessEnv, encoding: 'utf8' },
+  )
+  expect([write.status === 0, write.stderr.includes('ERR_ACCESS_DENIED')]).toEqual([false, true])
+  expect(existsSync(path.join(root, 'x'))).toBe(false)
 })
 
 test('a lossy schema converts with each dropped construct named, and is opaque in strict mode', () => {

@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { parseSync } from 'oxc-parser'
 
@@ -183,6 +183,9 @@ const parseModule = (file: string, source: string): Module => {
 
 // the free identifiers an expression reads, with nested functions' parameters and locals in scope, and type
 // positions skipped. Also returns what can't be in a slice whatever it reads: import(), import.meta
+// members that reach the language's machinery rather than a schema: Object.constructor('return process')() would
+// read the environment through a value global (review of aef81dc1)
+const BANNED_MEMBERS = new Set(['constructor', '__proto__', 'prototype'])
 const TYPE_KEYS = new Set([
   'typeAnnotation',
   'returnType',
@@ -212,6 +215,32 @@ const freeIdentifiers = (root: Node) => {
     else if (p.type === 'AssignmentPattern') patternNames(p.left as Node, into)
     else if (p.type === 'RestElement') patternNames(p.argument as Node, into)
   }
+  // the expressions inside a binding pattern: each default, and each computed key, at any depth. They run when the
+  // binding does, so they're read as the initializer is (review of aef81dc1)
+  const patternExpressions = (p: Node | null | undefined): Node[] => {
+    if (!p) return []
+    if (p.type === 'AssignmentPattern')
+      return [p.right as Node, ...patternExpressions(p.left as Node)]
+    if (p.type === 'ObjectPattern')
+      return (p.properties as Node[]).flatMap((q) =>
+        q.type === 'RestElement'
+          ? patternExpressions(q.argument as Node)
+          : [...(q.computed ? [q.key as Node] : []), ...patternExpressions(q.value as Node)],
+      )
+    if (p.type === 'ArrayPattern')
+      return (p.elements as (Node | null)[]).flatMap((e) => patternExpressions(e))
+    if (p.type === 'RestElement') return patternExpressions(p.argument as Node)
+    return []
+  }
+  // a computed key: a literal is a name like any other; anything else could name anything
+  const computedKey = (k: Node) => {
+    if (k.type === 'Literal') {
+      if (BANNED_MEMBERS.has(String(k.value))) banned.push(`the ${String(k.value)} property`)
+      return
+    }
+    if (k.type === 'TemplateLiteral' && (k.expressions as Node[]).length === 0) return
+    banned.push('a computed key that isn’t a literal')
+  }
   const hoisted = (body: Node[]) => {
     const s = new Set<string>()
     for (const n of body) {
@@ -239,10 +268,17 @@ const freeIdentifiers = (root: Node) => {
         return
       case 'MemberExpression':
         visit(node.object, scope)
-        if (node.computed) visit(node.property, scope)
+        if (node.computed) {
+          computedKey(node.property as Node)
+          visit(node.property, scope)
+        } else if (BANNED_MEMBERS.has((node.property as Node).name as string))
+          banned.push(`the ${(node.property as Node).name as string} property`)
         return
       case 'Property':
-        if (node.computed) visit(node.key, scope)
+        if (node.computed) {
+          computedKey(node.key as Node)
+          visit(node.key, scope)
+        }
         visit(node.value, scope)
         return
       case 'MethodDefinition':
@@ -271,8 +307,7 @@ const freeIdentifiers = (root: Node) => {
         if (node.id) s.add((node.id as Node).name as string)
         for (const p of node.params as Node[]) patternNames(p, s)
         const inner = [...scope, s]
-        for (const p of node.params as Node[])
-          visit(p.type === 'AssignmentPattern' ? p.right : undefined, inner)
+        visit((node.params as Node[]).flatMap(patternExpressions), inner)
         const body = node.body as Node
         if (body.type === 'BlockStatement') inner.push(hoisted(body.body as Node[]))
         visit(body.type === 'BlockStatement' ? body.body : body, inner)
@@ -283,9 +318,11 @@ const freeIdentifiers = (root: Node) => {
       case 'CatchClause': {
         const s = new Set<string>()
         patternNames(node.param as Node, s)
+        visit(patternExpressions(node.param as Node), [...scope, s])
         return visit(node.body, [...scope, s])
       }
       case 'VariableDeclarator':
+        visit(patternExpressions(node.id as Node), scope)
         return visit(node.init, scope)
     }
     for (const [key, value] of Object.entries(node)) {
@@ -377,7 +414,8 @@ export const planSlice = (file: string, source: string, input: Node) => {
         throw new Opaque(`${m.file}'s ${name} is ${b.what}`)
       case 'const':
         needed(m).locals.add(name)
-        if (b.declarator.init) expression(m, b.declarator.init as Node, depth)
+        // the whole declarator: its initializer, and its pattern's defaults and computed keys
+        expression(m, b.declarator, depth)
         return
       case 'relative': {
         if (depth + 1 > MAX_DEPTH)
@@ -490,6 +528,23 @@ try {
 }
 `
 
+// what the child may read: the app root (its slice dir included), and every node_modules from the root up, where its
+// schema libraries resolve, through any symlinks into a package store
+/** The child's Node flags: the permission model, reading only the app and its node_modules. */
+export const childArgs = (root: string) => [
+  '--permission',
+  ...readable(root).map((d) => `--allow-fs-read=${d}`),
+]
+const readable = (root: string) => {
+  const dirs = [path.resolve(root)]
+  for (let d = path.resolve(root); ; d = path.dirname(d)) {
+    const nm = path.join(d, 'node_modules')
+    if (existsSync(nm)) dirs.push(nm, realpathSync(nm))
+    if (path.dirname(d) === d) break
+  }
+  return [...new Set(dirs)]
+}
+
 /** RFC 0005 §2.1's E3: an action's input schema, by its slice, or why it's opaque. Never throws on author input. */
 export const sliceInput = (
   root: string,
@@ -523,7 +578,9 @@ export const sliceInput = (
     const runner = path.join(dir, 'run.mjs')
     writeFileSync(runner, RUNNER)
     // an empty environment: the slice can't read secrets or configuration (RFC 0005 §1)
-    const child = spawnSync(process.execPath, [runner, entry], {
+    // Node's permission model (review of aef81dc1): reads only the app and the node_modules it resolves from, and no
+    // writes, network, child processes or workers. The slice rule is a lint, not a sandbox; this is the sandbox
+    const child = spawnSync(process.execPath, [...childArgs(root), runner, entry], {
       cwd: root,
       // next's types make NODE_ENV required; the child gets none, on purpose
       env: {} as NodeJS.ProcessEnv,
