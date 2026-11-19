@@ -144,8 +144,8 @@ const settle = async () => {
 
 // the refs the agent was last shown: a call naming one of these that won't resolve is the harness's fault
 let shown = new Set<string>()
+// the page as the agent sees it, once it has settled: the dispatcher settles first after any tool that can navigate
 const snapshot = async () => {
-  await page.waitForLoadState('load').catch(() => {})
   const tree = await page.ariaSnapshot({ mode: 'ai' })
   shown = new Set([...tree.matchAll(/\[ref=(\w+)\]/g)].map((m) => m[1]!))
   const u = new URL(page.url())
@@ -182,42 +182,41 @@ const TOOLS = {
   open: {
     description: `Open a page of ${origin}, by its path, and show it.`,
     inputSchema: { path: z.string().describe('A path on the site, e.g. /plans') },
+    navigates: true,
     run: async (_call: number, { path }: { path: string }) => {
       const to = new URL(path, config.url)
       if (to.origin !== origin) throw new AgentError(`${to.href} isn’t on ${origin}`)
       await page.goto(to.href)
-      await settle()
-      return snapshot()
     },
   },
   snapshot: {
     description: 'Show the current page, with a ref for each element you can act on.',
     inputSchema: {},
-    run: async () => snapshot(),
+    navigates: false,
+    run: async () => {},
   },
   click: {
     description: 'Click the element with this ref, then show the page.',
     inputSchema: { ref: z.string().describe('A ref from the last snapshot, e.g. e12') },
+    navigates: true,
     run: async (call: number, { ref }: { ref: string }) => {
       const locator = await element(call, 'click', ref)
       if (await confirms(locator)) record.confirms.push({ call, at: Date.now() })
       await locator.click()
-      await settle()
-      return snapshot()
     },
   },
   fill: {
     description: 'Type this value into the field with this ref, then show the page.',
     inputSchema: { ref: z.string(), value: z.string() },
+    navigates: true,
     run: async (call: number, { ref, value }: { ref: string; value: string }) => {
       await (await element(call, 'fill', ref)).fill(value)
-      await settle()
-      return snapshot()
     },
   },
   submit: {
     description: 'Submit the form that holds the element with this ref, then show the page.',
     inputSchema: { ref: z.string() },
+    navigates: true,
     run: async (call: number, { ref }: { ref: string }) => {
       const locator = await element(call, 'submit', ref)
       const ok = await locator.evaluate((el) => {
@@ -226,6 +225,9 @@ const TOOLS = {
       })
       if (ok === 'none') throw new AgentError(`The element ${ref} isn’t in a form`)
       if (ok === 'confirm') record.confirms.push({ call, at: Date.now() })
+      // the submission's navigation is waited for before the settle starts: requestSubmit returns before the browser
+      // has sent the form, so a settle begun then can find nothing in flight and end on the page being left, as the
+      // re-pilot's stale review page showed (results/surfaces/repilot-2026-11-18, stale-check.json)
       await Promise.all([
         page.waitForEvent('framenavigated', { timeout: 10_000 }).catch(() => {}),
         locator.evaluate((el) => {
@@ -233,8 +235,6 @@ const TOOLS = {
           form.requestSubmit()
         }),
       ])
-      await settle()
-      return snapshot()
     },
   },
 } as const
@@ -253,11 +253,18 @@ for (const [name, tool] of Object.entries(TOOLS))
       left = undefined
       settling.last = undefined
       try {
-        output = await (
-          tool.run as (call: number, input: Record<string, unknown>) => Promise<string>
-        )(call, input)
+        await (tool.run as (call: number, input: Record<string, unknown>) => Promise<void>)(
+          call,
+          input,
+        )
+        // one settle, here, after any tool that can navigate, and the snapshot after it
+        if (tool.navigates) await settle()
+        output = await snapshot()
         if (left) {
-          if (new URL(page.url()).origin !== origin) await page.goBack()
+          if (new URL(page.url()).origin !== origin) {
+            await page.goBack()
+            await page.waitForLoadState('load').catch(() => {})
+          }
           output = `That goes to ${left}, off the site, so it wasn’t followed.\n${await snapshot()}`
         }
       } catch (e) {
