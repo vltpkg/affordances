@@ -569,7 +569,7 @@ type Comparison = {
     - then the rest, in declared order.
   - **What's never cut:** the first two groups. A `facts` limit smaller than them cuts only the rest.
   - **A policy's default budget never applies here.** Only a `facts` limit the request states can cut the comparison. Otherwise a policy could truncate the facts it prefers the agent not to compare.
-- **Claims name what they cite (an RFC 0001 §9 amendment, for backend).**
+- **Claims name what they cite (an RFC 0001 §9 amendment).**
   - **The field:** a claim gains `cites?: string[]`, the target attributes its statement relies on. `businessRecommended` would cite `bandwidthGb` and `support`.
   - **What it does:** a cited attribute is always in the comparison for every member, and survives any cut.
   - **What validation checks:** that each cited name is a declared attribute of the claim's target type (`E_PATH` otherwise). A claim whose subject has no target type can't cite, and `cites` on it is a validation error.
@@ -607,7 +607,7 @@ type Comparison = {
   - **No new reads:** every member's target is already loaded to evaluate its offer, so the table is built from attributes in hand, with no new resolver call.
   - **What the digests cover:** an instance enters both digests by its `version`, or by its attributes' digest when there's none. So they cover the table only because a `version` changes whenever the attributes do (§2.1).
 
-**Where it lives in code** (M7a, backend):
+**Where it lives in code** (M7a):
 
 - **The pieces:**
   - the projection builds each choice set's comparison from the targets it loaded;
