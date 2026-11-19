@@ -5,6 +5,7 @@ import { intendedEndState } from './intended.ts'
 import { computeMetrics } from './metrics.ts'
 import type { ServerRecord } from './server.ts'
 import { scoreSurfaceTrial } from './surface.ts'
+import { adapterOf } from './surface-adapters.ts'
 import { surfaces, type SurfaceId } from './surfaces.ts'
 
 // intake's standing check (M8, 22:07Z): every committed trace scored again through this commit's code, from what the
@@ -13,7 +14,8 @@ import { surfaces, type SurfaceId } from './surfaces.ts'
 // scoreSurfaceTrial, as runSurfaceTrial does. A difference names the trace; the check passes only with none
 
 type Line = { kind: string; [key: string]: unknown }
-export type Rescored = { id: string; plan: 'M5' | 'surfaces'; same: boolean }
+// replay: whether the surface's replay records, rebuilt from the server record by its adapter, are the committed bytes
+export type Rescored = { id: string; plan: 'M5' | 'surfaces'; same: boolean; replay?: boolean }
 
 const linesOf = (file: string) => {
   const text = readFileSync(file, 'utf8').trimEnd().split('\n')
@@ -46,6 +48,7 @@ export const rescoreTrace = async (dir: string, id: string): Promise<Rescored> =
       id,
       plan: 'surfaces',
       same: JSON.stringify({ kind: 'metrics', ...metrics }) === committed,
+      replay: replayRebuilt(dir, id, surface, record, trial),
     }
   }
   const server = path.join(dir, `${id}.server.json`)
@@ -56,6 +59,31 @@ export const rescoreTrace = async (dir: string, id: string): Promise<Rescored> =
     await intendedEndState(server),
   )
   return { id, plan: 'M5', same: JSON.stringify({ kind: 'metrics', ...metrics }) === committed }
+}
+
+// the runner writes a surface trace's replay records from its server record (surface-adapters.ts): rebuilt the same
+// way, each must be the committed file's bytes, so a change to how they're written can't hide behind committed copies
+const replayRebuilt = (
+  dir: string,
+  id: string,
+  surface: (typeof surfaces)[SurfaceId],
+  record: unknown,
+  trial: Line,
+) => {
+  const adapter = adapterOf(surface)
+  const committed = readFileSync(path.join(dir, `${id}.replay.json`), 'utf8')
+  const context = {
+    index: trial.index as number,
+    task: trial.task as string,
+    project: (JSON.parse(committed) as { project?: string }).project ?? '',
+  }
+  const same = (file: string, value: unknown) =>
+    JSON.stringify(value) === readFileSync(path.join(dir, file), 'utf8')
+  return (
+    same(`${id}.replay.json`, adapter.replay(record as never, context)) &&
+    (!adapter.confirmReplay ||
+      same(`${id}.replay-confirm.json`, adapter.confirmReplay(record as never, context)))
+  )
 }
 
 /** Every scored trace in a run's directory (interrupted/ holds no scored trace), a few at a time. */
@@ -83,13 +111,16 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   for (const dir of process.argv.slice(2)) {
     const { rescored: r, unscorable } = await rescoreDir(dir)
     const bad = r.filter((x) => !x.same)
-    differ += bad.length + unscorable.length
+    const replays = r.filter((x) => x.replay === false)
+    differ += bad.length + replays.length + unscorable.length
     console.log(
       JSON.stringify({
         dir,
         traces: r.length,
         identical: r.length - bad.length,
         differ: bad.map((x) => x.id),
+        replaysDiffer: replays.map((x) => x.id),
+        replaysRebuilt: r.filter((x) => x.replay === true).length,
         unscorable,
       }),
     )

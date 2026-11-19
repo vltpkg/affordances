@@ -297,7 +297,7 @@ test.skipIf(!build)(
     const driver = answering5xxOnce(1, at, path.join(at, `${s.id}.state.json`))
     const r = await runSurfaceSpecs([s], () => driver, at, {
       labBuild: build!,
-      port: PORT,
+      ports: [PORT],
       pilot: true,
     })
     expect(r).toEqual({ missing: [], faults: 1, trialsRun: 2 })
@@ -322,7 +322,7 @@ test.skipIf(!build)(
     // resumed, the scored spec isn't run again
     const again = await runSurfaceSpecs([s], () => driver, at, {
       labBuild: build!,
-      port: PORT,
+      ports: [PORT],
       pilot: true,
     })
     expect(again).toEqual({ missing: [], faults: 1, trialsRun: 2 })
@@ -339,7 +339,7 @@ test.skipIf(!build)(
     await expect(
       runSurfaceSpecs([s], () => driver, at, {
         labBuild: build!,
-        port: PORT,
+        ports: [PORT],
         pilot: true,
         maxAttempts: 10,
       }),
@@ -558,7 +558,6 @@ test.skipIf(!build)(
     const driver = answering5xxOnce(1, at, path.join(at, `${s.id}.state.json`), 99)
     const r = await runSurfaceSpecs([s], () => driver, at, {
       labBuild: build!,
-      port: PORT,
       ports: [PORT],
       pilot: true,
       maxAttempts: 2,
@@ -587,9 +586,11 @@ test.skipIf(!build)(
     for (const surface of ['full', 'browser'] as SurfaceId[]) {
       const s = spec(surface, `no-record-${surface}`)
       runs = 0
-      const options = { labBuild: build!, port: PORT, ports: [PORT], pilot: true, maxAttempts: 2 }
+      const options = { labBuild: build!, ports: [PORT], pilot: true, maxAttempts: 2 }
       // the first attempt, as one run's last act: set aside for its retry
-      await expect(runSurfaceTrial(s, dead, at, options)).rejects.toThrow(DriverFailure)
+      await expect(runSurfaceTrial(s, dead, at, { ...options, port: PORT })).rejects.toThrow(
+        DriverFailure,
+      )
       // the resume: the final attempt, scored
       expect(await runSurfaceSpecs([s], () => dead, at, options)).toEqual({
         missing: [],
@@ -629,7 +630,6 @@ test.skipIf(!build)(
     const run = (s: TrialSpec, driver: Driver) =>
       runSurfaceSpecs([s], () => driver, at, {
         labBuild: build!,
-        port: PORT,
         ports: [PORT],
         pilot: true,
       })

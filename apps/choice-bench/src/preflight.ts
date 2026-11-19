@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { projectKeyOf, startLabServer } from './lab-server.ts'
-import { decidingFacts, reached, t8Depth, walk } from './oracle.ts'
+import { decidingFacts, reached, readsViews, t8Depth, walk } from './oracle.ts'
 import { checkPin } from './pin.ts'
 import { checkMcpPin } from './pins.ts'
 import { fakeDriver } from './drivers/fake.ts'
@@ -95,7 +95,7 @@ const checkSurface = async (
     )
     const listed = (await client.listTools()).tools
     const reads = await walk(id, client, url)
-    const views = surface.kind !== 'v0' && surface.kind !== 'browser'
+    const views = readsViews(id)
     // the first view is from the user's project when its plan offers are bound to it
     const firstView = !views
       ? 'pages'

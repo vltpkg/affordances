@@ -4,15 +4,15 @@ import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { parseOfferId } from '@affordances/runtime'
 import { conditions } from './conditions.ts'
-import { askedToConfirm } from './response.ts'
 import type { ServerRecord } from './server.ts'
 import type { SurfaceServerRecord } from './surface-server.ts'
-import { browserRequestsOf, type BrowserTrial } from './browser.ts'
-import { mcpRequestsOf, type McpTrial } from './mcp.ts'
+import type { BrowserTrial } from './browser.ts'
+import type { McpTrial } from './mcp.ts'
+import { adapterOfRecord } from './surface-adapters.ts'
 import { surfaces, type SurfaceId } from './surfaces.ts'
 import { setupTrial } from './trial.ts'
-import { v0RequestsOf, type CapabilityRequest, type V0Trial } from './v0.ts'
-import { keyOf, uniqueBy } from './requests.ts'
+import type { CapabilityRequest, V0Trial } from './v0.ts'
+import type { Request } from './requests.ts'
 
 // the choice (the planner and intake, 2026-11-18): the intended end state. The agent's offers that came back
 // confirmation_required or ran are replayed, in order and each once, through the condition's own runtime on a fresh
@@ -83,7 +83,6 @@ export const decisionsOf = (
   return out
 }
 
-type Request = { offer: string; input?: unknown }
 // what a replay needs of a trial: its condition, plan order and task, for a fresh copy of its starting store, and the
 // project key its requests carry
 type Base = Pick<ServerRecord, 'condition' | 'index' | 'task' | 'project'> & { surface?: SurfaceId }
@@ -143,36 +142,10 @@ const replay = async (
   // 'none' is an agent that never executed anything: on v0, never called an action; on the browser, never loaded the
   // review step with a selection. One that did, though nothing applied, replays to the starting state
   const surface = 'surface' in record ? record.surface : undefined
-  // WebMCP's generic tools are the same four, refused for confirmation or run, so its requests read as MCP's
-  if (surface === 'mcp' || surface === 'webmcp') {
-    const mcp = record as McpTrial
-    if (!mcp.calls.some((c) => c.tool === 'execute'))
-      return { state: undefined, replayed: [], skipped: [], alternatives: [] }
-    return replayAll(mcp, mcpRequestsOf(mcp))
-  }
-  if (surface === 'browser') {
-    const browser = record as BrowserTrial
-    if (!browserRequestsOf(browser, 'first-load').length)
-      return { state: undefined, replayed: [], skipped: [], alternatives: [] }
-    return replayAll(browser, browserRequestsOf(browser, browser.rule))
-  }
-  const v0 = surface === 'v0'
-  const executed = record.calls.some((c) => c.tool === (v0 ? 'affordances_call' : 'execute'))
-  if (!executed) return { state: undefined, replayed: [], skipped: [], alternatives: [] }
-  return replayAll(
-    record,
-    v0 ? v0RequestsOf(record as V0Trial) : requestsOf(record as ServerRecord),
-  )
+  const requests = adapterOfRecord(surface).requests(record as never)
+  if (!requests) return { state: undefined, replayed: [], skipped: [], alternatives: [] }
+  return replayAll(record, requests)
 }
-
-// identical requests (same offer and input) count once: an approved choice is two, and add-on offers share an id
-const requestsOf = (record: ServerRecord): Request[] =>
-  uniqueBy(
-    record.calls.flatMap((c) =>
-      c.tool === 'execute' && (askedToConfirm(c) || c.state) ? [c.input as Request] : [],
-    ),
-    keyOf,
-  )
 
 const replayAll = async (
   record: Base,

@@ -171,7 +171,6 @@ let result: Awaited<ReturnType<typeof runSurfaceSpecs>> | undefined
 try {
   result = await runSurfaceSpecs(specs, driverFor, out, {
     labBuild: path.join(ROOT, 'apps', 'hosting-lab'),
-    port: WORKER_PORTS[0]!,
     ports: WORKER_PORTS,
     // the plan's own pause rule: the pilots' more than 2 faults, the confirmatory run's more than 2%
     pilot: RUN_PLANS[mode as PlanName].pilot,
