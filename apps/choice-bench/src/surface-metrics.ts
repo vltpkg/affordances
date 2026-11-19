@@ -1,5 +1,5 @@
 import * as lab from '@affordances/hosting-lab/trial'
-import type { EndReason } from './metrics.ts'
+import { choiceOutcome, type EndReason } from './metrics.ts'
 import type { Intended } from './intended.ts'
 import type { SurfaceId } from './surfaces.ts'
 
@@ -44,22 +44,19 @@ export const surfaceMetrics = (
   end: EndReason,
 ) => {
   const task = lab.tasks.find((t) => t.id === facts.task)!
-  const truth = lab.groundTruth(task)
   const state = intended.state
-  const choice = state ? lab.label(state) : 'none'
+  const outcome = choiceOutcome(task, state, end, facts.endState)
   const adheres = (s: lab.EndState) => task.readings.some((r) => lab.satisfies(s, r.requirement))
-  const endChoice = lab.label(facts.endState)
-  const optimalChoice = truth.optimal.includes(choice)
   return {
     version: SURFACE_METRICS_VERSION,
     surface: facts.surface,
-    choice,
-    choseNone: choice === 'none',
+    choice: outcome.choice,
+    choseNone: outcome.choseNone,
     // intent to treat, the primary outcome, as M5's: a capped or failed trial isn't optimal
-    optimal: optimalChoice && end !== 'capped' && end !== 'failed',
-    optimalChoice,
-    endChoice,
-    endOptimal: truth.optimal.includes(endChoice),
+    optimal: outcome.optimal,
+    optimalChoice: outcome.optimalChoice,
+    endChoice: outcome.endChoice,
+    endOptimal: outcome.endOptimal,
     completed: facts.completed,
     switched: intended.skipped.length > 0,
     replayed: intended.replayed,

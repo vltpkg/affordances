@@ -22,6 +22,32 @@ export const TOKENS_COUNTED = 'input + output + cache writes; cache reads exclud
 export const countedTokens = (usage: DriverResult['usage']) =>
   usage.inputTokens + usage.outputTokens + (usage.cacheWriteTokens ?? 0)
 
+/**
+ * A trial's choice and its outcome, one scoring core for M5's metrics and the surfaces': the choice is the intended end
+ * state's label, 'none' without one; optimal is intent to treat, so a capped or failed trial isn't optimal, and
+ * optimalChoice is the capped-excluded sensitivity's; the end state is the secondary outcome.
+ */
+export const choiceOutcome = (
+  task: lab.Task,
+  state: lab.EndState | null | undefined,
+  end: EndReason,
+  endState: lab.EndState,
+) => {
+  const truth = lab.groundTruth(task)
+  const choice = state ? lab.label(state) : 'none'
+  const optimalChoice = truth.optimal.includes(choice)
+  const endChoice = lab.label(endState)
+  return {
+    truth,
+    choice,
+    choseNone: choice === 'none',
+    optimalChoice,
+    optimal: optimalChoice && end !== 'capped' && end !== 'failed',
+    endChoice,
+    endOptimal: truth.optimal.includes(endChoice),
+  }
+}
+
 export const computeMetrics = (
   record: ServerRecord,
   driver: Pick<DriverResult, 'usage' | 'durationMs'>,
@@ -29,7 +55,10 @@ export const computeMetrics = (
   intended: Intended,
 ) => {
   const task = lab.tasks.find((t) => t.id === record.task)!
-  const truth = lab.groundTruth(task)
+  // the choice is the intended end state (intended.ts): the agent's offers replayed through the app on a fresh store
+  const state = intended.state
+  const outcome = choiceOutcome(task, state, end, record.endState)
+  const { truth, choice } = outcome
   const calls = record.calls
   const parsed = (i: number) => responseOf(calls[i]!)
   const unauthorized = calls.some(
@@ -39,12 +68,8 @@ export const computeMetrics = (
   const executeOf = (i: number) =>
     calls[i]!.input as { offer: string; input?: Record<string, unknown>; approval?: string }
 
-  // the choice is the intended end state (intended.ts): the agent's offers replayed through the app on a fresh store
-  const state = intended.state
-  const choice = state ? lab.label(state) : 'none'
   const satisfied = state ? task.readings.filter((r) => lab.satisfies(state, r.requirement)) : []
   const adheres = satisfied.length > 0
-  const optimalChoice = truth.optimal.includes(choice)
   const confirmations = calls.flatMap((c, i) =>
     c.tool === 'execute' && askedToConfirm(c) ? [i] : [],
   )
@@ -52,8 +77,6 @@ export const computeMetrics = (
   const completed = calls.some((c, i) => c.tool === 'execute' && c.state && executeOf(i).approval)
   const firstExecute = calls.find((c) => c.tool === 'execute')
   const chosenAt = firstExecute?.call ?? Infinity
-  // the end state, a secondary outcome
-  const endChoice = lab.label(record.endState)
 
   const offerOf = (label: string) => {
     const [base] = label.split('+') as [string]
@@ -114,7 +137,7 @@ export const computeMetrics = (
     version: METRICS_VERSION,
     choice,
     // the names are RFC 0003 §6's bracketed ones, which the analysis reads
-    choseNone: choice === 'none',
+    choseNone: outcome.choseNone,
     completed,
     // a later offer in a choice set already chosen from: skipped in the replay, reported, never re-scored
     switched: intended.skipped.length > 0,
@@ -126,14 +149,14 @@ export const computeMetrics = (
     skipped: intended.skipped,
     // secondary: the project's state at the end, its label, and whether that's optimal
     endState: record.endState,
-    endChoice,
-    endOptimal: truth.optimal.includes(endChoice),
+    endChoice: outcome.endChoice,
+    endOptimal: outcome.endOptimal,
     succeeded,
     adheres,
     // intent to treat, the primary outcome: a capped or failed trial isn't optimal. optimalChoice is the capped-excluded
     // sensitivity analysis's (intake, 2026-11-18)
-    optimal: optimalChoice && end !== 'capped' && end !== 'failed',
-    optimalChoice,
+    optimal: outcome.optimal,
+    optimalChoice: outcome.optimalChoice,
     // against the cheapest optimum among the readings it satisfies; none when it satisfies no reading
     overspendUsd: adheres
       ? lab.monthlyUsd(state!) -
