@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { createMdHandler } from '../src/next/index.ts'
 import { ROUTES_ENV } from '../src/next/routes.ts'
+import { clockCheck } from './convert/core/support/timing.ts'
 
 // a conversion that throws for a reason md didn't foresee: switched on per test, in readStreamed (reading the page) or
 // in the markdown it hands back (converting it). the read's error has a cause, as when md tried the other path too
@@ -107,7 +108,10 @@ test('a page nested 2,000, 20,000 and 100,000 deep, of divs or svgs, is read up 
       const response = await createMdHandler()(new Request(`${site}/x/express.md`))
       const text = await response.text()
       // generous: far under what reading the whole nesting takes
-      expect(performance.now() - started).toBeLessThan(2_000)
+      const took = performance.now() - started
+      clockCheck(`${tag} nested ${n} deep, through the route, under 2s`, () =>
+        expect(took).toBeLessThan(2_000),
+      )
       expect([
         tag,
         n,

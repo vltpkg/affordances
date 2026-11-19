@@ -1,0 +1,42 @@
+{
+  "name": "@affordances/runtime",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The projection runtime: a capability manifest and a caller's context, as offers an agent can discover and execute",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vltpkg/affordances.git",
+    "directory": "packages/runtime"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./agent": {
+      "types": "./dist/agent.d.ts",
+      "default": "./dist/agent.js"
+    },
+    "./agent-runtime": {
+      "types": "./dist/agent-runtime.d.ts",
+      "default": "./dist/agent-runtime.js"
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@affordances/ir": "workspace:*"
+  },
+  "devDependencies": {
+    "fast-check": "^4.10.2"
+  }
+}

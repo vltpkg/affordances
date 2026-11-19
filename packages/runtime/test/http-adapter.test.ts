@@ -1,0 +1,118 @@
+import { expect, test } from 'vitest'
+import { httpAdapter } from '../src/agent.ts'
+
+// protocol 1 over fetch (RFC 0004 §2), moved from @affordances/webmcp. A host without a browser's cookie passes a
+// fetcher that adds its session: what the wrapper adds reaches the request, and the adapter's own requests are as before
+
+const recorder = () => {
+  const seen: { url: string; method: string; headers: Record<string, string>; body?: string }[] = []
+  const fetcher = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    seen.push({
+      url: String(input),
+      method: init.method ?? 'GET',
+      headers: Object.fromEntries(new Headers(init.headers).entries()),
+      ...(typeof init.body === 'string' && { body: init.body }),
+    })
+    return new Response(JSON.stringify({ offers: [], status: 'succeeded' }), {
+      headers: { 'content-type': 'application/json' },
+    })
+  }) as typeof fetch
+  return { seen, fetcher }
+}
+
+test('a wrapped fetcher’s session and Origin reach every request', async () => {
+  const { seen, fetcher } = recorder()
+  const withSession: typeof fetch = (input, init = {}) => {
+    const headers = new Headers(init.headers)
+    headers.set('authorization', 'Bearer s_1')
+    headers.set('cookie', 'sid=s_1')
+    headers.set('origin', 'http://127.0.0.1:3913')
+    return fetcher(input, { ...init, headers })
+  }
+  const a = httpAdapter('http://127.0.0.1:3913/api/projection', withSession, {
+    policy: 'exhaustive',
+  })
+  await a.project({ type: 'hosting.project', key: 'j1' })
+  await a.execute({ offer: 'o1', input: { plan: 'p2' } })
+  for (const r of seen)
+    expect(r.headers).toMatchObject({
+      authorization: 'Bearer s_1',
+      cookie: 'sid=s_1',
+      origin: 'http://127.0.0.1:3913',
+    })
+})
+
+test('its requests: GET view with the start and policy, POST execute with the same, as webmcp sent them', async () => {
+  const { seen, fetcher } = recorder()
+  const a = httpAdapter('http://h/api/projection', fetcher, { policy: 'exhaustive' })
+  await a.project({ type: 'hosting.project', key: 'j1' })
+  await a.inspect('o1')
+  await a.expand({ from: 'o1', along: 'alternatives' })
+  await a.execute({ offer: 'o1', input: { plan: 'p2' } })
+  expect(seen.map((r) => [r.method, r.url, r.body ?? null])).toEqual([
+    ['GET', 'http://h/api/projection/view?policy=exhaustive&start=hosting.project%3Aj1', null],
+    [
+      'GET',
+      'http://h/api/projection/inspect?offer=o1&policy=exhaustive&start=hosting.project%3Aj1',
+      null,
+    ],
+    [
+      'POST',
+      'http://h/api/projection/expand',
+      JSON.stringify({
+        from: 'o1',
+        along: 'alternatives',
+        policy: 'exhaustive',
+        start: 'hosting.project:j1',
+      }),
+    ],
+    [
+      'POST',
+      'http://h/api/projection/execute',
+      JSON.stringify({
+        offer: 'o1',
+        input: { plan: 'p2' },
+        policy: 'exhaustive',
+        start: 'hosting.project:j1',
+      }),
+    ],
+  ])
+})
+
+// the connection's own start (intake, 16:27Z): a view parameter the host sets, used when the agent names none
+test('a configured start is the connection’s own: every call carries it until the agent names another', async () => {
+  const { seen, fetcher } = recorder()
+  const a = httpAdapter('http://h/api/projection', fetcher, {
+    policy: 'exhaustive',
+    start: { type: 'hosting.project', key: 'j1' },
+  })
+  // before any project(), an execute already reads the connection's projection
+  await a.execute({ offer: 'o1' })
+  await a.project()
+  await a.project({ type: 'hosting.plan', key: 'p2' })
+  await a.inspect('o1')
+  expect(seen.map((r) => r.body ?? r.url)).toEqual([
+    JSON.stringify({ offer: 'o1', policy: 'exhaustive', start: 'hosting.project:j1' }),
+    'http://h/api/projection/view?policy=exhaustive&start=hosting.project%3Aj1',
+    'http://h/api/projection/view?policy=exhaustive&start=hosting.plan%3Ap2',
+    'http://h/api/projection/inspect?offer=o1&policy=exhaustive&start=hosting.plan%3Ap2',
+  ])
+  // without one, a view is site-wide, as before
+  const plain = recorder()
+  await httpAdapter('http://h/api/projection', plain.fetcher).project()
+  expect(plain.seen[0]!.url).toBe('http://h/api/projection/view')
+})
+
+// code review of M8 (the v1 wire): the route's refusal before the runtime has the runtime's shape (RFC 0004 §2.3).
+// On a view, an expansion or an inspection it's thrown with its detail, never read as a view; on an execution it's
+// the result, as the runtime's own refusals are
+test("the route's refusal: thrown with its detail for a view, the result for an execution", async () => {
+  const refusal = { status: 'refused', code: 'invalid_input', detail: 'start is type:key or an id' }
+  const fetcher = (async () =>
+    new Response(JSON.stringify(refusal), { status: 400 })) as typeof fetch
+  const a = httpAdapter('http://h/api/projection', fetcher)
+  await expect(a.project()).rejects.toThrow('400: start is type:key or an id')
+  await expect(a.expand({ from: 'o1', along: 'more' })).rejects.toThrow('400: start is type:key')
+  await expect(a.inspect('o1')).rejects.toThrow('400: start is type:key')
+  expect(await a.execute({ offer: 'o1' })).toEqual(refusal)
+})

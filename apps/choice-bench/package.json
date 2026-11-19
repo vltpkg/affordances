@@ -1,0 +1,22 @@
+{
+  "name": "@affordances/choice-bench",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The agent-choice benchmark of RFC 0003: drivers, the benchmark's tools over the projection runtime, and the harness",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "smoke": "node src/smoke.ts"
+  },
+  "dependencies": {
+    "@affordances/hosting-lab": "workspace:*",
+    "@affordances/ir": "workspace:*",
+    "@affordances/mcp": "workspace:*",
+    "@affordances/mcp-v1": "workspace:*",
+    "@affordances/runtime": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "playwright": "^1.64.1",
+    "zod": "^4.6.7"
+  }
+}

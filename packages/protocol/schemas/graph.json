@@ -45,8 +45,7 @@
                 "type": "string"
               }
             },
-            "required": ["to"],
-            "additionalProperties": false
+            "required": ["to"]
           }
         },
         "md": {
@@ -54,8 +53,7 @@
           "type": "string"
         }
       },
-      "required": ["v", "page", "route", "entities", "actions"],
-      "additionalProperties": false
+      "required": ["v", "page", "route", "entities", "actions"]
     },
     "ActionDescriptor": {
       "type": "object",
@@ -111,8 +109,7 @@
           "type": "boolean"
         }
       },
-      "required": ["name", "description", "input", "expose", "available"],
-      "additionalProperties": false
+      "required": ["name", "description", "input", "expose", "available"]
     }
   }
 }

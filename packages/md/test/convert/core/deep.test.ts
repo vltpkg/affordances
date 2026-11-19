@@ -3,6 +3,7 @@ import { CUT, DEPTH } from '../../../src/convert/depth.ts'
 import { declines, forcePath } from '../../../src/convert/path.ts'
 import { flightStripper, readStreamed } from '../../../src/convert/index.ts'
 import { htmlToMarkdown, readPage } from '../../../src/index.ts'
+import { clockCheck } from './support/timing.ts'
 
 afterEach(() => {
   forcePath(undefined)
@@ -38,7 +39,10 @@ test.each([
     const started = performance.now()
     const [markdown, ...rest] = read(html)
     // generous, and far under what reading the whole nesting would take (seconds to minutes on the tree pipeline)
-    expect(performance.now() - started).toBeLessThan(2_000)
+    const took = performance.now() - started
+    clockCheck(`${tag} nested ${n} deep on ${path}, under 2s`, () =>
+      expect(took).toBeLessThan(2_000),
+    )
     expect(rest).toEqual([markdown, markdown])
     expect(markdown).toBe('top\n')
     expect(readPage(html).cut).toBe(true)
@@ -70,11 +74,17 @@ test(
     let started = performance.now()
     const tree = read(html)
     // the tree pipeline converts the bold nested as deep as md reads, whatever the page's own depth
-    expect(performance.now() - started).toBeLessThan(5_000)
+    const treeTook = performance.now() - started
+    clockCheck('unclosed formatting on the tree pipeline, under 5s', () =>
+      expect(treeTook).toBeLessThan(5_000),
+    )
     forcePath('core')
     started = performance.now()
     expect(read(html)).toEqual(tree)
-    expect(performance.now() - started).toBeLessThan(2_000)
+    const coreTook = performance.now() - started
+    clockCheck('unclosed formatting on md-core, under 2s', () =>
+      expect(coreTook).toBeLessThan(2_000),
+    )
     expect(tree[0]!.startsWith('top\n')).toBe(true)
     expect(tree[0]).not.toContain('deep words')
   },

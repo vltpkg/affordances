@@ -1944,7 +1944,9 @@ test('@affordances/md/next/proxy is the same proxy side as @affordances/md/next,
 
 // next.config.mjs loads @affordances/md/next in plain node, not a bundler: an import node's esm can't resolve (next
 // has no exports map, so 'next/server' needs its .js) breaks every app's config, which a vite-run test never sees
-test('the next entries load in plain node, as next.config does', () => {
+// a real failure mode (an entry that won't load in plain node) on a node process that starts slowly under load: a
+// long timeout, not a skip (intake's rule, 2026-11-17)
+test('the next entries load in plain node, as next.config does', { timeout: 30_000 }, () => {
   for (const entry of ['../src/next/index.ts', '../src/next/proxy.ts']) {
     const url = new URL(entry, import.meta.url).href
     const loaded = execFileSync(

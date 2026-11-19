@@ -1,0 +1,23 @@
+{
+  "label": "POST HOC, DESCRIPTIVE",
+  "firstCarrier": {
+    "A claude-haiku-5-5": {
+      "execute hosting.plan.list": 100
+    },
+    "A claude-sonnet-5-5": {
+      "execute hosting.plan.list": 114
+    },
+    "C claude-haiku-5-5": {
+      "execute hosting.plan.list": 96
+    },
+    "C claude-sonnet-5-5": {
+      "execute hosting.plan.list": 19
+    },
+    "S claude-haiku-5-5": {
+      "execute hosting.plan.list": 114
+    },
+    "S claude-sonnet-5-5": {
+      "execute hosting.plan.list": 114
+    }
+  }
+}

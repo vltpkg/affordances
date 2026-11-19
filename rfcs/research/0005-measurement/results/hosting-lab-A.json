@@ -1,0 +1,46 @@
+{
+  "resources": [],
+  "capabilities": [],
+  "diagnostics": [
+    {
+      "code": "W_NO_ID",
+      "file": "src/app/actions.ts",
+      "subject": "cancel"
+    },
+    {
+      "code": "W_NO_ID",
+      "file": "src/app/add-ons/actions.ts",
+      "subject": "addAddOn"
+    },
+    {
+      "code": "W_NO_ID",
+      "file": "src/app/add-ons/actions.ts",
+      "subject": "removeAddOn"
+    },
+    {
+      "code": "W_NO_ID",
+      "file": "src/app/deployments/actions.ts",
+      "subject": "deploy"
+    },
+    {
+      "code": "W_NO_ID",
+      "file": "src/app/deployments/actions.ts",
+      "subject": "rollback"
+    },
+    {
+      "code": "W_NO_ID",
+      "file": "src/app/plans/actions.ts",
+      "subject": "listPlans"
+    },
+    {
+      "code": "W_NO_ID",
+      "file": "src/app/plans/actions.ts",
+      "subject": "subscribe"
+    },
+    {
+      "code": "W_NO_ID",
+      "file": "src/app/plans/actions.ts",
+      "subject": "subscribeBundle"
+    }
+  ]
+}

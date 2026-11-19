@@ -1,5 +1,11 @@
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from '@standard-schema/spec'
 import type { Expose, NavItem } from '@affordances/protocol'
+import {
+  fromCapability,
+  type BindableCapability,
+  type CapabilityActionConfig,
+  type CapabilityInput,
+} from './capability.ts'
 import { AffordancesError, RedirectSignal } from './errors.ts'
 
 export const AFFORDANCES = Symbol.for('affordances.action')
@@ -27,6 +33,12 @@ export type ActionConfig<
   State extends Entities,
 > = {
   name: string
+  /**
+   * @experimental The capability's identifier, 'commerce.cart.addItem' (RFC 0001 §6.1): the migration form for a
+   * v0 action (RFC 0001 §10.1), for `@affordances/ir`, which isn't published yet. A string literal, so codegen reads
+   * it without importing the app. It changes nothing at run time or on v0's wire.
+   */
+  id?: string
   description: string
   input: Schema
   // the route's state, so guard and summary are typed against it
@@ -40,6 +52,10 @@ export type ActionConfig<
     input: StandardSchemaV1.InferOutput<Schema> | undefined
     state: State
     ctx: Ctx<Session>
+    // on a call, whether v0's client sent confirm: true. A capability's runtime check reads it (RFC 0001 §12.1)
+    confirmed?: boolean
+    // true only when the graph lists the action, never on a call: a call's validated input can be undefined too
+    listing?: boolean
   }) => GuardResult | Promise<GuardResult>
   // what a `confirm` action will do, shown to the person before they approve it
   summary?: (args: {
@@ -147,10 +163,25 @@ export type AffordancesOptions<Session> = {
 }
 
 export const createAffordances = <Session = never>(options: AffordancesOptions<Session> = {}) => {
-  const defineAction = <Schema extends StandardSchemaV1, Output, State extends Entities = Entities>(
+  // a capability-bound action (RFC 0001 §12.1): the capability's data, and this action's code
+  /**
+   * @experimental Binding a capability from `@affordances/ir`, which isn't published yet. It may change before it is,
+   * and its fail-closed refusal on v0's agent path is interim.
+   */
+  function defineAction<C extends BindableCapability, Output, State extends Entities = Entities>(
+    config: CapabilityActionConfig<C, Output, Session, State>,
+  ): Action<CapabilityInput<C>, Output>
+  function defineAction<Schema extends StandardSchemaV1, Output, State extends Entities = Entities>(
     config: ActionConfig<Schema, Output, Session, State>,
-  ): Action<StandardSchemaV1.InferInput<Schema>, Output> => {
-    if (!config.expose && process.env.NODE_ENV !== 'production')
+  ): Action<StandardSchemaV1.InferInput<Schema>, Output>
+  function defineAction(
+    given:
+      | ActionConfig<StandardSchemaV1, unknown, Session, Entities>
+      | CapabilityActionConfig<BindableCapability, unknown, Session, Entities>,
+  ): AnyAction {
+    const config = 'capability' in given ? fromCapability(given) : given
+    // a capability says why itself (fromCapability)
+    if (!config.expose && !('capability' in given) && process.env.NODE_ENV !== 'production')
       console.warn(`[affordances] ${config.name} has no \`expose\`, so agents can't reach it`)
 
     const action = async (...args: unknown[]) => {
@@ -171,10 +202,7 @@ export const createAffordances = <Session = never>(options: AffordancesOptions<S
       outputSchema: config.output && toJsonSchema(config.output),
       auth: options.auth as Auth<unknown> | undefined,
     }
-    return Object.assign(action, { [AFFORDANCES]: meta }) as unknown as Action<
-      StandardSchemaV1.InferInput<Schema>,
-      Output
-    >
+    return Object.assign(action, { [AFFORDANCES]: meta }) as unknown as AnyAction
   }
 
   const defineState = <State extends Entities>(

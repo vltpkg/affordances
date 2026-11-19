@@ -30,9 +30,25 @@
       "types": "./dist/manifest.d.ts",
       "default": "./dist/manifest.js"
     },
+    "./compiled": {
+      "types": "./dist/compiled.d.ts",
+      "default": "./dist/compiled.js"
+    },
     "./codegen": {
       "types": "./dist/codegen.d.ts",
       "default": "./dist/codegen.js"
+    },
+    "./diagnostics": {
+      "types": "./dist/diagnostics.d.ts",
+      "default": "./dist/diagnostics.js"
+    },
+    "./author": {
+      "types": "./dist/author.d.ts",
+      "default": "./dist/author.js"
+    },
+    "./projection": {
+      "types": "./dist/projection.d.ts",
+      "default": "./dist/projection.js"
     }
   },
   "scripts": {
@@ -46,13 +62,25 @@
     "oxc-parser": "^0.156.0"
   },
   "devDependencies": {
+    "@affordances/ir": "workspace:*",
+    "@affordances/runtime": "workspace:*",
     "next": "^16.4.6",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "zod": "^4.6.7"
   },
   "peerDependencies": {
+    "@affordances/ir": "workspace:*",
+    "@affordances/runtime": "workspace:*",
     "next": ">=16",
     "react": ">=19"
+  },
+  "peerDependenciesMeta": {
+    "@affordances/ir": {
+      "optional": true
+    },
+    "@affordances/runtime": {
+      "optional": true
+    }
   }
 }

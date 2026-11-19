@@ -28,6 +28,7 @@
     "@standard-schema/spec": "^1.1.0"
   },
   "devDependencies": {
+    "@affordances/ir": "workspace:*",
     "zod": "^4.6.7"
   }
 }

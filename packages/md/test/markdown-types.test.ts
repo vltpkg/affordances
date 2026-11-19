@@ -47,8 +47,9 @@ test("MarkdownArgs<'/route'> gives params their types from the route, as page.ts
 })
 
 // a real tsc run over an app's markdown.ts and the .affordances/md.ts md() generates for it
-// each runs tsc, a second or more on its own and more under a full run's load: past vitest's 5s default
-const TSC = 30_000
+// each runs tsc, a second or more on its own and more under a full run's load: past vitest's 5s default. tsc's errors
+// are a real failure mode, so a slow run gets a long timeout, never a skip; 30s failed at load 59 (intake's rule)
+const TSC = 120_000
 const tsc = fileURLToPath(new URL('../../../node_modules/typescript/bin/tsc', import.meta.url))
 const src = fileURLToPath(new URL('../src/next/', import.meta.url))
 let root: string

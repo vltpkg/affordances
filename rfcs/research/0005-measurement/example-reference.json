@@ -1,0 +1,169 @@
+{
+  "about": "RFC 0005 §7's reference for apps/example: the manifest a developer would write by hand, field by field. Written 2026-11-18, before any extractor exists or runs, so it can't be fitted to one. Each capability lists every field §7 measures, including those extraction never recovers (effects, declarative preconditions, claims, relations). A field the app's code doesn't support is null.",
+  "spike": "SPIKE: measurement input for assumption 8, not product code.",
+  "namespace": "acme",
+  "resources": [
+    {
+      "id": "acme.product",
+      "key": "slug",
+      "from": "the route segment /products/[slug]",
+      "attributes": ["slug", "name", "option", "variants"]
+    },
+    {
+      "id": "acme.cart",
+      "key": "session",
+      "from": null,
+      "attributes": ["items", "count", "subtotal"]
+    },
+    { "id": "acme.order", "key": "id", "from": null, "attributes": ["id", "items", "total"] }
+  ],
+  "capabilities": [
+    {
+      "id": "acme.catalog.search",
+      "kind": "query",
+      "description": "Search the catalog by name, category, or description. Every word must match. Returns the matching products with each variant's SKU and stock, so addToCart on the product's page can follow without opening it.",
+      "binding": { "route": "/", "action": "search" },
+      "target": null,
+      "input": {
+        "type": "object",
+        "properties": { "query": { "type": "string", "minLength": 1, "maxLength": 100 } },
+        "required": ["query"],
+        "additionalProperties": false
+      },
+      "inputLossy": ["trim"],
+      "authorization": { "principal": "any" },
+      "confirmation": null,
+      "preconditions": [],
+      "effects": [],
+      "claims": [],
+      "relations": []
+    },
+    {
+      "id": "acme.cart.setQuantity",
+      "kind": "action",
+      "description": "Set the quantity of an item already in the cart. A quantity of 0 removes it.",
+      "binding": { "route": "/cart", "action": "updateQuantity" },
+      "target": "acme.cart",
+      "input": {
+        "type": "object",
+        "properties": {
+          "sku": { "type": "string" },
+          "quantity": { "type": "integer", "minimum": 0, "maximum": 10 }
+        },
+        "required": ["sku", "quantity"],
+        "additionalProperties": false
+      },
+      "inputLossy": ["coerce"],
+      "authorization": { "principal": "authenticated" },
+      "confirmation": null,
+      "preconditions": [
+        { "id": "inCart", "description": "The item is in the cart", "declarative": true },
+        { "id": "inStock", "description": "The new quantity is in stock", "declarative": true }
+      ],
+      "effects": [
+        {
+          "category": "state",
+          "change": "update",
+          "resource": "acme.cart",
+          "reversibility": "reversible"
+        }
+      ],
+      "claims": [],
+      "relations": []
+    },
+    {
+      "id": "acme.cart.removeItem",
+      "kind": "action",
+      "description": "Remove an item from the cart, whatever its quantity.",
+      "binding": { "route": "/cart", "action": "removeItem" },
+      "target": "acme.cart",
+      "input": {
+        "type": "object",
+        "properties": { "sku": { "type": "string" } },
+        "required": ["sku"],
+        "additionalProperties": false
+      },
+      "inputLossy": [],
+      "authorization": { "principal": "authenticated" },
+      "confirmation": null,
+      "preconditions": [
+        { "id": "inCart", "description": "The item is in the cart", "declarative": true }
+      ],
+      "effects": [
+        {
+          "category": "state",
+          "change": "update",
+          "resource": "acme.cart",
+          "reversibility": "reversible"
+        }
+      ],
+      "claims": [],
+      "relations": []
+    },
+    {
+      "id": "acme.checkout.placeOrder",
+      "kind": "action",
+      "description": "Place an order for everything in the cart. Reserves the stock and empties the cart. Nothing ships: this is a demo store.",
+      "binding": { "route": "/checkout", "action": "placeOrder" },
+      "target": "acme.cart",
+      "input": { "type": "object", "properties": {}, "additionalProperties": false },
+      "inputLossy": [],
+      "authorization": { "principal": "authenticated" },
+      "confirmation": {
+        "summary": "Place an order for {target.count} items totalling {target.subtotal}"
+      },
+      "preconditions": [
+        { "id": "notEmpty", "description": "The cart has items", "declarative": true },
+        { "id": "inStock", "description": "All of them are in stock", "declarative": true }
+      ],
+      "effects": [
+        {
+          "category": "state",
+          "change": "create",
+          "resource": "acme.order",
+          "reversibility": "irreversible"
+        },
+        {
+          "category": "state",
+          "change": "update",
+          "resource": "acme.cart",
+          "reversibility": "irreversible"
+        }
+      ],
+      "claims": [],
+      "relations": []
+    },
+    {
+      "id": "acme.cart.addItem",
+      "kind": "action",
+      "description": "Add a variant of this product to the cart, by SKU. Starts a session if there is none, so anonymous callers get a cart.",
+      "binding": { "route": "/products/[slug]", "action": "addToCart" },
+      "target": "acme.product",
+      "input": {
+        "type": "object",
+        "properties": {
+          "sku": { "type": "string" },
+          "quantity": { "type": "integer", "minimum": 1, "maximum": 10, "default": 1 }
+        },
+        "required": ["sku"],
+        "additionalProperties": false
+      },
+      "inputLossy": ["coerce"],
+      "authorization": { "principal": "any" },
+      "confirmation": null,
+      "preconditions": [
+        { "id": "inStock", "description": "The variant is in stock", "declarative": true }
+      ],
+      "effects": [
+        {
+          "category": "state",
+          "change": "update",
+          "resource": "acme.cart",
+          "reversibility": "reversible"
+        }
+      ],
+      "claims": [],
+      "relations": []
+    }
+  ]
+}

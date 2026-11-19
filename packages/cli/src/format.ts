@@ -1,5 +1,6 @@
 import { signature } from '@affordances/mcp'
 import type { Delta, Graph } from '@affordances/protocol'
+import type { MissingId } from '@affordances/next/codegen'
 import type { Step } from './project.ts'
 
 // the human side of each command; --json prints the same results as data instead
@@ -31,6 +32,18 @@ export const built = ({ routes, manifest }: { routes: string[]; manifest: string
     `${routes.length} ${routes.length === 1 ? 'route' : 'routes'} → ${manifest}`,
     ...routes.map((r) => `  ${r}`),
   ].join('\n')
+
+// each action without a capability id, and the id it would get
+export const ids = ({ missing, written }: { missing: MissingId[]; written: boolean }) =>
+  missing.length
+    ? [
+        ...pad(missing.map((m) => [m.code, m.route, `${m.name} → ${m.suggested}`])),
+        '',
+        written
+          ? `Wrote ${missing.length} placeholder ${missing.length === 1 ? 'id' : 'ids'}, each marked "placeholder" in the source. Replace each with the id you choose before you ship: an id is the action's identity across every transport, and a suggestion only stands in for it.`
+          : 'These are placeholders, made from each route and name. Run with --write to add them as `id` in each defineAction, then replace each with the id you choose.',
+      ].join('\n')
+    : 'Every action has a capability id.'
 
 // the graph as an agent would skim it: what's on the page, what can be done, where to go next
 export const graph = ({ graph: g, tokens }: { graph: Graph; tokens: number }) => {

@@ -19,6 +19,18 @@ export {
   type InferState,
   type StateDef,
 } from './action.ts'
+export {
+  type BindableCapability,
+  type CapabilityActionConfig,
+  type CapabilityGuards,
+  type CapabilityInput,
+  type CheckPrincipal,
+  type CheckRequest,
+  type CheckResult,
+  type CheckRuntime,
+  type ListedOffers,
+  type GuardFn,
+} from './capability.ts'
 export { AffordancesError, redirect } from './errors.ts'
 export { createHandler, type HandlerOptions, type Manifest } from './handler.ts'
 export { compile, match, sort, type CompiledRoute, type Segment } from './route.ts'

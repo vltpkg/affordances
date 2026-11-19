@@ -1,0 +1,1 @@
+{"invocation":1,"gate":{"metric":"1-minute load average","under":32},"startLoad":[31.54,36.90,45.18],"waitedSeconds":1710,"startedAt":"2026-11-18T05:18:05Z","runner":"e4e0332b0068b4377bae67541875a9b3c36c23b91b221dc057ce7a27c20cbeab","export":"c81eeeb1a61e0330be34ce170169c8d9a77292cc","launchScript":"41276fbe7f110ba9a109bae34870c0035c4aee3251a2945cd062a021f7c969cd"}

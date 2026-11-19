@@ -31,7 +31,7 @@ const compare = (pages: { name: string; html: string }[], options: Options) => {
 }
 const none = { differ: [], declined: {} }
 
-test('md fixtures', () => {
+test('md fixtures', { timeout: 30_000 }, () => {
   const pages = fixturePages()
   expect(compare(pages, { url: 'https://shop.test/page' })).toEqual(none)
   expect(

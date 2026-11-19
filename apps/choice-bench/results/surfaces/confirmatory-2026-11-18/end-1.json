@@ -1,0 +1,56 @@
+{
+  "launch": 1,
+  "endedAt": "2026-11-18T21:17:20.837Z",
+  "load": [
+    17.62,
+    24.57,
+    18.64
+  ],
+  "stopped": null,
+  "result": {
+    "missing": [],
+    "faults": 0,
+    "trialsRun": 400
+  },
+  "faultsByCell": {},
+  "stampsAfter": [
+    {
+      "file": "/home/jason/.config/claude/settings.json",
+      "mtime": "2026-11-11T21:23:33.369Z",
+      "sha256": "4ac48268f58a063ba4e5cd9c834907b782a1baf7289d00312b6c811352530ef2"
+    },
+    {
+      "file": "/home/jason/.config/claude/.credentials.json",
+      "mtime": "2026-11-18T16:28:23.039Z",
+      "sha256": "recorded outside git"
+    },
+    {
+      "file": "/home/jason/.codex/AGENTS.md",
+      "mtime": "2026-09-16T15:55:56.625Z",
+      "sha256": "eb40aa9fd1ab622ccdc78d0c5aaff2eb802355c10400778a7d6da1964c847cc8"
+    },
+    {
+      "file": "/home/jason/.codex/config.toml",
+      "mtime": "2026-11-10T18:55:19.138Z",
+      "sha256": "3cd86bb5402f6499754c3e7b3f0946f7e78408a4c0b415a81880c690b007849b"
+    },
+    {
+      "file": "/home/jason/.codex/auth.json",
+      "mtime": "2026-11-18T13:50:25.211Z",
+      "sha256": "recorded outside git"
+    }
+  ],
+  "ownerChanges": [],
+  "loginsAfter": {
+    "at": "2026-11-18T21:17:20.837Z",
+    "claude": true,
+    "codex": true
+  },
+  "secrets": [],
+  "email": {
+    "checked": true,
+    "found": false,
+    "files": 0,
+    "occurrences": 0
+  }
+}

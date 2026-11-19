@@ -1,0 +1,203 @@
+import { expect, test } from 'vitest'
+import {
+  conformanceCases,
+  derive,
+  digest,
+  evaluate,
+  fromModules,
+  normalize,
+  validate,
+  type Context,
+} from '@affordances/ir'
+import { addOns, bundles, plans } from '../src/catalog.ts'
+import * as capabilities from '../src/app/capabilities.ts'
+import { manifest } from '../src/app/capabilities.ts'
+
+// the fixed option set every benchmark condition shares (roadmap M4a)
+
+// the manifest is pinned by digest, so any change to it is deliberate and named here.
+// - M5's: 'sha256-5wGv2c-mT5wJu9N542it5-327q9I3dVboRvAGUDucs4', the manifest of the c81eeeb1 era (calibration, the
+//   confirmatory and exploratory runs), unchanged by the move into a capability module (RFC 0005 §1, 4ee4e0cb)
+// - M7f's: the claims cite what their statements rely on (RFC 0002 §6.6, M7a). Only M7f's new export uses it, which
+//   names its own commit and is never pooled with c81eeeb1's: 'sha256-TdMAthJoydo0hSSNqNByr3W31-_HXXpO185qdNojN2s'
+// - M8e's: T8's regions (results/surfaces-t8/PLAN.md §3), the hosting.region resource, its read query and the
+//   relatedTo from the plans' list. M8e's pin names its own commit and is never pooled with M7f's
+const ON_RECORD = 'sha256-Unrg7FlERwbxQerOUeG1eoCHUvV4Sm7-L1okp6XzUp0'
+
+test('the capability module gives the manifest on record, byte for byte', async () => {
+  expect(await digest(manifest)).toBe(ON_RECORD)
+  // as a compiler reads it: the module's exports, its parts beside its defineManifest, give that same manifest
+  const read = fromModules([{ file: 'src/app/capabilities.ts', exports: { ...capabilities } }], {})
+  expect(read.diagnostics).toEqual([])
+  expect(read.manifest).toBe(manifest)
+})
+
+test('the manifest is valid IR, with no errors and nothing left unknown', () => {
+  const result = validate(manifest)
+  expect(result.issues.filter((i) => i.code.startsWith('E_'))).toEqual([])
+  expect(result.ok).toBe(true)
+  // every action declares its effects, and none is only guards
+  expect(
+    result.issues.filter((i) => i.code === 'W_EFFECTS_UNKNOWN' || i.code === 'W_OPAQUE'),
+  ).toEqual([])
+})
+
+test('every effect has a reversibility, and every compensable one names what undoes it', () => {
+  const ids = new Set(manifest.capabilities.map((c) => c.id))
+  const actions = manifest.capabilities.filter((d) => d.kind === 'action')
+  expect(actions.filter((c) => !c.effects?.length).map((c) => c.id)).toEqual([])
+  const effects = actions.flatMap((c) => c.effects!.map((e) => ({ id: c.id, ...e })))
+  expect(effects.filter((e) => !e.reversibility).map((e) => `${e.id}: ${e.description}`)).toEqual(
+    [],
+  )
+  expect(
+    effects
+      .filter((e) => e.reversibility === 'compensable' && !ids.has(e.compensatedBy!))
+      .map((e) => `${e.id}: ${e.compensatedBy}`),
+  ).toEqual([])
+})
+
+test('normalizing is idempotent, and the digest is stable', async () => {
+  const once = normalize(manifest)
+  expect(normalize(once)).toEqual(once)
+  const value = await digest(manifest)
+  expect(await digest(once)).toBe(value)
+  expect(await digest(structuredClone(manifest))).toBe(value)
+  expect(value).toMatch(/^sha256-[A-Za-z0-9_-]{43}$/)
+})
+
+test('the plans are one choice set, the regions another, and the bundle is an alternative to subscribing', () => {
+  expect(manifest.resources.find((r) => r.id === 'hosting.plan')?.alternatives).toBe(true)
+  expect(manifest.resources.find((r) => r.id === 'hosting.region')?.alternatives).toBe(true)
+  expect(manifest.relations).toEqual([
+    expect.objectContaining({
+      type: 'alternativeTo',
+      from: 'hosting.bundle.subscribe',
+      to: 'hosting.plan.subscribe',
+    }),
+    // T8's: where a plan is served from, one step from the plans' list
+    expect.objectContaining({
+      type: 'relatedTo',
+      from: 'hosting.plan.list',
+      to: 'hosting.region.read',
+    }),
+  ])
+})
+
+test('every paid action needs a confirmation; reading and cancelling need none', () => {
+  const byId = Object.fromEntries(manifest.capabilities.map((c) => [c.id, c]))
+  const confirmed = (ids: string[]) => ids.filter((id) => byId[id]!.confirmation !== undefined)
+  const paid = ['hosting.plan.subscribe', 'hosting.bundle.subscribe', 'hosting.addOn.add']
+  expect(confirmed(paid)).toEqual(paid)
+  expect(
+    confirmed(['hosting.plan.list', 'hosting.subscription.cancel', 'hosting.addOn.remove']),
+  ).toEqual([])
+})
+
+test('each declarative precondition has a context that makes it false, for the conformance kit', () => {
+  const cases = conformanceCases(manifest)
+  const declarative = manifest.capabilities.flatMap((c) =>
+    [...(c.preconditions ?? []), ...(c.authorization?.conditions ?? [])]
+      .filter((p) => 'expr' in p)
+      .map((p) => `${c.id}#${p.id}`),
+  )
+  expect(cases.map((c) => `${c.capability}#${c.condition}`).toSorted()).toEqual(
+    declarative.toSorted(),
+  )
+  expect(cases.filter((c) => c.context === undefined)).toEqual([])
+})
+
+test('derived edges: what each capability acts on, and what deploying creates', () => {
+  const edges = derive(manifest)
+  expect(edges).toContainEqual(
+    expect.objectContaining({
+      relation: 'produces',
+      from: 'hosting.deployment.create',
+      to: 'hosting.deployment',
+    }),
+  )
+  expect(edges).toContainEqual(
+    expect.objectContaining({
+      relation: 'supports',
+      from: 'hosting.plan',
+      to: 'hosting.plan.subscribe',
+    }),
+  )
+  expect(edges.every((e) => e.basis === 'inferred')).toBe(true)
+})
+
+test('the catalog fits the declared attributes, and its prices are the experiment', () => {
+  expect(plans.map((p) => [p.slug, p.priceUsd])).toEqual([
+    ['hobby', 0],
+    ['pro', 20],
+    ['business', 80],
+  ])
+  // the bundle costs less than its parts bought separately, as its claim says
+  const proPlus = bundles[0]!
+  const parts =
+    plans.find((p) => p.slug === proPlus.plan)!.priceUsd +
+    proPlus.addOns.reduce((sum, a) => sum + addOns.find((x) => x.slug === a)!.priceUsd, 0)
+  expect(parts - proPlus.priceUsd).toBe(
+    manifest.claims!.find((c) => c.id === 'bundleSaves')!.quantity!.value,
+  )
+})
+
+// what each effect's description promises holds right after success, as a state written out by hand from the
+// description. RFC 0002 §8.4 checks `establishes` against the state after a run, so a false one is a contradiction
+const afterSuccess: Record<string, Context> = {
+  'hosting.subscription.cancel': {
+    target: {
+      id: 'p_1',
+      ownerId: 'u_1',
+      plan: 'pro',
+      renewsAs: 'hobby',
+      addOns: [],
+      buildMinutesUsed: 0,
+      buildMinutesIncluded: 3000,
+    },
+  },
+  'hosting.deployment.rollback': {
+    target: { id: 'd_1', projectId: 'p_1', status: 'ready', current: true },
+  },
+}
+
+test('every establishes holds in the state its effect describes', () => {
+  const establishing = manifest.capabilities.flatMap((c) =>
+    (c.effects ?? []).flatMap((e) =>
+      'establishes' in e && e.establishes ? [{ id: c.id, expr: e.establishes }] : [],
+    ),
+  )
+  expect(establishing.map((e) => e.id).toSorted()).toEqual(Object.keys(afterSuccess).toSorted())
+  expect(establishing.map((e) => [e.id, evaluate(e.expr, afterSuccess[e.id]!)])).toEqual(
+    establishing.map((e) => [e.id, true]),
+  )
+})
+
+// M8e's T8 fixture, exactly as results/surfaces-t8/PLAN.md §3 states it
+test('T8: two regions as data, a region query that charges nothing, and the claim on Pro reworded', async () => {
+  const { regions } = await import('../src/catalog.ts')
+  expect(regions).toEqual([
+    { slug: 'us-east', name: 'US East', jurisdiction: 'US', plans: ['hobby', 'pro', 'business'] },
+    { slug: 'eu-west', name: 'EU West', jurisdiction: 'EU', plans: ['business'] },
+  ])
+  const read = manifest.capabilities.find((c) => c.id === 'hosting.region.read')!
+  expect([read.kind, read.target, read.targetAt, read.authorization]).toEqual([
+    'query',
+    'hosting.region',
+    '/region',
+    { principal: 'authenticated' },
+  ])
+  expect(read.effects ?? []).toEqual([])
+  const { TASK_EDITS } = await import('../src/lib/task-edits.ts')
+  const edited = TASK_EDITS.T8!.apply(manifest)
+  expect(edited.claims!.find((c) => c.id === 'proRecommended')).toMatchObject({
+    statement:
+      'Recommended for production sites: instant rollback, and extra bandwidth whenever you need it',
+    cites: ['rollback'],
+    applies: { eq: [{ path: 'target.slug' }, { value: 'pro' }] },
+  })
+  // and the edit is T8's alone: the base manifest's claim is unchanged
+  expect(manifest.claims!.find((c) => c.id === 'proRecommended')!.statement).toBe(
+    'Recommended for production projects',
+  )
+})

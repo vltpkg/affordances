@@ -5,6 +5,7 @@ import { htmlToMarkdown as coreMarkdown } from '../../../src/convert/core/index.
 import { htmlToMarkdown, readPage } from '../../../src/index.ts'
 import { markerPages } from './marker-fuzz.ts'
 import { onBoth } from './support/paths.ts'
+import { clockCheck } from './support/timing.ts'
 
 // md-core against the tree pipeline, on what markers keep and leave out
 const same = (html: string) =>
@@ -317,7 +318,9 @@ test('thousands of shown tab panels find their tabs in linear time', () => {
   // loaded machine slows alike: about 8x when it's linear, about 64x when each id searches every element
   const small = panelsTimed(500)
   const large = panelsTimed(4000)
-  expect(large.best / small.best).toBeLessThan(24)
+  clockCheck('tab panels: 8x the panels under 24x the time', () =>
+    expect(large.best / small.best).toBeLessThan(24),
+  )
   expect(large.declined).toEqual([])
   expect(large.markdown).toContain('p3998\n\n**Last**\n\np3999\n')
 }, 60000)

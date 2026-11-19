@@ -1,10 +1,54 @@
 import { defineConfig } from 'tsdown'
 import base from '../../tsdown.config.ts'
 
-export default defineConfig({
-  ...base,
-  entry: ['src/index.ts', 'src/config.ts', 'src/route.ts', 'src/manifest.ts', 'src/codegen.ts'],
-  // the route handler's manifest import stays a package import, so the app's alias can replace it
-  external: ['@affordances/next/manifest'],
-  platform: 'node',
-})
+export default defineConfig([
+  {
+    ...base,
+    entry: [
+      'src/index.ts',
+      'src/config.ts',
+      'src/route.ts',
+      'src/manifest.ts',
+      'src/compiled.ts',
+      'src/codegen.ts',
+      'src/diagnostics.ts',
+    ],
+    // the route handler's manifest import stays a package import, so the app's alias can replace it
+    external: ['@affordances/next/manifest', '@affordances/next/compiled'],
+    platform: 'node',
+    // the build's own tsconfig, src only: tsconfig.json also includes test/, and a test importing another package's
+    // source (extract.test.ts reads ir's schema) would otherwise have its declarations written into that package's src
+    tsconfig: 'tsconfig.build.json',
+  },
+  // /author, the authoring API a capability module imports: a re-export of @affordances/ir, next's optional peer, kept
+  // external in code and declarations, so it's the one entry that references ir (intake, 2026-11-18). Built on its own,
+  // so no chunk it shares with the main entries can carry the reference
+  {
+    ...base,
+    entry: ['src/author.ts'],
+    platform: 'node',
+    clean: false,
+    tsconfig: 'tsconfig.build.json',
+  },
+  // /projection, RFC 0005 §5's route: it builds a runtime from @affordances/runtime, next's second optional peer, kept
+  // external in code and declarations, so it's the one entry that references runtime (intake, 2026-11-18). Built on its
+  // own, like /author, so no chunk it shares with the main entries can carry the reference
+  {
+    ...base,
+    entry: ['src/projection.ts'],
+    platform: 'node',
+    clean: false,
+    tsconfig: 'tsconfig.build.json',
+  },
+  // the capability-module evaluator's child program (RFC 0005 §1), run by path, never imported: so no declarations.
+  // @affordances/ir is next's optional peer, so tsdown keeps it external, a bare import the app resolves (intake,
+  // 2026-11-18); nothing of ir or zod is bundled. Built after the main entries, without cleaning their output
+  {
+    ...base,
+    entry: ['src/evaluate.ts'],
+    platform: 'node',
+    dts: false,
+    clean: false,
+    tsconfig: 'tsconfig.build.json',
+  },
+])

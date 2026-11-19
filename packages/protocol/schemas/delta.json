@@ -57,12 +57,10 @@
             },
             "issues": {}
           },
-          "required": ["code", "message"],
-          "additionalProperties": false
+          "required": ["code", "message"]
         }
       },
-      "required": ["ok"],
-      "additionalProperties": false
+      "required": ["ok"]
     },
     "ActionDescriptor": {
       "type": "object",
@@ -118,8 +116,7 @@
           "type": "boolean"
         }
       },
-      "required": ["name", "description", "input", "expose", "available"],
-      "additionalProperties": false
+      "required": ["name", "description", "input", "expose", "available"]
     }
   }
 }

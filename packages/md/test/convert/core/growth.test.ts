@@ -6,34 +6,24 @@ import { resolveStreamed } from '../../../src/convert/index.ts'
 import { forcePath, type Path } from '../../../src/convert/path.ts'
 import { htmlToMarkdown, readPage } from '../../../src/index.ts'
 import { onBoth } from './support/paths.ts'
+import { leastRatio } from './support/timing.ts'
 
 afterEach(() => {
   forcePath(undefined)
 })
 
 // how many times as long a page of eight times as many takes, a loaded machine slowing both alike: about 8x when it's
-// linear, about 64x when each one reads all the others. each size's best of three, the two taken in turn, and measured
-// again (up to three times) while it's over the limit, which a real quadratic is every time and a busy moment isn't
+// linear, about 64x when each one reads all the others
 const LIMIT = 24
 const took = (read: () => unknown) => {
   const started = performance.now()
   read()
   return performance.now() - started
 }
-// each argument runs its size once and says how long the part that counts took
-const ratioOf = (small: () => number, large: () => number, limit = LIMIT) => {
-  let ratio = Infinity
-  for (let tries = 0; tries < 3 && ratio >= limit; tries++) {
-    let one = Infinity
-    let eight = Infinity
-    for (let run = 0; run < 3; run++) {
-      one = Math.min(one, small())
-      eight = Math.min(eight, large())
-    }
-    ratio = Math.min(ratio, eight / one)
-  }
-  return ratio
-}
+// each argument runs its size once and says how long the part that counts took: the least of N runs of each,
+// measured again with more runs while it's over the limit (support/timing.ts)
+const ratioOf = (small: () => number, large: () => number, limit = LIMIT) =>
+  leastRatio(small, large, limit)
 // a page of n of something on one path, md-core (strict: it writes the page, never declines) or the tree pipeline,
 // against one of 8n, and what the large one wrote
 const grows = (path: Path, read: (n: number) => string, n = 1000) => {

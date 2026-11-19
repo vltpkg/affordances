@@ -2,7 +2,7 @@ import { Console, Effect, Option } from 'effect'
 import { Argument, CliError, Command, Flag } from 'effect/cli'
 import { call, open } from './agent.ts'
 import * as format from './format.ts'
-import { build, init } from './project.ts'
+import { build, ids, init } from './project.ts'
 
 const json = Flag.Boolean('json').pipe(
   Flag.withDescription('Print the result as JSON, for scripts and agents'),
@@ -75,6 +75,28 @@ const buildCommand = Command.make('build', { json }, (o) =>
   ),
 )
 
+const idsCommand = Command.make(
+  'ids',
+  {
+    write: Flag.Boolean('write').pipe(
+      Flag.withDescription('Add each suggested id to its defineAction, as `id`'),
+      Flag.withDefault(false),
+    ),
+    prefix: Flag.String('prefix').pipe(
+      Flag.withDescription(
+        "Lead each suggested id with this identifier, e.g. acmeStore: withAffordances' prefix from the site's name",
+      ),
+      Flag.optional,
+    ),
+    json,
+  },
+  (o) => respond(o.json, ids(cwd(), o.write, Option.getOrUndefined(o.prefix)), format.ids),
+).pipe(
+  Command.withDescription(
+    "Experimental: list actions without a capability id, each with a suggested one from its route and name. --write adds them to source. A suggestion is never an id until it's in source.",
+  ),
+)
+
 const openCommand = Command.make('open', { url, token, json }, (o) =>
   respond(o.json, open(o.url, Option.getOrUndefined(o.token)), format.graph),
 ).pipe(
@@ -118,5 +140,5 @@ const callCommand = Command.make(
 
 export const affordances = Command.make('affordances').pipe(
   Command.withDescription('Make a Next.js app agent-operable, and see it the way agents do.'),
-  Command.withSubcommands([initCommand, buildCommand, openCommand, callCommand]),
+  Command.withSubcommands([initCommand, buildCommand, idsCommand, openCommand, callCommand]),
 )

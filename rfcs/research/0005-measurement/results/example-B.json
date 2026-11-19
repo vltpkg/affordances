@@ -1,0 +1,232 @@
+{
+  "codemod": 5,
+  "resources": [
+    {
+      "id": "products",
+      "key": "slug"
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "cart.removeItem",
+      "kind": "action",
+      "description": "Remove an item from the cart, whatever its quantity.",
+      "binding": {
+        "route": "/cart",
+        "action": "removeItem"
+      },
+      "target": null,
+      "input": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string"
+          }
+        },
+        "required": ["sku"]
+      },
+      "authorization": {
+        "principal": "authenticated"
+      },
+      "confirmation": null,
+      "preconditions": [
+        {
+          "id": "guard",
+          "description": "The item is in the cart",
+          "declarative": false
+        }
+      ],
+      "effects": [],
+      "claims": [],
+      "relations": []
+    },
+    {
+      "id": "cart.updateQuantity",
+      "kind": "action",
+      "description": "Set the quantity of an item already in the cart. A quantity of 0 removes it.",
+      "binding": {
+        "route": "/cart",
+        "action": "updateQuantity"
+      },
+      "target": null,
+      "input": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10
+          }
+        },
+        "required": ["sku", "quantity"]
+      },
+      "authorization": {
+        "principal": "authenticated"
+      },
+      "confirmation": null,
+      "preconditions": [
+        {
+          "id": "guard",
+          "description": "The item is in the cart, and the new quantity is in stock",
+          "declarative": false
+        }
+      ],
+      "effects": [],
+      "claims": [],
+      "relations": []
+    },
+    {
+      "id": "checkout.placeOrder",
+      "kind": "action",
+      "description": "Place an order for everything in the cart. Reserves the stock and empties the cart. Nothing ships: this is a demo store.",
+      "binding": {
+        "route": "/checkout",
+        "action": "placeOrder"
+      },
+      "target": null,
+      "input": {
+        "type": "object",
+        "properties": {}
+      },
+      "authorization": {
+        "principal": "authenticated"
+      },
+      "confirmation": {
+        "summary": "Run placeOrder"
+      },
+      "preconditions": [
+        {
+          "id": "guard",
+          "description": "The cart has items, and all of them are in stock",
+          "declarative": false
+        }
+      ],
+      "effects": [],
+      "claims": [],
+      "relations": []
+    },
+    {
+      "id": "products.addToCart",
+      "kind": "action",
+      "description": "Add a variant of this product to the cart, by SKU. Starts a session if there is none, so anonymous callers get a cart.",
+      "binding": {
+        "route": "/products/[slug]",
+        "action": "addToCart"
+      },
+      "target": "products",
+      "input": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string"
+          },
+          "quantity": {
+            "default": 1,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          }
+        },
+        "required": ["sku"]
+      },
+      "authorization": {
+        "principal": "any"
+      },
+      "confirmation": null,
+      "preconditions": [
+        {
+          "id": "guard",
+          "description": "The variant is in stock",
+          "declarative": false
+        }
+      ],
+      "effects": [],
+      "claims": [],
+      "relations": []
+    },
+    {
+      "id": "search",
+      "kind": "query",
+      "description": "Search the catalog by name, category, or description. Every word must match. Returns the matching products with each variant's SKU and stock, so addToCart on the product's page can follow without opening it.",
+      "binding": {
+        "route": "/",
+        "action": "search"
+      },
+      "target": null,
+      "input": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "required": ["query"]
+      },
+      "authorization": {
+        "principal": "any"
+      },
+      "confirmation": null,
+      "preconditions": [],
+      "effects": [],
+      "claims": [],
+      "relations": []
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "W_OPAQUE",
+      "file": "src/app/cart/actions.ts",
+      "subject": "updateQuantity's guard"
+    },
+    {
+      "code": "W_EFFECTS_UNKNOWN",
+      "file": "src/app/cart/actions.ts",
+      "subject": "updateQuantity"
+    },
+    {
+      "code": "W_OPAQUE",
+      "file": "src/app/cart/actions.ts",
+      "subject": "removeItem's guard"
+    },
+    {
+      "code": "W_EFFECTS_UNKNOWN",
+      "file": "src/app/cart/actions.ts",
+      "subject": "removeItem"
+    },
+    {
+      "code": "W_SUMMARY_GENERIC",
+      "file": "src/app/checkout/actions.ts",
+      "subject": "placeOrder"
+    },
+    {
+      "code": "W_OPAQUE",
+      "file": "src/app/checkout/actions.ts",
+      "subject": "placeOrder's guard"
+    },
+    {
+      "code": "W_EFFECTS_UNKNOWN",
+      "file": "src/app/checkout/actions.ts",
+      "subject": "placeOrder"
+    },
+    {
+      "code": "W_OPAQUE",
+      "file": "src/app/products/[slug]/actions.ts",
+      "subject": "addToCart's guard"
+    },
+    {
+      "code": "W_ATTRIBUTES_UNKNOWN",
+      "file": "src/app/products/[slug]/actions.ts",
+      "subject": "products"
+    },
+    {
+      "code": "W_EFFECTS_UNKNOWN",
+      "file": "src/app/products/[slug]/actions.ts",
+      "subject": "addToCart"
+    }
+  ]
+}

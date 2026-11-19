@@ -1,0 +1,339 @@
+import {
+  conformanceCases,
+  evaluate,
+  falsifying,
+  fitContext,
+  searchFalsifying,
+  putPointer,
+  type CapabilityDefinition,
+  type Context,
+  type Expr,
+  type Id,
+} from '@affordances/ir'
+import { offerId } from './offer-id.ts'
+import { createRuntime, type RuntimeOptions } from './project.ts'
+import type { ExecutionResult, GuardImpl, Handler, Principal, ResourceResolver } from './types.ts'
+
+// RFC 0002 §9, R5: rule 5's conformance kit. For each declarative precondition and authorization condition, ir
+// derives a state in which it alone is false (conformanceCases); for each guard, the kit forces it to false with
+// every declarative condition true. The kit has the application's fixture arrange that state, executes the
+// capability through the application's own resolvers and handlers, with an approval, and expects a refusal that
+// names the condition. A capability that runs when it should refuse fails conformance
+
+export type ConformanceFixture = {
+  // the application's runtime options: its resolvers over a store arrange writes to, and its real handlers
+  options: RuntimeOptions
+  // put an instance in the store, with these attributes
+  arrange(type: Id, key: string, attributes: Record<string, unknown>): void | Promise<void>
+  // the caller: the kit fills in the attributes each case needs, and signs it in
+  principal: Principal
+  // an input that passes the capability's input schema, which the kit adds each case's input to
+  input?(capability: Id): Record<string, unknown>
+}
+
+export type ConformanceResult = {
+  capability: Id
+  condition: string
+  kind: 'declarative' | 'guard'
+  // false: the condition implies another, so a refusal can't be pinned on it alone (falsify.ts)
+  isolated: boolean
+  pass: boolean
+  // what the execution returned; absent for a case the kit couldn't test
+  got?: ExecutionResult
+  // why it didn't pass when it never ran: a gap is a failure, never a silent skip (review's close-out finding)
+  reason?: string
+}
+
+const KEY = 'conformance'
+
+// q goes down with p: no state makes p false and q true, so a refusal for q can be pinned on p. A condition the
+// greedy drop gave up for some other reason can't stand in for p
+const implied = (c: CapabilityDefinition, p: string, q: string) => {
+  if (p === q) return true
+  const exprOf = (id: string) =>
+    [...(c.authorization?.conditions ?? []), ...(c.preconditions ?? [])].find(
+      (x) => x.id === id && 'expr' in x,
+    ) as { expr: Expr } | undefined
+  const [a, b] = [exprOf(p), exprOf(q)]
+  // implied only when the search proves no state makes p false and q true; one that ran out of budget isn't proof
+  return !!a && !!b && 'none' in searchFalsifying({ any: [a.expr, { not: b.expr }] })
+}
+
+export const conformance = async (fixture: ConformanceFixture): Promise<ConformanceResult[]> => {
+  const { manifest } = fixture.options
+  const handlers = fixture.options.handlers ?? {}
+  const results: ConformanceResult[] = []
+  // the attribute a resource type's key is
+  const keyOf = (type: Id) => manifest.resources.find((r) => r.id === type)!.key
+
+  // every guard passes, except the one under test; the handler's run is the application's own
+  const forced = (c: CapabilityDefinition, failing?: string): Record<Id, Handler> => {
+    const guards: Record<string, GuardImpl> = {}
+    for (const x of [...(c.preconditions ?? []), ...(c.authorization?.conditions ?? [])])
+      if ('guard' in x) guards[x.id] = () => x.id !== failing
+    return { ...handlers, [c.id]: { ...handlers[c.id], guards } }
+  }
+
+  // arrange a case's context, execute with an approval, and say whether it was refused for that condition
+  const attempt = async (
+    c: CapabilityDefinition,
+    condition: string,
+    context: Context,
+    failing?: string,
+  ): Promise<{
+    got: ExecutionResult
+    named: boolean
+    refusedBy?: string
+    falseIds: Set<string>
+  }> => {
+    // an instance's key is its key attribute: the case's value when it sets one, which may be what's falsified
+    const keyFor = (
+      type: Id,
+      attributes: Record<string, unknown> | undefined,
+      fallback: string,
+    ) => {
+      const given = attributes?.[keyOf(type)]
+      return typeof given === 'string' ? given : fallback
+    }
+    const targetKey = c.target ? keyFor(c.target, context.target, KEY) : undefined
+    if (c.target)
+      await fixture.arrange(c.target, targetKey!, {
+        ...context.target,
+        [keyOf(c.target)]: targetKey,
+      })
+    const input: Record<string, unknown> = { ...fixture.input?.(c.id), ...context.input }
+    for (const r of c.references ?? []) {
+      const key = keyFor(r.resource, context.references?.[r.name], `${KEY}-${r.name}`)
+      await fixture.arrange(r.resource, key, {
+        ...context.references?.[r.name],
+        [keyOf(r.resource)]: key,
+      })
+      putPointer(input, r.at, key)
+    }
+    const principal: Principal = {
+      ...fixture.principal,
+      authenticated: true,
+      attributes: { ...fixture.principal.attributes, ...context.principal },
+    }
+    const runtime = createRuntime({ ...fixture.options, handlers: forced(c, failing) })
+    const offer = c.target
+      ? offerId({ capability: c.id, target: { type: c.target, key: targetKey! } })
+      : c.id
+    let got = await runtime.execute({ principal, offer, input })
+    if (
+      got.status === 'refused' &&
+      got.code === 'confirmation_required' &&
+      got.confirmation?.approval
+    )
+      got = await runtime.execute({ principal, offer, input, approval: got.confirmation.approval })
+    // refused by a condition, not for a missing instance or a confirmation the kit couldn't give
+    const refusedBy =
+      got.status === 'refused' && (got.code === 'precondition' || got.code === 'unauthorized')
+        ? got.condition?.id
+        : undefined
+    // the declarative conditions false in the state the kit arranged, as the runtime would read it
+    const arranged: Context = {
+      principal: principal.attributes,
+      input,
+      references: Object.fromEntries(
+        (c.references ?? []).map((r) => [r.name, context.references?.[r.name] ?? {}]),
+      ),
+    }
+    if (c.target) arranged.target = { ...context.target, [keyOf(c.target)]: targetKey }
+    const falseIds = new Set(
+      [...(c.authorization?.conditions ?? []), ...(c.preconditions ?? [])].flatMap((x) =>
+        'expr' in x && evaluate(x.expr, arranged) === false ? [x.id] : [],
+      ),
+    )
+    return { got, named: refusedBy === condition, refusedBy, falseIds }
+  }
+
+  // a context where `id` is false and every other declarative condition of c is true, or as many as can be: the others
+  // that can't be are dropped one at a time, the first that frees a context going first
+  const alongside = (c: CapabilityDefinition, id: string): Context | undefined => {
+    const all = [...(c.authorization?.conditions ?? []), ...(c.preconditions ?? [])].flatMap((x) =>
+      'expr' in x ? [{ id: x.id, expr: x.expr as Expr }] : [],
+    )
+    const target = all.find((x) => x.id === id)!.expr
+    // false exactly when target is false and all of others are true
+    const want = (others: Expr[]) =>
+      fitContext(
+        manifest,
+        c,
+        falsifying(others.length ? { any: [target, { not: { all: others } }] } : target),
+      )
+    let others = all.filter((x) => x.id !== id).map((x) => x.expr)
+    for (;;) {
+      const found = want(others)
+      if (found || !others.length) return found
+      const next = others.findIndex((_, i) => want(others.filter((__, j) => j !== i)))
+      others = next < 0 ? others.slice(1) : others.filter((_, j) => j !== next)
+    }
+  }
+
+  for (const k of conformanceCases(manifest)) {
+    const c = manifest.capabilities.find((x) => x.id === k.capability)!
+    if (!k.context) {
+      results.push({
+        capability: c.id,
+        condition: k.condition,
+        kind: 'declarative',
+        isolated: k.isolated,
+        pass: false,
+        reason: 'untested: no state makes this condition false',
+      })
+      continue
+    }
+    // a state that fitting to the declared schemas no longer makes false: run, it could pass on the wrong refusal, or
+    // fail for the wrong reason
+    if (k.reason) {
+      results.push({
+        capability: c.id,
+        condition: k.condition,
+        kind: 'declarative',
+        isolated: k.isolated,
+        pass: false,
+        reason: `untested: ${k.reason}`,
+      })
+      continue
+    }
+    // a case that isn't isolated: the condition false, and as many of the others true as can be with it, so what
+    // refuses is the condition or one it takes down with it
+    const context = k.isolated ? k.context : (alongside(c, k.condition) ?? k.context)
+    const { got, named, refusedBy, falseIds } = await attempt(c, k.condition, context)
+    // it passes when a condition that's false there refuses it: never on not_found from an arrange that did nothing,
+    // a leftover confirmation, or an unauthorized that names no condition
+    results.push({
+      capability: c.id,
+      condition: k.condition,
+      kind: 'declarative',
+      isolated: k.isolated,
+      pass: k.isolated
+        ? named
+        : refusedBy !== undefined && falseIds.has(refusedBy) && implied(c, k.condition, refusedBy),
+      got,
+    })
+  }
+
+  for (const c of manifest.capabilities) {
+    const conditions = [...(c.authorization?.conditions ?? []), ...(c.preconditions ?? [])]
+    const exprs = conditions.flatMap((x) => ('expr' in x ? [x.expr as Expr] : []))
+    // a context where every declarative condition holds: not all of them is false there
+    const context = exprs.length ? fitContext(manifest, c, falsifying({ not: { all: exprs } })) : {}
+    for (const x of conditions) {
+      if (!('guard' in x)) continue
+      if (!context) {
+        results.push({
+          capability: c.id,
+          condition: x.id,
+          kind: 'guard',
+          isolated: true,
+          pass: false,
+          reason:
+            'untested: no state makes every declarative condition true, so the guard alone can’t refuse',
+        })
+        continue
+      }
+      const { got, named } = await attempt(c, x.id, context, x.id)
+      results.push({
+        capability: c.id,
+        condition: x.id,
+        kind: 'guard',
+        isolated: true,
+        pass: named,
+        got,
+      })
+    }
+  }
+  return results
+}
+
+// RFC 0002 §2.1: a resolver MUST scope its reads to the principal, since the runtime
+// evaluates conditions on whatever it returns and a host-set start can name any resource. The kit can't know an
+// application's access policy, so the application states it: two principals, each with the private resources it may
+// read. The kit checks every one of them under its owner, the other principal and an anonymous one
+
+/** @experimental One principal, and the private resources it may read, by resolver type. */
+export type ResolverOwner = { principal: Principal; reads: Record<Id, string[]> }
+
+/** @experimental What resolverConformance takes: the application's resolvers, and its two principals. */
+export type ResolverFixture = {
+  resources: Record<Id, ResourceResolver>
+  principals: [ResolverOwner, ResolverOwner]
+}
+
+/** @experimental One check of one resource: its resolver, key, the principal tried, and what failed, if anything. */
+export type ResolverResult = {
+  resolver: Id
+  resource: string
+  principal: 'owner' | 'other' | 'anonymous'
+  check: 'load' | 'list'
+  pass: boolean
+  reason?: string
+}
+
+const ANONYMOUS: Principal = { authenticated: false, attributes: {} }
+
+/**
+ * @experimental The resolver contract's check: each listed resource loads for its owner, and loads as null, and is
+ * left out of list(), for the other principal and for an anonymous one.
+ */
+export const resolverConformance = async (fixture: ResolverFixture): Promise<ResolverResult[]> => {
+  const results: ResolverResult[] = []
+  const [a, b] = fixture.principals
+  for (const [owner, other] of [
+    [a, b],
+    [b, a],
+  ] as const) {
+    for (const [type, keys] of Object.entries(owner.reads)) {
+      const resolver = fixture.resources[type]
+      for (const key of keys) {
+        if (!resolver) {
+          results.push({
+            resolver: type,
+            resource: key,
+            principal: 'owner',
+            check: 'load',
+            pass: false,
+            reason: 'no resolver for this type',
+          })
+          continue
+        }
+        const own = await resolver.load(key, owner.principal)
+        results.push({
+          resolver: type,
+          resource: key,
+          principal: 'owner',
+          check: 'load',
+          pass: own !== null,
+          ...(own === null && { reason: 'its owner can’t read it, so the check proves nothing' }),
+        })
+        for (const [name, p] of [
+          ['other', other.principal],
+          ['anonymous', ANONYMOUS],
+        ] as const) {
+          const got = await resolver.load(key, p)
+          results.push({
+            resolver: type,
+            resource: key,
+            principal: name,
+            check: 'load',
+            pass: got === null,
+            ...(got !== null && { reason: `the ${name} principal can read it` }),
+          })
+          // a list may need a capability's scope; the kit lists without one, as an unscoped list must still be safe
+          const listed = (await resolver.list?.(p, { capability: '' })) ?? []
+          results.push({
+            resolver: type,
+            resource: key,
+            principal: name,
+            check: 'list',
+            pass: !listed.includes(key),
+            ...(listed.includes(key) && { reason: `the ${name} principal's list() includes it` }),
+          })
+        }
+      }
+    }
+  }
+  return results
+}

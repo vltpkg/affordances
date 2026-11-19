@@ -1,0 +1,686 @@
+{
+  "example A": {
+    "fields": {
+      "binding": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 5,
+        "precision": null,
+        "recall": 0.0
+      },
+      "id": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "kind": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "input": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "authorization": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "confirmation": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "target": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "preconditions": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "extractedGuards": 0,
+        "precision": null,
+        "recall": null
+      },
+      "effects": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "claims": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "relations": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "resources": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 3,
+        "keyOnlyMatches": [],
+        "precision": null,
+        "recall": 0.0
+      }
+    },
+    "mismatches": [],
+    "diagnostics": {
+      "W_NO_ID": 5
+    },
+    "confirmationSummaries": []
+  },
+  "example B": {
+    "fields": {
+      "binding": {
+        "tp": 5,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "id": {
+        "tp": 0,
+        "fp": 5,
+        "fn": 5,
+        "precision": 0.0,
+        "recall": 0.0
+      },
+      "kind": {
+        "tp": 5,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "input": {
+        "tp": 0,
+        "fp": 5,
+        "fn": 5,
+        "precision": 0.0,
+        "recall": 0.0
+      },
+      "authorization": {
+        "tp": 5,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "confirmation": {
+        "tp": 5,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "target": {
+        "tp": 0,
+        "fp": 1,
+        "fn": 4,
+        "precision": 0.0,
+        "recall": 0.0
+      },
+      "preconditions": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 6,
+        "extractedGuards": 4,
+        "precision": null,
+        "recall": 0.0
+      },
+      "effects": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 5,
+        "precision": null,
+        "recall": 0.0
+      },
+      "claims": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "relations": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "resources": {
+        "tp": 0,
+        "fp": 1,
+        "fn": 3,
+        "keyOnlyMatches": [["products", "slug"]],
+        "precision": 0.0,
+        "recall": 0.0
+      }
+    },
+    "mismatches": [
+      {
+        "binding": ["/", "search"],
+        "field": "id",
+        "reference": "acme.catalog.search",
+        "extracted": "search"
+      },
+      {
+        "binding": ["/cart", "updateQuantity"],
+        "field": "id",
+        "reference": "acme.cart.setQuantity",
+        "extracted": "cart.updateQuantity"
+      },
+      {
+        "binding": ["/cart", "removeItem"],
+        "field": "id",
+        "reference": "acme.cart.removeItem",
+        "extracted": "cart.removeItem"
+      },
+      {
+        "binding": ["/checkout", "placeOrder"],
+        "field": "id",
+        "reference": "acme.checkout.placeOrder",
+        "extracted": "checkout.placeOrder"
+      },
+      {
+        "binding": ["/products/[slug]", "addToCart"],
+        "field": "id",
+        "reference": "acme.cart.addItem",
+        "extracted": "products.addToCart"
+      },
+      {
+        "binding": ["/", "search"],
+        "field": "input",
+        "reference": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "required": ["query"],
+          "additionalProperties": false
+        },
+        "extracted": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "required": ["query"]
+        }
+      },
+      {
+        "binding": ["/cart", "updateQuantity"],
+        "field": "input",
+        "reference": {
+          "type": "object",
+          "properties": {
+            "sku": {
+              "type": "string"
+            },
+            "quantity": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10
+            }
+          },
+          "required": ["sku", "quantity"],
+          "additionalProperties": false
+        },
+        "extracted": {
+          "type": "object",
+          "properties": {
+            "sku": {
+              "type": "string"
+            },
+            "quantity": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10
+            }
+          },
+          "required": ["sku", "quantity"]
+        }
+      },
+      {
+        "binding": ["/cart", "removeItem"],
+        "field": "input",
+        "reference": {
+          "type": "object",
+          "properties": {
+            "sku": {
+              "type": "string"
+            }
+          },
+          "required": ["sku"],
+          "additionalProperties": false
+        },
+        "extracted": {
+          "type": "object",
+          "properties": {
+            "sku": {
+              "type": "string"
+            }
+          },
+          "required": ["sku"]
+        }
+      },
+      {
+        "binding": ["/checkout", "placeOrder"],
+        "field": "input",
+        "reference": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "extracted": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "binding": ["/products/[slug]", "addToCart"],
+        "field": "input",
+        "reference": {
+          "type": "object",
+          "properties": {
+            "sku": {
+              "type": "string"
+            },
+            "quantity": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10,
+              "default": 1
+            }
+          },
+          "required": ["sku"],
+          "additionalProperties": false
+        },
+        "extracted": {
+          "type": "object",
+          "properties": {
+            "sku": {
+              "type": "string"
+            },
+            "quantity": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10
+            }
+          },
+          "required": ["sku"]
+        }
+      },
+      {
+        "binding": ["/cart", "updateQuantity"],
+        "field": "target",
+        "reference": "acme.cart",
+        "extracted": null
+      },
+      {
+        "binding": ["/cart", "removeItem"],
+        "field": "target",
+        "reference": "acme.cart",
+        "extracted": null
+      },
+      {
+        "binding": ["/checkout", "placeOrder"],
+        "field": "target",
+        "reference": "acme.cart",
+        "extracted": null
+      },
+      {
+        "binding": ["/products/[slug]", "addToCart"],
+        "field": "target",
+        "reference": "acme.product",
+        "extracted": "products"
+      }
+    ],
+    "diagnostics": {
+      "W_ATTRIBUTES_UNKNOWN": 1,
+      "W_EFFECTS_UNKNOWN": 4,
+      "W_OPAQUE": 4,
+      "W_SUMMARY_GENERIC": 1
+    },
+    "confirmationSummaries": [
+      {
+        "binding": ["/checkout", "placeOrder"],
+        "reference": "Place an order for {target.count} items totalling {target.subtotal}",
+        "extracted": "Run placeOrder"
+      }
+    ]
+  },
+  "hosting-lab A": {
+    "fields": {
+      "binding": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 8,
+        "precision": null,
+        "recall": 0.0
+      },
+      "id": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "kind": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "input": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "authorization": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "confirmation": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "target": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "preconditions": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "extractedGuards": 0,
+        "precision": null,
+        "recall": null
+      },
+      "effects": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "claims": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "relations": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": null,
+        "recall": null
+      },
+      "resources": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 5,
+        "keyOnlyMatches": [],
+        "precision": null,
+        "recall": 0.0
+      }
+    },
+    "mismatches": [],
+    "diagnostics": {
+      "W_NO_ID": 8
+    },
+    "confirmationSummaries": []
+  },
+  "hosting-lab B": {
+    "fields": {
+      "binding": {
+        "tp": 8,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "id": {
+        "tp": 0,
+        "fp": 8,
+        "fn": 8,
+        "precision": 0.0,
+        "recall": 0.0
+      },
+      "kind": {
+        "tp": 8,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "input": {
+        "tp": 8,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "authorization": {
+        "tp": 8,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "confirmation": {
+        "tp": 8,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "target": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 7,
+        "precision": null,
+        "recall": 0.0
+      },
+      "preconditions": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 11,
+        "extractedGuards": 7,
+        "precision": null,
+        "recall": 0.0
+      },
+      "effects": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 15,
+        "precision": null,
+        "recall": 0.0
+      },
+      "claims": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 3,
+        "precision": null,
+        "recall": 0.0
+      },
+      "relations": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 2,
+        "precision": null,
+        "recall": 0.0
+      },
+      "resources": {
+        "tp": 0,
+        "fp": 0,
+        "fn": 5,
+        "keyOnlyMatches": [],
+        "precision": null,
+        "recall": 0.0
+      }
+    },
+    "mismatches": [
+      {
+        "binding": ["/plans", "listPlans"],
+        "field": "id",
+        "reference": "hosting.plan.list",
+        "extracted": "plans.listPlans"
+      },
+      {
+        "binding": ["/plans", "subscribe"],
+        "field": "id",
+        "reference": "hosting.plan.subscribe",
+        "extracted": "plans.subscribe"
+      },
+      {
+        "binding": ["/plans", "subscribeBundle"],
+        "field": "id",
+        "reference": "hosting.bundle.subscribe",
+        "extracted": "plans.subscribeBundle"
+      },
+      {
+        "binding": ["/", "cancel"],
+        "field": "id",
+        "reference": "hosting.subscription.cancel",
+        "extracted": "cancel"
+      },
+      {
+        "binding": ["/add-ons", "addAddOn"],
+        "field": "id",
+        "reference": "hosting.addOn.add",
+        "extracted": "addOns.addAddOn"
+      },
+      {
+        "binding": ["/add-ons", "removeAddOn"],
+        "field": "id",
+        "reference": "hosting.addOn.remove",
+        "extracted": "addOns.removeAddOn"
+      },
+      {
+        "binding": ["/deployments", "deploy"],
+        "field": "id",
+        "reference": "hosting.deployment.create",
+        "extracted": "deployments.deploy"
+      },
+      {
+        "binding": ["/deployments", "rollback"],
+        "field": "id",
+        "reference": "hosting.deployment.rollback",
+        "extracted": "deployments.rollback"
+      },
+      {
+        "binding": ["/plans", "subscribe"],
+        "field": "target",
+        "reference": "hosting.plan",
+        "extracted": null
+      },
+      {
+        "binding": ["/plans", "subscribeBundle"],
+        "field": "target",
+        "reference": "hosting.bundle",
+        "extracted": null
+      },
+      {
+        "binding": ["/", "cancel"],
+        "field": "target",
+        "reference": "hosting.project",
+        "extracted": null
+      },
+      {
+        "binding": ["/add-ons", "addAddOn"],
+        "field": "target",
+        "reference": "hosting.addOn",
+        "extracted": null
+      },
+      {
+        "binding": ["/add-ons", "removeAddOn"],
+        "field": "target",
+        "reference": "hosting.addOn",
+        "extracted": null
+      },
+      {
+        "binding": ["/deployments", "deploy"],
+        "field": "target",
+        "reference": "hosting.project",
+        "extracted": null
+      },
+      {
+        "binding": ["/deployments", "rollback"],
+        "field": "target",
+        "reference": "hosting.deployment",
+        "extracted": null
+      }
+    ],
+    "diagnostics": {
+      "W_EFFECTS_UNKNOWN": 7,
+      "W_OPAQUE": 7,
+      "W_SUMMARY_GENERIC": 3
+    },
+    "confirmationSummaries": [
+      {
+        "binding": ["/plans", "subscribe"],
+        "reference": "Move {project.id} to {target.name}, for {target.priceUsd} USD a month",
+        "extracted": "Run subscribe"
+      },
+      {
+        "binding": ["/plans", "subscribeBundle"],
+        "reference": "Move {project.id} to {target.name}, for {target.priceUsd} USD a month",
+        "extracted": "Run subscribeBundle"
+      },
+      {
+        "binding": ["/add-ons", "addAddOn"],
+        "reference": "Add {target.name} to {project.id}, for {target.priceUsd} USD a month",
+        "extracted": "Run addAddOn"
+      }
+    ]
+  }
+}

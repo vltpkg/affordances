@@ -1,0 +1,325 @@
+{
+  "ok": true,
+  "refusals": [],
+  "surfaces": [
+    {
+      "surface": "full",
+      "buildId": "CCY8468hlh2lMLNpTFn0k",
+      "siteIndex": "a1be791cf38fa64f9f16db78568b7b1369f2016720f42e9b74b3bccdf5539b56",
+      "instructions": null,
+      "toolsHash": "f851c709e844a2dd80ccb346387cb0846ed926ae3ec11d3eca19bd404755c4a8",
+      "tools": [
+        "execute",
+        "expand",
+        "inspect",
+        "project"
+      ],
+      "firstView": "project",
+      "found": [
+        {
+          "fact": "plan hobby priceUsd",
+          "where": "project"
+        },
+        {
+          "fact": "plan hobby bandwidthGb",
+          "where": "project"
+        },
+        {
+          "fact": "plan pro priceUsd",
+          "where": "project"
+        },
+        {
+          "fact": "plan pro bandwidthGb",
+          "where": "project"
+        },
+        {
+          "fact": "plan business priceUsd",
+          "where": "project"
+        },
+        {
+          "fact": "plan business bandwidthGb",
+          "where": "project"
+        },
+        {
+          "fact": "addOn priority-support priceUsd",
+          "where": "project"
+        },
+        {
+          "fact": "addOn extra-bandwidth priceUsd",
+          "where": "project"
+        },
+        {
+          "fact": "addOn daily-backups priceUsd",
+          "where": "project"
+        },
+        {
+          "fact": "bundle pro-plus priceUsd",
+          "where": "project"
+        },
+        {
+          "fact": "region us-east plans",
+          "where": "project"
+        },
+        {
+          "fact": "region eu-west plans",
+          "where": "project"
+        }
+      ],
+      "missing": [],
+      "depth": {
+        "ok": true,
+        "detail": "both regions and their plans in the first view, nothing omitted"
+      }
+    },
+    {
+      "surface": "progressive",
+      "buildId": "CCY8468hlh2lMLNpTFn0k",
+      "siteIndex": "a1be791cf38fa64f9f16db78568b7b1369f2016720f42e9b74b3bccdf5539b56",
+      "instructions": null,
+      "toolsHash": "f851c709e844a2dd80ccb346387cb0846ed926ae3ec11d3eca19bd404755c4a8",
+      "tools": [
+        "execute",
+        "expand",
+        "inspect",
+        "project"
+      ],
+      "firstView": "project",
+      "found": [
+        {
+          "fact": "plan hobby priceUsd",
+          "where": "project"
+        },
+        {
+          "fact": "plan hobby bandwidthGb",
+          "where": "project"
+        },
+        {
+          "fact": "plan pro priceUsd",
+          "where": "project"
+        },
+        {
+          "fact": "plan pro bandwidthGb",
+          "where": "project"
+        },
+        {
+          "fact": "plan business priceUsd",
+          "where": "project"
+        },
+        {
+          "fact": "plan business bandwidthGb",
+          "where": "project"
+        },
+        {
+          "fact": "addOn priority-support priceUsd",
+          "where": "project"
+        },
+        {
+          "fact": "addOn extra-bandwidth priceUsd",
+          "where": "project"
+        },
+        {
+          "fact": "addOn daily-backups priceUsd",
+          "where": "project"
+        },
+        {
+          "fact": "bundle pro-plus priceUsd",
+          "where": "project"
+        },
+        {
+          "fact": "region us-east plans",
+          "where": "expand {\"along\":\"relations\",\"count\":3,\"from\":{\"key\":\"proj_55d70dae8028468a8c095b6655e342e9\",\"type\":\"hosting.project\"}}"
+        },
+        {
+          "fact": "region eu-west plans",
+          "where": "expand {\"along\":\"relations\",\"count\":3,\"from\":{\"key\":\"proj_55d70dae8028468a8c095b6655e342e9\",\"type\":\"hosting.project\"}}"
+        }
+      ],
+      "missing": [],
+      "depth": {
+        "ok": true,
+        "detail": "no region in the first view; its one relations expansion returns both"
+      }
+    },
+    {
+      "surface": "v0",
+      "buildId": "CCY8468hlh2lMLNpTFn0k",
+      "siteIndex": "a1be791cf38fa64f9f16db78568b7b1369f2016720f42e9b74b3bccdf5539b56",
+      "instructions": null,
+      "toolsHash": "917f64f834fd3efa5a51a8a0a077f9a32b97edea87fc700e2e84989398e3bd66",
+      "tools": [
+        "affordances_call",
+        "affordances_open"
+      ],
+      "firstView": "pages",
+      "found": [
+        {
+          "fact": "plan hobby priceUsd",
+          "where": "open /plans"
+        },
+        {
+          "fact": "plan hobby bandwidthGb",
+          "where": "open /plans"
+        },
+        {
+          "fact": "plan pro priceUsd",
+          "where": "open /plans"
+        },
+        {
+          "fact": "plan pro bandwidthGb",
+          "where": "open /plans"
+        },
+        {
+          "fact": "plan business priceUsd",
+          "where": "open /plans"
+        },
+        {
+          "fact": "plan business bandwidthGb",
+          "where": "open /plans"
+        },
+        {
+          "fact": "addOn priority-support priceUsd",
+          "where": "open /add-ons"
+        },
+        {
+          "fact": "addOn extra-bandwidth priceUsd",
+          "where": "open /add-ons"
+        },
+        {
+          "fact": "addOn daily-backups priceUsd",
+          "where": "open /add-ons"
+        },
+        {
+          "fact": "bundle pro-plus priceUsd",
+          "where": "open /plans"
+        },
+        {
+          "fact": "servedFrom hobby regions",
+          "where": "open /plans/hobby"
+        },
+        {
+          "fact": "servedFrom pro regions",
+          "where": "open /plans/pro"
+        },
+        {
+          "fact": "servedFrom business regions",
+          "where": "open /plans/business"
+        }
+      ],
+      "missing": [],
+      "depth": {
+        "ok": true,
+        "detail": "no plan's regions on the first page; each plan's page is one link from /plans"
+      }
+    },
+    {
+      "surface": "browser",
+      "buildId": "CCY8468hlh2lMLNpTFn0k",
+      "siteIndex": "a1be791cf38fa64f9f16db78568b7b1369f2016720f42e9b74b3bccdf5539b56",
+      "instructions": null,
+      "toolsHash": "0ae10c5529920055a913da6f3c49521bbc1d3b08c160d844bf42ddc0e3d3702f",
+      "tools": [
+        "click",
+        "fill",
+        "open",
+        "snapshot",
+        "submit"
+      ],
+      "firstView": "pages",
+      "found": [
+        {
+          "fact": "plan hobby priceUsd",
+          "where": "open /plans"
+        },
+        {
+          "fact": "plan hobby bandwidthGb",
+          "where": "open /plans"
+        },
+        {
+          "fact": "plan pro priceUsd",
+          "where": "open /plans"
+        },
+        {
+          "fact": "plan pro bandwidthGb",
+          "where": "open /plans"
+        },
+        {
+          "fact": "plan business priceUsd",
+          "where": "open /plans"
+        },
+        {
+          "fact": "plan business bandwidthGb",
+          "where": "open /plans"
+        },
+        {
+          "fact": "addOn priority-support priceUsd",
+          "where": "open /add-ons"
+        },
+        {
+          "fact": "addOn extra-bandwidth priceUsd",
+          "where": "open /add-ons"
+        },
+        {
+          "fact": "addOn daily-backups priceUsd",
+          "where": "open /add-ons"
+        },
+        {
+          "fact": "bundle pro-plus priceUsd",
+          "where": "open /plans"
+        },
+        {
+          "fact": "servedFrom hobby regions",
+          "where": "open /plans/hobby"
+        },
+        {
+          "fact": "servedFrom pro regions",
+          "where": "open /plans/pro"
+        },
+        {
+          "fact": "servedFrom business regions",
+          "where": "open /plans/business"
+        }
+      ],
+      "missing": [],
+      "depth": {
+        "ok": true,
+        "detail": "no plan's regions on the first page; each plan's page is one link from /plans"
+      },
+      "browser": {
+        "chromium": "156.0.8078.4",
+        "playwright": "1.64.1",
+        "launchArgs": []
+      }
+    }
+  ],
+  "manifestDigest": "sha256-TkmuWjcmgPAZiuxRoUNhgLRdLpOVNZF6VkedfffaIbE",
+  "catalog": "6d0a9c5cede735a9f63ae76edef58058d216cfbc2b7237aa309d7d8f056afd60",
+  "mcpPin": {
+    "commit": "e9645ab4bea0244d3d29f2e4bee7e7231337ef55",
+    "files": 12,
+    "ok": true,
+    "differ": []
+  },
+  "exportPin": {
+    "ok": true,
+    "commit": "38ee40ef0f71dfe9a326e0e96a22c1e4bf7c5fbc",
+    "treeHash": "157cf43ad8240b844f442d71339a00052bed5b9569d2db365afe9b18d14e13f8"
+  },
+  "t8Records": [
+    {
+      "surface": "full",
+      "regionSeen": true
+    },
+    {
+      "surface": "progressive",
+      "regionSeen": true
+    },
+    {
+      "surface": "v0",
+      "regionSeen": false
+    },
+    {
+      "surface": "browser",
+      "regionSeen": false
+    }
+  ]
+}

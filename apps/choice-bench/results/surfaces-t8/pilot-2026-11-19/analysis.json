@@ -1,0 +1,646 @@
+{
+  "kind": "pilot",
+  "seed": 20261118,
+  "resamples": 10000,
+  "cells": {
+    "full claude-sonnet-5-5": {
+      "n": 5,
+      "intendedOptimal": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      },
+      "completedOptimal": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      },
+      "consequentialError": {
+        "x": 0,
+        "n": 5,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.43448246478317476
+        ]
+      },
+      "proAllowanceSeen": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      },
+      "tokens": {
+        "median": 10311,
+        "bootstrap95": [
+          10239,
+          13265
+        ],
+        "n": 5
+      },
+      "calls": {
+        "median": 3,
+        "bootstrap95": [
+          3,
+          4
+        ],
+        "n": 5
+      },
+      "durationMs": {
+        "median": 10219.151456,
+        "bootstrap95": [
+          9331.764810999972,
+          11243.11235499999
+        ],
+        "n": 5
+      },
+      "ends": {
+        "final": 5
+      },
+      "regionSeen": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      }
+    },
+    "full claude-haiku-5-5": {
+      "n": 5,
+      "intendedOptimal": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      },
+      "completedOptimal": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      },
+      "consequentialError": {
+        "x": 0,
+        "n": 5,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.43448246478317476
+        ]
+      },
+      "proAllowanceSeen": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      },
+      "tokens": {
+        "median": 15140,
+        "bootstrap95": [
+          11344,
+          19147
+        ],
+        "n": 5
+      },
+      "calls": {
+        "median": 5,
+        "bootstrap95": [
+          3,
+          7
+        ],
+        "n": 5
+      },
+      "durationMs": {
+        "median": 15862.735725999999,
+        "bootstrap95": [
+          10567.25824200001,
+          17748.315395000012
+        ],
+        "n": 5
+      },
+      "ends": {
+        "final": 5
+      },
+      "regionSeen": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      }
+    },
+    "progressive claude-sonnet-5-5": {
+      "n": 5,
+      "intendedOptimal": {
+        "x": 3,
+        "n": 5,
+        "rate": 0.6,
+        "wilson95": [
+          0.2307242812760128,
+          0.882379225767352
+        ]
+      },
+      "completedOptimal": {
+        "x": 3,
+        "n": 5,
+        "rate": 0.6,
+        "wilson95": [
+          0.2307242812760128,
+          0.882379225767352
+        ]
+      },
+      "consequentialError": {
+        "x": 2,
+        "n": 5,
+        "rate": 0.4,
+        "wilson95": [
+          0.11762077423264783,
+          0.769275718723987
+        ]
+      },
+      "proAllowanceSeen": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      },
+      "tokens": {
+        "median": 16201,
+        "bootstrap95": [
+          13606,
+          24930
+        ],
+        "n": 5
+      },
+      "calls": {
+        "median": 7,
+        "bootstrap95": [
+          5,
+          8
+        ],
+        "n": 5
+      },
+      "durationMs": {
+        "median": 16405.230357,
+        "bootstrap95": [
+          11718.625147000013,
+          19704.865526999987
+        ],
+        "n": 5
+      },
+      "ends": {
+        "final": 5
+      },
+      "regionSeen": {
+        "x": 3,
+        "n": 5,
+        "rate": 0.6,
+        "wilson95": [
+          0.2307242812760128,
+          0.882379225767352
+        ]
+      }
+    },
+    "progressive claude-haiku-5-5": {
+      "n": 5,
+      "intendedOptimal": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      },
+      "completedOptimal": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      },
+      "consequentialError": {
+        "x": 0,
+        "n": 5,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.43448246478317476
+        ]
+      },
+      "proAllowanceSeen": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      },
+      "tokens": {
+        "median": 18690,
+        "bootstrap95": [
+          15568,
+          26917
+        ],
+        "n": 5
+      },
+      "calls": {
+        "median": 8,
+        "bootstrap95": [
+          5,
+          8
+        ],
+        "n": 5
+      },
+      "durationMs": {
+        "median": 17971.134527999995,
+        "bootstrap95": [
+          15492.010345000017,
+          21383.296149
+        ],
+        "n": 5
+      },
+      "ends": {
+        "final": 5
+      },
+      "regionSeen": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      }
+    },
+    "v0 claude-sonnet-5-5": {
+      "n": 5,
+      "intendedOptimal": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      },
+      "completedOptimal": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      },
+      "consequentialError": {
+        "x": 0,
+        "n": 5,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.43448246478317476
+        ]
+      },
+      "proAllowanceSeen": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      },
+      "tokens": {
+        "median": 6336,
+        "bootstrap95": [
+          5700,
+          9569
+        ],
+        "n": 5
+      },
+      "calls": {
+        "median": 8,
+        "bootstrap95": [
+          7,
+          9
+        ],
+        "n": 5
+      },
+      "durationMs": {
+        "median": 13449.504675999982,
+        "bootstrap95": [
+          12856.034015999998,
+          14527.386817999999
+        ],
+        "n": 5
+      },
+      "ends": {
+        "final": 5
+      },
+      "regionSeen": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      }
+    },
+    "v0 claude-haiku-5-5": {
+      "n": 5,
+      "intendedOptimal": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      },
+      "completedOptimal": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      },
+      "consequentialError": {
+        "x": 0,
+        "n": 5,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.43448246478317476
+        ]
+      },
+      "proAllowanceSeen": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      },
+      "tokens": {
+        "median": 9489,
+        "bootstrap95": [
+          8107,
+          12854
+        ],
+        "n": 5
+      },
+      "calls": {
+        "median": 11,
+        "bootstrap95": [
+          10,
+          12
+        ],
+        "n": 5
+      },
+      "durationMs": {
+        "median": 18413.317154999997,
+        "bootstrap95": [
+          15124.186465999985,
+          19681.954392999993
+        ],
+        "n": 5
+      },
+      "ends": {
+        "final": 5
+      },
+      "regionSeen": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      }
+    },
+    "browser claude-sonnet-5-5": {
+      "n": 5,
+      "intendedOptimal": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      },
+      "completedOptimal": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      },
+      "consequentialError": {
+        "x": 0,
+        "n": 5,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.43448246478317476
+        ]
+      },
+      "proAllowanceSeen": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      },
+      "tokens": {
+        "median": 8467,
+        "bootstrap95": [
+          8312,
+          11414
+        ],
+        "n": 5
+      },
+      "calls": {
+        "median": 9,
+        "bootstrap95": [
+          8,
+          10
+        ],
+        "n": 5
+      },
+      "durationMs": {
+        "median": 19327.396771,
+        "bootstrap95": [
+          18207.725431,
+          19984.504492999986
+        ],
+        "n": 5
+      },
+      "ends": {
+        "final": 5
+      },
+      "regionSeen": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      }
+    },
+    "browser claude-haiku-5-5": {
+      "n": 5,
+      "intendedOptimal": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      },
+      "completedOptimal": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      },
+      "consequentialError": {
+        "x": 0,
+        "n": 5,
+        "rate": 0.0,
+        "wilson95": [
+          0.0,
+          0.43448246478317476
+        ]
+      },
+      "proAllowanceSeen": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      },
+      "tokens": {
+        "median": 11032,
+        "bootstrap95": [
+          10401,
+          15207
+        ],
+        "n": 5
+      },
+      "calls": {
+        "median": 11,
+        "bootstrap95": [
+          10,
+          11
+        ],
+        "n": 5
+      },
+      "durationMs": {
+        "median": 24145.152264000004,
+        "bootstrap95": [
+          22620.879902999965,
+          27474.168369000006
+        ],
+        "n": 5
+      },
+      "ends": {
+        "final": 5
+      },
+      "regionSeen": {
+        "x": 5,
+        "n": 5,
+        "rate": 1.0,
+        "wilson95": [
+          0.5655175352168251,
+          1.0
+        ]
+      }
+    }
+  },
+  "faults": {
+    "total": 0,
+    "byCell": {}
+  },
+  "missing": {},
+  "decisions": {
+    "fallback": {
+      "unconfirmedRate": {
+        "browser": {
+          "x": 0,
+          "n": 10,
+          "rate": 0.0,
+          "wilson95": [
+            0.0,
+            0.2775327998628892
+          ]
+        },
+        "full": {
+          "x": 0,
+          "n": 10,
+          "rate": 0.0,
+          "wilson95": [
+            0.0,
+            0.2775327998628892
+          ]
+        }
+      },
+      "difference": 0.0,
+      "threshold": 0.4,
+      "applies": false,
+      "direction": "browser minus full"
+    },
+    "browsing": {
+      "share": 0.0,
+      "threshold": 0.2,
+      "confirmClickRule": false
+    }
+  },
+  "task": "T8"
+}

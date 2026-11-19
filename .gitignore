@@ -16,3 +16,14 @@ coverage
 .env
 .env.*
 !.env.example
+
+# test scratch copies, removed after each run; a killed run can leave one
+**/test/.fixture-*/
+**/test/.slice-*/
+**/test/.extract-*/
+**/test/.modules-*/
+**/test/.probe-*/
+**/test/.v0-adapter-*/
+apps/example/scripts/v0-golden/out.json
+# Python's bytecode caches, written beside the analysis scripts they load
+__pycache__/

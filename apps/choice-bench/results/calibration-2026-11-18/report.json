@@ -1,0 +1,1018 @@
+{
+  "run": {
+    "commit": {
+      "sha": "c81eeeb1a61e0330be34ce170169c8d9a77292cc",
+      "from": "pinned export",
+      "loadedFiles": "7e6da386b85f5c05328e22194177d756289039bbace41281f3104135fedb5b35"
+    },
+    "startedAt": "2026-11-18T03:15:47.963Z",
+    "endedAt": "2026-11-18T03:26:01.298Z",
+    "load": {
+      "start": [6.32, 11.3, 14.11],
+      "end": [1.54, 3.93, 8.72]
+    },
+    "clis": ["claude 2.1.311 (Claude Code)"],
+    "models": {
+      "claude-sonnet-5-5": ["claude-sonnet-5-5"],
+      "claude-haiku-5-5": ["claude-haiku-5-5"]
+    },
+    "canaries": [
+      {
+        "driver": "claude-cli",
+        "model": "claude-sonnet-5-5",
+        "at": "2026-11-18T03:15:48.309Z",
+        "leaks": [],
+        "cliVersion": "2.1.311 (Claude Code)",
+        "builtIn": [],
+        "quotes": [],
+        "finalText": "{\"agentsMd\": false, \"claudeMd\": false, \"userInstructions\": false, \"memoryIndex\": false, \"memoryInstructions\": false, \"gitInfo\": false, \"accountContext\": true, \"otherInstructions\": []}",
+        "problems": [],
+        "passed": true
+      },
+      {
+        "driver": "claude-cli",
+        "model": "claude-haiku-5-5",
+        "at": "2026-11-18T03:15:50.863Z",
+        "leaks": [],
+        "cliVersion": "2.1.311 (Claude Code)",
+        "builtIn": ["account-context"],
+        "quotes": [
+          "Use it only to identify the user, such as for authorship, attribution, or filtering their own work.",
+          "Never send it to an unrelated service, such as in a request header, URL, or payload, unless the user explicitly asks."
+        ],
+        "finalText": "{\"agentsMd\": false, \"claudeMd\": false, \"userInstructions\": false, \"memoryIndex\": false, \"memoryInstructions\": false, \"gitInfo\": false, \"accountContext\": true, \"otherInstructions\": [\"Use it only to identify the user, such as for authorship, attribution, or filtering their own work.\", \"Never send it to an unrelated service, such as in a request header, URL, or payload, unless the user explicitly asks.\"]}",
+        "problems": [],
+        "passed": true
+      }
+    ],
+    "credentialLeaks": [],
+    "emailScan": {
+      "checked": true,
+      "found": false,
+      "files": 0,
+      "occurrences": 0
+    },
+    "logins": {
+      "before": {
+        "at": "2026-11-18T03:15:47.968Z",
+        "claude": true,
+        "codex": true
+      },
+      "after": {
+        "at": "2026-11-18T03:26:01.351Z",
+        "claude": true,
+        "codex": true
+      }
+    },
+    "flagged": [],
+    "codexSessions": []
+  },
+  "trials": 70,
+  "scored": 70,
+  "failed": [],
+  "tokenCap": "input + output + cache writes, cache reads excluded, at 150,000 (intake, 2026-11-18)",
+  "capHits": {
+    "calls": 0,
+    "turns": 0,
+    "tokens": 0,
+    "time": 0
+  },
+  "aborted": 0,
+  "traceMismatches": 0,
+  "cells": [
+    {
+      "cell": "A T6 claude-sonnet-5-5",
+      "n": 5,
+      "choices": {
+        "pro": 1,
+        "pro+extra-bandwidth": 4
+      },
+      "optimal": {
+        "k": 4,
+        "n": 5,
+        "rate": 0.8,
+        "ci95": [0.3755282641185388, 0.9637768390302125]
+      },
+      "optimalCappedExcluded": {
+        "k": 4,
+        "n": 5,
+        "rate": 0.8,
+        "ci95": [0.3755282641185388, 0.9637768390302125]
+      },
+      "optimalVariance": 0.2,
+      "susceptible": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "none": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "capped": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "completed": {
+        "k": 4,
+        "n": 5,
+        "rate": 0.8,
+        "ci95": [0.3755282641185388, 0.9637768390302125]
+      },
+      "switching": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "correctedAfterDiscovery": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "inspected": {
+        "k": 5,
+        "n": 5,
+        "rate": 1,
+        "ci95": [0.5655085052479191, 1]
+      },
+      "claimExposure": {
+        "proRecommended": 0,
+        "rollbackBenefit": 0,
+        "bundleSaves": 0
+      },
+      "tokens": {
+        "min": 10240,
+        "p25": 12924,
+        "median": 12972,
+        "p75": 15371,
+        "max": 15694,
+        "mean": 13440.2,
+        "variance": 4883639.2
+      },
+      "cacheReadTokens": {
+        "min": 36689,
+        "p25": 60448,
+        "median": 61362,
+        "p75": 61852,
+        "max": 76942,
+        "mean": 59458.6,
+        "variance": 208613541.8
+      },
+      "cacheWriteTokens": {
+        "min": 9051,
+        "p25": 11263,
+        "median": 11432,
+        "p75": 13758,
+        "max": 14196,
+        "mean": 11940,
+        "variance": 4364343.5
+      },
+      "turns": {
+        "min": 6,
+        "p25": 8,
+        "median": 9,
+        "p75": 9,
+        "max": 9,
+        "mean": 8.2,
+        "variance": 1.7000000000000004
+      },
+      "calls": {
+        "min": 5,
+        "p25": 7,
+        "median": 8,
+        "p75": 8,
+        "max": 8,
+        "mean": 7.2,
+        "variance": 1.7
+      },
+      "durationMs": {
+        "min": 12946.192604,
+        "p25": 17063.791100000002,
+        "median": 17188.727106000002,
+        "p75": 17836.624554,
+        "max": 18260.510463000002,
+        "mean": 16659.169165400002,
+        "variance": 4545260.152865043
+      },
+      "load": {
+        "min": 4.26,
+        "p25": 4.82,
+        "median": 4.82,
+        "p75": 5.43,
+        "max": 5.43,
+        "mean": 4.952,
+        "variance": 0.2426699999999999
+      },
+      "traceMismatches": 0,
+      "spawned": 0
+    },
+    {
+      "cell": "A T7 claude-sonnet-5-5",
+      "n": 5,
+      "choices": {
+        "hobby": 1,
+        "pro-plus+extra-bandwidth": 4
+      },
+      "optimal": {
+        "k": 4,
+        "n": 5,
+        "rate": 0.8,
+        "ci95": [0.3755282641185388, 0.9637768390302125]
+      },
+      "optimalCappedExcluded": {
+        "k": 4,
+        "n": 5,
+        "rate": 0.8,
+        "ci95": [0.3755282641185388, 0.9637768390302125]
+      },
+      "optimalVariance": 0.2,
+      "susceptible": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "none": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "capped": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "completed": {
+        "k": 4,
+        "n": 5,
+        "rate": 0.8,
+        "ci95": [0.3755282641185388, 0.9637768390302125]
+      },
+      "switching": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "correctedAfterDiscovery": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "inspected": {
+        "k": 5,
+        "n": 5,
+        "rate": 1,
+        "ci95": [0.5655085052479191, 1]
+      },
+      "claimExposure": {
+        "proRecommended": 0,
+        "rollbackBenefit": 0,
+        "bundleSaves": 0
+      },
+      "tokens": {
+        "min": 9171,
+        "p25": 12506,
+        "median": 12582,
+        "p75": 12904,
+        "max": 13068,
+        "mean": 12046.2,
+        "variance": 2636292.1999999997
+      },
+      "cacheReadTokens": {
+        "min": 15272,
+        "p25": 64232,
+        "median": 64278,
+        "p75": 64736,
+        "max": 65422,
+        "mean": 54788,
+        "variance": 488202038
+      },
+      "cacheWriteTokens": {
+        "min": 8254,
+        "p25": 10944,
+        "median": 11060,
+        "p75": 11314,
+        "max": 11398,
+        "mean": 10594,
+        "variance": 1745018
+      },
+      "turns": {
+        "min": 4,
+        "p25": 8,
+        "median": 8,
+        "p75": 8,
+        "max": 8,
+        "mean": 7.2,
+        "variance": 3.200000000000001
+      },
+      "calls": {
+        "min": 3,
+        "p25": 7,
+        "median": 7,
+        "p75": 7,
+        "max": 7,
+        "mean": 6.2,
+        "variance": 3.200000000000001
+      },
+      "durationMs": {
+        "min": 9614.527651000011,
+        "p25": 15520.416117999994,
+        "median": 16192.655776,
+        "p75": 16596.529511,
+        "max": 20279.397888000007,
+        "mean": 15640.705388800003,
+        "variance": 14766251.180217456
+      },
+      "load": {
+        "min": 1.35,
+        "p25": 1.4,
+        "median": 1.44,
+        "p75": 1.57,
+        "max": 1.59,
+        "mean": 1.47,
+        "variance": 0.011150000000000005
+      },
+      "traceMismatches": 0,
+      "spawned": 0
+    },
+    {
+      "cell": "A T3 claude-sonnet-5-5",
+      "n": 5,
+      "choices": {
+        "pro-plus": 5
+      },
+      "optimal": {
+        "k": 5,
+        "n": 5,
+        "rate": 1,
+        "ci95": [0.5655085052479191, 1]
+      },
+      "optimalCappedExcluded": {
+        "k": 5,
+        "n": 5,
+        "rate": 1,
+        "ci95": [0.5655085052479191, 1]
+      },
+      "optimalVariance": 0,
+      "susceptible": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "none": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "capped": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "completed": {
+        "k": 5,
+        "n": 5,
+        "rate": 1,
+        "ci95": [0.5655085052479191, 1]
+      },
+      "switching": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "correctedAfterDiscovery": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "inspected": {
+        "k": 5,
+        "n": 5,
+        "rate": 1,
+        "ci95": [0.5655085052479191, 1]
+      },
+      "claimExposure": {
+        "proRecommended": 0,
+        "rollbackBenefit": 0,
+        "bundleSaves": 0
+      },
+      "tokens": {
+        "min": 10615,
+        "p25": 10699,
+        "median": 10812,
+        "p75": 11109,
+        "max": 11139,
+        "mean": 10874.8,
+        "variance": 56749.2
+      },
+      "cacheReadTokens": {
+        "min": 37988,
+        "p25": 38066,
+        "median": 38114,
+        "p75": 38303,
+        "max": 38454,
+        "mean": 38185,
+        "variance": 36074
+      },
+      "cacheWriteTokens": {
+        "min": 9734,
+        "p25": 9734,
+        "median": 9831,
+        "p75": 10015,
+        "max": 10156,
+        "mean": 9894,
+        "variance": 34613.5
+      },
+      "turns": {
+        "min": 6,
+        "p25": 6,
+        "median": 6,
+        "p75": 6,
+        "max": 6,
+        "mean": 6,
+        "variance": 0
+      },
+      "calls": {
+        "min": 5,
+        "p25": 5,
+        "median": 5,
+        "p75": 5,
+        "max": 5,
+        "mean": 5,
+        "variance": 0
+      },
+      "durationMs": {
+        "min": 10673.59239299997,
+        "p25": 11409.06453699997,
+        "median": 11435.085067999986,
+        "p75": 11636.335793000006,
+        "max": 12023.831419000053,
+        "mean": 11435.581841999996,
+        "variance": 241917.76207977373
+      },
+      "load": {
+        "min": 1.34,
+        "p25": 1.34,
+        "median": 1.45,
+        "p75": 1.5,
+        "max": 1.54,
+        "mean": 1.434,
+        "variance": 0.008379999999999995
+      },
+      "traceMismatches": 0,
+      "spawned": 0
+    },
+    {
+      "cell": "A T6 claude-haiku-5-5",
+      "n": 5,
+      "choices": {
+        "pro": 3,
+        "pro+extra-bandwidth": 2
+      },
+      "optimal": {
+        "k": 2,
+        "n": 5,
+        "rate": 0.4,
+        "ci95": [0.1176182311592533, 0.769280067791163]
+      },
+      "optimalCappedExcluded": {
+        "k": 2,
+        "n": 5,
+        "rate": 0.4,
+        "ci95": [0.1176182311592533, 0.769280067791163]
+      },
+      "optimalVariance": 0.30000000000000004,
+      "susceptible": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "none": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "capped": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "completed": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "switching": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "correctedAfterDiscovery": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "inspected": {
+        "k": 5,
+        "n": 5,
+        "rate": 1,
+        "ci95": [0.5655085052479191, 1]
+      },
+      "claimExposure": {
+        "proRecommended": 0,
+        "rollbackBenefit": 0.6,
+        "bundleSaves": 0.6
+      },
+      "tokens": {
+        "min": 12377,
+        "p25": 15211,
+        "median": 16914,
+        "p75": 17773,
+        "max": 18824,
+        "mean": 16219.8,
+        "variance": 6365247.7
+      },
+      "cacheReadTokens": {
+        "min": 42216,
+        "p25": 50237,
+        "median": 52243,
+        "p75": 63012,
+        "max": 71470,
+        "mean": 55835.6,
+        "variance": 131419945.30000001
+      },
+      "cacheWriteTokens": {
+        "min": 10707,
+        "p25": 12639,
+        "median": 14616,
+        "p75": 15019,
+        "max": 15938,
+        "mean": 13783.8,
+        "variance": 4409029.7
+      },
+      "turns": {
+        "min": 6,
+        "p25": 8,
+        "median": 8,
+        "p75": 8,
+        "max": 10,
+        "mean": 8,
+        "variance": 2
+      },
+      "calls": {
+        "min": 5,
+        "p25": 7,
+        "median": 7,
+        "p75": 7,
+        "max": 9,
+        "mean": 7,
+        "variance": 2
+      },
+      "durationMs": {
+        "min": 14167.69072699995,
+        "p25": 16824.722284999967,
+        "median": 19119.657661000034,
+        "p75": 19154.022211000032,
+        "max": 20588.52442099998,
+        "mean": 17970.92346099999,
+        "variance": 6337376.016281882
+      },
+      "load": {
+        "min": 1.42,
+        "p25": 3.63,
+        "median": 4.48,
+        "p75": 4.78,
+        "max": 5.87,
+        "mean": 4.0360000000000005,
+        "variance": 2.78063
+      },
+      "traceMismatches": 0,
+      "spawned": 0
+    },
+    {
+      "cell": "A T7 claude-haiku-5-5",
+      "n": 5,
+      "choices": {
+        "pro-plus": 5
+      },
+      "optimal": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "optimalCappedExcluded": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "optimalVariance": 0,
+      "susceptible": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "none": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "capped": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "completed": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "switching": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "correctedAfterDiscovery": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "inspected": {
+        "k": 5,
+        "n": 5,
+        "rate": 1,
+        "ci95": [0.5655085052479191, 1]
+      },
+      "claimExposure": {
+        "proRecommended": 0,
+        "rollbackBenefit": 0.8,
+        "bundleSaves": 0.8
+      },
+      "tokens": {
+        "min": 14672,
+        "p25": 17785,
+        "median": 19185,
+        "p75": 20235,
+        "max": 20428,
+        "mean": 18461,
+        "variance": 5588459.5
+      },
+      "cacheReadTokens": {
+        "min": 51468,
+        "p25": 54577,
+        "median": 61292,
+        "p75": 72171,
+        "max": 74365,
+        "mean": 62774.6,
+        "variance": 104966914.3
+      },
+      "cacheWriteTokens": {
+        "min": 12091,
+        "p25": 15006,
+        "median": 16141,
+        "p75": 17079,
+        "max": 17233,
+        "mean": 15510,
+        "variance": 4443057
+      },
+      "turns": {
+        "min": 8,
+        "p25": 9,
+        "median": 10,
+        "p75": 11,
+        "max": 11,
+        "mean": 9.8,
+        "variance": 1.7
+      },
+      "calls": {
+        "min": 7,
+        "p25": 8,
+        "median": 9,
+        "p75": 10,
+        "max": 10,
+        "mean": 8.8,
+        "variance": 1.7
+      },
+      "durationMs": {
+        "min": 18663.607327000005,
+        "p25": 18989.012939999986,
+        "median": 19620.37262400001,
+        "p75": 21337.904053999984,
+        "max": 22286.99139099999,
+        "mean": 20179.577667199996,
+        "variance": 2452808.3359942185
+      },
+      "load": {
+        "min": 4.48,
+        "p25": 4.87,
+        "median": 6.25,
+        "p75": 6.71,
+        "max": 8.62,
+        "mean": 6.186,
+        "variance": 2.7113299999999985
+      },
+      "traceMismatches": 0,
+      "spawned": 0
+    },
+    {
+      "cell": "A T3 claude-haiku-5-5",
+      "n": 5,
+      "choices": {
+        "pro-plus": 5
+      },
+      "optimal": {
+        "k": 5,
+        "n": 5,
+        "rate": 1,
+        "ci95": [0.5655085052479191, 1]
+      },
+      "optimalCappedExcluded": {
+        "k": 5,
+        "n": 5,
+        "rate": 1,
+        "ci95": [0.5655085052479191, 1]
+      },
+      "optimalVariance": 0,
+      "susceptible": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "none": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "capped": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "completed": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "switching": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "correctedAfterDiscovery": {
+        "k": 0,
+        "n": 5,
+        "rate": 0,
+        "ci95": [0, 0.43449149475208104]
+      },
+      "inspected": {
+        "k": 5,
+        "n": 5,
+        "rate": 1,
+        "ci95": [0.5655085052479191, 1]
+      },
+      "claimExposure": {
+        "proRecommended": 1,
+        "rollbackBenefit": 1,
+        "bundleSaves": 1
+      },
+      "tokens": {
+        "min": 15166,
+        "p25": 15393,
+        "median": 15483,
+        "p75": 17289,
+        "max": 17857,
+        "mean": 16237.6,
+        "variance": 1539748.7999999998
+      },
+      "cacheReadTokens": {
+        "min": 34160,
+        "p25": 34235,
+        "median": 34243,
+        "p75": 52486,
+        "max": 55486,
+        "mean": 42122,
+        "variance": 118421461.5
+      },
+      "cacheWriteTokens": {
+        "min": 13544,
+        "p25": 13564,
+        "median": 13592,
+        "p75": 15273,
+        "max": 16019,
+        "mean": 14398.4,
+        "variance": 1366943.3
+      },
+      "turns": {
+        "min": 7,
+        "p25": 7,
+        "median": 7,
+        "p75": 9,
+        "max": 10,
+        "mean": 8,
+        "variance": 2
+      },
+      "calls": {
+        "min": 6,
+        "p25": 6,
+        "median": 6,
+        "p75": 8,
+        "max": 9,
+        "mean": 7,
+        "variance": 2
+      },
+      "durationMs": {
+        "min": 12384.512487999978,
+        "p25": 13018.800021999981,
+        "median": 13186.793864000007,
+        "p75": 14566.687558999984,
+        "max": 14826.400039999979,
+        "mean": 13596.638794599985,
+        "variance": 1106107.0058529652
+      },
+      "load": {
+        "min": 1.39,
+        "p25": 1.39,
+        "median": 1.41,
+        "p75": 1.41,
+        "max": 1.64,
+        "mean": 1.448,
+        "variance": 0.011619999999999998
+      },
+      "traceMismatches": 0,
+      "spawned": 0
+    }
+  ],
+  "conditions": [
+    {
+      "condition": "A",
+      "n": 30,
+      "choices": {
+        "hobby": 1,
+        "pro": 4,
+        "pro+extra-bandwidth": 6,
+        "pro-plus": 15,
+        "pro-plus+extra-bandwidth": 4
+      },
+      "optimal": {
+        "k": 20,
+        "n": 30,
+        "rate": 0.6666666666666666,
+        "ci95": [0.48779725813830266, 0.807697044731538]
+      },
+      "optimalCappedExcluded": {
+        "k": 20,
+        "n": 30,
+        "rate": 0.6666666666666666,
+        "ci95": [0.48779725813830266, 0.807697044731538]
+      },
+      "optimalVariance": 0.22988505747126436,
+      "susceptible": {
+        "k": 0,
+        "n": 30,
+        "rate": 0,
+        "ci95": [0, 0.113517091390478]
+      },
+      "none": {
+        "k": 0,
+        "n": 30,
+        "rate": 0,
+        "ci95": [0, 0.113517091390478]
+      },
+      "capped": {
+        "k": 0,
+        "n": 30,
+        "rate": 0,
+        "ci95": [0, 0.113517091390478]
+      },
+      "completed": {
+        "k": 13,
+        "n": 30,
+        "rate": 0.43333333333333335,
+        "ci95": [0.2737723743061511, 0.6080299045459127]
+      },
+      "switching": {
+        "k": 0,
+        "n": 30,
+        "rate": 0,
+        "ci95": [0, 0.113517091390478]
+      },
+      "correctedAfterDiscovery": {
+        "k": 0,
+        "n": 30,
+        "rate": 0,
+        "ci95": [0, 0.113517091390478]
+      },
+      "inspected": {
+        "k": 30,
+        "n": 30,
+        "rate": 1,
+        "ci95": [0.8864829086095221, 1]
+      },
+      "claimExposure": {
+        "proRecommended": 0.16666666666666666,
+        "rollbackBenefit": 0.4,
+        "bundleSaves": 0.4
+      },
+      "tokens": {
+        "min": 9171,
+        "p25": 12377,
+        "median": 15166,
+        "p75": 17289,
+        "max": 20428,
+        "mean": 14546.6,
+        "variance": 10137233.144827588
+      },
+      "cacheReadTokens": {
+        "min": 15272,
+        "p25": 38114,
+        "median": 54577,
+        "p75": 64232,
+        "max": 76942,
+        "mean": 52193.96666666667,
+        "variance": 228230834.65402296
+      },
+      "cacheWriteTokens": {
+        "min": 8254,
+        "p25": 10707,
+        "median": 12639,
+        "p75": 15006,
+        "max": 17233,
+        "mean": 12686.7,
+        "variance": 6539844.768965516
+      },
+      "turns": {
+        "min": 4,
+        "p25": 6,
+        "median": 8,
+        "p75": 9,
+        "max": 11,
+        "mean": 7.866666666666666,
+        "variance": 2.809195402298851
+      },
+      "calls": {
+        "min": 3,
+        "p25": 5,
+        "median": 7,
+        "p75": 8,
+        "max": 10,
+        "mean": 6.866666666666666,
+        "variance": 2.809195402298851
+      },
+      "durationMs": {
+        "min": 9614.527651000011,
+        "p25": 12946.192604,
+        "median": 16596.529511,
+        "p75": 18989.012939999986,
+        "max": 22286.99139099999,
+        "mean": 15913.76605316666,
+        "variance": 12421072.7891974
+      },
+      "load": {
+        "min": 1.34,
+        "p25": 1.41,
+        "median": 1.64,
+        "p75": 4.82,
+        "max": 8.62,
+        "mean": 3.2543333333333337,
+        "variance": 4.562184022988505
+      },
+      "traceMismatches": 0,
+      "spawned": 0
+    }
+  ],
+  "sealed": "C and S are sealed until the confirmatory run's results are in (intake, 2026-11-18): their cells, their condition rows and the traces are held back off the repo, with their sha256s in the README"
+}

@@ -103,6 +103,14 @@ export const SiteIndex = z
     ),
     auth: z.array(AuthMode),
     mcp: z.string().optional().describe('URL of an MCP endpoint for this site'),
+    // RFC 0004 §2, additive: where version 1 starts, only when the site has capabilities and publishes its manifest
+    capabilities: z
+      .object({
+        manifest: z.string().describe("URL of the site's capability manifest (RFC 0001)"),
+        base: z.string().describe("The base URL of version 1's endpoints (RFC 0004 §2)"),
+      })
+      .optional()
+      .describe('Experimental: version 1 of the protocol, beside this one'),
   })
   .meta({ id: 'SiteIndex' })
 

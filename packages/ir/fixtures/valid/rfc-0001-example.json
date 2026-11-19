@@ -1,0 +1,204 @@
+{
+  "capabilities": [
+    {
+      "authorization": {
+        "principal": "any"
+      },
+      "description": "Add a variant of a product to the cart, by SKU",
+      "effects": [
+        {
+          "category": "state",
+          "change": "update",
+          "description": "Adds the item to the cart",
+          "establishes": {
+            "gt": [
+              {
+                "path": "target.count"
+              },
+              {
+                "value": 0
+              }
+            ]
+          },
+          "resource": "commerce.cart",
+          "reversibility": "reversible"
+        }
+      ],
+      "id": "commerce.cart.addItem",
+      "input": {
+        "properties": {
+          "productId": {
+            "type": "string"
+          },
+          "quantity": {
+            "maximum": 10,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "sku": {
+            "type": "string"
+          }
+        },
+        "required": ["productId", "sku"],
+        "type": "object"
+      },
+      "kind": "action",
+      "preconditions": [
+        {
+          "description": "The variant is in stock",
+          "guard": true,
+          "id": "inStock"
+        }
+      ],
+      "references": [
+        {
+          "at": "/productId",
+          "name": "product",
+          "resource": "commerce.product"
+        }
+      ],
+      "target": "commerce.cart"
+    },
+    {
+      "authorization": {
+        "principal": "authenticated"
+      },
+      "confirmation": {
+        "summary": "Place an order for {target.count} items, and pay its total"
+      },
+      "description": "Place an order for everything in the cart. Reserves the stock and empties the cart.",
+      "effects": [
+        {
+          "category": "financial",
+          "compensatedBy": "commerce.order.refund",
+          "description": "Charges the cart's total to the saved payment method",
+          "reversibility": "compensable"
+        },
+        {
+          "category": "state",
+          "change": "create",
+          "description": "Creates an order",
+          "resource": "commerce.order"
+        },
+        {
+          "category": "state",
+          "change": "update",
+          "description": "Empties the cart",
+          "establishes": {
+            "eq": [
+              {
+                "path": "target.count"
+              },
+              {
+                "value": 0
+              }
+            ]
+          },
+          "resource": "commerce.cart",
+          "reversibility": "irreversible"
+        }
+      ],
+      "id": "commerce.cart.checkout",
+      "input": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "kind": "action",
+      "preconditions": [
+        {
+          "description": "Every item is in stock",
+          "guard": true,
+          "id": "inStock"
+        },
+        {
+          "description": "The cart has items",
+          "expr": {
+            "gt": [
+              {
+                "path": "target.count"
+              },
+              {
+                "value": 0
+              }
+            ]
+          },
+          "id": "notEmpty"
+        }
+      ],
+      "target": "commerce.cart"
+    },
+    {
+      "authorization": {
+        "principal": "authenticated"
+      },
+      "confirmation": {
+        "summary": "Refund order {target.id}"
+      },
+      "description": "Refund an order's charge",
+      "effects": [
+        {
+          "category": "financial",
+          "description": "Returns the order's total to the payment method",
+          "reversibility": "irreversible"
+        }
+      ],
+      "id": "commerce.order.refund",
+      "input": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "kind": "action",
+      "target": "commerce.order"
+    }
+  ],
+  "namespace": "https://store.example/capabilities",
+  "provenance": {
+    "basis": "declared",
+    "source": "store"
+  },
+  "resources": [
+    {
+      "attributes": {
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "contains": ["commerce.product"],
+      "description": "A shopper's cart",
+      "id": "commerce.cart",
+      "key": "id"
+    },
+    {
+      "attributes": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "description": "A placed order",
+      "id": "commerce.order",
+      "key": "id"
+    },
+    {
+      "description": "A product with variants",
+      "id": "commerce.product",
+      "key": "slug"
+    }
+  ],
+  "schemaVersion": "0.1",
+  "sources": [
+    {
+      "id": "store",
+      "name": "Example Store",
+      "role": "owner"
+    }
+  ]
+}

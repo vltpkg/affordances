@@ -44,6 +44,11 @@ export type HandlerOptions = {
   allowedOrigins?: string[]
   // the path a framework's own redirect error points to (e.g. next's redirect()), or undefined if it isn't one
   redirectFrom?: (error: unknown) => string | undefined
+  /**
+   * @experimental Version 1's discovery (RFC 0004 §2): the site index names the capability manifest and the base of
+   * version 1's endpoints. Set only when the site has capabilities and publishes its manifest; unset, the index is v0's
+   */
+  capabilities?: { manifest: string; base: string }
 }
 
 const status: Record<ErrorCode, number> = {
@@ -106,7 +111,9 @@ const describe = async (
   const descriptor: ActionDescriptor = { ...summarize(action), available: true }
   if (meta.expose !== 'public' && !ctx.session)
     return { ...descriptor, available: false, reason: 'Requires a session' }
-  const result = meta.guard ? await meta.guard({ input: undefined, state, ctx }) : true
+  const result = meta.guard
+    ? await meta.guard({ input: undefined, state, ctx, listing: true })
+    : true
   return result === true
     ? descriptor
     : { ...descriptor, available: false, ...(result && { reason: result }) }
@@ -145,6 +152,7 @@ export const createHandler = (options: HandlerOptions) => {
     })),
     auth: ['cookie', 'bearer'],
     ...(manifest.mcp && { mcp: manifest.mcp }),
+    ...(options.capabilities && { capabilities: options.capabilities }),
   })
 
   const call = async (
@@ -191,7 +199,10 @@ export const createHandler = (options: HandlerOptions) => {
     // 4. validate, 5. guard
     const input = await validate(meta.input, body.data.input)
     const before = await load(route, url, ctx)
-    const guard = meta.guard ? await meta.guard({ input, state: before.state, ctx }) : true
+    // a capability's check tells the runtime that v0's client confirmed (RFC 0001 §12.1)
+    const guard = meta.guard
+      ? await meta.guard({ input, state: before.state, ctx, confirmed: body.data.confirm === true })
+      : true
     if (guard !== true)
       throw new AffordancesError('unavailable', guard || `${meta.name} is unavailable right now`)
 

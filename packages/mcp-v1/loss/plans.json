@@ -1,0 +1,73 @@
+{
+  "generic": {
+    "carries": "every view, byte for byte",
+    "lost": ["per-tool annotations"]
+  },
+  "perCapability": {
+    "capabilities": 3,
+    "exported": 0,
+    "fields": {
+      "carried": 0,
+      "partial": 0,
+      "atCall": 0,
+      "lost": 37
+    },
+    "rows": [
+      {
+        "capability": "hosting.plan.list",
+        "exported": false,
+        "fields": {
+          "id": "lost",
+          "description": "lost",
+          "kind": "lost",
+          "output": "lost",
+          "safe": "lost",
+          "relations": "lost",
+          "availability": "lost",
+          "revision": "lost",
+          "relevance": "lost"
+        }
+      },
+      {
+        "capability": "hosting.plan.subscribe",
+        "exported": false,
+        "fields": {
+          "id": "lost",
+          "description": "lost",
+          "kind": "lost",
+          "input": "lost",
+          "target": "lost",
+          "references": "lost",
+          "preconditions": "lost",
+          "authorization": "lost",
+          "confirmation": "lost",
+          "effects.reversibility": "lost",
+          "effects.financial": "lost",
+          "claims": "lost",
+          "relations": "lost",
+          "choiceSet": "lost",
+          "availability": "lost",
+          "revision": "lost",
+          "relevance": "lost"
+        }
+      },
+      {
+        "capability": "hosting.plan.cancel",
+        "exported": false,
+        "fields": {
+          "id": "lost",
+          "description": "lost",
+          "kind": "lost",
+          "target": "lost",
+          "authorization": "lost",
+          "effects.reversibility": "lost",
+          "effects.financial": "lost",
+          "choiceSet": "lost",
+          "availability": "lost",
+          "revision": "lost",
+          "relevance": "lost"
+        }
+      }
+    ]
+  }
+}
