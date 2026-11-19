@@ -47,7 +47,9 @@ export type ProjectionRouteOptions<Session = unknown> = {
   seenTokens?: TokenStore
   /**
    * @experimental The app's own runtime, served as it is, so the route and the app's other pages share one: its
-   * manifest, resolvers, handlers and approval keys are then the runtime's, and the options for them go unread
+   * manifest, resolvers, handlers and approval keys are then the runtime's, and the options for them go unread. The
+   * route's approval gate doesn't apply then, so keeping the runtime's approval key and token store shared by every
+   * instance, as the gate would require, becomes the app's job
    */
   runtime?: RuntimeInstance
   /**
