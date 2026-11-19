@@ -84,7 +84,7 @@ confirmation exactly, but not the ids themselves, which the developer chooses (R
 
 - **View-following WebMCP registration** (RFC 0004 §5): not built. The per-capability option registers a fixed list. The generic mode is the default.
 - **In-tool WebMCP consent:** waits for the browser's request for user interaction. Until then, WebMCP fails closed, and the person confirms in the app's own review page (RFC 0004 §5).
-- **The resolver contract's enforcement:** a conformance check only. A runtime that enforced read scoping itself would need a principal-aware resource model, which in the planner's estimate is a larger change.
+- **The resolver contract's enforcement:** a conformance check only. A runtime that enforced read scoping itself would need a principal-aware resource model, which is likely a larger change (an estimate, not measured).
 - **§6.6 covers a set's own members, not related resources:** a view carries its targets by reference only, so a related resource's facts reach no view unless that resource is itself an alternatives type, and then only in its own set's comparison, not the related set's. So the regions a plan is served from appear in the region set's comparison, never in the plans'. Whether a comparison should follow declared relations is open. A later benchmark packet's task, T8, is built on exactly this case (its depth is measured by a committed test).
 - **The inspector's declared-against-observed view** (RFC 0002 §8.4): an execution result carries its observed changes and `undeclared`, but the inspector doesn't show them yet (`rfcs/architecture/inspector.md`).
 - **Reference-sourced parameters** (RFC 0005 §4): not built. Compilation doesn't yet derive a route parameter from a resource reference.
