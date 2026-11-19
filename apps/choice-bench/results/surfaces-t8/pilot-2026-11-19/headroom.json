@@ -1,0 +1,21 @@
+{
+  "kind": "headroom",
+  "task": "T8",
+  "bounds": [
+    "1/10",
+    "9/10"
+  ],
+  "models": {
+    "claude-sonnet-5-5": {
+      "optimal": 18,
+      "of": 20,
+      "within": true
+    },
+    "claude-haiku-5-5": {
+      "optimal": 20,
+      "of": 20,
+      "within": false
+    }
+  },
+  "passes": false
+}
