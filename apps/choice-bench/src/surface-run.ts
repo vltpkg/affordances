@@ -19,7 +19,7 @@ import { surfacePreflight } from './preflight.ts'
 import { MAX_ATTEMPTS, runSurfaceSpecs, SurfaceRunStopped } from './surface.ts'
 import { planMismatch, planOfDir, type PlanName } from './run-dir.ts'
 import { cellTotals, statusOf } from './status.ts'
-import { RUN_PLANS } from './surface-plan.ts'
+import { RUN_PLANS, specsOf } from './surface-plan.ts'
 
 // M7f's surface run, launch and resume (the planner, 2026-11-18 17:35Z). M5's run.ts and its modes are left as they ran.
 //   node src/surface-run.ts plan               the pilot's 60, listed in their order, not run
@@ -44,15 +44,13 @@ const refuse = (why: string): never => {
 const PREFLIGHT_PORT = 3941
 const WORKER_PORTS = [3931, 3932]
 
-const PLANS = RUN_PLANS
 const LISTS: Record<string, PlanName> = {
   plan: 'pilot',
   'plan-repilot': 'repilot',
   'plan-confirmatory': 'confirmatory',
 }
 if (mode && mode in LISTS) {
-  for (const s of PLANS[LISTS[mode]!].specs())
-    console.log(`${s.id} ${s.surface} ${s.model} ${s.index}`)
+  for (const s of specsOf(LISTS[mode]!)) console.log(`${s.id} ${s.surface} ${s.model} ${s.index}`)
   process.exit(0)
 }
 // the liveness check (intake, 18:18Z): non-outcome fields only, read-only, safe mid-run. It reads no pin and starts
@@ -69,13 +67,12 @@ if (mode === 'status') {
     console.error(`${out} holds no launch record yet, so no plan to report`)
     process.exit(2)
   }
-  const specs = PLANS[plan].specs()
-  const lines = statusOf(out, specs)
+  const lines = statusOf(out, specsOf(plan))
   for (const l of lines) console.log(JSON.stringify(l))
   console.log(JSON.stringify({ cells: cellTotals(lines) }))
   process.exit(0)
 }
-if (!mode || !(mode in PLANS) || !outArg) {
+if (!mode || !(mode in RUN_PLANS) || !outArg) {
   console.error(
     'usage: node src/surface-run.ts plan | plan-repilot | plan-confirmatory | status <out> | pilot|repilot|confirmatory <out> [--dry]',
   )
@@ -86,7 +83,9 @@ const out = path.resolve(outArg)
 mkdirSync(out, { recursive: true })
 // each launch's own records, numbered, so a resume keeps every earlier one
 // one plan per directory, checked before anything is written: no earlier launch of another plan, no stray trace
-const mismatch = planMismatch(out, mode as PlanName)
+// the plan's specs, expanded once: the mismatch check and the run read the same list
+const specs = specsOf(mode as PlanName, dry ? 'fake' : 'claude-cli')
+const mismatch = planMismatch(out, mode as PlanName, specs)
 if (mismatch) refuse(mismatch)
 const launch = readdirSync(out).filter((f) => /^launch-\d+\.json$/.test(f)).length + 1
 const write = (name: string, value: unknown) =>
@@ -108,12 +107,11 @@ const preflight = await surfacePreflight({
   dir: path.join(out, `preflight-${launch}`),
   root: ROOT,
   pinned: true,
-  surfaces: [...PLANS[mode as PlanName].surfaces],
+  surfaces: [...RUN_PLANS[mode as PlanName].surfaces],
 })
 write('preflight', preflight)
 if (!preflight.ok) refuse(`the pinned preflight: ${preflight.refusals.join('; ')}`)
 
-const specs = PLANS[mode as PlanName].specs(dry ? 'fake' : 'claude-cli')
 const driverFor = (s: TrialSpec): Driver =>
   s.driver === 'fake'
     ? fakeDriver(s.index, path.join(out, `${s.id}.raw.json`))
@@ -174,7 +172,7 @@ try {
     port: WORKER_PORTS[0]!,
     ports: WORKER_PORTS,
     // the plan's own pause rule: the pilots' more than 2 faults, the confirmatory run's more than 2%
-    pilot: PLANS[mode as PlanName].pilot,
+    pilot: RUN_PLANS[mode as PlanName].pilot,
   })
 } catch (e) {
   if (!(e instanceof SurfaceRunStopped)) throw e

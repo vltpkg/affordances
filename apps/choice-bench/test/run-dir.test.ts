@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, expect, test } from 'vitest'
 import { planMismatch, planOfDir } from '../src/run-dir.ts'
+import { specsOf } from '../src/surface-plan.ts'
 
 // one plan per run directory (review, 18:42Z): a launch or resume into another plan's directory refuses, and status
 // reads the plan from the directory's first launch record
@@ -32,19 +33,25 @@ test('another plan’s launch, or a trace not in this plan, refuses; its own dir
   const pilot = at('pilot-out')
   writeFileSync(path.join(pilot, 'launch-1.json'), JSON.stringify({ launch: 1 }))
   writeFileSync(path.join(pilot, 'pilot-full-T6-claude-sonnet-5-5-0.jsonl'), '{}\n')
-  expect(planMismatch(pilot, 'repilot')).toMatch(/holds a pilot run, not repilot/)
-  expect(planMismatch(pilot, 'confirmatory')).toMatch(/holds a pilot run, not confirmatory/)
-  expect(planMismatch(pilot, 'pilot')).toBeUndefined()
+  expect(planMismatch(pilot, 'repilot', specsOf('repilot', 'fake'))).toMatch(
+    /holds a pilot run, not repilot/,
+  )
+  expect(planMismatch(pilot, 'confirmatory', specsOf('confirmatory', 'fake'))).toMatch(
+    /holds a pilot run, not confirmatory/,
+  )
+  expect(planMismatch(pilot, 'pilot', specsOf('pilot', 'fake'))).toBeUndefined()
   // no launch record yet, but a stray trace: refused too
   const stray = at('stray')
   writeFileSync(path.join(stray, 'pilot-v0-T6-claude-haiku-5-5-1.jsonl'), '{}\n')
-  expect(planMismatch(stray, 'repilot')).toMatch(/holds traces that aren't repilot's: pilot-v0/)
+  expect(planMismatch(stray, 'repilot', specsOf('repilot', 'fake'))).toMatch(
+    /holds traces that aren't repilot's: pilot-v0/,
+  )
   // a fresh directory, and the plan's own, pass
-  expect(planMismatch(at('fresh'), 'confirmatory')).toBeUndefined()
+  expect(planMismatch(at('fresh'), 'confirmatory', specsOf('confirmatory', 'fake'))).toBeUndefined()
   const own = at('own')
   writeFileSync(path.join(own, 'launch-1.json'), JSON.stringify({ launch: 1, plan: 'repilot' }))
   writeFileSync(path.join(own, 'repilot-full-T6-claude-sonnet-5-5-0.jsonl'), '{}\n')
-  expect(planMismatch(own, 'repilot')).toBeUndefined()
+  expect(planMismatch(own, 'repilot', specsOf('repilot', 'fake'))).toBeUndefined()
 })
 
 test('status reads the plan from the first launch record, and refuses a directory with none', () => {

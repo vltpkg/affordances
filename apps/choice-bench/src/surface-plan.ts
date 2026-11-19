@@ -8,72 +8,77 @@ import type { SurfaceId } from './surfaces.ts'
 // drift in load, latency or the model over the run's hours falls on every arm alike. A spec's index fixes its plan-id
 // order (permutationFor), as in M5
 
-export const PILOT_SURFACES: SurfaceId[] = ['full', 'progressive', 'v0', 'browser', 'mcp', 'webmcp']
-export const PILOT_MODELS = ['claude-sonnet-5-5', 'claude-haiku-5-5']
-export const PILOT_PER_CELL = 5
-export const PILOT_TASK = 'T6'
+const PILOT_SURFACES: SurfaceId[] = ['full', 'progressive', 'v0', 'browser', 'mcp', 'webmcp']
+// the 4 confirmatory surfaces: the re-pilot's (intake, 2026-11-18 18:37Z, after the pilot) and the confirmatory run's
+const CONFIRMATORY_SURFACES: SurfaceId[] = ['full', 'progressive', 'v0', 'browser']
+/** Every surface plan's models, Sonnet first on an even index and Haiku first on an odd one. */
+export const SURFACE_MODELS = ['claude-sonnet-5-5', 'claude-haiku-5-5']
 
-// the re-pilot (intake, 2026-11-18 18:37Z, after the pilot): the 4 confirmatory surfaces x 2 models x 2 = 16, in the
-// same interleaved and rotated order, on the new pin with the approval sentence
-export const REPILOT_SURFACES: SurfaceId[] = ['full', 'progressive', 'v0', 'browser']
-export const REPILOT_PER_CELL = 2
-// the confirmatory run (PLAN §4): the same 4 surfaces x 2 models x 50 = 400, on the re-pilot's pin
-export const CONFIRMATORY_SURFACES: SurfaceId[] = REPILOT_SURFACES
-export const CONFIRMATORY_PER_CELL = 50
+type PlanShape = {
+  prefix: string
+  surfaces: SurfaceId[]
+  perCell: number
+  task: string
+  // the pause rule: the pilots' 'more than 2 faults' (true) or the confirmatory run's 'more than 2% of the trials run'
+  pilot: boolean
+}
 
-type PlanShape = { prefix: string; surfaces: SurfaceId[]; perCell: number }
+/**
+ * The plans the entry runs, by mode, each described once: its specs' prefix, surfaces, trials per cell and task, and
+ * its pause rule. The pilot is 6 surfaces x 2 models x 5 on T6; the re-pilot the 4 confirmatory surfaces x 2 models x 2,
+ * on the new pin with the approval sentence; the confirmatory run the same 4 x 2 x 50 = 400, on the re-pilot's pin
+ */
+export const RUN_PLANS = {
+  pilot: { prefix: 'pilot', surfaces: PILOT_SURFACES, perCell: 5, task: 'T6', pilot: true },
+  repilot: {
+    prefix: 'repilot',
+    surfaces: CONFIRMATORY_SURFACES,
+    perCell: 2,
+    task: 'T6',
+    pilot: true,
+  },
+  confirmatory: {
+    prefix: 'confirmatory',
+    surfaces: CONFIRMATORY_SURFACES,
+    perCell: 50,
+    task: 'T6',
+    pilot: false,
+  },
+} as const satisfies Record<string, PlanShape>
+export type PlanName = keyof typeof RUN_PLANS
 
 const specOf = (
-  prefix: string,
+  shape: PlanShape,
   surface: SurfaceId,
   model: string,
   index: number,
   driver: string,
 ): TrialSpec => ({
-  id: `${prefix}-${surface}-${PILOT_TASK}-${model}-${index}`.replace(/[^\w.-]/g, '_'),
+  id: `${shape.prefix}-${surface}-${shape.task}-${model}-${index}`.replace(/[^\w.-]/g, '_'),
   condition: 'A',
   surface,
-  task: PILOT_TASK,
+  task: shape.task,
   model,
   driver,
   index,
 })
 
 /** A plan's surfaces in index i's rotation: the list turned i places. */
-export const rotation = (i: number, surfaces: SurfaceId[] = PILOT_SURFACES) =>
+export const rotation = (i: number, surfaces: SurfaceId[]) =>
   surfaces.map((_, k) => surfaces[(k + i) % surfaces.length]!)
 
-// by index, each index's specs side by side, the model order alternating, the surfaces rotated per index
-const planOf = (shape: PlanShape, driver: string): TrialSpec[] =>
-  Array.from({ length: shape.perCell }, (_, index) =>
-    (index % 2 === 0 ? PILOT_MODELS : [...PILOT_MODELS].toReversed()).flatMap((model) =>
+/**
+ * A plan's specs, in the order they run: by index, each index's specs side by side, the model order alternating and
+ * the surfaces rotated per index. Each index fixes its plan-id order, as in M5 (RFC 0003 §4). driver 'fake' is the dry
+ * run's, with no model
+ */
+export const specsOf = (plan: PlanName, driver = 'claude-cli'): TrialSpec[] => {
+  const shape: PlanShape = RUN_PLANS[plan]
+  return Array.from({ length: shape.perCell }, (_, index) =>
+    (index % 2 === 0 ? SURFACE_MODELS : [...SURFACE_MODELS].toReversed()).flatMap((model) =>
       rotation(index, shape.surfaces).map((surface) =>
-        specOf(shape.prefix, surface, model, index, driver),
+        specOf(shape, surface, model, index, driver),
       ),
     ),
   ).flat()
-
-/** The pilot's 60, in the order they run. driver 'fake' is the dry run's, with no model. */
-export const surfacePilotPlan = (driver = 'claude-cli') =>
-  planOf({ prefix: 'pilot', surfaces: PILOT_SURFACES, perCell: PILOT_PER_CELL }, driver)
-
-/** The re-pilot's 16, in the order they run. */
-export const surfaceRepilotPlan = (driver = 'claude-cli') =>
-  planOf({ prefix: 'repilot', surfaces: REPILOT_SURFACES, perCell: REPILOT_PER_CELL }, driver)
-
-/** The confirmatory run's 400, in the order they run: each index fixes its plan-id order, as in M5 (RFC 0003 §4). */
-export const surfaceConfirmatoryPlan = (driver = 'claude-cli') =>
-  planOf(
-    { prefix: 'confirmatory', surfaces: CONFIRMATORY_SURFACES, perCell: CONFIRMATORY_PER_CELL },
-    driver,
-  )
-
-/**
- * The plans the entry runs, by mode: their specs, the surfaces their pinned preflight checks, and their pause rule,
- * the pilots' 'more than 2 faults' (pilot: true) or the confirmatory run's 'more than 2% of the trials run'
- */
-export const RUN_PLANS = {
-  pilot: { specs: surfacePilotPlan, surfaces: PILOT_SURFACES, pilot: true },
-  repilot: { specs: surfaceRepilotPlan, surfaces: REPILOT_SURFACES, pilot: true },
-  confirmatory: { specs: surfaceConfirmatoryPlan, surfaces: CONFIRMATORY_SURFACES, pilot: false },
-} as const
+}

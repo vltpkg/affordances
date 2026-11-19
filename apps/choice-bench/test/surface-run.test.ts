@@ -4,16 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, expect, test } from 'vitest'
 import { loadGate, ownerChanges, stampOwnerFiles } from '../src/integrity.ts'
-import {
-  PILOT_MODELS,
-  PILOT_SURFACES,
-  CONFIRMATORY_SURFACES,
-  REPILOT_SURFACES,
-  RUN_PLANS,
-  surfaceConfirmatoryPlan,
-  surfacePilotPlan,
-  surfaceRepilotPlan,
-} from '../src/surface-plan.ts'
+import { RUN_PLANS, SURFACE_MODELS, specsOf } from '../src/surface-plan.ts'
 import { APPROVAL, surfaces } from '../src/surfaces.ts'
 
 // M7f's surface run (the planner, 17:35Z): its plan and order, its integrity steps, and its refusal off the pin
@@ -22,11 +13,11 @@ const dir = mkdtempSync(path.join(tmpdir(), 'choice-bench-surface-run-'))
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
 test('the pilot’s 60: every surface × model × index once, interleaved by index, models alternating, surfaces rotated', () => {
-  const plan = surfacePilotPlan()
+  const plan = specsOf('pilot')
   expect(plan).toHaveLength(60)
   expect(new Set(plan.map((s) => s.id)).size).toBe(60)
   const cells = new Set(plan.map((s) => `${s.surface} ${s.model} ${s.index}`))
-  expect(cells.size).toBe(PILOT_SURFACES.length * PILOT_MODELS.length * 5)
+  expect(cells.size).toBe(RUN_PLANS.pilot.surfaces.length * SURFACE_MODELS.length * 5)
   for (let i = 0; i < 5; i++) {
     const block = plan.slice(i * 12, i * 12 + 12)
     // each index's twelve side by side
@@ -34,16 +25,16 @@ test('the pilot’s 60: every surface × model × index once, interleaved by ind
     // Sonnet first when i is even, Haiku when it's odd
     expect(block[0]!.model).toBe(i % 2 === 0 ? 'claude-sonnet-5-5' : 'claude-haiku-5-5')
     // the surfaces rotate one place per index, so each index leads with a different one
-    expect(block[0]!.surface).toBe(PILOT_SURFACES[i])
+    expect(block[0]!.surface).toBe(RUN_PLANS.pilot.surfaces[i])
     expect(
       block
         .slice(0, 6)
         .map((s) => s.surface)
         .toSorted(),
-    ).toEqual([...PILOT_SURFACES].toSorted())
+    ).toEqual([...RUN_PLANS.pilot.surfaces].toSorted())
   }
   expect(plan.every((s) => s.task === 'T6' && s.driver === 'claude-cli')).toBe(true)
-  expect(surfacePilotPlan('fake').every((s) => s.driver === 'fake')).toBe(true)
+  expect(specsOf('pilot', 'fake').every((s) => s.driver === 'fake')).toBe(true)
 })
 
 test('the owner’s files are stamped by mtime and sha256, and a change is reported, never refused', () => {
@@ -94,24 +85,24 @@ test('every surface’s instruction line ends with the one approval sentence, id
 })
 
 test('the re-pilot: the 4 confirmatory surfaces x 2 models x 2, interleaved, alternating and rotated', () => {
-  const plan = surfaceRepilotPlan()
+  const plan = specsOf('repilot')
   expect(plan).toHaveLength(16)
   expect(new Set(plan.map((s) => `${s.surface} ${s.model} ${s.index}`)).size).toBe(16)
-  expect(new Set(plan.map((s) => s.surface))).toEqual(new Set(REPILOT_SURFACES))
+  expect(new Set(plan.map((s) => s.surface))).toEqual(new Set(RUN_PLANS.repilot.surfaces))
   for (let i = 0; i < 2; i++) {
     const block = plan.slice(i * 8, i * 8 + 8)
     expect(block.every((s) => s.index === i)).toBe(true)
     expect(block[0]!.model).toBe(i % 2 === 0 ? 'claude-sonnet-5-5' : 'claude-haiku-5-5')
-    expect(block[0]!.surface).toBe(REPILOT_SURFACES[i])
+    expect(block[0]!.surface).toBe(RUN_PLANS.repilot.surfaces[i])
   }
   expect(plan.every((s) => s.id.startsWith('repilot-'))).toBe(true)
   // the pilot's own ids are as they were, so its committed record still matches its plan
-  expect(surfacePilotPlan()[0]!.id).toBe('pilot-full-T6-claude-sonnet-5-5-0')
+  expect(specsOf('pilot')[0]!.id).toBe('pilot-full-T6-claude-sonnet-5-5-0')
 })
 
 // the planner (18:41Z): the confirmatory run on the re-pilot's pin, through the same entry
 test('the confirmatory 400: 4 surfaces x 2 models x 50, interleaved and rotated, each index fixing its plan order', () => {
-  const plan = surfaceConfirmatoryPlan()
+  const plan = specsOf('confirmatory')
   expect(plan).toHaveLength(400)
   expect(new Set(plan.map((s) => s.id)).size).toBe(400)
   expect(new Set(plan.map((s) => `${s.surface} ${s.model} ${s.index}`)).size).toBe(400)
@@ -123,7 +114,7 @@ test('the confirmatory 400: 4 surfaces x 2 models x 50, interleaved and rotated,
     const block = plan.slice(i * 8, i * 8 + 8)
     expect(block.every((s) => s.index === i)).toBe(true)
     expect(block[0]!.model).toBe(i % 2 === 0 ? 'claude-sonnet-5-5' : 'claude-haiku-5-5')
-    expect(block[0]!.surface).toBe(CONFIRMATORY_SURFACES[i % 4])
+    expect(block[0]!.surface).toBe(RUN_PLANS.confirmatory.surfaces[i % 4])
   }
   // its pause is the confirmatory rule, more than 2%, not the pilots' more than 2
   expect(RUN_PLANS.confirmatory.pilot).toBe(false)
