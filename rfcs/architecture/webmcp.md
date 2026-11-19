@@ -24,11 +24,11 @@ specification is [RFC 0004 §5](../0004-protocol-evolution.md#5-webmcp), as amen
   MCP. `mode: 'per-capability'` is the option.
 - **The view request rides on every call:** the page's `view` (its policy) and its `start` go into the adapter, which
   keeps the start a connection's last view was made from, so `expand`, `inspect` and `execute` read the same projection.
-- **The start, from the page:** the resource the page is about, used when the agent's `project` names none. hosting-lab's
-  root layout passes the session's own project (`apps/hosting-lab/src/app/layout.tsx`). A start is a view parameter only,
-  and grants nothing: the route checks every offer and every call against the session's principal. A test drives the
-  real `serveView` and `serveExecute` with another user's start, and gets nothing of theirs
-  (`apps/hosting-lab/test/webmcp-start.test.ts`).
+- **The start, from the page:** the resource the page is about, used when the agent's `project` names none.
+  hosting-lab's root layout passes the session's own project (`apps/hosting-lab/src/app/layout.tsx`). A start is a view
+  parameter only, and grants nothing: the route checks every offer and every call against the session's principal. A
+  test drives the real projection route (`apps/hosting-lab/src/lib/serve.ts`'s `GET` and `POST`) with another user's
+  start, and gets nothing of theirs (`apps/hosting-lab/test/webmcp-start.test.ts`).
 - **The per-capability option, as built:** a fixed list from the public manifest, one tool for each capability whose
   authorization is `any` (`exportable`, `packages/runtime/src/agent.ts`), named by its capability id
   (`capabilityTool`). A capability id always passes WebMCP's name rule. **Not built:** following the view, which would
