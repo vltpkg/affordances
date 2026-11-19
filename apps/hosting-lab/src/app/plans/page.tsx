@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { Button } from '@affordances/ui/components/button'
 import { bundles } from '@/catalog'
 import { currentPlans } from '@/lib/store'
@@ -25,6 +26,9 @@ const Page = async () => {
                 <li>{p.rollback ? 'Instant rollback' : 'No rollback'}</li>
                 <li>{p.support} support</li>
               </ul>
+              <Link href={`/plans/${p.slug}`} className="text-sm underline">
+                Details
+              </Link>
               {current ? (
                 <p className="text-sm font-medium">Current plan</p>
               ) : (

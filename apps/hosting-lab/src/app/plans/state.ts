@@ -18,5 +18,7 @@ export default defineState(
   {
     description:
       'Every plan and bundle, with its price, limits, rollback and support, and which one the project is on',
+    // each plan's own page, with the regions it's served from
+    nav: ({ plans }) => plans.map((p) => ({ to: `/plans/${p.slug}`, label: p.name })),
   },
 )

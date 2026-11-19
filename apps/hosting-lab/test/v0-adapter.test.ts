@@ -18,13 +18,15 @@ vi.mock('next/cache', () => ({ revalidatePath: () => {} }))
 const root = path.join(import.meta.dirname, '..')
 let handler: (request: Request) => Promise<Response>
 let routes: string[]
+let declared: Record<string, { actions: unknown[] }>
 
 beforeAll(async () => {
   generate(root)
   const { manifest } = (await import(
     pathToFileURL(path.join(root, '.affordances', 'manifest.ts')).href
-  )) as { manifest: { routes: Record<string, unknown> } }
+  )) as { manifest: { routes: Record<string, { actions: unknown[] }> } }
   routes = Object.keys(manifest.routes)
+  declared = manifest.routes
   handler = createRouteHandler({ manifest: manifest as never })
 })
 
@@ -50,13 +52,18 @@ const post = async (route: string, body: unknown, sid: string) => {
 test('every route’s Graph validates as v0, names its bound actions, and the site index lists every route', async () => {
   const sid = 's_m7b_graph'
   store.account(sid)
+  // a dynamic route is opened at one of its real keys: a plan's page at Pro's slug
+  const examples: Record<string, string> = { '/plans/[slug]': '/plans/pro' }
   for (const route of routes) {
-    const response = await get(`/api/affordances/graph${route === '/' ? '' : route}`, sid)
+    const opened = examples[route] ?? route
+    const response = await get(`/api/affordances/graph${opened === '/' ? '' : opened}`, sid)
     expect({ route, status: response.status }).toEqual({ route, status: 200 })
     const graph = Graph.parse(await response.json())
     expect([graph.v, graph.route]).toEqual(['0', route])
-    expect(graph.actions.length).toBeGreaterThan(0)
+    // every action the route binds, and none more: a plan's own page binds none, since it only reads
+    expect(graph.actions.length).toBe(declared[route]!.actions.length)
   }
+  expect(Object.keys(examples).every((r) => routes.includes(r))).toBe(true)
   const index = SiteIndex.parse(await (await get('/.well-known/affordances.json')).json())
   expect(index.v).toBe('0')
   expect(index.routes.map((r) => r.route).toSorted()).toEqual(routes.toSorted())
