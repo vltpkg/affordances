@@ -29,6 +29,7 @@ The pre-registered gate (`../PLAN.md` §6): each model's optimal rate, pooled ov
 
 - **Sonnet 5.5:** 18 of 20, in range.
 - **Haiku 5.5:** 20 of 20, above 18. So the gate fails.
+- **So T8 isn't a ceiling on every surface** (intake's wording, 02:23Z): T8's headroom gate failed on Haiku 5.5 (20 of 20 optimal). Sonnet 5.5 was 18 of 20; its 2 misses were both on progressive, each buying the owner's favored option (Pro with extra bandwidth) with the deciding fact unseen (pilot, n=5 per cell, descriptive, not a test).
 - **What follows, by the plan and intake's ruling (2026-11-19 02:21Z):** M8e stops and closes on this pilot. There's no confirmatory T8 run, no change to the fixture and rerun under this plan, and nothing here is labelled confirmatory.
 - **The gate worked as designed.** It's there so that a task with no room to separate the surfaces is found before the confirmatory run, not after. It spent 40 trials instead of 440.
 
@@ -41,6 +42,8 @@ The pre-registered gate (`../PLAN.md` §6): each model's optimal rate, pooled ov
 ## The pilot, per surface: pilot, descriptive, not a test
 
 **No future task may be chosen or tuned from these per-surface rates, and any later task's justification is written without citing them** (intake's rule, 02:21Z).
+
+What the table shows, in intake's words: T8's headroom gate failed on Haiku 5.5 (20 of 20 optimal). Sonnet 5.5 was 18 of 20; its 2 misses were both on progressive, each buying the owner's favored option (Pro with extra bandwidth) with the deciding fact unseen (pilot, n=5 per cell, descriptive, not a test).
 
 At 5 trials per cell, these are descriptive only. No contrast is estimated, and no interval is offered as a test. They were opened only after the gate failed, on intake's ruling, since no confirmatory run follows.
 
