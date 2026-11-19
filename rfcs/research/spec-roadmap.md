@@ -58,7 +58,7 @@ confirmation exactly, but not the ids themselves, which the developer chooses (R
 ## 2. What the benchmark says, and doesn't
 
 - **M5 (RFC 0003, T6, two models):**
-  - **H1, a steering policy against exhaustive disclosure:** not rejected.
+  - **H1, the exhaustive view in a different structure (S, carrying exactly A's information) against exhaustive disclosure:** not rejected.
   - **H2, the advocated policy against exhaustive:** rejected, with the advocated policy lower, mostly on one model.
   - **H2's validity note:** it measured the advocated policy as a whole, which narrowed the first view's scope, not the owner's claims alone. §6.6 is the product fix.
 - **M7f (the surface comparison, T6 with the person's approval stated on every surface):** a ceiling. All 400 trials were optimal, so T6 doesn't separate full, progressive, v0 and browser for these two models. That isn't evidence that the surfaces are equal in general (`apps/choice-bench/results/surfaces/confirmatory-2026-11-18/README.md`).
