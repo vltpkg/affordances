@@ -22,6 +22,7 @@ import {
   type TrialSpec,
 } from './harness.ts'
 import { intendedEndState } from './intended.ts'
+import { regionSeenIn } from './oracle.ts'
 import {
   crossCheck,
   HarnessFault,
@@ -127,6 +128,9 @@ const factsOf = async (
       proAllowanceSeen: m.calls
         .slice(0, firstRequest)
         .some((c) => showsFact(c.output, 'pro', 'bandwidthGb', gb)),
+      ...(task === 'T8' && {
+        regionSeen: m.calls.slice(0, firstRequest).some((c) => regionSeenIn(surface.id, c.output)),
+      }),
       unauthorized: mcpUnauthorized(m),
       endState,
     }
@@ -149,6 +153,7 @@ const factsOf = async (
       proAllowanceSeen: before.some((c) =>
         showsInTree(parseAria(c.output), pro, `${Number(gb).toLocaleString('en')} GB`, plans),
       ),
+      ...(task === 'T8' && { regionSeen: before.some((c) => regionSeenIn(surface.id, c.output)) }),
       // the browser reaches no API: a refusal is the page's, never 'unauthorized'
       unauthorized: false,
       endState,
@@ -167,6 +172,7 @@ const factsOf = async (
       calls: calls.length,
       firstRequest,
       proAllowanceSeen: before.some((c) => showsFact(c.output, 'pro', 'bandwidthGb', gb)),
+      ...(task === 'T8' && { regionSeen: before.some((c) => regionSeenIn(surface.id, c.output)) }),
       unauthorized: calls.some((c) => delta(c)?.error?.code === 'unauthorized'),
       endState,
     }
@@ -182,6 +188,11 @@ const factsOf = async (
     proAllowanceSeen: calls
       .slice(0, firstRequest)
       .some((c) => showsFact(structured(c.response), 'pro', 'bandwidthGb', gb)),
+    ...(task === 'T8' && {
+      regionSeen: calls
+        .slice(0, firstRequest)
+        .some((c) => regionSeenIn(surface.id, structured(c.response))),
+    }),
     unauthorized: calls.some((c) => c.tool === 'execute' && responseOf(c)?.code === 'unauthorized'),
     endState,
   }
@@ -309,6 +320,15 @@ export const scoreSurfaceTrial = async (t: {
     }),
   }
 }
+
+/**
+ * A T8 trace carries its deciding fact (results/surfaces-t8/PLAN.md §5; the planner, 00:04Z): metrics without a boolean
+ * regionSeen are the harness's fault, set aside and counted like any other, never scored. Other tasks have no such field.
+ */
+export const missingFact = (task: string, metrics: Record<string, unknown>) =>
+  task === 'T8' && typeof metrics.regionSeen !== 'boolean'
+    ? { kind: 'missing-fact', detail: "a T8 trace's metrics have no regionSeen" }
+    : undefined
 
 export const runSurfaceTrial = async (
   spec: TrialSpec,
@@ -542,6 +562,17 @@ export const runSurfaceTrial = async (
     durationMs: result?.durationMs ?? 0,
     end,
   })
+  const missing = missingFact(spec.task, metrics)
+  if (missing) {
+    recordFault(dir, spec, {
+      ...missing,
+      serverErrors: [],
+      serverLog: `${spec.id}.server.log`,
+      raw: result?.raw ?? null,
+      attempt: faultsOf(dir).filter((f) => f.spec.id === spec.id).length + 1,
+    })
+    return { spec, fault: missing }
+  }
   // the driver's record of its calls against the server's: a mismatch marks the trial, as in M5
   const known =
     surface.kind === 'v0'

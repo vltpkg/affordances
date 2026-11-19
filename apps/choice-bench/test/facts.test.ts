@@ -1,5 +1,13 @@
-import { expect, test } from 'vitest'
-import { holdsPhrase, parseAria, showsFact, showsInTree } from '../src/facts.ts'
+import { describe, expect, test } from 'vitest'
+import {
+  holdsPhrase,
+  pageShowsServedFrom,
+  parseAria,
+  showsFact,
+  showsInTree,
+  showsRegionPlans,
+  showsServedFrom,
+} from '../src/facts.ts'
 
 // §2's deciding facts as each surface shows them, by one matcher per kind of result
 
@@ -117,4 +125,84 @@ test('a value is a whole phrase of a node’s text (design, 15:19Z)', () => {
   expect(holdsPhrase('$20 a month, included in your bundle', '$20 a month')).toBe(true)
   expect(holdsPhrase('1,000 GB bandwidth', '000 GB')).toBe(false)
   expect(holdsPhrase('Free', 'Free')).toBe(true)
+})
+
+// a plan's page as the browser's snapshot renders it (hosting-lab's /plans/<slug>, bffc4fdf)
+const page = (items: string[], heading = 'Pro') =>
+  parseAria(
+    [
+      `- heading "${heading}" [level=1] [ref=e1]`,
+      '- paragraph [ref=e2]: $20 a month',
+      // as Playwright 1.64's ai snapshot renders hosting-lab's page: the region unnamed, its heading inside it
+      '- region [ref=e3]:',
+      '  - heading "Served from" [level=2] [ref=e4]',
+      '  - list [ref=e5]:',
+      ...items.map((t, i) => `    - listitem [ref=e${6 + i}]: ${t}`),
+    ].join('\n'),
+  )
+
+// T8's regionSeen (results/surfaces-t8/PLAN.md §5, as clarified): the fact that rules Pro out, as a complete list. On the
+// graph surfaces, EU West's region object with plans exactly ['business']; on the pages, Pro's served-from list exactly
+// ['US East (US)'], and v0's graph for it with servedFrom slugs exactly ['us-east']
+describe('T8: the deciding fact as a complete list', () => {
+  const euWest = { slug: 'eu-west', name: 'EU West' }
+  test('a region object or a comparison row with exactly its plans, and nothing short of it', () => {
+    // a comparison's row carries no key: it's named by its name
+    const row = { rows: [{ name: 'EU West', jurisdiction: 'EU', plans: ['business'] }] }
+    expect(showsRegionPlans(row, euWest, ['business'])).toBe(true)
+    expect(
+      showsRegionPlans({ region: { slug: 'eu-west', plans: ['business'] } }, euWest, ['business']),
+    ).toBe(true)
+    for (const near of [
+      { rows: [{ name: 'EU West', plans: ['business', 'pro'] }] },
+      { rows: [{ name: 'US East', plans: ['business'] }] },
+      { rows: [{ name: 'EU West', plans: [] }] },
+      { rows: [{ name: 'EU West', plans: 'business' }] },
+    ])
+      expect(showsRegionPlans(near, euWest, ['business'])).toBe(false)
+  })
+
+  test("v0's graph for Pro's page, with exactly its regions", () => {
+    const graph = {
+      entities: {
+        plan: { slug: 'pro', name: 'Pro', priceUsd: 20 },
+        servedFrom: [{ slug: 'us-east', name: 'US East', jurisdiction: 'US' }],
+      },
+    }
+    expect(showsServedFrom(graph, 'pro', ['us-east'])).toBe(true)
+    expect(showsServedFrom(graph, 'business', ['us-east'])).toBe(false)
+    expect(showsServedFrom(graph, 'pro', ['us-east', 'eu-west'])).toBe(false)
+  })
+
+  test("Pro's page in the agent's snapshot: its heading, and its 'Served from' list exactly", () => {
+    expect(pageShowsServedFrom(page(['US East (US)']), 'Pro', ['US East (US)'])).toBe(true)
+    expect(
+      pageShowsServedFrom(page(['US East (US)', 'EU West (EU)']), 'Pro', ['US East (US)']),
+    ).toBe(false)
+    expect(pageShowsServedFrom(page(['US East (US)'], 'Business'), 'Pro', ['US East (US)'])).toBe(
+      false,
+    )
+    expect(pageShowsServedFrom(page([]), 'Pro', ['US East (US)'])).toBe(false)
+  })
+})
+
+// Pro's page as Playwright 1.64 snapshots hosting-lab's real /plans/pro (bffc4fdf), captured, not written by hand
+const REAL_PRO_PAGE = [
+  '  - main [ref=e10]:',
+  '    - generic [ref=e11]:',
+  '      - heading "Pro" [level=1] [ref=e12]',
+  '      - paragraph [ref=e13]: $20 a month',
+  '      - region [ref=e14]:',
+  '        - heading "Served from" [level=2] [ref=e15]',
+  '        - list [ref=e16]:',
+  '          - listitem [ref=e17]: US East (US)',
+  '      - link "All plans" [ref=e18] [cursor=pointer]:',
+  '        - /url: /plans',
+].join('\n')
+
+test("the real snapshot of Pro's page shows its regions exactly, by the same matcher", () => {
+  expect(pageShowsServedFrom(parseAria(REAL_PRO_PAGE), 'Pro', ['US East (US)'])).toBe(true)
+  expect(
+    pageShowsServedFrom(parseAria(REAL_PRO_PAGE), 'Pro', ['US East (US)', 'EU West (EU)']),
+  ).toBe(false)
 })

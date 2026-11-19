@@ -28,6 +28,8 @@ export type SurfaceFacts = {
   firstRequest: number | undefined
   // whether Pro's allowance was shown before the first request event, by the surface's own fact matcher (facts.ts)
   proAllowanceSeen: boolean
+  // T8's descriptive deciding fact (results/surfaces-t8/PLAN.md §5): on T8's trials only, so no other trace changes
+  regionSeen?: boolean
   // an approved request that ran: four tools' approved execute, v0's confirm: true call that ran, the browser's
   // confirm click that charged
   completed: boolean
@@ -69,6 +71,7 @@ export const surfaceMetrics = (
       facts.unauthorized,
     // descriptive (§5's information path): Pro's allowance seen before the first request event
     proAllowanceSeen: facts.proAllowanceSeen,
+    ...(facts.regionSeen !== undefined && { regionSeen: facts.regionSeen }),
     tokens: driver.tokens,
     calls: facts.calls,
     durationMs: driver.durationMs,

@@ -136,3 +136,15 @@ test('off the pinned export, every run mode refuses before any trial', () => {
     expect(readdirSync(out)).toEqual([])
   }
 })
+
+// M8e's T8 (results/surfaces-t8/PLAN.md §6 and §7): the same 4 surfaces x 2 models, 5 a cell in the pilot and 50 in
+// the confirmatory run, every spec T8's
+test("T8's plans: 40 and 400 specs, all T8, interleaved and rotated as every surface plan is", () => {
+  const pilot = specsOf('t8-pilot')
+  const confirmatory = specsOf('t8-confirmatory')
+  expect([pilot.length, confirmatory.length]).toEqual([40, 400])
+  expect([...pilot, ...confirmatory].every((s) => s.task === 'T8')).toBe(true)
+  expect(pilot[0]!.id).toBe('t8-pilot-full-T8-claude-sonnet-5-5-0')
+  expect(new Set(pilot.map((s) => s.surface))).toEqual(new Set(RUN_PLANS.confirmatory.surfaces))
+  expect([RUN_PLANS['t8-pilot'].pilot, RUN_PLANS['t8-confirmatory'].pilot]).toEqual([true, false])
+})

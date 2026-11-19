@@ -44,6 +44,22 @@ export const RUN_PLANS = {
     task: 'T6',
     pilot: false,
   },
+  // M8e's T8 (results/surfaces-t8/PLAN.md §6 and §7): the same 4 surfaces x 2 models, a pilot of 5 a cell (40, with a
+  // margin of 20 for retries, which MAX_ATTEMPTS's one retry a spec keeps within), and a confirmatory run of 50 a cell
+  't8-pilot': {
+    prefix: 't8-pilot',
+    surfaces: CONFIRMATORY_SURFACES,
+    perCell: 5,
+    task: 'T8',
+    pilot: true,
+  },
+  't8-confirmatory': {
+    prefix: 't8-confirmatory',
+    surfaces: CONFIRMATORY_SURFACES,
+    perCell: 50,
+    task: 'T8',
+    pilot: false,
+  },
 } as const satisfies Record<string, PlanShape>
 export type PlanName = keyof typeof RUN_PLANS
 

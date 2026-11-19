@@ -1,6 +1,6 @@
 import * as lab from '@affordances/hosting-lab/trial'
 import { expect, test } from 'vitest'
-import { decidingFacts, reached, type Read } from '../src/oracle.ts'
+import { decidingFacts, reached, type PriceFact, type Read } from '../src/oracle.ts'
 import { refusalsOf, type SurfaceCheck } from '../src/preflight.ts'
 import { surfacePromptFor } from '../src/surface.ts'
 import { surfaces } from '../src/surfaces.ts'
@@ -8,7 +8,7 @@ import { surfaces } from '../src/surfaces.ts'
 // M7f's preflight (surfaces/PLAN.md §2): the parity oracle's matching, and every check refusing its failing case
 
 test('the deciding facts are the app’s own: every plan’s price and bandwidth, every add-on’s and bundle’s price', async () => {
-  const facts = await decidingFacts()
+  const facts = (await decidingFacts()) as PriceFact[]
   expect(
     facts
       .filter((f) => f.kind === 'plan')
@@ -27,7 +27,7 @@ test('the deciding facts are the app’s own: every plan’s price and bandwidth
 
 // a structured read that shows every fact, and one with a fact removed
 const allFacts = async (): Promise<Read[]> => {
-  const facts = await decidingFacts()
+  const facts = (await decidingFacts()) as PriceFact[]
   // one row per item of a kind: its slug and each of its facts' values
   const rows = (kind: string) => {
     const bySlug = new Map<string, Record<string, unknown>>()
@@ -44,7 +44,7 @@ const allFacts = async (): Promise<Read[]> => {
 }
 
 test('the oracle finds every fact a surface shows, and a surface with a fact removed is refused', async () => {
-  const facts = await decidingFacts()
+  const facts = (await decidingFacts()) as PriceFact[]
   const full = reached('full', facts, await allFacts())
   expect(full.missing).toEqual([])
   expect(full.found.every((f) => f.where === 'project')).toBe(true)
@@ -60,7 +60,7 @@ test('the oracle finds every fact a surface shows, and a surface with a fact rem
 })
 
 test('the browser’s oracle reads snapshots by design’s tree rule, never a value off another row', async () => {
-  const facts = (await decidingFacts()).filter((f) => f.kind === 'plan')
+  const facts = ((await decidingFacts()) as PriceFact[]).filter((f) => f.kind === 'plan')
   const snapshot = ['Hobby', 'Pro', 'Business']
     .map((name) => {
       const f = (field: string) => facts.find((x) => x.name === name && x.field === field)!.rendered
@@ -146,4 +146,18 @@ test('a clean run passes; each failing check is refused, by name', () => {
       differ: [{ file: 'packages/mcp/src/server.ts', reason: 'differs' }],
     }),
   ).toEqual(["packages/mcp isn't main's e9645ab4: packages/mcp/src/server.ts differs"])
+})
+
+// the planner (00:04Z): the pinned preflight runs a fake T8 trial per surface, and refuses unless each one's metrics
+// carry regionSeen as a boolean
+test('a T8 fake trial whose metrics lack a boolean regionSeen refuses the run, naming its surface', () => {
+  const records = [
+    { surface: 'full' as const, regionSeen: true },
+    { surface: 'v0' as const, regionSeen: false },
+    { surface: 'browser' as const, regionSeen: undefined },
+  ]
+  expect(refusalsOf([], [], undefined, undefined, records)).toEqual([
+    "browser: a T8 trial's metrics have no regionSeen",
+  ])
+  expect(refusalsOf([], [], undefined, undefined, records.slice(0, 2))).toEqual([])
 })

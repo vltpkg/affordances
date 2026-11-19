@@ -670,3 +670,15 @@ test.skipIf(!build)(
   },
   600_000,
 )
+
+// the planner (00:04Z): a T8 trace without its deciding fact is a harness fault, never scored; no other task has it
+test("a T8 trace's metrics without a boolean regionSeen are a missing-fact fault; another task's never are", async () => {
+  const { missingFact } = await import('../src/surface.ts')
+  expect(missingFact('T8', { optimal: true })).toEqual({
+    kind: 'missing-fact',
+    detail: "a T8 trace's metrics have no regionSeen",
+  })
+  expect(missingFact('T8', { regionSeen: 'yes' })?.kind).toBe('missing-fact')
+  expect(missingFact('T8', { regionSeen: false })).toBeUndefined()
+  expect(missingFact('T6', { optimal: true })).toBeUndefined()
+})

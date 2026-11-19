@@ -118,3 +118,70 @@ export const showsInTree = (
   const at = smallest(tree)
   return !!at && !others.some((o) => o !== label && holds(at, o))
 }
+
+// T8's facts are lists (results/surfaces-t8/PLAN.md §3 and §4): which plans a region serves, and which regions serve a
+// plan. Each is compared whole, so a plan or region missing from one reads as absent, never as left unsaid
+const sameList = (a: unknown, b: readonly string[]) =>
+  Array.isArray(a) && a.length === b.length && a.every((x, i) => x === b[i])
+const flatten = (node: AriaNode): AriaNode[] => [node, ...node.children.flatMap(flatten)]
+
+/**
+ * A region's plans in structured data, as a view shows them: an object for the region holding exactly these plans. A
+ * comparison's row carries no key (RFC 0002 §6.6), so the region is named by its slug or its name.
+ */
+export const showsRegionPlans = (
+  result: unknown,
+  region: { slug: string; name: string },
+  plans: readonly string[],
+): boolean => {
+  if (typeof result !== 'object' || result === null) return false
+  const o = result as Record<string, unknown>
+  if (
+    !Array.isArray(o) &&
+    (o.slug === region.slug || o.name === region.name) &&
+    sameList(o.plans, plans)
+  )
+    return true
+  return Object.values(o).some((v) => showsRegionPlans(v, region, plans))
+}
+
+/** A plan's regions in v0's graph for its page: the plan, and the slugs of exactly these regions it's served from. */
+export const showsServedFrom = (
+  result: unknown,
+  plan: string,
+  regions: readonly string[],
+): boolean => {
+  if (typeof result !== 'object' || result === null) return false
+  const o = result as Record<string, unknown>
+  const served = o.servedFrom
+  if (
+    !Array.isArray(o) &&
+    (o.plan as { slug?: unknown } | undefined)?.slug === plan &&
+    Array.isArray(served) &&
+    sameList(
+      served.map((r) => (r as { slug?: unknown }).slug),
+      regions,
+    )
+  )
+    return true
+  return Object.values(o).some((v) => showsServedFrom(v, plan, regions))
+}
+
+/** A plan's page as the agent's snapshot shows it: its heading the plan's name, and its 'Served from' list exactly. */
+export const pageShowsServedFrom = (tree: AriaNode, plan: string, items: readonly string[]) => {
+  const nodes = flatten(tree)
+  if (!nodes.some((n) => n.role === 'heading' && n.name === plan)) return false
+  // the section holding the 'Served from' heading: Playwright's ai snapshot names no region by its aria-labelledby, so
+  // the section is the node whose child is that heading, and its list the one beside it
+  const section = nodes.find((n) =>
+    n.children.some((c) => c.role === 'heading' && c.name === 'Served from'),
+  )
+  const list = section?.children.find((n) => n.role === 'list')
+  return (
+    !!list &&
+    sameList(
+      list.children.filter((c) => c.role === 'listitem').map((c) => c.text ?? c.name ?? ''),
+      items,
+    )
+  )
+}

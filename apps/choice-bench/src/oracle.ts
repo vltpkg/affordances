@@ -1,6 +1,15 @@
 import * as lab from '@affordances/hosting-lab/trial'
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { parseAria, showsFact, showsInTree, structured } from './facts.ts'
+import { regions, plans as catalogPlans } from '@affordances/hosting-lab/catalog'
+import {
+  pageShowsServedFrom,
+  parseAria,
+  showsFact,
+  showsInTree,
+  showsRegionPlans,
+  showsServedFrom,
+  structured,
+} from './facts.ts'
 import type { SurfaceId } from './surfaces.ts'
 
 // the information-parity oracle (surfaces/PLAN.md §2): before any trial, a walk through each surface's own tools, as the
@@ -9,7 +18,8 @@ import type { SurfaceId } from './surfaces.ts'
 // measure the gap, not the surface (M5's F lesson). For each fact found, the result it matched is kept, so a near-miss
 // can be audited
 
-export type Fact = {
+export type Fact = PriceFact | RegionFact | ServedFromFact
+export type PriceFact = {
   kind: 'plan' | 'addOn' | 'bundle'
   slug: string
   // the label a page shows for it, its catalog name
@@ -19,12 +29,69 @@ export type Fact = {
   // as the pages render it (hosting-lab's usd and the plans page): 'Free', '$20 a month', '1,000 GB'
   rendered: string
 }
+// T8's (results/surfaces-t8/PLAN.md §4): on the graph surfaces, each region's plans, a complete list
+type RegionFact = { kind: 'region'; slug: string; name: string; field: 'plans'; plans: string[] }
+// and on the pages, each plan's page listing exactly its regions: their slugs in v0's graph, and their text on the page
+type ServedFromFact = {
+  kind: 'servedFrom'
+  slug: string
+  name: string
+  field: 'regions'
+  regions: string[]
+  items: string[]
+}
+
+// a plan's regions as its page lists them, in the catalog's order: 'US East (US)'
+const servedFromOf = (plan: string) => {
+  const served = regions.filter((r) => r.plans.includes(plan as never))
+  return {
+    regions: served.map((r) => r.slug),
+    items: served.map((r) => `${r.name} (${r.jurisdiction})`),
+  }
+}
+
+/** T8's deciding facts, from the catalog: every region's plans, and every plan's page of regions. */
+const t8Facts = (): Fact[] => [
+  ...regions.map((r) => ({
+    kind: 'region' as const,
+    slug: r.slug,
+    name: r.name,
+    field: 'plans' as const,
+    plans: [...r.plans],
+  })),
+  ...catalogPlans.map((p) => ({
+    kind: 'servedFrom' as const,
+    slug: p.slug,
+    name: p.name,
+    field: 'regions' as const,
+    ...servedFromOf(p.slug),
+  })),
+]
+
+// the graph surfaces read a view; v0 and the browser read pages
+const GRAPH: readonly SurfaceId[] = ['full', 'progressive', 'mcp', 'webmcp']
+
+/**
+ * T8's regionSeen (PLAN §5, as clarified): the one fact that rules the favored option out, as a complete list, by the
+ * walk's own matchers. On the graph surfaces, EU West's region with plans exactly ['business']; on v0, the graph for
+ * Pro's page with exactly its regions' slugs; in the browser, Pro's page listing exactly 'US East (US)'.
+ */
+export const regionSeenIn = (surface: SurfaceId, output: unknown): boolean => {
+  const eu = regions.find((r) => r.slug === 'eu-west')!
+  const pro = catalogPlans.find((p) => p.slug === 'pro')!
+  const served = servedFromOf('pro')
+  if (GRAPH.includes(surface)) return showsRegionPlans(output, eu, [...eu.plans])
+  if (surface === 'v0') return showsServedFrom(output, 'pro', served.regions)
+  return (
+    typeof output === 'string' && pageShowsServedFrom(parseAria(output), pro.name, served.items)
+  )
+}
 
 const usd = (n: number) => (n === 0 ? 'Free' : `$${n} a month`)
 const nobody = { authenticated: false, attributes: {} } as never
 
 /** §2's deciding facts, from the app's own resolvers, never copied here. */
-export const decidingFacts = async (): Promise<Fact[]> => {
+export const decidingFacts = async (task?: string): Promise<Fact[]> => {
   const facts: Fact[] = []
   for (const [kind, type, capability] of [
     ['plan', 'hosting.plan', 'hosting.plan.subscribe'],
@@ -58,10 +125,19 @@ export const decidingFacts = async (): Promise<Fact[]> => {
         })
     }
   }
-  return facts
+  // T8's are its own: no other task's walk asks for them
+  return task === 'T8' ? [...facts, ...t8Facts()] : facts
 }
 
 export const factId = (f: Fact) => `${f.kind} ${f.slug} ${f.field}`
+
+// whether a fact is one this surface must reach: a region's plans on the graph surfaces, a plan's page on the others
+const appliesTo = (f: Fact, surface: SurfaceId) =>
+  f.kind === 'region'
+    ? GRAPH.includes(surface)
+    : f.kind === 'servedFrom'
+      ? !GRAPH.includes(surface)
+      : true
 
 // one tool result the walk read: where it came from, and its text
 export type Read = { where: string; text: string }
@@ -112,7 +188,7 @@ const walkViews = async (client: Client): Promise<Read[]> => {
 }
 
 // v0's walk: open every route in the SiteIndex, and read each graph. A route with a dynamic segment has no path of
-// its own, so it's reached, if at all, through the static ones' nav
+// its own, so it's reached, if at all, through the graphs' nav, which the walk follows
 const walkV0 = async (client: Client, url: string): Promise<Read[]> => {
   const index = (await (await fetch(`${url}/.well-known/affordances.json`)).json()) as {
     routes?: { path?: string; route?: string }[]
@@ -123,9 +199,17 @@ const walkV0 = async (client: Client, url: string): Promise<Read[]> => {
     ),
   ]
   const reads: Read[] = []
-  for (const path of paths.toSorted()) {
+  // then each graph's nav, as an agent follows it: a dynamic route's pages, T8's plan pages among them, are reached so
+  const queue = paths.toSorted()
+  const seen = new Set<string>()
+  for (let path = queue.shift(); path !== undefined; path = queue.shift()) {
+    if (seen.has(path)) continue
+    seen.add(path)
     const r = await textOf(client, 'affordances_open', { path })
     reads.push({ where: `open ${path}`, text: r.text })
+    const nav = (structured(r.text) as { nav?: { to?: unknown }[] } | undefined)?.nav ?? []
+    for (const n of nav)
+      if (typeof n.to === 'string' && n.to.startsWith('/') && !seen.has(n.to)) queue.push(n.to)
   }
   return reads
 }
@@ -161,19 +245,110 @@ export const reached = (surface: SurfaceId, facts: Fact[], reads: Read[]) => {
   const labels = (kind: Fact['kind']) => [
     ...new Set(facts.filter((f) => f.kind === kind).map((f) => f.name)),
   ]
+  const matches = (f: Fact, read: { tree?: ReturnType<typeof parseAria>; value?: unknown }) =>
+    f.kind === 'region'
+      ? showsRegionPlans(read.value, f, f.plans)
+      : f.kind === 'servedFrom'
+        ? surface === 'browser'
+          ? pageShowsServedFrom(read.tree!, f.name, f.items)
+          : showsServedFrom(read.value, f.slug, f.regions)
+        : surface === 'browser'
+          ? showsInTree(read.tree!, f.name, f.rendered, labels(f.kind))
+          : showsFact(read.value, f.slug, f.field, f.value)
   const trees =
     surface === 'browser' ? reads.map((r) => ({ where: r.where, tree: parseAria(r.text) })) : []
   const data =
     surface === 'browser' ? [] : reads.map((r) => ({ where: r.where, value: structured(r.text) }))
   const found: { fact: string; where: string }[] = []
   const missing: string[] = []
-  for (const f of facts) {
+  for (const f of facts.filter((x) => appliesTo(x, surface))) {
     const hit =
-      surface === 'browser'
-        ? trees.find((t) => showsInTree(t.tree, f.name, f.rendered, labels(f.kind)))
-        : data.find((d) => showsFact(d.value, f.slug, f.field, f.value))
+      surface === 'browser' ? trees.find((t) => matches(f, t)) : data.find((d) => matches(f, d))
     if (hit) found.push({ fact: factId(f), where: hit.where })
     else missing.push(factId(f))
   }
   return { found, missing }
+}
+
+// whether a result holds every region's plans, each a complete list
+const allRegions = (value: unknown) =>
+  regions.every((r) => showsRegionPlans(value, r, [...r.plans]))
+
+/**
+ * T8's depth check (results/surfaces-t8/PLAN.md §4), mechanical, on the walk's reads: the deciding fact is one step
+ * out, as the plan states it, or the run is refused and the fixture goes back to review and intake.
+ * - full: both region offers, and the region set with each region's plans in its comparison, in the first view, with
+ *   nothing omitted from that comparison;
+ * - progressive: no region offer and no region set in the first view, and the one expansion it lists along
+ *   relations returns both region offers and each region's plans;
+ * - v0 and browser: no plan's regions on the first page opened, and each plan's page one link from the plans page,
+ *   listing exactly its regions.
+ */
+export const t8Depth = (surface: SurfaceId, reads: Read[]): { ok: boolean; detail: string } => {
+  const offers = regions.map((r) => `hosting.region.read@hosting.region:${r.slug}`)
+  const first = reads[0]
+  if (!first) return { ok: false, detail: 'the walk read nothing' }
+  if (surface === 'full') {
+    const v = structured(first.text) as
+      | { choiceSets?: { id: string; comparison?: { omitted?: { attributes?: string[] } } }[] }
+      | undefined
+    const set = v?.choiceSets?.find((c) => c.id.startsWith('hosting.region.read@'))
+    const ok =
+      offers.every((o) => first.text.includes(o)) &&
+      allRegions(v) &&
+      (set?.comparison?.omitted?.attributes ?? ['missing']).length === 0
+    return {
+      ok,
+      detail: ok
+        ? 'both regions and their plans in the first view, nothing omitted'
+        : 'the first view lacks a region, its plans, or omits a column',
+    }
+  }
+  if (surface === 'progressive') {
+    const v = structured(first.text) as
+      | { omitted?: { expand?: { from: unknown; along: string }[] } }
+      | undefined
+    const listed = (v?.omitted?.expand ?? []).filter((e) => e.along === 'relations')
+    const hidden =
+      !offers.some((o) => first.text.includes(o)) &&
+      !first.text.includes('hosting.region.read@hosting.region"')
+    const opened = reads.find(
+      (r) =>
+        r.where.startsWith('expand ') &&
+        listed.some((e) => r.where === `expand ${JSON.stringify(e)}`) &&
+        allRegions(structured(r.text)),
+    )
+    const ok =
+      hidden && listed.length === 1 && !!opened && offers.every((o) => opened.text.includes(o))
+    return {
+      ok,
+      detail: ok
+        ? 'no region in the first view; its one relations expansion returns both'
+        : `the first view shows a region, lists ${listed.length} relations expansions, or none returns both regions`,
+    }
+  }
+  const items = catalogPlans.map((p) => ({ ...p, ...servedFromOf(p.slug) }))
+  const onPage = (r: Read, p: (typeof items)[number]) =>
+    surface === 'browser'
+      ? pageShowsServedFrom(parseAria(r.text), p.name, p.items)
+      : showsServedFrom(structured(r.text), p.slug, p.regions)
+  const plansPage = reads.find((r) => r.where === 'open /plans')
+  const linked = (p: (typeof items)[number]) =>
+    !!plansPage &&
+    (surface === 'browser'
+      ? plansPage.text.includes(`/url: /plans/${p.slug}`)
+      : ((structured(plansPage.text) as { nav?: { to?: string }[] } | undefined)?.nav ?? []).some(
+          (n) => n.to === `/plans/${p.slug}`,
+        ))
+  const firstHides = !items.some((p) => onPage(first, p))
+  const reachable = items.every(
+    (p) => linked(p) && reads.some((r) => r.where === `open /plans/${p.slug}` && onPage(r, p)),
+  )
+  const ok = firstHides && reachable
+  return {
+    ok,
+    detail: ok
+      ? "no plan's regions on the first page; each plan's page is one link from /plans"
+      : 'the first page shows regions, or a plan page is unlinked from /plans or lacks its regions',
+  }
 }

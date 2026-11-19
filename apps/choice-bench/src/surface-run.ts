@@ -48,6 +48,8 @@ const LISTS: Record<string, PlanName> = {
   plan: 'pilot',
   'plan-repilot': 'repilot',
   'plan-confirmatory': 'confirmatory',
+  'plan-t8-pilot': 't8-pilot',
+  'plan-t8-confirmatory': 't8-confirmatory',
 }
 if (mode && mode in LISTS) {
   for (const s of specsOf(LISTS[mode]!)) console.log(`${s.id} ${s.surface} ${s.model} ${s.index}`)
@@ -74,7 +76,7 @@ if (mode === 'status') {
 }
 if (!mode || !(mode in RUN_PLANS) || !outArg) {
   console.error(
-    'usage: node src/surface-run.ts plan | plan-repilot | plan-confirmatory | status <out> | pilot|repilot|confirmatory <out> [--dry]',
+    'usage: node src/surface-run.ts plan | plan-repilot | plan-confirmatory | plan-t8-pilot | plan-t8-confirmatory | status <out> | pilot|repilot|confirmatory|t8-pilot|t8-confirmatory <out> [--dry]',
   )
   process.exit(2)
 }
@@ -108,6 +110,7 @@ const preflight = await surfacePreflight({
   root: ROOT,
   pinned: true,
   surfaces: [...RUN_PLANS[mode as PlanName].surfaces],
+  task: RUN_PLANS[mode as PlanName].task,
 })
 write('preflight', preflight)
 if (!preflight.ok) refuse(`the pinned preflight: ${preflight.refusals.join('; ')}`)
