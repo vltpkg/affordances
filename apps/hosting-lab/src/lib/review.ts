@@ -33,8 +33,6 @@ export type Review = {
   // reason, which is then given
   summary?: string
   refused?: string
-  // the runtime's refusal code, when it's refused
-  code?: string
 }
 
 // the runtime's check, without approval: a capability that requires confirmation refuses with its rendered summary,
@@ -58,7 +56,6 @@ export const review = async (
       checked.status === 'refused'
         ? (checked.condition?.description ?? checked.detail ?? checked.code)
         : 'This needs no confirmation',
-    ...(checked.status === 'refused' && { code: checked.code }),
   }
 }
 

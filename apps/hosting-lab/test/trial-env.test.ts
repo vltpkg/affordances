@@ -170,3 +170,46 @@ test('with a state file, each 5xx is counted with its status and route; a 2xx is
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// simplify #26: a lookup of an existing account writes nothing, so no page render writes the trial's state; making an
+// account writes it
+test('the trial state is written when an account is made, never when an existing one is only read', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'hosting-lab-state-'))
+  const file = path.join(dir, 'state.json')
+  try {
+    const r = spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        [
+          "const { rmSync, existsSync } = await import('node:fs')",
+          "const store = await import('./src/lib/store.ts')",
+          `const file = ${JSON.stringify(file)}`,
+          "store.account('s_trial_9')",
+          'rmSync(file, { force: true })',
+          "store.account('s_trial_9')",
+          'const afterRead = existsSync(file)',
+          "store.account('s_other')",
+          'console.log(JSON.stringify({ afterRead, afterMake: existsSync(file) }))',
+        ].join('\n'),
+      ],
+      {
+        cwd: root,
+        encoding: 'utf8',
+        env: {
+          PATH: process.env.PATH ?? '',
+          HOSTING_LAB_TRIAL_SESSION: 's_trial_9',
+          HOSTING_LAB_TRIAL_STATE_FILE: file,
+        } as unknown as NodeJS.ProcessEnv,
+      },
+    )
+    if (r.status !== 0) throw new Error(r.stderr)
+    expect(JSON.parse(r.stdout.trim().split('\n').at(-1)!)).toEqual({
+      afterRead: false,
+      afterMake: true,
+    })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

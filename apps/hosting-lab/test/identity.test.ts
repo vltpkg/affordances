@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server'
 import { beforeEach, expect, test } from 'vitest'
 import { credentialOf } from '@affordances/next/projection'
 import { SESSION_COOKIE } from '../src/lib/cookie.ts'
-import { serveExecute, serveExpand, serveInspect, serveView } from '../src/lib/serve.ts'
+import * as serve from '../src/lib/serve.ts'
 import * as store from '../src/lib/store.ts'
 import { accountFor } from '../src/lib/view.ts'
 import { proxy } from '../src/proxy.ts'
@@ -22,9 +22,9 @@ beforeEach(() => store.reset())
 const json = { 'content-type': 'application/json' }
 const bearer = (sid: string) => ({ authorization: `Bearer ${sid}` })
 const view = (sid: string, query = '?policy=exhaustive') =>
-  serveView(new Request(`https://hosting.test/api/projection${query}`, { headers: bearer(sid) }))
+  serve.GET(new Request(`https://hosting.test/api/projection${query}`, { headers: bearer(sid) }))
 const post = (path: string, sid: string, body: unknown) =>
-  (path === 'expand' ? serveExpand : serveExecute)(
+  (path === 'expand' ? serve.POST : serve.POST)(
     new Request(`https://hosting.test/api/projection/${path}`, {
       method: 'POST',
       body: JSON.stringify(body),
@@ -42,7 +42,7 @@ const responses = async (sid: string): Promise<string[]> => {
     await read(post('expand', sid, { ...e, policy: 'exhaustive' }))
   for (const o of first.offers as { id: string }[]) {
     await read(
-      serveInspect(
+      serve.GET(
         new Request(
           `https://hosting.test/api/projection/inspect?offer=${encodeURIComponent(o.id)}&policy=exhaustive`,
           { headers: bearer(sid) },
@@ -142,7 +142,7 @@ test('finding 3: the proxy never gives an agent-facing request a session; pages 
 test('finding 3: a caller with no credential is anonymous, and a per-project offer needs authorization', async () => {
   store.account('s_owner')
   const v = await (
-    await serveView(new Request('https://hosting.test/api/projection?policy=exhaustive'))
+    await serve.GET(new Request('https://hosting.test/api/projection?policy=exhaustive'))
   ).json()
   const subscribe = v.offers.find(
     (o: { capability: string }) => o.capability === 'hosting.plan.subscribe',

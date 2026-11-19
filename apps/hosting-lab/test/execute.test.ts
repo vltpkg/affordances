@@ -1,7 +1,7 @@
 import { createAffordances, createHandler } from '@affordances/core'
 import { offerId, parseOfferId } from '@affordances/runtime'
 import { beforeEach, expect, test } from 'vitest'
-import { serveExecute, serveExpand, serveView } from '../src/lib/serve.ts'
+import * as serve from '../src/lib/serve.ts'
 import { checkedBy } from '../src/lib/runtime.ts'
 import * as store from '../src/lib/store.ts'
 import { cancel, subscribe } from '../src/app/capabilities.ts'
@@ -13,7 +13,7 @@ type Delta = { ok: boolean; error?: { code: string; message: string } }
 beforeEach(() => store.reset())
 
 const execute = (body: unknown, sid?: string) =>
-  serveExecute(
+  serve.POST(
     new Request('https://hosting.test/api/projection/execute', {
       method: 'POST',
       body: JSON.stringify(body),
@@ -75,7 +75,7 @@ test("an execution's changes are the caller's view's, under its policy and budge
     const view = `?start=hosting.project:${id}&policy=resource${offers ? `&offers=${offers}` : ''}`
     const read = async (): Promise<{ offers: { id: string }[] }> =>
       (
-        await serveView(
+        await serve.GET(
           new Request(`https://hosting.test/api/projection${view}`, {
             headers: { authorization: `Bearer ${sid}` },
           }),
@@ -219,7 +219,7 @@ test('a cookie call needs a matching Origin, for execute and expand', async () =
     input: { projectId: id },
   })
   const post = (headers: Record<string, string>) =>
-    serveExecute(
+    serve.POST(
       new Request('https://hosting.test/api/projection/execute', {
         method: 'POST',
         body,
@@ -235,7 +235,7 @@ test('a cookie call needs a matching Origin, for execute and expand', async () =
     { cookie: `sid=${sid}`, authorization: 'Bearer two words' },
   ]
   for (const headers of crossSite) expect((await post(headers)).status).toBe(403)
-  const expand = await serveExpand(
+  const expand = await serve.POST(
     new Request('https://hosting.test/api/projection/expand', {
       method: 'POST',
       body: JSON.stringify({ from: { type: 'hosting.project', key: id }, along: 'relations' }),
@@ -320,7 +320,7 @@ test('input that fails the schema is 422, and a body that isn’t a call is 400'
   )
   expect(bad.status).toBe(422)
   expect(await bad.json()).toMatchObject({ code: 'invalid_input' })
-  const notJson = await serveExecute(
+  const notJson = await serve.POST(
     new Request('https://hosting.test/api/projection/execute', {
       method: 'POST',
       body: 'not json',

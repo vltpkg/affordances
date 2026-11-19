@@ -5,7 +5,7 @@ import { manifest } from '../src/app/capabilities.ts'
 import { handlers } from '../src/lib/handlers.ts'
 import { principalOf } from '../src/lib/principal.ts'
 import { resolvers } from '../src/lib/resolvers.ts'
-import { serveExecute, serveExpand, serveInspect, serveView } from '../src/lib/serve.ts'
+import * as serve from '../src/lib/serve.ts'
 import * as store from '../src/lib/store.ts'
 
 // code review of M8 (#6): the in-process adapter and httpAdapter run the same calls the same way. An execution is
@@ -16,10 +16,10 @@ beforeEach(() => store.reset())
 const SESSION = 's_transports'
 const auth = { authorization: `Bearer ${SESSION}` }
 const routes: Record<string, (r: Request) => Promise<Response>> = {
-  view: serveView,
-  inspect: serveInspect,
-  expand: serveExpand,
-  execute: serveExecute,
+  view: serve.GET,
+  inspect: serve.GET,
+  expand: serve.POST,
+  execute: serve.POST,
 }
 const overHttp = (): AgentAdapter =>
   httpAdapter('https://hosting.test/api/projection', (async (url: string, init?: RequestInit) =>

@@ -362,7 +362,14 @@ const written = <F extends (...args: never[]) => unknown>(f: F): F =>
     writeTrialState()
     return result
   }) as F
-export const account = written(accountUnwritten)
+// an existing account is only read, so no page render writes the trial's state; making one writes it
+export const account = (sid: string): Account => {
+  const found = findAccount(sid)
+  if (found) return found
+  const made = accountUnwritten(sid)
+  writeTrialState()
+  return made
+}
 export const subscribePlan = written(subscribePlanUnwritten)
 export const subscribeBundle = written(subscribeBundleUnwritten)
 export const cancel = written(cancelUnwritten)

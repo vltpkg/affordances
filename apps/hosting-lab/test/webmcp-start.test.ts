@@ -1,6 +1,6 @@
 import { registerWebMcp } from '@affordances/webmcp'
 import { beforeEach, expect, test } from 'vitest'
-import { serveExecute, serveView } from '../src/lib/serve.ts'
+import * as serve from '../src/lib/serve.ts'
 import * as store from '../src/lib/store.ts'
 
 // the page's start for WebMCP (intake, 2026-11-18 16:28Z): the first view starts from the page's resource, the
@@ -23,7 +23,7 @@ const tools = (sid: string, start?: { type: string; key: string }) => {
       ...init,
       headers: { ...(init?.headers as Record<string, string>), authorization: `Bearer ${sid}` },
     })
-    return (init?.method ?? 'GET') === 'POST' ? serveExecute(request) : serveView(request)
+    return (init?.method ?? 'GET') === 'POST' ? serve.POST(request) : serve.GET(request)
   }) as typeof fetch
   registerWebMcp({
     base: '/api/projection',

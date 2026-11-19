@@ -24,9 +24,6 @@ const route = createProjectionRoute({
   runtime,
 })
 
-// each operation by the path it's served at, the route telling them apart by their last segment
-export const serveView = route.GET
-export const serveInspect = route.GET
-export const serveExpand = route.POST
-export const serveCheck = route.POST
-export const serveExecute = route.POST
+// the route's two methods: it tells the operations apart by the path's last segment (view and inspect by GET; expand,
+// check and execute by POST)
+export const { GET, POST } = route

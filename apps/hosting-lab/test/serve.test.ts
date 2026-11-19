@@ -1,6 +1,6 @@
 import { httpAdapter } from '@affordances/runtime/agent'
 import { beforeEach, expect, test } from 'vitest'
-import { serveExecute, serveExpand, serveInspect, serveView } from '../src/lib/serve.ts'
+import * as serve from '../src/lib/serve.ts'
 import * as store from '../src/lib/store.ts'
 
 // the agent-facing projection route answers with a view, for the caller its credentials name, and nothing more
@@ -8,7 +8,7 @@ import * as store from '../src/lib/store.ts'
 beforeEach(() => store.reset())
 
 const get = (query = '', headers: Record<string, string> = {}) =>
-  serveView(new Request(`https://hosting.test/api/projection${query}`, { headers }))
+  serve.GET(new Request(`https://hosting.test/api/projection${query}`, { headers }))
 
 test('a caller with a bearer session gets a view of their own projection', async () => {
   const id = store.account('s_view').project.id
@@ -93,7 +93,7 @@ test("the default policy is the start resource's offers, as a v0 page graph show
 })
 
 const post = (body: unknown, headers: Record<string, string> = {}) =>
-  serveExpand(
+  serve.POST(
     new Request('https://hosting.test/api/projection/expand', {
       method: 'POST',
       body: JSON.stringify(body),
@@ -101,7 +101,7 @@ const post = (body: unknown, headers: Record<string, string> = {}) =>
     }),
   )
 const inspectGet = (query: string, headers: Record<string, string> = {}) =>
-  serveInspect(new Request(`https://hosting.test/api/projection/inspect${query}`, { headers }))
+  serve.GET(new Request(`https://hosting.test/api/projection/inspect${query}`, { headers }))
 
 test('every expansion a view lists answers with a view, never a projection', async () => {
   const auth = { authorization: 'Bearer s_expand' }
@@ -138,10 +138,10 @@ test("a choice set expands along 'comparison' over HTTP, through the route and t
   expect(expanded.comparison.omitted.attributes).toEqual([])
 
   const routes: Record<string, (r: Request) => Promise<Response>> = {
-    view: serveView,
-    inspect: serveInspect,
-    expand: serveExpand,
-    execute: serveExecute,
+    view: serve.GET,
+    inspect: serve.GET,
+    expand: serve.POST,
+    execute: serve.POST,
   }
   const fetcher = (async (url: string, init?: RequestInit) =>
     routes[new URL(url).pathname.split('/').at(-1)!]!(

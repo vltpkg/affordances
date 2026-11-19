@@ -1,5 +1,5 @@
 import * as lab from '@affordances/hosting-lab/trial'
-import { serveExecute, serveView } from '@affordances/hosting-lab/serve'
+import * as serve from '@affordances/hosting-lab/serve'
 import { expect, test } from 'vitest'
 import { remoteRuntime } from '../src/remote.ts'
 import { surfaces } from '../src/surfaces.ts'
@@ -14,7 +14,7 @@ import { setupTrial } from '../src/trial.ts'
 const T3 = lab.tasks.find((t) => t.id === 'T3')!
 const route = (url: string, init?: RequestInit) => {
   const request = new Request(`https://hosting.test${url}`, init)
-  return request.method === 'POST' ? serveExecute(request) : serveView(request)
+  return request.method === 'POST' ? serve.POST(request) : serve.GET(request)
 }
 
 // an approval token masked, since each runtime signs its own
