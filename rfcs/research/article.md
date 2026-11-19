@@ -120,8 +120,7 @@ and `browser` (browser automation), with the person's approval stated on every s
 - **The reading recorded with the results:** a CEILING. With approval stated, T6 doesn't separate full, progressive, v0 and
   browser for Sonnet 5.5 or Haiku 5.5. All three registered contrasts are 0, each model's Newcombe interval is about ±7.1
   points, and the pooled interval is degenerate. That's not evidence the surfaces are equal in general. The
-  pilot-to-confirmatory change is attributed to the approval sentence, the one agent-side change, which was checked
-  independently.
+  pilot-to-confirmatory change is attributed to the approval sentence, the one agent-side change, which review checked.
 
 ## 6. M8e: a deciding fact one step out
 
