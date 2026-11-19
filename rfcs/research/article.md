@@ -141,6 +141,10 @@ between 10% and 90% in the pilot, or the study stops.
 In the benchmark, token-passing stands in for the person's approval, as v0's confirm resend and the browser's click do;
 the product toolset never gives a model a token (RFC 0004 §4, §5).
 
+In v0, an agent can approve its own call by resending it with `confirm: true` [C7.3]. That's why version 1 gives the
+approval to the person, through a single-use token, and no product transport hands a model that token (RFC 0004 §1,
+§7).
+
 - **Measured on real runs:** in M7f's pilot, a scan of every trace and CLI stream log for token-shaped strings found none
   on MCP or WebMCP, the product toolsets. Every token-shaped string was on `full` and `progressive`, the benchmark's
   simulated approval.
@@ -215,6 +219,7 @@ its checks pass. The demo never lets an agent approve: v0 would run a call on th
 | C6.2  | T8's result, intake's line verbatim; no confirmatory run; 40 trials, not 440; the forking guard                | `apps/choice-bench/results/surfaces-t8/pilot-2026-11-19/README.md`                                              | 59b7c4a3                                    |
 | C7.1  | No token-shaped string on MCP or WebMCP in M7f's pilot                                                         | `apps/choice-bench/results/surfaces/pilot-2026-11-18/README.md`                                                 | 6f878aa0                                    |
 | C7.2  | `toModel` removes every approval field and token-shaped text; no tool result in any mode carries a token       | `packages/runtime/src/agent.ts`, `packages/runtime/test/agent.test.ts`, `packages/mcp-v1/test/boundary.test.ts` | 6191b65b                                    |
+| C7.3  | In v0, an agent approves its own call by resending `confirm: true`; version 1's approval is the person's       | `packages/core/src/capability.ts`, `packages/core/src/handler.ts`; `rfcs/0004-protocol-evolution.md` §1, §7     | 8366e4eb; 5760784c; 0af8871b                |
 | C8.1  | The demo: four transports, refused, confirmed in the review page, read back; 20 checks, exit 0                 | `apps/capability-demo/README.md`, `demo.ts`                                                                     | 3c901eb8                                    |
 | C9.1  | The two models                                                                                                 | `apps/choice-bench/results/surfaces/PLAN.md` §4                                                                 | 0b0851e0                                    |
 | C9.2  | Codex in M5's pilot only (15 trials), and out until the harness can isolate the owner's global instructions    | `apps/choice-bench/results/M5-REPORT.md` §3.1; `surfaces/PLAN.md` §4                                            | 6c1f27c7; 0b0851e0                          |
