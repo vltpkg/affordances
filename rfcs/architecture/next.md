@@ -35,9 +35,12 @@ The specification is [§1 and §2](../0005-nextjs-compilation.md#1-where-declara
 - **An input schema** is evaluated, never parsed by hand. The compiler takes a slice of the module, only the consts
   and imports the schema needs, and runs it in a child process under Node's permission model, which reads only the
   slice's folder and `node_modules`, with an empty environment, and can't write or fetch. Zod, Valibot, ArkType,
-  TypeBox, Effect and `@effect/schema` are recognized. The slice is run twice, and two runs that give different
-  schemas make the input opaque (`W_INPUT_OPAQUE`). `E_CAPABILITY_NONDETERMINISTIC` is a different check, on the
-  capability modules' whole evaluation.
+  TypeBox, Effect and `@effect/schema` are recognized. The slice is run twice, and two runs that give different schemas make the input opaque (`W_INPUT_OPAQUE`). Each
+  input has a child of its own: the slice rule doesn't refuse writes, so in a shared process one input's slice could
+  change another's schema (since 0597d4f0, which reverted a shared child). The runner holds `JSON.stringify` and
+  `String` before the slice runs. One extract run parses each module once, for its actions and for every slice. `E_CAPABILITY_NONDETERMINISTIC` is a different check, on the capability modules' whole evaluation: the first child
+  runs the whole pipeline, and the second only evaluates the modules again, in a check mode, and the two evaluations
+  are compared (since 1f2cd0b5).
 
 ## The slice's rule
 
@@ -72,7 +75,14 @@ changes:
 - `bindings.ts`, each capability's v0 action by its export, and how to call it.
 
 With no namespace, there's no manifest, and `W_NO_NAMESPACE` says why. Its suggestion comes from a literal
-`metadataBase`, then the package's `homepage`. The codemod that writes ids marks each `// placeholder`.
+`metadataBase`, then the package's `homepage`. The compile reuses the route scan `generate()` just made, and reads the
+tsconfig's aliases once.
+
+An action without an id gets a suggestion, from one function that `W_NO_ID` and the codemod share (since 5bb1796c and
+4524efd1). When E9 gives the route a target type, it's `<prefix>.<type>.<folders after the target>.<name>`:
+`/shop/products/[slug]/reviews` and `add` give `products.reviews.add`. Otherwise it's the route's folders and the name,
+`cart.updateQuantity`. The name is never mapped to a standard verb. The prefix is `withAffordances`' name, and the
+codemod marks every id it writes `// placeholder`, since an id is the developer's to choose.
 
 ## The config
 
@@ -96,12 +106,17 @@ generated files, rewrites a page to the catch-all when `Accept` or `Content-Type
   - Every response is `application/vnd.affordances+json; version=1` (since ec7e80d1), private and uncacheable, with
     `Vary: Authorization, Cookie`.
   - A cookie-authenticated POST needs the site's own `Origin`, or one in `allowedOrigins`, or it's refused before the
-    runtime.
+    runtime. The credential is read by one parser, `credentialOf` (`{ token, via }`), for this check and for an app's
+    principal (since ad470b2b).
   - A refusal before the runtime has the runtime's shape, `{ status: 'refused', code, detail }`: the Origin's 403 is
     `unauthorized`, a malformed body's 400 is `invalid_input`, and a missing offer or operation's 404 is `not_found`
     ([RFC 0004 §2.3](../0004-protocol-evolution.md#23-the-rules-every-endpoint-keeps)).
-  - `expand` takes every direction, `comparison` included (since e52d5780), and its budget is the view's, `offers` and
-    `facts` as positive whole numbers and nothing else (since 741d2767).
+  - `expand` takes every direction in the runtime's `ALONG`, `comparison` included (since e52d5780), and its budget is
+    the view's, `offers` and `facts` as positive whole numbers and nothing else (since 741d2767). A test holds the generic
+    tools' input schemas to what the route accepts (80fd65c4).
+  - With the `runtime` option, the route serves the app's own runtime, so its pages and the route share one (since
+    922fba80). Its manifest, handlers and approval keys are then the runtime's, and keeping that key and token store
+    shared by every instance is the app's job.
   - It fails closed without an `approvalKey` and `seenTokens` outside development and test. The runtime is loaded lazily,
     as an optional peer, and each v0 `run` and guard runs in a v0 context.
 
@@ -117,6 +132,7 @@ generated files, rewrites a page to the catch-all when `Accept` or `Content-Type
 - **Not built:** reference-sourced route parameters (RFC 0005 §4's `{ from: 'reference', name }`); a binding's
   parameters are only ever from the target. Mixed apps (RFC 0005 §9.2) are open. The serving direction of RFC 0004 §8,
   from the IR to v0, has only its binding-identity test.
-- **Divergences:** RFC 0005 §5 has the app import `manifest.json` and `bindings`. hosting-lab passes its IR manifest
-  object and its own handlers instead, with no bindings, which the route supports. `allowedOrigins`, the `handlers`
-  option and the manifest's cache lifetime are as built and not in the RFC.
+- **Divergences:** RFC 0005 §5 has the app import `manifest.json` and `bindings`. hosting-lab passes its own runtime
+  instead (the `runtime` option), which its review page and v0's agent path share, with no bindings; the manifest and
+  handlers it also passes go unread. `allowedOrigins`, the `handlers` and
+  `runtime` options and the manifest's cache lifetime are as built and not in the RFC.

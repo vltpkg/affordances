@@ -28,8 +28,9 @@ The JSON Schema is generated into `packages/ir/schema.json` by `scripts/schema.t
 
 ## One source for the types
 
-Every type is a zod schema, and the TypeScript types are inferred from them, so the types, the validator and the JSON
-Schema can't disagree. `Expr` is the one type written by hand, since it's recursive. Objects are strict: an unknown
+Every type is a zod schema, and the TypeScript types are inferred from them. The JSON Schema is generated from the same
+schemas, with zod's refinements mirrored by hand as conditional subschemas (`json-schema.ts`), and a test holds the two
+to accepting the same documents. `Expr` is the one type written by hand, since it's recursive. Objects are strict: an unknown
 field is an error, not ignored.
 
 ## The model
@@ -76,6 +77,8 @@ The specification is [§6 and §7](../0001-semantic-capability-ir.md#6-identity-
   charge's `applies` (since e0aebba5) and in a claim's `applies`.
 - **Serialization** is RFC 8785, and **the digest** is `sha256-` and base64url of the canonical bytes, by Web Crypto.
   A test pins RFC 0001 §11's example digest.
+- **Shared helpers** the runtime, next and mcp-v1 use rather than copy: `chargesOf` (a confirmation's charges),
+  `decodePointer` and the other JSON Pointer helpers, and `localId` (a reference's own id).
 
 ## Validation
 

@@ -23,10 +23,11 @@ What an offer discloses and why (views, choice sets, the comparison and the disc
 
 ## Exports
 
-- **`.`:** `createRuntime`, `offerId` and `parseOfferId`, `builtInPolicies`, `checkOrderBasis`, `claimFree`,
-  `statusOf`, `HandlerRefusal`, `keptColumns`, `conformance` and `resolverConformance`, and every type.
+- **`.`:** `createRuntime`, `offerId`, `parseOfferId` and `inputOf`, `encodeStart` and `decodeStart`, `ALONG`,
+  `builtInPolicies`, `checkOrderBasis`, `claimFree`, `statusOf`, `HandlerRefusal`, `keptColumns`, the approval defaults
+  (`approvalGate`, `devApprovalKey` and `memoryTokenStore`), `conformance` and `resolverConformance`, and every type.
 - **`./agent`:** the shared tool core ([mcp.md](./mcp.md#the-shared-tool-core)): `createToolset`, `toModel`,
-  `TOKEN`, `GENERIC_TOOLS`, `capabilityTool`, `exportable` and `httpAdapter`. It imports only ir and types, so it runs in a
+  `TOKEN`, `GENERIC_TOOLS`, `capabilityTool` and `capabilityToolFates`, `exportable` and `httpAdapter`. It imports only ir and types, so it runs in a
   browser.
 - **`./agent-runtime`:** `createRuntimeAdapter`, the same tools over an in-process runtime, for a server.
 
@@ -75,7 +76,8 @@ The specification is [§8](../0002-contextual-projection.md#8-execution).
 
 `execute` walks one fixed sequence, and stops at the first refusal. A refusal runs nothing and observes nothing.
 
-1. **The offer id is parsed afresh,** since it grants nothing. An unknown capability, an event, a wrong target type, a
+1. **The offer id is parsed afresh,** since it grants nothing, by the one codec every caller uses (`parseOfferId`,
+   with `inputOf` for the input fields an id fixes, since 2bad184d). An unknown capability, an event, a wrong target type, a
    missing `targetAt` key, an unknown reference or a target that loads as none is `not_found`.
 2. **Authorization:** none declared, or authentication required and absent, is `unauthorized`. Its conditions get no
    input.
@@ -123,8 +125,11 @@ The specification is [§8.2](../0002-contextual-projection.md#82-confirmation-an
 - **How it's checked:** recomputed from the call being made, verified in constant time under the current key and then
   the previous one, unexpired, and its nonce claimed once in the shared store. Any failure gives a fresh token for this
   exact call. A caller with no `subject` can't be approved.
-- **Defaults:** five minutes to expire. `createRuntimeAdapter`, like the HTTP route, fails closed without a key and a
-  store, except under `NODE_ENV` development or test.
+- **Defaults:** five minutes to expire. One gate, `approvalGate`, decides for every host: outside `NODE_ENV`
+  development or test, a host fails closed without a key and a store; in them, it falls back to `devApprovalKey` and
+  `memoryTokenStore` (since 33047f09). `createRuntimeAdapter`, hosting-lab and choice-bench use it. The HTTP route
+  keeps a word-for-word copy, since it loads the runtime only on its first request, and a test holds the two to the same
+  decision in all 24 cases (2d5a7b62).
 - **The model never holds one:** the agent tools strip every `approval` field and anything shaped like a token, and
   only the person's explicit accept spends one ([mcp.md](./mcp.md#the-shared-tool-core)).
 
