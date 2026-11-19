@@ -4,13 +4,13 @@
     "lost": ["per-tool annotations"]
   },
   "perCapability": {
-    "capabilities": 9,
+    "capabilities": 10,
     "exported": 1,
     "fields": {
       "carried": 2,
       "partial": 0,
       "atCall": 1,
-      "lost": 121
+      "lost": 133
     },
     "rows": [
       {
@@ -22,6 +22,7 @@
           "kind": "lost",
           "output": "lost",
           "authorization": "at-call",
+          "relations": "lost",
           "availability": "lost",
           "revision": "lost",
           "relevance": "lost"
@@ -38,6 +39,23 @@
           "target": "lost",
           "authorization": "lost",
           "authorization.conditions": "lost",
+          "availability": "lost",
+          "revision": "lost",
+          "relevance": "lost"
+        }
+      },
+      {
+        "capability": "hosting.region.read",
+        "exported": false,
+        "fields": {
+          "id": "lost",
+          "description": "lost",
+          "kind": "lost",
+          "input": "lost",
+          "target": "lost",
+          "authorization": "lost",
+          "relations": "lost",
+          "choiceSet": "lost",
           "availability": "lost",
           "revision": "lost",
           "relevance": "lost"

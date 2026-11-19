@@ -1,0 +1,196 @@
+{
+  "generic": {
+    "carries": "every view, byte for byte",
+    "lost": ["per-tool annotations"]
+  },
+  "perCapability": {
+    "capabilities": 9,
+    "exported": 1,
+    "fields": {
+      "carried": 2,
+      "partial": 0,
+      "atCall": 1,
+      "lost": 121
+    },
+    "rows": [
+      {
+        "capability": "hosting.plan.list",
+        "exported": true,
+        "fields": {
+          "id": "carried",
+          "description": "carried",
+          "kind": "lost",
+          "output": "lost",
+          "authorization": "at-call",
+          "availability": "lost",
+          "revision": "lost",
+          "relevance": "lost"
+        }
+      },
+      {
+        "capability": "hosting.project.read",
+        "exported": false,
+        "fields": {
+          "id": "lost",
+          "description": "lost",
+          "kind": "lost",
+          "input": "lost",
+          "target": "lost",
+          "authorization": "lost",
+          "authorization.conditions": "lost",
+          "availability": "lost",
+          "revision": "lost",
+          "relevance": "lost"
+        }
+      },
+      {
+        "capability": "hosting.plan.subscribe",
+        "exported": false,
+        "fields": {
+          "id": "lost",
+          "description": "lost",
+          "kind": "lost",
+          "input": "lost",
+          "target": "lost",
+          "references": "lost",
+          "preconditions": "lost",
+          "authorization": "lost",
+          "confirmation": "lost",
+          "effects.reversibility": "lost",
+          "effects.financial": "lost",
+          "effects.state": "lost",
+          "claims": "lost",
+          "relations": "lost",
+          "choiceSet": "lost",
+          "availability": "lost",
+          "revision": "lost",
+          "relevance": "lost"
+        }
+      },
+      {
+        "capability": "hosting.bundle.subscribe",
+        "exported": false,
+        "fields": {
+          "id": "lost",
+          "description": "lost",
+          "kind": "lost",
+          "input": "lost",
+          "target": "lost",
+          "references": "lost",
+          "preconditions": "lost",
+          "authorization": "lost",
+          "confirmation": "lost",
+          "effects.reversibility": "lost",
+          "effects.financial": "lost",
+          "effects.state": "lost",
+          "claims": "lost",
+          "relations": "lost",
+          "availability": "lost",
+          "revision": "lost",
+          "relevance": "lost"
+        }
+      },
+      {
+        "capability": "hosting.subscription.cancel",
+        "exported": false,
+        "fields": {
+          "id": "lost",
+          "description": "lost",
+          "kind": "lost",
+          "input": "lost",
+          "idempotent": "lost",
+          "target": "lost",
+          "preconditions": "lost",
+          "authorization": "lost",
+          "authorization.conditions": "lost",
+          "effects.reversibility": "lost",
+          "effects.state": "lost",
+          "availability": "lost",
+          "revision": "lost",
+          "relevance": "lost"
+        }
+      },
+      {
+        "capability": "hosting.addOn.add",
+        "exported": false,
+        "fields": {
+          "id": "lost",
+          "description": "lost",
+          "kind": "lost",
+          "input": "lost",
+          "target": "lost",
+          "references": "lost",
+          "preconditions": "lost",
+          "authorization": "lost",
+          "confirmation": "lost",
+          "effects.reversibility": "lost",
+          "effects.financial": "lost",
+          "effects.state": "lost",
+          "availability": "lost",
+          "revision": "lost",
+          "relevance": "lost"
+        }
+      },
+      {
+        "capability": "hosting.addOn.remove",
+        "exported": false,
+        "fields": {
+          "id": "lost",
+          "description": "lost",
+          "kind": "lost",
+          "input": "lost",
+          "idempotent": "lost",
+          "target": "lost",
+          "references": "lost",
+          "preconditions": "lost",
+          "authorization": "lost",
+          "effects.reversibility": "lost",
+          "effects.state": "lost",
+          "availability": "lost",
+          "revision": "lost",
+          "relevance": "lost"
+        }
+      },
+      {
+        "capability": "hosting.deployment.create",
+        "exported": false,
+        "fields": {
+          "id": "lost",
+          "description": "lost",
+          "kind": "lost",
+          "input": "lost",
+          "target": "lost",
+          "preconditions": "lost",
+          "authorization": "lost",
+          "authorization.conditions": "lost",
+          "effects.reversibility": "lost",
+          "effects.external": "lost",
+          "effects.state": "lost",
+          "availability": "lost",
+          "revision": "lost",
+          "relevance": "lost"
+        }
+      },
+      {
+        "capability": "hosting.deployment.rollback",
+        "exported": false,
+        "fields": {
+          "id": "lost",
+          "description": "lost",
+          "kind": "lost",
+          "input": "lost",
+          "idempotent": "lost",
+          "target": "lost",
+          "preconditions": "lost",
+          "authorization": "lost",
+          "effects.reversibility": "lost",
+          "effects.external": "lost",
+          "effects.state": "lost",
+          "availability": "lost",
+          "revision": "lost",
+          "relevance": "lost"
+        }
+      }
+    ]
+  }
+}
