@@ -194,7 +194,7 @@ const factsOf = async (
 export const MAX_ATTEMPTS = 2
 
 /** A spec's attempts so far, from disk: its recorded harness faults and its CLI failures. */
-export const attemptsOf = (dir: string, id: string) =>
+const attemptsOf = (dir: string, id: string) =>
   faultsOf(dir).filter((f) => f.spec.id === id).length + priorFailures(dir, id)
 
 // the Playwright the harness runs, for a record whose browser never launched

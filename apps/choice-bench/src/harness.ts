@@ -420,7 +420,7 @@ export const canaryPlan = (): TrialSpec[] =>
   }))
 
 // M5's runs, closed: their plans are on record at their commits, so their modes refuse rather than run a changed plan
-export const RETIRED: Record<string, string> = {
+const RETIRED: Record<string, string> = {
   pilot: '4893655c032c1ee57ef8450a747dfc50a1ecfaf2',
   calibration: 'c81eeeb1a61e0330be34ce170169c8d9a77292cc',
 }

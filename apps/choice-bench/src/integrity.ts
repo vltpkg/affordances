@@ -12,7 +12,7 @@ import { configRoots } from './drivers/isolation.ts'
  * of the host's processes share the real config dir, so a change is reported, with its time, for intake to read.
  * Only a digest of a credentials file is kept, never its bytes.
  */
-export const ownerFiles = () => {
+const ownerFiles = () => {
   const roots = configRoots()
   return [
     path.join(roots.claude, 'settings.json'),
@@ -26,7 +26,7 @@ export type OwnerStamp = { file: string; mtime: string | null; sha256: string | 
 
 // the two credential files (intake, 2026-11-18 18:22Z): their digests are written only to an out-of-git sidecar, so a
 // run's records carry 'recorded outside git' by design, and no committed record ever needs a hand edit
-export const CREDENTIAL_FILES = ['.credentials.json', 'auth.json']
+const CREDENTIAL_FILES = ['.credentials.json', 'auth.json']
 export const OUTSIDE_GIT = 'recorded outside git'
 const isCredential = (file: string) => CREDENTIAL_FILES.some((name) => path.basename(file) === name)
 
