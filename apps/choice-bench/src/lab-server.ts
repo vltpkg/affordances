@@ -134,13 +134,21 @@ export class HarnessFault extends Error {
 }
 
 /** The trial's project key, as its session sees it: project.read's target. */
-export const projectKeyOf = async (url: string, session: string) => {
+// the trial's project.read offer, from an exhaustive view through its own session: its id, and the project it reads
+const projectReadOffer = async (url: string, session: string) => {
   const view = (await (
     await fetch(`${url}/api/projection/view?policy=exhaustive`, {
       headers: { authorization: `Bearer ${session}` },
     })
-  ).json()) as { offers: { capability: string; target?: { key: string } }[] }
-  const key = view.offers.find((o) => o.capability === 'hosting.project.read')?.target?.key
+  ).json()) as { offers: { id: string; capability: string; target?: { key: string } }[] }
+  const read = view.offers.find((o) => o.capability === 'hosting.project.read')
+  if (!read)
+    throw new HarnessFault('cross-check', 'project.read isn’t offered to the trial’s session')
+  return read
+}
+
+export const projectKeyOf = async (url: string, session: string) => {
+  const key = (await projectReadOffer(url, session)).target?.key
   if (!key)
     throw new HarnessFault('cross-check', 'project.read isn’t offered to the trial’s session')
   return key
@@ -151,19 +159,11 @@ export const projectKeyOf = async (url: string, session: string) => {
  * the add-ons, the two project.read can say. A disagreement is a harness fault, never scored.
  */
 export const crossCheck = async (url: string, session: string, state: EndState | undefined) => {
-  const headers = { authorization: `Bearer ${session}`, 'content-type': 'application/json' }
-  const view = (await (
-    await fetch(`${url}/api/projection/view?policy=exhaustive`, { headers })
-  ).json()) as {
-    offers: { id: string; capability: string }[]
-  }
-  const read = view.offers.find((o) => o.capability === 'hosting.project.read')
-  if (!read)
-    throw new HarnessFault('cross-check', 'project.read isn’t offered to the trial’s session')
+  const read = await projectReadOffer(url, session)
   const result = (await (
     await fetch(`${url}/api/projection/execute`, {
       method: 'POST',
-      headers,
+      headers: { authorization: `Bearer ${session}`, 'content-type': 'application/json' },
       body: JSON.stringify({ offer: read.id }),
     })
   ).json()) as { status: string; output?: { plan?: string; addOns?: string[] } }

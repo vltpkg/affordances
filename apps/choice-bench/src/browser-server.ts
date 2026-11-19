@@ -1,10 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
-import { chromium } from 'playwright'
 import { z } from 'zod'
 import { writeRecordAtomic, type RecordFault } from './record-file.ts'
+import { trialBrowser } from './trial-browser.ts'
 
 // the browser surface's tool server, as a driver launches it: node src/browser-server.ts <config.json> (surfaces/
 // PLAN.md §3; the planner, 15:11Z). Pure browser automation: Chromium, with no flag beyond Playwright's own (no
@@ -53,18 +52,12 @@ export type BrowserRecord = {
 }
 
 const config = JSON.parse(readFileSync(process.argv[2]!, 'utf8')) as BrowserConfig
-const origin = new URL(config.url).origin
-const LAUNCH_ARGS: string[] = []
-const browser = await chromium.launch({ headless: true, args: LAUNCH_ARGS })
-const playwright = (
-  createRequire(import.meta.url)('playwright/package.json') as { version: string }
-).version
+// no flags beyond Playwright's, so no WebMCP
+const { origin, browser, context, versions, confine } = await trialBrowser(config, [])
 const record: BrowserRecord = {
   surface: 'browser',
   url: config.url,
-  chromium: browser.version(),
-  playwright,
-  launchArgs: LAUNCH_ARGS,
+  ...versions,
   toolLists: [],
   calls: [],
   loads: [],
@@ -77,19 +70,12 @@ let left: string | undefined
 const save = () => {
   writeRecordAtomic(config.out, record)
 }
-const context = await browser.newContext()
-await context.addCookies([
-  { name: 'sid', value: config.session, url: config.url, httpOnly: true, sameSite: 'Lax' },
-])
 // confined at the context, so no link, redirect or script leaves the trial's origin
-await context.route('**/*', async (route) => {
-  const url = route.request().url()
-  if (new URL(url).origin === origin) return route.continue()
+await confine((url, request) => {
   record.aborted.push({ url, at: Date.now() })
   // a link or redirect off the site: the page it would have replaced comes back, and the agent is told (below)
-  if (route.request().isNavigationRequest() && !route.request().frame().parentFrame()) left = url
+  if (request.isNavigationRequest() && !request.frame().parentFrame()) left = url
   save()
-  return route.abort('blockedbyclient')
 })
 const held = (await context.cookies()).find((c) => c.name === 'sid')
 if (held)
@@ -101,8 +87,7 @@ page.on('framenavigated', (frame) => {
   // Chromium's error page for a stopped navigation is no load of the site
   if (u.origin !== origin) return
   const load: BrowserLoad = { url: frame.url(), at: Date.now() }
-  if (u.origin === origin && u.pathname === '/review')
-    load.review = Object.fromEntries(u.searchParams.entries())
+  if (u.pathname === '/review') load.review = Object.fromEntries(u.searchParams.entries())
   record.loads.push(load)
   save()
 })

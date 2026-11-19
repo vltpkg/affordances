@@ -3,11 +3,11 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
-import { chromium, type Page } from 'playwright'
+import type { Page } from 'playwright'
 import type { McpCall } from './mcp-server.ts'
 import { parsedOrText } from './facts.ts'
 import { writeRecordAtomic, type RecordFault } from './record-file.ts'
+import { trialBrowser } from './trial-browser.ts'
 
 // the WebMCP pilot surface's bridge, as a driver launches it: node src/webmcp-server.ts <config.json> (surfaces/
 // PLAN.md §3; design, 14:10Z and 15:02Z). Chromium with WebMCP on, the trial's own app open in it, and the tools the
@@ -37,17 +37,14 @@ export type WebMcpRecord = {
 }
 
 const config = JSON.parse(readFileSync(process.argv[2]!, 'utf8')) as WebMcpConfig
-const origin = new URL(config.url).origin
 // WebMCP's own flag (rfcs/research/0004-webmcp/SPIKE.md): the only one, and recorded
-const LAUNCH_ARGS = ['--enable-features=WebMCP']
-const browser = await chromium.launch({ headless: true, args: LAUNCH_ARGS })
+const { browser, context, versions, confine } = await trialBrowser(config, [
+  '--enable-features=WebMCP',
+])
 const record: WebMcpRecord = {
   surface: 'webmcp',
   url: config.url,
-  chromium: browser.version(),
-  playwright: (createRequire(import.meta.url)('playwright/package.json') as { version: string })
-    .version,
-  launchArgs: LAUNCH_ARGS,
+  ...versions,
   toolLists: [],
   calls: [],
   completions: [],
@@ -57,16 +54,9 @@ const record: WebMcpRecord = {
 const save = () => {
   writeRecordAtomic(config.out, record)
 }
-const context = await browser.newContext()
-await context.addCookies([
-  { name: 'sid', value: config.session, url: config.url, httpOnly: true, sameSite: 'Lax' },
-])
-await context.route('**/*', async (route) => {
-  const url = route.request().url()
-  if (new URL(url).origin === origin) return route.continue()
+await confine((url) => {
   record.aborted.push({ url, at: Date.now() })
   save()
-  return route.abort('blockedbyclient')
 })
 // the agent's page: the app's home, whose tools it registers on load
 const page = await context.newPage()
