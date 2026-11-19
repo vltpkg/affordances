@@ -8,6 +8,7 @@ import {
   MAX_DEPTH,
   planSlice,
   sliceInput,
+  sliceInputs,
   type SliceResult,
 } from '../src/slice.ts'
 
@@ -56,8 +57,23 @@ const slice = (
   const file = path.join(dir, 'actions.ts')
   const source = `'use server'\nimport { defineAction } from '@affordances/next'\n${preamble}\nexport const act = defineAction({ name: 'act', input: ${input}, run: async () => {} })\n`
   writeFileSync(file, source)
-  const [found] = findInputs(file, source)
-  return sliceInput(root, file, source, found!.input as never, { strict })
+  return sliceInput(root, file, source, request(file, source).input, { strict })
+}
+// the file's one action input, as the extract run asks for it
+const request = (file: string, source: string) => ({
+  file,
+  source,
+  input: findInputs(file, source)[0]!.input as never,
+})
+// the same case written, without evaluating it
+const written = (preamble: string, input: string, helpers: Record<string, string> = {}) => {
+  const dir = path.join(root, 'app', `case${n++}`)
+  mkdirSync(dir)
+  for (const [name, text] of Object.entries(helpers)) writeFileSync(path.join(dir, name), text)
+  const file = path.join(dir, 'actions.ts')
+  const source = `'use server'\nimport { defineAction } from '@affordances/next'\n${preamble}\nexport const act = defineAction({ name: 'act', input: ${input}, run: async () => {} })\n`
+  writeFileSync(file, source)
+  return request(file, source)
 }
 
 // a result, as one comparable value: its status, what it dropped and its top-level fields, or its reason
@@ -438,6 +454,34 @@ test('a generated corpus of 120 schema files: each converts or is opaque exactly
     true,
   ])
 }, 300_000)
+
+test('one child for a whole run gives each input exactly what its own child does: the corpus, and strict mode', () => {
+  const r = rng(20261119)
+  const requests = Array.from({ length: 60 }, () => {
+    const ps = Array.from({ length: 1 + Math.floor(r() * 3) }, (_, k) => parts(r, k))
+    const preamble = [Z, ...new Set(ps.flatMap((p) => p.preamble))].join('\n')
+    const input = `z.object({ ${ps.map((p, k) => `f${k}: ${p.field}`).join(', ')} })`
+    return written(preamble, input, Object.assign({}, ...ps.map((p) => p.helpers ?? {})))
+  })
+  // and a schema that throws as it's built, and one that isn't a Standard Schema, each its own error in the batch
+  requests.push(written(Z, "z.string().regex(new RegExp('('))"), written(Z, '42'))
+  for (const strict of [false, true]) {
+    const alone = requests.map((q) => sliceInput(root, q.file, q.source, q.input, { strict }))
+    expect(sliceInputs(root, requests, { strict })).toEqual(alone)
+    // every outcome is in the batch
+    expect(new Set(alone.map((a) => a.status))).toEqual(new Set(['converted', 'opaque']))
+  }
+}, 300_000)
+
+test('a run whose shared child fails as a whole falls back to one child per input', () => {
+  const requests = [written(Z, 'z.object({ a: z.string() })'), written(Z, 'z.string().email()')]
+  // too little time for any child: the batch fails, and each input gets its own child's answer
+  const alone = requests.map((q) => sliceInput(root, q.file, q.source, q.input, { timeoutMs: 1 }))
+  expect(sliceInputs(root, requests, { timeoutMs: 1 })).toEqual(alone)
+  expect(alone.every((a) => a.status === 'opaque')).toBe(true)
+  // and with time, both convert from the one child
+  expect(sliceInputs(root, requests).map((x) => x.status)).toEqual(['converted', 'converted'])
+})
 
 test('the sentinel was never imported, by any test above', () => {
   expect(existsSync(path.join(root, 'lib', 'SENTINEL-HIT'))).toBe(false)

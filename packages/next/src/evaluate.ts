@@ -19,6 +19,8 @@ type Input = {
   aliases: { prefix: string; targets: string[] }[]
   // extraction's output, to merge in; without it, the modules' manifest alone
   extraction?: Extraction
+  // 'check': the determinism check's run, which prints only the evaluation, the part a second run can differ in
+  mode?: 'check'
 }
 
 // on stdin: extraction's output can outgrow an argument
@@ -67,7 +69,7 @@ type Ir = {
     ok: boolean
     issues?: { code: string; at: string; message: string }[]
   }
-  digest: (manifest: ModuleManifest) => Promise<string>
+  digestOf: (value: unknown) => Promise<string>
   fromModules: (
     modules: { file: string; exports: Record<string, unknown> }[],
     identity: unknown,
@@ -109,13 +111,20 @@ const exported = modules.flatMap(({ file, exports }) =>
       : []
   }),
 )
+// what the modules made: all a second evaluation can differ in, since the merge, normalize and validate below are pure
+// functions of it and of the extraction, which both runs are given
+const evaluation = {
+  manifest: manifest && canonicalJson(manifest),
+  diagnostics,
+  exported,
+  ...(reason && { reason }),
+}
+if (input.mode === 'check') {
+  out(evaluation)
+  process.exit(0)
+}
 if (!manifest || !input.extraction) {
-  out({
-    manifest: manifest && canonicalJson(manifest),
-    diagnostics,
-    exported,
-    ...(reason && { reason }),
-  })
+  out({ ...evaluation, evaluation: JSON.stringify(evaluation) })
   process.exit(0)
 }
 
@@ -134,12 +143,12 @@ const all = [
   })),
 ]
 const failed = all.some((d) => String((d as { code: string }).code).startsWith('E_'))
+// the digest of the canonical bytes themselves: normalize is idempotent, so ir's digest() would normalize again for nothing
+const canonical = canonicalJson(normalized)
 out({
-  ...(!failed && {
-    canonical: canonicalJson(normalized),
-    digest: await ir.digest(normalized),
-  }),
+  ...(!failed && { canonical, digest: await ir.digestOf(normalized) }),
   bindings: merged.bindings,
   diagnostics: all,
   exported,
+  evaluation: JSON.stringify(evaluation),
 })

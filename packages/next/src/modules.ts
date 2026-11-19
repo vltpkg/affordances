@@ -116,7 +116,8 @@ type TsConfig = {
   compilerOptions?: { baseUrl?: string; paths?: Record<string, string[]> }
 }
 
-type Alias = { prefix: string; targets: string[] }
+/** @experimental One paths alias: its prefix, and the directories it maps to. */
+export type Alias = { prefix: string; targets: string[] }
 
 /** @experimental The app's paths aliases, as TypeScript reads them, and the config it couldn't read, if any. */
 export const readAliases = (
@@ -178,10 +179,18 @@ const candidates = (base: string) =>
     existsSync(f),
   )
 
-/** @experimental Where an import in a module resolves to, if it's a file of the app, by relative path or alias. */
-export const resolveImport = (root: string, from: string, source: string): string | undefined => {
+/**
+ * @experimental Where an import in a module resolves to, if it's a file of the app, by relative path or alias. A caller
+ * resolving many imports passes the aliases it read once.
+ */
+export const resolveImport = (
+  root: string,
+  from: string,
+  source: string,
+  aliases: Alias[] = aliasesOf(root),
+): string | undefined => {
   if (source.startsWith('.')) return candidates(path.resolve(path.dirname(from), source))[0]
-  for (const { prefix, targets } of aliasesOf(root))
+  for (const { prefix, targets } of aliases)
     if (source.startsWith(prefix))
       for (const t of targets) {
         const found = candidates(path.join(t, source.slice(prefix.length)))[0]
@@ -193,15 +202,32 @@ export const resolveImport = (root: string, from: string, source: string): strin
 const allowedPackage = (source: string) =>
   [...AUTHORING, ...SCHEMA_LIBRARIES].some((lib) => source === lib || source.startsWith(`${lib}/`))
 
+// a source's line starts, so an offset's line is a binary search, not a slice of the source up to it
+const linesOf = (source: string) => {
+  const starts = [0]
+  for (let i = source.indexOf('\n'); i !== -1; i = source.indexOf('\n', i + 1)) starts.push(i + 1)
+  return (offset: number) => {
+    let lo = 0
+    let hi = starts.length - 1
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1
+      if (starts[mid]! <= offset) lo = mid
+      else hi = mid - 1
+    }
+    return lo + 1
+  }
+}
+
 /** @experimental One module's static checks: its imports, what it reaches, and its syntax (RFC 0005 §1). */
 export const checkModule = (
   root: string,
   file: string,
   source = readFileSync(file, 'utf8'),
+  aliases: Alias[] = aliasesOf(root),
 ): Diagnostic[] => {
   const rel = path.relative(root, file)
   const out: Diagnostic[] = []
-  const lineOf = (offset: number) => source.slice(0, offset).split('\n').length
+  const lineOf = linesOf(source)
   const { program, errors } = parseSync(file, source)
   if (errors.length) {
     out.push({
@@ -235,7 +261,7 @@ export const checkModule = (
       (specifiers.length > 0 &&
         specifiers.every((s) => s.importKind === 'type' || s.exportKind === 'type'))
     if (typeOnly || allowedPackage(from)) continue
-    const target = resolveImport(root, file, from)
+    const target = resolveImport(root, file, from, aliases)
     if (target && path.basename(target) === MODULE) continue
     out.push({
       code: 'E_CAPABILITY_IMPORT',
@@ -248,10 +274,13 @@ export const checkModule = (
     })
   }
 
-  // syntax Node can't erase, wherever it is
-  const visitSyntax = (n: unknown): void => {
+  // one walk of the tree for the two things only a walk finds: syntax Node can't erase, wherever it is, and
+  // Math.random, read as a member (Math itself is a value global). Each is reported where it was before
+  const syntax: Diagnostic[] = []
+  const randomAt: number[] = []
+  const visit = (n: unknown): void => {
     if (!n || typeof n !== 'object') return
-    if (Array.isArray(n)) return n.forEach(visitSyntax)
+    if (Array.isArray(n)) return n.forEach(visit)
     const node = n as Node
     const construct =
       node.type === 'TSEnumDeclaration'
@@ -264,17 +293,25 @@ export const checkModule = (
               ? 'a parameter property'
               : undefined
     if (construct)
-      out.push({
+      syntax.push({
         code: 'E_CAPABILITY_SYNTAX',
         file: rel,
         line: lineOf(node.start),
         subject: construct,
         detail: construct === 'an enum' ? 'use a const object and z.enum instead' : undefined,
       })
+    if (
+      node.type === 'MemberExpression' &&
+      (node.object as Node).type === 'Identifier' &&
+      (node.object as Node).name === 'Math' &&
+      ((node.property as Node).name === 'random' || (node.property as Node).value === 'random')
+    )
+      randomAt.push(node.start)
     for (const [k, v] of Object.entries(node))
-      if (k !== 'type' && k !== 'start' && k !== 'end') visitSyntax(v)
+      if (k !== 'type' && k !== 'start' && k !== 'end') visit(v)
   }
-  visitSyntax(body)
+  visit(body)
+  out.push(...syntax)
 
   // the ambient reads: with the module's own top-level names in scope, so a local binding named Date isn't one
   for (const node of body) {
@@ -315,22 +352,6 @@ export const checkModule = (
   }
   for (const b of banned) if (b === 'a dynamic import()') ambient('import()', 0)
   for (const { name, node } of free) if (!VALUE_GLOBALS.has(name)) ambient(name, node.start)
-  // Math.random, read as a member: Math itself is a value global
-  const visitMath = (n: unknown): void => {
-    if (!n || typeof n !== 'object') return
-    if (Array.isArray(n)) return n.forEach(visitMath)
-    const node = n as Node
-    if (
-      node.type === 'MemberExpression' &&
-      (node.object as Node).type === 'Identifier' &&
-      (node.object as Node).name === 'Math' &&
-      !top.has('Math') &&
-      ((node.property as Node).name === 'random' || (node.property as Node).value === 'random')
-    )
-      ambient('Math.random', node.start)
-    for (const [k, v] of Object.entries(node))
-      if (k !== 'type' && k !== 'start' && k !== 'end') visitMath(v)
-  }
-  visitMath(body)
+  if (!top.has('Math')) for (const at of randomAt) ambient('Math.random', at)
   return out
 }

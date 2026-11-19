@@ -3,7 +3,7 @@ import { existsSync, readFileSync, watch } from 'node:fs'
 import path from 'node:path'
 import type { NextConfig } from 'next'
 import { MEDIA_TYPE, WELL_KNOWN_PATH } from '@affordances/protocol'
-import { findAppDir, generate, ID, segment } from './codegen.ts'
+import { findAppDir, generate, ID, segment, type RouteEntry } from './codegen.ts'
 import { compileSync, writeCompiled } from './compile.ts'
 import { API_PATH, MANIFEST_PATH, PROJECTION_BASE } from './constants.ts'
 import { fails, format, type Diagnostic } from './diagnostics.ts'
@@ -207,8 +207,9 @@ const print = (root: string, line: string, error: boolean, once = true) => {
 // reports W_NO_NAMESPACE, which withAffordances prints itself, with the line to paste
 // `once`: a build prints each line once across its processes; dev's watcher prints every recompile's, so an error that
 // comes back after a save shows again
-const compile = (root: string, identity: Identity, once = true) => {
-  const result = compileSync(root, identity)
+// `entries`: codegen's scan of the routes, just made, so the compiler doesn't walk the app again
+const compile = (root: string, identity: Identity, entries: RouteEntry[], once = true) => {
+  const result = compileSync(root, { ...identity, entries })
   writeCompiled(root, result)
   for (const d of result.diagnostics)
     print(root, `[affordances] ${format(d, identity.strict)}`, fails(d.code, identity.strict), once)
@@ -256,7 +257,7 @@ export const withAffordances = <C extends Config>(
   // once per root: next loads its config more than once in one build, and each compile runs the evaluator twice
   if (!compiled.has(root)) {
     compiled.add(root)
-    const result = compile(root, identity)
+    const result = compile(root, identity, entries)
     // no manifest, and nothing failed: no namespace anywhere, in the config or a defineManifest export, which carries
     // its own (RFC 0005 §1). Then the build names the one line that turns it on
     if (result.canonical === undefined && !result.failed)
@@ -276,8 +277,7 @@ export const withAffordances = <C extends Config>(
         clearTimeout(timer)
         timer = setTimeout(() => {
           try {
-            generate(root, options)
-            compile(root, identity, false)
+            compile(root, identity, generate(root, options), false)
           } catch (error) {
             console.error(`[affordances] ${(error as Error).message}`)
           }

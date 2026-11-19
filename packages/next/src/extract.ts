@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { parseSync } from 'oxc-parser'
-import { byCodeUnit, scan, suggestId } from './codegen.ts'
+import { byCodeUnit, scan, suggestId, type RouteEntry } from './codegen.ts'
 import type { Diagnostic } from './diagnostics.ts'
-import { sliceInput } from './slice.ts'
+import { parseCache, seedParse, sliceInputs } from './slice.ts'
 
 // RFC 0005 §2.1's extraction: each rule reads one literal from a v0 defineAction, statically, and records its basis.
 // A v0 field is `imported` (the developer's v0 declaration, carried across formats), with the file and line as its
@@ -99,8 +99,7 @@ const literal = (node: Node | undefined): unknown =>
       : undefined
 
 // each exported defineAction in an actions file, with its config's properties by name
-const actionsIn = (file: string, source: string) => {
-  const { program } = parseSync(file, source)
+const actionsIn = (program: ReturnType<typeof parseSync>['program']) => {
   // each import's local name: its module, and the name the module exports it as ('*' for a namespace import)
   const imports = new Map<string, { from: string; imported: string }>()
   const found: { local: string; props: Map<string, Node>; at: number }[] = []
@@ -157,6 +156,13 @@ export const segmentResource = (route: string): { id: string; key: string } | un
 
 const byId = <T extends { id: string }>(xs: T[]) => xs.toSorted((a, b) => byCodeUnit(a.id, b.id))
 
+// whether the rules reach E3 for an action: a literal name and id, no capability, and an input
+const reaches = (props: Map<string, Node>) =>
+  typeof literal(props.get('name')) === 'string' &&
+  !props.get('capability') &&
+  typeof literal(props.get('id')) === 'string' &&
+  !!props.get('input')
+
 /**
  * @experimental RFC 0005 §2.1's rules E1 to E9 over a v0 app, for the compiler's pipeline. Throws only codegen's own errors
  * from its scan, which v0's build already fails on; everything it reads itself is a result or a diagnostic.
@@ -164,14 +170,15 @@ const byId = <T extends { id: string }>(xs: T[]) => xs.toSorted((a, b) => byCode
 export const extract = (
   root: string,
   // idPrefix: withAffordances' prefix for suggested ids, from the site's name (RFC 0005 §1)
-  options: { strict?: boolean; idPrefix?: string } = {},
+  // entries: codegen's scan of the routes, when the caller already made it
+  options: { strict?: boolean; idPrefix?: string; entries?: RouteEntry[] } = {},
 ): Extracted => {
   const capabilities: ExtractedCapability[] = []
   const bindings: ExtractedBinding[] = []
   const resources = new Map<string, ExtractedResource>()
   const bound: BoundAction[] = []
   const diagnostics: Diagnostic[] = []
-  const entries = scan(root)
+  const entries = options.entries ?? scan(root)
 
   // E9's conflicts first: a resource type two routes infer with different keys is used by neither (review of
   // 8d2b22e1), so /products/[slug] and /products/[id] never bind one key to the other's
@@ -192,15 +199,34 @@ export const extract = (
         .join(', '),
     })
 
-  for (const entry of entries) {
-    if (!entry.actions) continue
+  // each actions file read and parsed once, for its actions and for its inputs' slices
+  const cache = parseCache()
+  const files = entries.flatMap((entry) => {
+    if (!entry.actions) return []
     const rel = entry.actions.file
     const file = ['.ts', '.tsx', '.js', '.jsx']
       .map((ext) => path.join(root, rel + ext))
       .find((f) => existsSync(f))!
-    const relFile = path.relative(root, file)
     const source = readFileSync(file, 'utf8')
-    const { found, imports } = actionsIn(file, source)
+    const parsed = parseSync(file, source)
+    seedParse(cache, file, parsed)
+    return [{ entry, file, source, ...actionsIn(parsed.program) }]
+  })
+  // E3's inputs, every one the rules below reach, evaluated together
+  const requests = files.flatMap(({ file, source, found }) =>
+    found
+      .filter(({ props }) => reaches(props))
+      .map(({ props }) => ({ file, source, input: props.get('input')! as never })),
+  )
+  const sliced = new Map(
+    sliceInputs(root, requests, { strict: options.strict }, cache).map((r, i) => [
+      requests[i]!.input as unknown as Node,
+      r,
+    ]),
+  )
+
+  for (const { entry, file, source, found, imports } of files) {
+    const relFile = path.relative(root, file)
     for (const { local, props, at } of found) {
       const line = lineOf(source, at)
       const nameValue = literal(props.get('name'))
@@ -316,7 +342,7 @@ export const extract = (
       let input: Record<string, unknown> | undefined
       const inputNode = props.get('input')
       if (inputNode) {
-        const r = sliceInput(root, file, source, inputNode as never, { strict: options.strict })
+        const r = sliced.get(inputNode)!
         if (r.status === 'converted') {
           input = r.schema
           fieldProvenance['/input'] = inferred

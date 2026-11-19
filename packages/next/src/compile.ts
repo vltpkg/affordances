@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 import path from 'node:path'
 // codegen's writer: only on change, and atomically (a temp file renamed into place), since each of next's workers
 // compiles and writes .affordances/ for itself (47a6d7ef)
-import { writeIfChanged } from './codegen.ts'
+import { writeIfChanged, type RouteEntry } from './codegen.ts'
 import { CATALOG, fails, type Diagnostic, type DiagnosticCode } from './diagnostics.ts'
 import { evaluateModules } from './evaluator.ts'
 import { extract } from './extract.ts'
@@ -51,6 +51,8 @@ export const compileSync = (
     strict?: boolean
     // the prefix W_NO_ID's suggested ids take, from withAffordances' name (RFC 0005 §1)
     idPrefix?: string
+    // codegen's scan of the routes, when the caller already made it (withAffordances), so the app is walked once
+    entries?: RouteEntry[]
   } = {},
 ): Compiled => {
   const diagnostics: Diagnostic[] = []
@@ -72,7 +74,8 @@ export const compileSync = (
     return done({ bindings: [] })
   // an unreadable tsconfig is said, never a silent loss of every alias; a v0 app
   // resolves no aliases, so it's never asked
-  const { unreadable } = readAliases(root)
+  // read once for the whole compile: every import resolved below, the static checks and the child's resolve hook
+  const { aliases, unreadable } = readAliases(root)
   if (unreadable)
     diagnostics.push({
       code: 'W_TSCONFIG_UNREADABLE',
@@ -94,14 +97,19 @@ export const compileSync = (
 
   // what extraction recovers from the v0 actions; each bound action's import resolved to a module export here, where
   // the file system is, so the child's merge needs none
-  const extracted = extract(root, { strict: options.strict, idPrefix: options.idPrefix })
+  const extracted = extract(root, {
+    strict: options.strict,
+    idPrefix: options.idPrefix,
+    entries: options.entries,
+  })
   const extraction: Extraction = {
     capabilities: extracted.capabilities,
     resources: extracted.resources,
     bindings: extracted.bindings,
     bound: extracted.bound.map((a) => {
       const from =
-        a.capability.from && resolveImport(root, path.join(root, a.export.file), a.capability.from)
+        a.capability.from &&
+        resolveImport(root, path.join(root, a.export.file), a.capability.from, aliases)
       return {
         route: a.route,
         action: a.action,
@@ -122,7 +130,7 @@ export const compileSync = (
     ...(options.namespace && { namespace: options.namespace }),
     ...(options.owner && { owner: options.owner }),
   }
-  const evaluated = evaluateModules(root, found.modules, identity, { extraction })
+  const evaluated = evaluateModules(root, found.modules, identity, { extraction, aliases })
   diagnostics.push(...evaluated.diagnostics)
   // no namespace: withAffordances reports W_NO_NAMESPACE once, with the line to paste, and nothing is written
   if (evaluated.reason === 'no-namespace') return done({ bindings: [] })

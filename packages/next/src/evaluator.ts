@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { findAppDir } from './codegen.ts'
 import type { Diagnostic } from './diagnostics.ts'
 import type { CompiledBinding, Extraction } from './merge.ts'
-import { aliasesOf, checkModule } from './modules.ts'
+import { aliasesOf, checkModule, type Alias } from './modules.ts'
 
 // RFC 0005 §1's evaluation, the parent's side: the capability modules run in a child (evaluate.ts), never in the
 // build's own process, and twice, each time fresh, with an empty environment. If the two manifests differ by a byte,
@@ -44,6 +44,8 @@ type ChildOutput = {
   bindings?: CompiledBinding[]
   diagnostics?: ChildDiagnostic[]
   reason?: 'no-namespace'
+  // what the modules made, as the determinism check's run prints it alone
+  evaluation?: string
 }
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -89,34 +91,32 @@ export const evaluateUnchecked = (
   root: string,
   modules: string[],
   identity: { namespace?: string; owner?: { id?: string; name: string; href?: string } },
-  options: { timeoutMs?: number; extraction?: Extraction } = {},
+  options: { timeoutMs?: number; extraction?: Extraction; aliases?: Alias[] } = {},
 ): Evaluated => {
   const appDir = findAppDir(root)
   // on stdin, since extraction's output can outgrow an argument
-  const input = JSON.stringify({
+  const request = {
     root,
     modules,
     identity,
-    aliases: aliasesOf(root),
+    aliases: options.aliases ?? aliasesOf(root),
     ...(options.extraction && { extraction: options.extraction }),
-  })
-  const run = () =>
-    spawnSync(
-      process.execPath,
-      [
-        '--permission',
-        ...readable(root, appDir).map((d) => `--allow-fs-read=${d}`),
-        childProgram(),
-      ],
-      {
-        cwd: appDir,
-        input,
-        // next's types make NODE_ENV required; the child gets none, on purpose
-        env: {} as NodeJS.ProcessEnv,
-        encoding: 'utf8',
-        timeout: options.timeoutMs ?? 60_000,
-      },
-    )
+  }
+  const args = [
+    '--permission',
+    ...readable(root, appDir).map((d) => `--allow-fs-read=${d}`),
+    childProgram(),
+  ]
+  // the first run does the whole pipeline; the second, the determinism check, only evaluates the modules again
+  const run = (mode?: 'check') =>
+    spawnSync(process.execPath, args, {
+      cwd: appDir,
+      input: JSON.stringify(mode ? { ...request, mode } : request),
+      // next's types make NODE_ENV required; the child gets none, on purpose
+      env: {} as NodeJS.ProcessEnv,
+      encoding: 'utf8',
+      timeout: options.timeoutMs ?? 60_000,
+    })
   const failed = (why: string): Evaluated => ({
     diagnostics: [
       { code: 'E_CAPABILITY_EVALUATION', file: path.relative(root, appDir), detail: why },
@@ -128,21 +128,28 @@ export const evaluateUnchecked = (
     return failed(
       first.error?.message ?? (first.stderr.trim().split('\n').at(-1) || `exit ${first.status}`),
     )
-  const second = run()
+  const second = run('check')
   // the second run is checked as the first is: a crash there is no evidence of determinism
   if (second.error || second.status !== 0)
     return failed(
       second.error?.message ?? (second.stderr.trim().split('\n').at(-1) || `exit ${second.status}`),
     )
-  if (second.stdout !== first.stdout) {
+  // the first run's evaluation, which it prints beside the merged manifest; an evaluation that threw prints only that
+  let evaluation = first.stdout
+  try {
+    evaluation = (JSON.parse(first.stdout) as ChildOutput).evaluation ?? first.stdout
+  } catch {
+    // no result: said below, once the two runs agree
+  }
+  if (second.stdout !== evaluation) {
     let at = 0
-    while (at < first.stdout.length && first.stdout[at] === second.stdout[at]) at++
+    while (at < evaluation.length && evaluation[at] === second.stdout[at]) at++
     return {
       diagnostics: [
         {
           code: 'E_CAPABILITY_NONDETERMINISTIC',
           file: path.relative(root, appDir),
-          detail: `the two evaluations first differ at byte ${at}: …${first.stdout.slice(Math.max(0, at - 40), at + 40)}…`,
+          detail: `the two evaluations first differ at byte ${at}: …${evaluation.slice(Math.max(0, at - 40), at + 40)}…`,
         },
       ],
       exported: [],
@@ -171,9 +178,10 @@ export const evaluateModules = (
   root: string,
   modules: string[],
   identity: { namespace?: string; owner?: { id?: string; name: string; href?: string } },
-  options: { timeoutMs?: number; extraction?: Extraction } = {},
+  options: { timeoutMs?: number; extraction?: Extraction; aliases?: Alias[] } = {},
 ): Evaluated => {
-  const checked = modules.flatMap((m) => checkModule(root, m))
+  const aliases = options.aliases ?? aliasesOf(root)
+  const checked = modules.flatMap((m) => checkModule(root, m, undefined, aliases))
   if (checked.some((d) => d.code.startsWith('E_'))) return { diagnostics: checked, exported: [] }
-  return evaluateUnchecked(root, modules, identity, options)
+  return evaluateUnchecked(root, modules, identity, { ...options, aliases })
 }

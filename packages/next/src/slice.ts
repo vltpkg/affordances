@@ -99,8 +99,11 @@ const isLibrary = (source: string) =>
 
 class Opaque extends Error {}
 
-const parseModule = (file: string, source: string): Module => {
-  const { program, errors } = parseSync(file, source)
+// a file's parse, oxc's, which the caller may already hold
+type Parsed = Pick<ReturnType<typeof parseSync>, 'program' | 'errors'>
+
+const parseModule = (file: string, source: string, parsed?: Parsed): Module => {
+  const { program, errors } = parsed ?? parseSync(file, source)
   if (errors.length) throw new Opaque(`${file} doesn't parse: ${errors[0]!.message}`)
   const bindings = new Map<string, Binding>()
   const exports: Module['exports'] = new Map()
@@ -394,21 +397,38 @@ const resolveFile = (from: string, source: string): string | undefined => {
 
 type Needed = { module: Module; locals: Set<string> }
 
+/**
+ * The modules one extract run has parsed, by file, shared by every slice it plans: an actions file's own parse seeds it,
+ * and a module two inputs import is parsed once. A parsed module is only read.
+ */
+export type ParseCache = { modules: Map<string, Module>; programs: Map<string, Parsed> }
+export const parseCache = (): ParseCache => ({ modules: new Map(), programs: new Map() })
+/** Records a file's parse the caller already made, so a slice of it doesn't parse it again. */
+export const seedParse = (cache: ParseCache, file: string, parsed: Parsed) =>
+  void cache.programs.set(file, parsed)
+
 // the slice: every module it reaches, with the locals it needs from each; or why it doesn't hold
-export const planSlice = (file: string, source: string, input: Node) => {
+export const planSlice = (
+  file: string,
+  source: string,
+  input: Node,
+  cache: ParseCache = parseCache(),
+) => {
   const modules = new Map<string, Needed>()
   const lossy = new Set<string>()
   // every method the slice calls, and every library it imports, so what's lossy is known once the walk is done: a
   // schema built in one module can be refined in another that never imports the library
   const called = new Set<string>()
   const libraries = new Set<string>()
+  // the modules this slice reached, parsed now or by an earlier slice of the run: only these are its libraries' scope
   const parsed = new Map<string, Module>()
   const moduleOf = (f: string, text?: string) => {
-    let m = parsed.get(f)
+    let m = parsed.get(f) ?? cache.modules.get(f)
     if (!m) {
-      m = parseModule(f, text ?? readFileSync(f, 'utf8'))
-      parsed.set(f, m)
+      m = parseModule(f, text ?? readFileSync(f, 'utf8'), cache.programs.get(f))
+      cache.modules.set(f, m)
     }
+    parsed.set(f, m)
     return m
   }
   const visited = new Set<string>()
@@ -614,17 +634,20 @@ const readable = (root: string) => {
   return [...new Set(dirs)]
 }
 
-/** RFC 0005 §2.1's E3: an action's input schema, by its slice, or why it's opaque. Never throws on author input. */
-export const sliceInput = (
-  root: string,
+// a slice planned, or why it's opaque before any evaluation: it doesn't read, breaks the slice rule, or (in strict mode)
+// uses what JSON Schema drops
+const prepare = (
   file: string,
   source: string,
   input: Node,
-  options: { strict?: boolean; timeoutMs?: number } = {},
-): SliceResult => {
+  options: { strict?: boolean },
+  cache?: ParseCache,
+):
+  | { status: 'planned'; plan: Extract<ReturnType<typeof planSlice>, { status: 'slice' }> }
+  | SliceResult => {
   let plan: ReturnType<typeof planSlice>
   try {
-    plan = planSlice(file, source, input)
+    plan = planSlice(file, source, input, cache)
   } catch (error) {
     return { status: 'opaque', reason: `the slice couldn't be read: ${(error as Error).message}` }
   }
@@ -634,51 +657,159 @@ export const sliceInput = (
       status: 'opaque',
       reason: `strict mode: the schema uses ${plan.lossy.join(', ')}, which JSON Schema drops`,
     }
-  const id = createHash('sha256')
-    .update(file)
-    .update(String(input.start))
-    .digest('hex')
-    .slice(0, 16)
-  const dir = path.join(root, '.affordances', '.slice', id)
+  return { status: 'planned', plan }
+}
+
+// a slice's directory, by its file and its input's offset
+const sliceId = (file: string, input: Node) =>
+  createHash('sha256').update(file).update(String(input.start)).digest('hex').slice(0, 16)
+
+// one evaluation's answer for one slice
+type Answer = { schema?: Record<string, unknown>; error?: string }
+const resultOf = (
+  answer: Answer,
+  again: string | undefined,
+  first: string,
+  lossy: string[],
+): SliceResult =>
+  !answer.schema
+    ? { status: 'opaque', reason: `the slice's evaluation failed: ${answer.error}` }
+    : again !== first
+      ? { status: 'opaque', reason: 'two evaluations of the slice gave different schemas' }
+      : { status: 'converted', schema: answer.schema, lossy }
+
+// an empty environment: the slice can't read secrets or configuration (RFC 0005 §1)
+// Node's permission model: reads only the app and the node_modules it resolves from, and no
+// writes, network, child processes or workers. The slice rule is a lint, not a sandbox; this is the sandbox
+// two evaluations, each in a fresh child: a slice whose output differs between them read a clock or chance the
+// lint missed, so it's opaque rather than published
+const spawnChild = (dir: string, args: string[], timeoutMs: number) => {
+  const flags = childArgs(dir)
+  return () =>
+    spawnSync(process.execPath, [...flags, ...args], {
+      cwd: dir,
+      // next's types make NODE_ENV required; the child gets none, on purpose
+      env: {} as NodeJS.ProcessEnv,
+      encoding: 'utf8',
+      timeout: timeoutMs,
+    })
+}
+
+/** RFC 0005 §2.1's E3: an action's input schema, by its slice, or why it's opaque. Never throws on author input. */
+export const sliceInput = (
+  root: string,
+  file: string,
+  source: string,
+  input: Node,
+  options: { strict?: boolean; timeoutMs?: number } = {},
+  cache?: ParseCache,
+): SliceResult => {
+  const prepared = prepare(file, source, input, options, cache)
+  if (prepared.status !== 'planned') return prepared
+  const { plan } = prepared
+  const dir = path.join(root, '.affordances', '.slice', sliceId(file, input))
   rmSync(dir, { recursive: true, force: true })
   mkdirSync(dir, { recursive: true })
   try {
     const entry = emit(plan, dir)
     const runner = path.join(dir, 'run.mjs')
     writeFileSync(runner, RUNNER)
-    // an empty environment: the slice can't read secrets or configuration (RFC 0005 §1)
-    // Node's permission model: reads only the app and the node_modules it resolves from, and no
-    // writes, network, child processes or workers. The slice rule is a lint, not a sandbox; this is the sandbox
-    // two evaluations, each in a fresh child: a slice whose output differs between them read a clock or chance the
-    // lint missed, so it's opaque rather than published
-    const run = () =>
-      spawnSync(process.execPath, [...childArgs(dir), runner, entry], {
-        cwd: dir,
-        // next's types make NODE_ENV required; the child gets none, on purpose
-        env: {} as NodeJS.ProcessEnv,
-        encoding: 'utf8',
-        timeout: options.timeoutMs ?? 15_000,
-      })
+    const run = spawnChild(dir, [runner, entry], options.timeoutMs ?? 15_000)
     const child = run()
     if (child.error)
       return { status: 'opaque', reason: `the slice's evaluation failed: ${child.error.message}` }
-    let result: { schema?: Record<string, unknown>; error?: string }
+    let answer: Answer
     try {
-      result = JSON.parse(child.stdout)
+      answer = JSON.parse(child.stdout)
     } catch {
       return {
         status: 'opaque',
         reason: `the slice's evaluation failed: ${child.stderr.trim().split('\n')[0] ?? 'no output'}`,
       }
     }
-    if (!result.schema)
-      return { status: 'opaque', reason: `the slice's evaluation failed: ${result.error}` }
-    if (run().stdout !== child.stdout)
-      return { status: 'opaque', reason: 'two evaluations of the slice gave different schemas' }
-    return { status: 'converted', schema: result.schema, lossy: plan.lossy }
+    if (!answer.schema) return resultOf(answer, child.stdout, child.stdout, plan.lossy)
+    return resultOf(answer, run().stdout, child.stdout, plan.lossy)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+}
+
+// the batch's program: each slice in turn, as RUNNER runs one, each in its own try, so one that throws is its own error
+const BATCH_RUNNER = `
+const answers = []
+for (const entry of process.argv.slice(2)) {
+  try {
+    const schema = (await import(entry)).default
+    const standard = schema?.['~standard']
+    if (!standard || standard.version !== 1) answers.push({ error: "the input isn't a Standard Schema" })
+    else if (!standard.jsonSchema) answers.push({ error: 'this schema (' + standard.vendor + ") can't produce JSON Schema" })
+    else {
+      const { $schema, ...rest } = standard.jsonSchema.input({ target: 'draft-2020-12' })
+      answers.push({ schema: rest })
+    }
+  } catch (error) {
+    answers.push({ error: String(error?.message ?? error) })
+  }
+}
+process.stdout.write(JSON.stringify(answers.map((a) => JSON.stringify(a))))
+`
+
+/**
+ * Every input of one extract run, by its slice, in the order given: sliceInput's answer for each, from one child for
+ * them all, run twice, so a build pays two process starts rather than two per input. Each slice is compared with its
+ * own second evaluation. If the shared child fails as a whole (it didn't start, timed out or printed no answers), each
+ * input is evaluated alone, as sliceInput does, so one slice's failure is never another's.
+ */
+export const sliceInputs = (
+  root: string,
+  requests: { file: string; source: string; input: Node }[],
+  options: { strict?: boolean; timeoutMs?: number } = {},
+  cache: ParseCache = parseCache(),
+): SliceResult[] => {
+  const prepared = requests.map((r) => prepare(r.file, r.source, r.input, options, cache))
+  const planned = prepared.flatMap((p, i) => (p.status === 'planned' ? [{ i, plan: p.plan }] : []))
+  const results = prepared.map((p) => (p.status === 'planned' ? undefined : p))
+  if (planned.length) {
+    const dir = path.join(root, '.affordances', '.slice', 'batch')
+    rmSync(dir, { recursive: true, force: true })
+    mkdirSync(dir, { recursive: true })
+    try {
+      const entries = planned.map(({ i, plan }) => {
+        const own = path.join(dir, sliceId(requests[i]!.file, requests[i]!.input))
+        mkdirSync(own, { recursive: true })
+        return emit(plan, own)
+      })
+      const runner = path.join(dir, 'run.mjs')
+      writeFileSync(runner, BATCH_RUNNER)
+      const run = spawnChild(
+        dir,
+        [runner, ...entries],
+        options.timeoutMs ?? 15_000 * planned.length,
+      )
+      const answersOf = (child: ReturnType<ReturnType<typeof spawnChild>>) => {
+        if (child.error || child.status !== 0) return undefined
+        try {
+          const texts = JSON.parse(child.stdout) as string[]
+          return texts.length === planned.length ? texts : undefined
+        } catch {
+          return undefined
+        }
+      }
+      const first = answersOf(run())
+      const second = first && answersOf(run())
+      planned.forEach(({ i, plan }, n) => {
+        const text = first?.[n]
+        if (text === undefined || !second) return
+        const answer = JSON.parse(text) as Answer
+        results[i] = resultOf(answer, answer.schema ? second[n] : text, text, plan.lossy)
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+  return requests.map(
+    (r, i) => results[i] ?? sliceInput(root, r.file, r.source, r.input, options, cache),
+  )
 }
 
 /** Each `defineAction({ input })` in an actions file: its export and its input expression, for E3. */
