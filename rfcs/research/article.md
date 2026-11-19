@@ -1,6 +1,6 @@
 # Telling an agent what it can do, and measuring whether it helps
 
-**Status:** DRAFT (2026-11-19), in final review. Every claim below has a row in the
+**Status:** accepted (2026-11-19). Every claim below has a row in the
 claim-and-trace table at the end, which names the committed file and the commit that holds it.
 
 ## 1. The problem
