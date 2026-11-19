@@ -15,8 +15,11 @@ import {
   missingLogins,
   pauseFor,
   pilotPlan,
+  readTrace,
+  resultOf,
   retiredMode,
   runTrial,
+  scoredMetrics,
   type TrialSpec,
 } from './harness.ts'
 import { baselineOf, checkBaseline, type CanaryRecord, readCanary, runCanary } from './canary.ts'
@@ -243,37 +246,10 @@ if (mode === 'plan') {
   const failed: Failed[] = []
   // a trial whose trace is complete is read back, not run again: a resumed run never re-runs a trial (intake)
   const done = (s: TrialSpec): Result | undefined => {
-    const file = path.join(out, `${s.id}.jsonl`)
-    if (!existsSync(file)) return
-    let lines: Record<string, any>[]
-    try {
-      lines = readFileSync(file, 'utf8')
-        .trim()
-        .split('\n')
-        .map((l) => JSON.parse(l) as Record<string, any>)
-    } catch {
-      // a trace cut off mid-write is incomplete: the trial runs, and runTrial sets the partial aside (review)
-      return
-    }
-    const of = (kind: string) => lines.find((l) => l.kind === kind)
-    const [trial, endLine, metrics] = [of('trial'), of('end'), of('metrics')]
-    if (!trial || !endLine || !metrics) return
-    const { kind: _k, ...m } = metrics
-    const footprint = endLine.footprint ?? null
-    return {
-      spec: s,
-      end: endLine.end,
-      capHits: endLine.capHits,
-      traceMismatch: endLine.traceMismatch,
-      spawned: endLine.spawned,
-      metrics: m as Result['metrics'],
-      turns: endLine.turns,
-      footprint,
-      flagged: (footprint?.claude?.length ?? 0) > 0,
-      load: endLine.load.start[0],
-      cli: trial.cli,
-      resolvedModel: trial.model.resolved,
-    }
+    // a trace cut off mid-write is incomplete: the trial runs, and runTrial sets the partial aside (review)
+    const t = readTrace(path.join(out, `${s.id}.jsonl`))
+    const metrics = scoredMetrics(t)
+    return metrics && resultOf(s, t!.trial!, t!.end!, metrics)
   }
   // the baseline, mandatory: checked when it exists, written when it doesn't, never skipped. A difference refuses,
   // flagged first (intake and the planner, 2026-11-18)

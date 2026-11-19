@@ -14,7 +14,9 @@ import {
   faultsOf,
   INSTRUCTIONS,
   priorFailures,
+  readTrace,
   recordFault,
+  scoredMetrics,
   setAside,
   type TrialSpec,
 } from './harness.ts'
@@ -636,21 +638,8 @@ export const runSurfaceTrial = async (
 }
 
 // a trace that's complete: its trial, end and metrics lines all there. Read back, never run again (intake)
-const scored = (dir: string, id: string) => {
-  const file = path.join(dir, `${id}.jsonl`)
-  if (!existsSync(file)) return false
-  try {
-    const kinds = new Set(
-      readFileSync(file, 'utf8')
-        .trim()
-        .split('\n')
-        .map((l) => (JSON.parse(l) as { kind: string }).kind),
-    )
-    return kinds.has('trial') && kinds.has('end') && kinds.has('metrics')
-  } catch {
-    return false
-  }
-}
+const scored = (dir: string, id: string) =>
+  scoredMetrics(readTrace(path.join(dir, `${id}.jsonl`))) !== undefined
 
 /** A run that must stop: past the fault threshold (intake, 14:24Z), or on an auth failure. */
 export class SurfaceRunStopped extends Error {}

@@ -199,6 +199,66 @@ const codexDefault = () => {
   }
 }
 
+// a trace's lines (src/harness.ts and src/surface.ts write them), each parsed once. Its metrics line, the outcome, stays
+// text until a scorer asks for it, so a liveness check that only reads the rest reads no outcome (src/status.ts)
+type Line = Record<string, any>
+const METRICS_PREFIX = '{"kind":"metrics"'
+export type Trace = { trial?: Line; end?: Line; calls: number; metrics?: string; broken: boolean }
+
+/** One trace, read once: none when there's no file, and `broken` when a line didn't parse, as a cut-off write leaves. */
+export const readTrace = (file: string): Trace | undefined => {
+  if (!existsSync(file)) return
+  const t: Trace = { calls: 0, broken: false }
+  for (const line of readFileSync(file, 'utf8').split('\n')) {
+    if (!line) continue
+    if (line.startsWith(METRICS_PREFIX)) {
+      t.metrics = line
+      continue
+    }
+    let l: Line
+    try {
+      l = JSON.parse(line) as Line
+    } catch {
+      t.broken = true
+      continue
+    }
+    if (l.kind === 'trial') t.trial = l
+    else if (l.kind === 'end') t.end = l
+    else if (l.kind === 'call') t.calls++
+  }
+  return t
+}
+
+/** A scored trace's metrics, parsed: its trial, end and metrics lines all whole. Otherwise none, so the trial runs. */
+export const scoredMetrics = (t: Trace | undefined): Line | undefined => {
+  if (!t || t.broken || !t.trial || !t.end || !t.metrics) return
+  try {
+    const { kind: _, ...metrics } = JSON.parse(t.metrics) as Line
+    return metrics
+  } catch {
+    return
+  }
+}
+
+/** A trial's result from its trace's lines: the run returns the same as a resume reads back. */
+export const resultOf = (spec: TrialSpec, trial: Line, end: Line, metrics: Line) => {
+  const footprint = end.footprint ?? null
+  return {
+    spec,
+    end: end.end as EndReason,
+    capHits: end.capHits as string[],
+    traceMismatch: end.traceMismatch as boolean,
+    spawned: end.spawned as boolean,
+    metrics: metrics as ReturnType<typeof computeMetrics>,
+    turns: end.turns as number | null,
+    footprint,
+    flagged: (footprint?.claude?.length ?? 0) > 0,
+    load: end.load.start[0] as number,
+    cli: trial.cli as DriverResult['cli'] | null,
+    resolvedModel: trial.model.resolved as string | null,
+  }
+}
+
 export const runTrial = async (spec: TrialSpec, driver: Driver, dir: string) => {
   mkdirSync(dir, { recursive: true })
   setAside(dir, spec.id)
@@ -330,20 +390,9 @@ export const runTrial = async (spec: TrialSpec, driver: Driver, dir: string) => 
     path.join(dir, `${spec.id}.jsonl`),
     `${lines.map((l) => JSON.stringify(l)).join('\n')}\n`,
   )
-  return {
-    spec,
-    end,
-    capHits,
-    traceMismatch,
-    spawned,
-    metrics,
-    turns: result?.turns ?? null,
-    footprint: result?.footprint ?? null,
-    flagged: (result?.footprint?.claude.length ?? 0) > 0,
-    load: loadAtStart[0]!,
-    cli: result?.cli ?? null,
-    resolvedModel: result?.resolvedModel ?? null,
-  }
+  // read from the lines just written, as a resume reads them, so a run and its resume agree: the resolved model is the
+  // trace's, which for codex is the -m id it ran
+  return resultOf(spec, lines[0] as Line, lines.at(-2) as Line, metrics)
 }
 
 // canary mode's plan (boundary review #7, the planner, 2026-11-18): the preflight alone needs drivers and models, not

@@ -1,6 +1,6 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
-import { faultsOf, priorFailures, type TrialSpec } from './harness.ts'
+import { faultsOf, priorFailures, readTrace, type TrialSpec } from './harness.ts'
 
 // a run's status, mid-run or after (intake's liveness rule, 2026-11-18 18:18Z; the planner's row 9647438a): only
 // NON-OUTCOME fields, each named here, never choice, completed, intended or any scored or labelled field. A trace's
@@ -23,39 +23,20 @@ export const STATUS_FIELDS = [
 ] as const
 export type StatusLine = Partial<Record<(typeof STATUS_FIELDS)[number], string | number | null>>
 
-const METRICS_PREFIX = '{"kind":"metrics"'
-
-// a scored trace's non-outcome fields: from its trial line, its end line, and the number of its call lines
+// a scored trace's non-outcome fields: from its trial line, its end line, and the number of its call lines. The
+// shared reader leaves the metrics line unparsed, and this never asks for it
 const traceStatus = (file: string) => {
-  let resolved: string | null = null
-  let end: string | null = null
-  let durationMs: number | null = null
-  let tokens: number | null = null
-  let calls = 0
-  let complete = false
-  for (const line of readFileSync(file, 'utf8').split('\n')) {
-    if (!line || line.startsWith(METRICS_PREFIX)) {
-      if (line) complete = true
-      continue
-    }
-    let kind: string | undefined
-    try {
-      kind = (JSON.parse(line) as { kind?: string }).kind
-    } catch {
-      continue
-    }
-    if (kind === 'call') calls++
-    else if (kind === 'trial')
-      resolved = ((JSON.parse(line) as { model?: { resolved?: string } }).model?.resolved ??
-        null) as string | null
-    else if (kind === 'end') {
-      const e = JSON.parse(line) as { end?: string; durationMs?: number; totalTokens?: number }
-      end = e.end ?? null
-      durationMs = e.durationMs === undefined ? null : Math.round(e.durationMs)
-      tokens = e.totalTokens ?? null
-    }
+  const t = readTrace(file)
+  const e = t?.end as { end?: string; durationMs?: number; totalTokens?: number } | undefined
+  return {
+    complete: t?.metrics !== undefined,
+    resolved: ((t?.trial as { model?: { resolved?: string } } | undefined)?.model?.resolved ??
+      null) as string | null,
+    end: e?.end ?? null,
+    durationMs: e?.durationMs === undefined ? null : Math.round(e.durationMs),
+    tokens: e?.totalTokens ?? null,
+    calls: t?.calls ?? 0,
   }
-  return { complete, resolved, end, durationMs, tokens, calls }
 }
 
 /** Each spec's status line, in the plan's order. */
