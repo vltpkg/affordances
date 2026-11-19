@@ -97,24 +97,32 @@ describe('missingIds (W_NO_ID)', () => {
     const suggested = missingIds(scan(root)).map((m) => m.suggested)
     expect(suggested).toEqual(['items.save', 'items.slug.save'])
   })
-  // M8-ids: with the target's type known (E9's, as written), the suggestion is the type and the action's name, the
-  // verb as the developer wrote it; without one, the route's folders and the name, as before
-  test("with the target's type known, the type and the action's name, wherever the route nests", () => {
+  // M8-ids: with the target's type known (E9's, as written), the suggestion is the type, the route's folders after the
+  // target, and the action's name, the verb as the developer wrote it; without one, the route's folders and the name
+  test("with the target's type known, the type, the folders after the target, and the action's name", () => {
     const root = project({
       'app/shop/products/[slug]/reviews/actions.ts': `'use server'\n${action('add')}${action('createNewReview')}`,
+      'app/shop/products/[slug]/reviews/drafts/actions.ts': `'use server'\n${action('save')}`,
+      'app/products/[slug]/actions.ts': `'use server'\n${action('addToCart')}`,
       'app/cart/actions.ts': `'use server'\n${action('updateQuantity')}`,
     })
     expect(missingIds(scan(root)).map((m) => [m.route, m.suggested])).toEqual([
       // no target type: the folders, as before
       ['/cart', 'cart.updateQuantity'],
-      // the verb is the name as written, never mapped to a standard one
-      ['/shop/products/[slug]/reviews', 'products.add'],
-      ['/shop/products/[slug]/reviews', 'products.createNewReview'],
+      // a route ending at its target: the type and the name, as the folder form gave it
+      ['/products/[slug]', 'products.addToCart'],
+      // one folder after the target, then two; the folders before the type's (shop) aren't part of it. The verb is the
+      // name as written, never mapped to a standard one
+      ['/shop/products/[slug]/reviews', 'products.reviews.add'],
+      ['/shop/products/[slug]/reviews', 'products.reviews.createNewReview'],
+      ['/shop/products/[slug]/reviews/drafts', 'products.reviews.drafts.save'],
     ])
     expect(missingIds(scan(root), { idPrefix: 'acmeStore' }).map((m) => m.suggested)).toEqual([
       'acmeStore.cart.updateQuantity',
-      'acmeStore.products.add',
-      'acmeStore.products.createNewReview',
+      'acmeStore.products.addToCart',
+      'acmeStore.products.reviews.add',
+      'acmeStore.products.reviews.createNewReview',
+      'acmeStore.products.reviews.drafts.save',
     ])
   })
   test('a type two routes infer with different keys is no target, so its suggestions fall back to the folders', () => {
@@ -138,7 +146,7 @@ describe('missingIds (W_NO_ID)', () => {
     writeIds(root)
     expect(
       readFileSync(path.join(root, 'app/shop/products/[slug]/reviews/actions.ts'), 'utf8'),
-    ).toContain("id: 'products.add', // placeholder: choose this action's id")
+    ).toContain("id: 'products.reviews.add', // placeholder: choose this action's id")
   })
   test('a suggestion never takes an id already written', () => {
     const root = project({

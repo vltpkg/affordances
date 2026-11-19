@@ -236,16 +236,21 @@ const parts = (route: string, withParams: boolean) =>
 
 // E9: the last dynamic segment under a static one, as the target's type and key. The id is the segment as written,
 // never singularized (RFC 0005 §9.1); a segment that isn't an identifier, or a catch-all, yields nothing
-export const segmentResource = (route: string): { id: string; key: string } | undefined => {
+// E9's target, with where in the route its dynamic segment is
+const targetSegment = (route: string) => {
   const segments = route.split('/').filter(Boolean)
   for (let i = segments.length - 1; i > 0; i--) {
     const m = /^\[([A-Za-z_$][\w$]*)\]$/.exec(segments[i]!)
     if (!m) continue
     const id = segments[i - 1]!
     if (id.startsWith('[') || !ID.test(id)) return undefined
-    return { id, key: m[1]! }
+    return { id, key: m[1]!, after: segments.slice(i + 1) }
   }
   return undefined
+}
+export const segmentResource = (route: string): { id: string; key: string } | undefined => {
+  const t = targetSegment(route)
+  return t && { id: t.id, key: t.key }
 }
 
 /**
@@ -264,8 +269,9 @@ export const targetTypes = (entries: RouteEntry[]) => {
   }
 }
 
-// an action's suggested id. With its target's type known: the type and the action's name as written, with no verb
-// inferred from it, so /shop/products/[slug]/reviews and add give products.add. Without one: the route's static
+// an action's suggested id. With its target's type known: the type, the route's static segments after the target, and
+// the action's name as written, with no verb inferred from it, so /shop/products/[slug]/reviews and add give
+// products.reviews.add, and /products/[slug] and addToCart give products.addToCart. Without one: the route's static
 // segments and the name, cart.updateQuantity. With withAffordances' idPrefix, the site's name as an identifier, it
 // leads: acmeStore.products.addToCart (RFC 0005 §1). withParams is the second form, for two that would collide
 export const suggestId = (
@@ -277,7 +283,9 @@ export const suggestId = (
 ) =>
   [
     ...(idPrefix ? [idPrefix] : []),
-    ...(type && !withParams ? [segment(type)] : parts(route, withParams)),
+    ...(type && !withParams
+      ? [segment(type), ...parts(`/${(targetSegment(route)?.after ?? []).join('/')}`, false)]
+      : parts(route, withParams)),
     segment(name),
   ].join('.')
 
