@@ -54,7 +54,8 @@ export const stampOwnerFiles = (files = ownerFiles(), sidecar?: string): OwnerSt
 }
 
 // a stamp as a record shows it, the one mask: a credential file's digest 'recorded outside git'
-const masked = (s: OwnerStamp) => (isCredential(s.file) && s.sha256 ? { ...s, sha256: OUTSIDE_GIT } : s)
+const masked = (s: OwnerStamp) =>
+  isCredential(s.file) && s.sha256 ? { ...s, sha256: OUTSIDE_GIT } : s
 const shown = (s: OwnerStamp | undefined) => (s ? masked(s) : null)
 
 /**

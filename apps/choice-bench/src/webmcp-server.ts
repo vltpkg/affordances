@@ -209,7 +209,10 @@ server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
   }
   // executeTool answers with the page tool's own result, { content, isError }, as JSON: relayed as it is, and its text
   // recorded, as the other MCP servers record theirs
-  const result = parsedOrText(text) as { content?: { type: 'text'; text: string }[]; isError?: boolean }
+  const result = parsedOrText(text) as {
+    content?: { type: 'text'; text: string }[]
+    isError?: boolean
+  }
   const content = Array.isArray(result?.content)
     ? result.content
     : [{ type: 'text' as const, text }]

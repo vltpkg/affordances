@@ -52,7 +52,10 @@ TASK_EDITS.T8 = {
 }
 
 /** The manifest a task's trials read: its edit applied, when the task has one, else the manifest as it is. */
-export const manifestFor = (task: string | undefined, m: CapabilityManifest): CapabilityManifest => {
+export const manifestFor = (
+  task: string | undefined,
+  m: CapabilityManifest,
+): CapabilityManifest => {
   const edit = task ? TASK_EDITS[task] : undefined
   return edit ? edit.apply(m) : m
 }
