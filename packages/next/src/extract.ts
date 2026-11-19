@@ -3,7 +3,7 @@ import path from 'node:path'
 import { parseSync } from 'oxc-parser'
 import { byCodeUnit, scan, suggestId, type RouteEntry } from './codegen.ts'
 import type { Diagnostic } from './diagnostics.ts'
-import { parseCache, seedParse, sliceInputs } from './slice.ts'
+import { parseCache, seedParse, sliceInput } from './slice.ts'
 
 // RFC 0005 §2.1's extraction: each rule reads one literal from a v0 defineAction, statically, and records its basis.
 // A v0 field is `imported` (the developer's v0 declaration, carried across formats), with the file and line as its
@@ -156,13 +156,6 @@ export const segmentResource = (route: string): { id: string; key: string } | un
 
 const byId = <T extends { id: string }>(xs: T[]) => xs.toSorted((a, b) => byCodeUnit(a.id, b.id))
 
-// whether the rules reach E3 for an action: a literal name and id, no capability, and an input
-const reaches = (props: Map<string, Node>) =>
-  typeof literal(props.get('name')) === 'string' &&
-  !props.get('capability') &&
-  typeof literal(props.get('id')) === 'string' &&
-  !!props.get('input')
-
 /**
  * @experimental RFC 0005 §2.1's rules E1 to E9 over a v0 app, for the compiler's pipeline. Throws only codegen's own errors
  * from its scan, which v0's build already fails on; everything it reads itself is a result or a diagnostic.
@@ -212,19 +205,6 @@ export const extract = (
     seedParse(cache, file, parsed)
     return [{ entry, file, source, ...actionsIn(parsed.program) }]
   })
-  // E3's inputs, every one the rules below reach, evaluated together
-  const requests = files.flatMap(({ file, source, found }) =>
-    found
-      .filter(({ props }) => reaches(props))
-      .map(({ props }) => ({ file, source, input: props.get('input')! as never })),
-  )
-  const sliced = new Map(
-    sliceInputs(root, requests, { strict: options.strict }, cache).map((r, i) => [
-      requests[i]!.input as unknown as Node,
-      r,
-    ]),
-  )
-
   for (const { entry, file, source, found, imports } of files) {
     const relFile = path.relative(root, file)
     for (const { local, props, at } of found) {
@@ -342,7 +322,15 @@ export const extract = (
       let input: Record<string, unknown> | undefined
       const inputNode = props.get('input')
       if (inputNode) {
-        const r = sliced.get(inputNode)!
+        // each input in a child of its own: one realm per input, so no slice can change another's schema
+        const r = sliceInput(
+          root,
+          file,
+          source,
+          inputNode as never,
+          { strict: options.strict },
+          cache,
+        )
         if (r.status === 'converted') {
           input = r.schema
           fieldProvenance['/input'] = inferred

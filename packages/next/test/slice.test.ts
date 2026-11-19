@@ -8,7 +8,6 @@ import {
   MAX_DEPTH,
   planSlice,
   sliceInput,
-  sliceInputs,
   type SliceResult,
 } from '../src/slice.ts'
 
@@ -455,32 +454,61 @@ test('a generated corpus of 120 schema files: each converts or is opaque exactly
   ])
 }, 300_000)
 
-test('one child for a whole run gives each input exactly what its own child does: the corpus, and strict mode', () => {
-  const r = rng(20261119)
-  const requests = Array.from({ length: 60 }, () => {
-    const ps = Array.from({ length: 1 + Math.floor(r() * 3) }, (_, k) => parts(r, k))
-    const preamble = [Z, ...new Set(ps.flatMap((p) => p.preamble))].join('\n')
-    const input = `z.object({ ${ps.map((p, k) => `f${k}: ${p.field}`).join(', ')} })`
-    return written(preamble, input, Object.assign({}, ...ps.map((p) => p.helpers ?? {})))
-  })
-  // and a schema that throws as it's built, and one that isn't a Standard Schema, each its own error in the batch
-  requests.push(written(Z, "z.string().regex(new RegExp('('))"), written(Z, '42'))
-  for (const strict of [false, true]) {
-    const alone = requests.map((q) => sliceInput(root, q.file, q.source, q.input, { strict }))
-    expect(sliceInputs(root, requests, { strict })).toEqual(alone)
-    // every outcome is in the batch
-    expect(new Set(alone.map((a) => a.status))).toEqual(new Set(['converted', 'opaque']))
-  }
-}, 300_000)
+// review's isolation probes (H1 to H4) and intake's registry probe: input A tries to change what input B reads. In a
+// child of its own, each input can change only its own answer. In one shared realm, H4 turned B's string into a number
+const HOSTILE: [string, string, string, Record<string, string>?][] = [
+  ['H1, assigning to a library member', Z, '(z.string = z.number, z.string())'],
+  ['H1b, Object.assign on a library', Z, '(Object.assign(z, { string: z.number }), z.string())'],
+  [
+    'H2, a module both import',
+    `${Z}\nimport { S } from './shared'`,
+    "((S.v = 'hacked'), z.string().default(S.v))",
+    { 'shared.ts': "export const S = { v: 'plain' }\n" },
+  ],
+  ['H3, replacing JSON.stringify', Z, `((JSON.stringify = () => '"x"'), z.string())`],
+  [
+    'H4, wrapping JSON.stringify, its output still valid',
+    Z,
+    "((o) => ((JSON.stringify = (v, r, w) => o(v, r, w).replaceAll('string', 'number')), z.string()))(JSON.stringify)",
+  ],
+  ["a value global's method the conversion uses", Z, '((Object.keys = () => []), z.string())'],
+  ["the library's global configuration", Z, "(z.config({ customError: () => 'x' }), z.string())"],
+  [
+    "the library's global registry",
+    Z,
+    "(z.globalRegistry.add(z.object({ b: z.string() }), { id: 'injected', title: 'injected' }), z.string())",
+  ],
+]
 
-test('a run whose shared child fails as a whole falls back to one child per input', () => {
-  const requests = [written(Z, 'z.object({ a: z.string() })'), written(Z, 'z.string().email()')]
-  // too little time for any child: the batch fails, and each input gets its own child's answer
-  const alone = requests.map((q) => sliceInput(root, q.file, q.source, q.input, { timeoutMs: 1 }))
-  expect(sliceInputs(root, requests, { timeoutMs: 1 })).toEqual(alone)
-  expect(alone.every((a) => a.status === 'opaque')).toBe(true)
-  // and with time, both convert from the one child
-  expect(sliceInputs(root, requests).map((x) => x.status)).toEqual(['converted', 'converted'])
+test.each(HOSTILE)(
+  '%s: B, evaluated after A, gets exactly what it gets alone',
+  (_, preamble, input, helpers) => {
+    const b = written(
+      `${Z}\nimport { S } from './shared'`,
+      'z.object({ b: z.string(), c: z.string().default(S.v) })',
+      { 'shared.ts': "export const S = { v: 'plain' }\n" },
+    )
+    const alone = sliceInput(root, b.file, b.source, b.input)
+    expect(alone).toMatchObject({ status: 'converted' })
+    // A plans: the slice rule doesn't refuse its write. Whatever A answers is A's own
+    const a = written(preamble, input, helpers)
+    expect(planSlice(a.file, a.source, a.input)).toMatchObject({ status: 'slice' })
+    sliceInput(root, a.file, a.source, a.input)
+    expect(sliceInput(root, b.file, b.source, b.input)).toEqual(alone)
+  },
+)
+
+test('a slice that tampers with a builtin changes only its own answer', () => {
+  const plain = written(Z, 'z.object({ b: z.string() })')
+  const before = sliceInput(root, plain.file, plain.source, plain.input)
+  // the library converts through the global JSON.stringify, so H4 does rewrite its own schema: its child's, alone
+  const h4 = written(Z, HOSTILE[4]![2])
+  expect(sliceInput(root, h4.file, h4.source, h4.input)).toMatchObject({
+    status: 'converted',
+    schema: { type: 'number' },
+  })
+  expect(sliceInput(root, plain.file, plain.source, plain.input)).toEqual(before)
+  expect(before).toMatchObject({ schema: { properties: { b: { type: 'string' } } } })
 })
 
 test('the sentinel was never imported, by any test above', () => {

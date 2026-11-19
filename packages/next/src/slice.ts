@@ -601,7 +601,10 @@ const emit = (plan: Plan, dir: string) => {
 // the child's program: import the slice, confirm a Standard Schema, convert it as authoring does (ir/author/standard.ts)
 const RUNNER = `
 const entry = process.argv[2]
-const out = (v) => process.stdout.write(JSON.stringify(v))
+// what the runner reports with, held before the slice runs, so a slice that replaces a builtin can't rewrite its answer
+const stringify = JSON.stringify
+const text = String
+const out = (v) => process.stdout.write(stringify(v))
 try {
   const schema = (await import(entry)).default
   const standard = schema?.['~standard']
@@ -612,7 +615,7 @@ try {
     out({ schema: rest })
   }
 } catch (error) {
-  out({ error: String(error?.message ?? error) })
+  out({ error: text(error?.message ?? error) })
 }
 `
 
@@ -732,84 +735,6 @@ export const sliceInput = (
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
-}
-
-// the batch's program: each slice in turn, as RUNNER runs one, each in its own try, so one that throws is its own error
-const BATCH_RUNNER = `
-const answers = []
-for (const entry of process.argv.slice(2)) {
-  try {
-    const schema = (await import(entry)).default
-    const standard = schema?.['~standard']
-    if (!standard || standard.version !== 1) answers.push({ error: "the input isn't a Standard Schema" })
-    else if (!standard.jsonSchema) answers.push({ error: 'this schema (' + standard.vendor + ") can't produce JSON Schema" })
-    else {
-      const { $schema, ...rest } = standard.jsonSchema.input({ target: 'draft-2020-12' })
-      answers.push({ schema: rest })
-    }
-  } catch (error) {
-    answers.push({ error: String(error?.message ?? error) })
-  }
-}
-process.stdout.write(JSON.stringify(answers.map((a) => JSON.stringify(a))))
-`
-
-/**
- * Every input of one extract run, by its slice, in the order given: sliceInput's answer for each, from one child for
- * them all, run twice, so a build pays two process starts rather than two per input. Each slice is compared with its
- * own second evaluation. If the shared child fails as a whole (it didn't start, timed out or printed no answers), each
- * input is evaluated alone, as sliceInput does, so one slice's failure is never another's.
- */
-export const sliceInputs = (
-  root: string,
-  requests: { file: string; source: string; input: Node }[],
-  options: { strict?: boolean; timeoutMs?: number } = {},
-  cache: ParseCache = parseCache(),
-): SliceResult[] => {
-  const prepared = requests.map((r) => prepare(r.file, r.source, r.input, options, cache))
-  const planned = prepared.flatMap((p, i) => (p.status === 'planned' ? [{ i, plan: p.plan }] : []))
-  const results = prepared.map((p) => (p.status === 'planned' ? undefined : p))
-  if (planned.length) {
-    const dir = path.join(root, '.affordances', '.slice', 'batch')
-    rmSync(dir, { recursive: true, force: true })
-    mkdirSync(dir, { recursive: true })
-    try {
-      const entries = planned.map(({ i, plan }) => {
-        const own = path.join(dir, sliceId(requests[i]!.file, requests[i]!.input))
-        mkdirSync(own, { recursive: true })
-        return emit(plan, own)
-      })
-      const runner = path.join(dir, 'run.mjs')
-      writeFileSync(runner, BATCH_RUNNER)
-      const run = spawnChild(
-        dir,
-        [runner, ...entries],
-        options.timeoutMs ?? 15_000 * planned.length,
-      )
-      const answersOf = (child: ReturnType<ReturnType<typeof spawnChild>>) => {
-        if (child.error || child.status !== 0) return undefined
-        try {
-          const texts = JSON.parse(child.stdout) as string[]
-          return texts.length === planned.length ? texts : undefined
-        } catch {
-          return undefined
-        }
-      }
-      const first = answersOf(run())
-      const second = first && answersOf(run())
-      planned.forEach(({ i, plan }, n) => {
-        const text = first?.[n]
-        if (text === undefined || !second) return
-        const answer = JSON.parse(text) as Answer
-        results[i] = resultOf(answer, answer.schema ? second[n] : text, text, plan.lossy)
-      })
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
-  }
-  return requests.map(
-    (r, i) => results[i] ?? sliceInput(root, r.file, r.source, r.input, options, cache),
-  )
 }
 
 /** Each `defineAction({ input })` in an actions file: its export and its input expression, for E3. */
