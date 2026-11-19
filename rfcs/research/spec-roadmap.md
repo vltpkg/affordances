@@ -103,6 +103,7 @@ confirmation exactly, but not the ids themselves, which the developer chooses (R
 ### 3.3 For the benchmark
 
 - **A task that separates the surfaces:** M7f hit a ceiling. A harder pre-registered task, with a pilot headroom gate blind to the contrast, is a later packet.
+- **The fixture moved after M7f:** from 6c595dd3, the regions, the `region.read` query and a detail page per plan are part of the reference app for every task. So a later T6 run isn't M7f's fixture. Earlier records reproduce from their own pins, and runs are never pooled across pins.
 - **Multi-turn users** (RFC 0003 §15, question 3): a trial has no user replies, so an agent that asks the user a question ends its trial.
 - **Drivers:** the runs used CLI agents only. One CLI's own global instructions couldn't be isolated, so it was dropped. MCP couldn't complete a confirmation non-interactively, so it's reported on the intended choice only.
 
