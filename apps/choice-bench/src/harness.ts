@@ -14,7 +14,7 @@ import { conditions, type ConditionId } from './conditions.ts'
 import type { SurfaceId } from './surfaces.ts'
 import type { Driver, DriverResult } from './drivers/types.ts'
 import { intendedEndState } from './intended.ts'
-import { computeMetrics, type EndReason } from './metrics.ts'
+import { computeMetrics, countedTokens, TOKENS_COUNTED, type EndReason } from './metrics.ts'
 import type { ServerConfig, ServerRecord } from './server.ts'
 import { MAX_CALLS, TOOLS } from './tools.ts'
 
@@ -27,6 +27,21 @@ export const promptFor = (task: lab.Task) => `${INSTRUCTIONS}\n\nThe user: ${tas
 
 // §5.2's caps; the tool-call cap is the server's
 export const CAPS = { calls: MAX_CALLS, turns: 40, tokens: 150_000, ms: 10 * 60_000 }
+
+/** The caps a trial hit, in the trace's order. A turn cap is only the CLI's own signal: a crash, a 529 or an auth failure
+ * also exits nonzero with no final text, and isn't one. The turn cap is the main runaway guard */
+export const capHitsOf = (t: {
+  capped: boolean
+  tokens: number
+  durationMs: number
+  stopped?: DriverResult['stopped']
+}) =>
+  [
+    t.capped && 'calls',
+    t.tokens > CAPS.tokens && 'tokens',
+    t.durationMs >= CAPS.ms && 'time',
+    t.stopped === 'turns' && 'turns',
+  ].filter((x): x is string => typeof x === 'string')
 
 export type TrialSpec = {
   id: string
@@ -313,17 +328,13 @@ export const runTrial = async (spec: TrialSpec, driver: Driver, dir: string) => 
     throw new Error(`trial ${spec.id}: the tool server never started (${failure ?? 'no error'})`)
   const record = JSON.parse(readFileSync(out, 'utf8')) as ServerRecord
   const usage = result?.usage ?? { inputTokens: 0, outputTokens: 0 }
-  // the cap (intake, 2026-11-18): input plus output, with cache writes counted as input and cache reads excluded.
-  // The turn cap is the main runaway guard. Cache reads and writes are recorded apart
-  const tokens = usage.inputTokens + usage.outputTokens + (usage.cacheWriteTokens ?? 0)
-  const capHits = [
-    record.capped && 'calls',
-    tokens > CAPS.tokens && 'tokens',
-    (result?.durationMs ?? 0) >= CAPS.ms && 'time',
-    // only the CLI's own signal that it stopped at its turn limit: a crash, a 529 or an auth failure also exits
-    // nonzero with no final text, and isn't a cap (boundary review #8)
-    result?.stopped === 'turns' && 'turns',
-  ].filter((x): x is string => typeof x === 'string')
+  const tokens = countedTokens(usage)
+  const capHits = capHitsOf({
+    capped: record.capped,
+    tokens,
+    durationMs: result?.durationMs ?? 0,
+    stopped: result?.stopped,
+  })
   const end: EndReason = record.aborted
     ? 'aborted'
     : failed
@@ -353,7 +364,7 @@ export const runTrial = async (spec: TrialSpec, driver: Driver, dir: string) => 
         resolved: result?.resolvedModel ?? (spec.driver === 'codex-cli' ? spec.model : null),
         ...(spec.driver === 'codex-cli' && { cliDefault: codexDefault() }),
       },
-      caps: { ...CAPS, tokensCount: 'input + output + cache writes; cache reads excluded' },
+      caps: { ...CAPS, tokensCount: TOKENS_COUNTED },
       plans: record.plans,
       startedAt,
       fixture: { manifestDigest: record.manifestDigest, baseDigest: record.baseDigest, policy },

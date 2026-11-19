@@ -8,6 +8,7 @@ import type { Driver, DriverResult } from './drivers/types.ts'
 import { parseAria, planAttributes, showsFact, showsInTree, structured } from './facts.ts'
 import {
   CAPS,
+  capHitsOf,
   DriverFailure,
   failureOf,
   faultPause,
@@ -29,7 +30,7 @@ import {
   readServerErrors,
   startLabServer,
 } from './lab-server.ts'
-import type { EndReason } from './metrics.ts'
+import { countedTokens, TOKENS_COUNTED, type EndReason } from './metrics.ts'
 import { askedToConfirm, responseOf } from './response.ts'
 import type { SurfaceServerConfig, SurfaceServerRecord } from './surface-server.ts'
 import { purchaseMade, surfaceMetrics, type SurfaceFacts } from './surface-metrics.ts'
@@ -522,15 +523,13 @@ export const runSurfaceTrial = async (
       } satisfies BrowserTrial),
     )
   const usage = result?.usage ?? { inputTokens: 0, outputTokens: 0 }
-  // M5's count: input plus output, with cache writes as input and cache reads excluded
-  const tokens = usage.inputTokens + usage.outputTokens + (usage.cacheWriteTokens ?? 0)
-  const capped = surface.kind === 'tools' && (record as SurfaceServerRecord).capped
-  const capHits = [
-    capped && 'calls',
-    tokens > CAPS.tokens && 'tokens',
-    (result?.durationMs ?? 0) >= CAPS.ms && 'time',
-    result?.stopped === 'turns' && 'turns',
-  ].filter((x): x is string => typeof x === 'string')
+  const tokens = countedTokens(usage)
+  const capHits = capHitsOf({
+    capped: surface.kind === 'tools' && (record as SurfaceServerRecord).capped,
+    tokens,
+    durationMs: result?.durationMs ?? 0,
+    stopped: result?.stopped,
+  })
   const end: EndReason = failed ? 'failed' : capHits.length ? 'capped' : 'final'
   const metrics = await scoreSurfaceTrial({
     surface,
@@ -564,7 +563,7 @@ export const runSurfaceTrial = async (
       surface: surface.id,
       cli: result?.cli ?? null,
       model: { requested: spec.model, resolved: result?.resolvedModel ?? null },
-      caps: { ...CAPS, tokensCount: 'input + output + cache writes; cache reads excluded' },
+      caps: { ...CAPS, tokensCount: TOKENS_COUNTED },
       plans,
       startedAt,
       server: {

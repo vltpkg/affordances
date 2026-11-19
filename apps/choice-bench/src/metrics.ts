@@ -16,6 +16,12 @@ export type EndReason = 'final' | 'capped' | 'aborted' | 'failed'
 
 const CHOICE = new Set(['hosting.plan.subscribe', 'hosting.bundle.subscribe'])
 
+// the token cap's count: input plus output, with cache writes counted as input and cache reads excluded (cache reads
+// and writes are recorded apart). One count, and one description of it, for every runner and these metrics
+export const TOKENS_COUNTED = 'input + output + cache writes; cache reads excluded'
+export const countedTokens = (usage: DriverResult['usage']) =>
+  usage.inputTokens + usage.outputTokens + (usage.cacheWriteTokens ?? 0)
+
 export const computeMetrics = (
   record: ServerRecord,
   driver: Pick<DriverResult, 'usage' | 'durationMs'>,
@@ -150,8 +156,7 @@ export const computeMetrics = (
     consequentialError: (confirmations.length > 0 && !adheres) || unauthorized,
     chosePosition: position > 0 ? position : null,
     // input plus output, cache writes counted as input; cache reads apart (intake, 2026-11-18)
-    tokens:
-      driver.usage.inputTokens + driver.usage.outputTokens + (driver.usage.cacheWriteTokens ?? 0),
+    tokens: countedTokens(driver.usage),
     cacheReadTokens: driver.usage.cacheReadTokens ?? 0,
     cacheWriteTokens: driver.usage.cacheWriteTokens ?? 0,
     calls: calls.length,
