@@ -1,6 +1,6 @@
 # Telling an agent what it can do, and measuring whether it helps
 
-**Status:** DRAFT (2026-11-19): design's draft, with backend's text for §2, the harness half of §3 and §7's boundary. For backend as lead, then review and intake. Every claim below has a row in the
+**Status:** DRAFT (2026-11-19), in final review. Every claim below has a row in the
 claim-and-trace table at the end, which names the committed file and the commit that holds it.
 
 ## 1. The problem
@@ -52,6 +52,9 @@ dynamic import, makes the input opaque, with a diagnostic, instead of being run 
 
 ## 3. How it's measured
 
+Studies are named by the project milestone that ran them: M5 (disclosure policy), M7f (surface), M8e (a deeper
+surface task).
+
 The method is RFC 0003's: a fictional hosting provider (hosting-lab) with fixed plans, add-ons and a bundle; tasks whose
 optimal end state is derived from the catalog before any trial; and agents run through command-line drivers, scored on
 the end state they ask the person to approve (the intended end state) and on what they completed.
@@ -59,7 +62,7 @@ the end state they ask the person to approve (the intended end state) and on wha
 - **Pre-registration:** each study's plan, analysis code and its decision rules are committed before any trial.
 - **Gates:** a pilot fixes the rules the confirmatory run takes from it. M8e's plan adds a headroom gate, read blind to
   the contrasts, that stops the study if a task leaves no room to separate the conditions.
-- **Blinding and integrity:** no outcome field is read until intake clears the run's integrity report.
+- **Blinding and integrity:** no outcome field is read until the run's integrity report is cleared.
 
 The measurement code has rules of its own, each checked mechanically.
 
@@ -77,9 +80,8 @@ The measurement code has rules of its own, each checked mechanically.
   exactly one step out on each surface: in full's first view, behind progressive's one relations expansion, and one
   link away on v0's and the browser's pages [C3.5].
 - **Integrity and blinding.** At launch and at the end, the run records its login checks, its canaries and a stamp of
-  each file the run must not change; the end record adds a scan of every result for secrets and the operator's email.
-  The credential files' digests are kept outside the repository [C3.6]. While a run is live and until intake clears
-  that record, the harness reports only non-outcome fields, from a fixed list, so no rate is seen before the gate [C3.7].
+  each file the run must not change; the end record adds a scan of every result for secrets and the owner's email.
+  The credential files' digests are kept outside the repository [C3.6]. While a run is live and until that record is cleared, the harness reports only non-outcome fields, from a fixed list, so no rate is seen before the gate [C3.7].
 - **Faults are the harness's, never scored.** A 5xx from the app, a disagreement between the two reads of the end
   state, or a stall the surface's server records sets the attempt aside, kept whole, and reruns it once. Past the pause
   rule, the run stops [C3.8].
@@ -115,10 +117,11 @@ and `browser` (browser automation), with the person's approval stated on every s
 
 - **A ceiling.** All 400 confirmatory trials were optimal, intended and completed, on every surface and both models. So
   every contrast is 0, with Newcombe's interval of about ±7.1 points per model, and the pooled interval is degenerate.
-- **The reading, in intake's words:** a CEILING. With approval stated, T6 doesn't separate full, progressive, v0 and
+- **The reading recorded with the results:** a CEILING. With approval stated, T6 doesn't separate full, progressive, v0 and
   browser for Sonnet 5.5 or Haiku 5.5. All three registered contrasts are 0, each model's Newcombe interval is about ±7.1
   points, and the pooled interval is degenerate. That's not evidence the surfaces are equal in general. The
-  pilot-to-confirmatory change is attributed to the approval sentence, the one agent-side change, which review checked.
+  pilot-to-confirmatory change is attributed to the approval sentence, the one agent-side change, which was checked
+  independently.
 
 ## 6. M8e: a deciding fact one step out
 
@@ -127,7 +130,7 @@ and the other surfaces need one expansion or one more page. The owner's recommen
 plan was pre-registered with a headroom gate: each model's optimal rate, pooled over the four surfaces, had to fall
 between 10% and 90% in the pilot, or the study stops.
 
-- **The result, in intake's words:** T8's headroom gate failed on Haiku 5.5 (20 of 20 optimal). Sonnet 5.5 was 18 of 20;
+- **The result, as recorded with the results:** T8's headroom gate failed on Haiku 5.5 (20 of 20 optimal). Sonnet 5.5 was 18 of 20;
   its 2 misses were both on progressive, each buying the owner's favored option (Pro with extra bandwidth) with the
   deciding fact unseen (pilot, n=5 per cell, descriptive, not a test).
 - **So M8e stopped on the pilot.** There was no confirmatory run, and nothing was changed and rerun.
@@ -214,9 +217,9 @@ its checks pass. The demo never lets an agent approve: v0 would run a call on th
 | C4.6  | The exploratory estimates (E1, E2), cross-run                                                                  | `apps/choice-bench/results/exploratory-2026-11-18/README.md`                                                    | 3f958191                                    |
 | C4.7  | §6.6: every choice set carries its comparison                                                                  | `rfcs/0002-contextual-projection.md` §6.6; `packages/runtime/test/comparison.test.ts`                           | c2ee930c                                    |
 | C5.1  | M7f: 400 of 400 optimal, every contrast 0, ±7.1 per model, pooled interval degenerate                          | `apps/choice-bench/results/surfaces/confirmatory-2026-11-18/analysis.json`                                      | 9cbc48ee                                    |
-| C5.2  | M7f's reading, intake's words verbatim                                                                         | `apps/choice-bench/results/surfaces/confirmatory-2026-11-18/README.md`                                          | 36062197                                    |
+| C5.2  | M7f's reading, the recorded reading verbatim                                                                   | `apps/choice-bench/results/surfaces/confirmatory-2026-11-18/README.md`                                          | 36062197                                    |
 | C6.1  | T8's gate: Sonnet 18 of 20, Haiku 20 of 20, fail                                                               | `apps/choice-bench/results/surfaces-t8/pilot-2026-11-19/headroom.json`                                          | 98e5b090                                    |
-| C6.2  | T8's result, intake's line verbatim; no confirmatory run; 40 trials, not 440; the forking guard                | `apps/choice-bench/results/surfaces-t8/pilot-2026-11-19/README.md`                                              | 59b7c4a3                                    |
+| C6.2  | T8's result, the recorded reading verbatim; no confirmatory run; 40 trials, not 440; the forking guard         | `apps/choice-bench/results/surfaces-t8/pilot-2026-11-19/README.md`                                              | 59b7c4a3                                    |
 | C7.1  | No token-shaped string on MCP or WebMCP in M7f's pilot                                                         | `apps/choice-bench/results/surfaces/pilot-2026-11-18/README.md`                                                 | 6f878aa0                                    |
 | C7.2  | `toModel` removes every approval field and token-shaped text; no tool result in any mode carries a token       | `packages/runtime/src/agent.ts`, `packages/runtime/test/agent.test.ts`, `packages/mcp-v1/test/boundary.test.ts` | 6191b65b                                    |
 | C7.3  | In v0, an agent approves its own call by resending `confirm: true`; version 1's approval is the person's       | `packages/core/src/capability.ts`, `packages/core/src/handler.ts`; `rfcs/0004-protocol-evolution.md` §1, §7     | 8366e4eb; 5760784c; 0af8871b                |
