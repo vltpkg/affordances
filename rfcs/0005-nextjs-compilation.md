@@ -65,7 +65,7 @@ What's needed is a build step that reads what's already written, asks for only w
   - **Imports without extensions, and tsconfig path aliases** (`./dep`, `@/schemas`), which Next apps use everywhere and Node won't resolve. The evaluator registers a small resolve hook (`node:module`'s `register`) that resolves them to `.ts`, from the app's tsconfig.
   - **Syntax that can't be erased** (an `enum`, a `namespace`, parameter properties, `import =`), which Node refuses with `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`. The compiler checks every module and slice with oxc first, and reports `E_CAPABILITY_SYNTAX`, with the construct and its location, instead of a Node crash. A TS `enum` reaching a schema (`z.nativeEnum(Status)`) is the common case. The fix is a `const` object and `z.enum`.
 
-**`@affordances/ir` is an optional peer, never bundled** (intake, 2026-11-18).
+**`@affordances/ir` is an optional peer, never bundled** (decided 2026-11-18).
 
 - **next bundles neither ir nor zod.** `@affordances/ir` is an optional `peerDependency` of `@affordances/next`. zod is ir's own dependency, and next names it nowhere: not in its dependencies, peers or optional dependencies.
 - **Where it resolves from:** the compiler loads ir from the app's root, where the app installed it. The evaluator's child imports it with a bare `import('@affordances/ir')`, which its resolve hook resolves from the app's root.
@@ -93,7 +93,7 @@ What's needed is a build step that reads what's already written, asks for only w
 | `namespace`  | an absolute URI             | none, never inferred | the manifest's namespace. Without one, there's no `manifest.json` (below)                                                                                                                                                                                                                                                                                                               |
 | `owner`      | `{ id, name }`              | none                 | the manifest's owner source. Without one, nothing is `declared` (`W_NO_OWNER`)                                                                                                                                                                                                                                                                                                          |
 | `strict`     | boolean                     | `false`              | §3's strict codes become errors                                                                                                                                                                                                                                                                                                                                                         |
-| `manifest`   | `'public'` or `'private'`   | `'public'`           | **`'public'`:** the index lists `capabilities: { manifest, base }`, and the manifest is served at `/.well-known/affordances/manifest.json`, with its digest as the `ETag`. **`'private'`:** the index has no `capabilities` field, and that path answers 404, as a path that doesn't exist does. Views, expansion, inspection, check and execution work under both (intake, 2026-11-18) |
+| `manifest`   | `'public'` or `'private'`   | `'public'`           | **`'public'`:** the index lists `capabilities: { manifest, base }`, and the manifest is served at `/.well-known/affordances/manifest.json`, with its digest as the `ETag`. **`'private'`:** the index has no `capabilities` field, and that path answers 404, as a path that doesn't exist does. Views, expansion, inspection, check and execution work under both (decided 2026-11-18) |
 | `projection` | a path from the site's root | `/api/projection`    | where the app mounts `createProjectionRoute` (§5), which the index names as `base` for RFC 0004 §2's endpoints                                                                                                                                                                                                                                                                          |
 
 - **An app with no `manifest.json`** (no namespace) lists no `capabilities` under either setting, so a v0 app's index is unchanged.
@@ -108,7 +108,7 @@ A `defineManifest` export overrides both.
 
 - **Suggested ids:** their prefix is an identifier inferred from `name` ("Acme Store" gives `acmeStore`). That's a separate thing from the namespace.
 - **No owner:** the owner is unset, and that's a warning, `W_NO_OWNER`, since no field can then be `declared`.
-- **No namespace: nothing is inferred, and no `manifest.json` is written** (intake, 2026-11-18).
+- **No namespace: nothing is inferred, and no `manifest.json` is written** (decided 2026-11-18).
   - **What the build reports:** `W_NO_NAMESPACE`, with the exact line to paste.
   - **The suggested value:** derived from the site's URL where it can be read without running the app: a literal `metadataBase` in the root layout, then `package.json`'s `homepage`. It's shown as "suggested, not applied", and the build never writes it in.
   - **A v0 app loses nothing:** `.affordances/manifest.ts`, its routes and its graph are unchanged.
@@ -189,7 +189,7 @@ These are never extracted, because code doesn't state them. Each one missing is 
 - **Zero configuration breaks nothing a v0 app has, and the first build names the one line, pre-filled where possible, that turns the manifest on** (`W_NO_NAMESPACE`, §1).
   - **With a namespace:** `.affordances/manifest.json` lists every action that has an `id`, plus `W_NO_ID` suggestions for the rest.
   - **The codemod:** the existing codemod writes the suggestions in (`writeIds`, in `codegen.ts`).
-  - **Ids are the developer's to choose** (intake, 2026-11-18). A suggestion, and every id the codemod writes, is a **placeholder**, built from the route's folder and the action's name. The codemod marks each one `placeholder` in the source it writes, and its output and `W_NO_ID`'s fix say to replace it.
+  - **Ids are the developer's to choose** (decided 2026-11-18). A suggestion, and every id the codemod writes, is a **placeholder**, built from the route's folder and the action's name. The codemod marks each one `placeholder` in the source it writes, and its output and `W_NO_ID`'s fix say to replace it.
     - **Why:** §7's measurement found that 0 of 13 suggestions matched the ids a developer chose. Suggestions name a folder and an action (`plans.listPlans`), while a capability id names a resource and a verb (`hosting.plan.list`).
 - **Diagnostics.** Every warning:
   - names the file, the line and the rule;
@@ -261,7 +261,7 @@ These are never extracted, because code doesn't state them. Each one missing is 
     - **Why:** RFC 0002's R2 says an approval token used twice runs once. With several instances, a per-process store would let one token run once on each, and a per-process key would refuse a token on any instance but the one that signed it.
     - **When it fails:** `next build` runs with `NODE_ENV=production` and evaluates route modules, so an app missing either fails at build time, by design, not at its first request.
   - **What it serves:** views and inspections, never a projection.
-  - **`@affordances/runtime` is next's second optional peer** (intake, 2026-11-18 10:40Z), a mirror of the ir ruling (§1): it's private, so next doesn't bundle it.
+  - **`@affordances/runtime` is next's second optional peer** (decided 2026-11-18), a mirror of the ir ruling (§1): it's private, so next doesn't bundle it.
     - **Who needs it:** only `/projection` imports it, with 0 references elsewhere, so only an app that serves the route needs it installed.
     - **When it's missing:** importing `/projection` fails with an error naming the peer to install. Any other import failure is rethrown as it is.
     - **Publishing:** the route needs runtime published, and so ir, which runtime depends on. That's the human's call, and the route works only inside this repository until then.
@@ -326,7 +326,7 @@ These are never extracted, because code doesn't state them. Each one missing is 
 
 ## 9. Open questions
 
-1. **Resource ids from segments (E9): decided.** The inferred id is the segment as written (`products`), never singularized, since singularizing is a heuristic. Renaming is the developer's, with a `defineResource` (intake, on acceptance, 2026-11-18).
+1. **Resource ids from segments (E9): decided.** The inferred id is the segment as written (`products`), never singularized, since singularizing is a heuristic. Renaming is the developer's, with a `defineResource` (decided on acceptance, 2026-11-18).
 2. **Mixed apps.** An app with both bound and v0 actions gets one manifest from both. Should a namespace be able to hold capabilities from two sources at once? This RFC allows it, with provenance telling them apart.
 3. **The wire format** (§5) is RFC 0004's.
 

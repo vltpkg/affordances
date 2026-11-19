@@ -150,7 +150,7 @@ The application registers how the runtime learns what it needs:
   - **Not supplied against null:** a declared attribute the resolver leaves out (no key) is not supplied, which RFC 0001 §3.1 evaluates as `missing`, so `unknown`. A key present with `null` is `absent`. The same holds for `Principal.attributes`. A resolver that can't read an attribute leaves it out; one that knows there's no value says `null`. Inside a value supplied whole (an attribute's own attributes, array elements, the input), an omitted key is `absent` (RFC 0001 §3.1). It returns `null` when the instance doesn't exist **or the principal may not see it**. The runtime can't tell those apart, and doesn't need to.
 - **`resources[type].list(principal, scope)`** enumerates instances for a choice set or a containment: every plan, or a cart's items (§5).
 
-**A resolver MUST return `null` for a resource its principal can't read.** The runtime evaluates conditions on whatever a resolver returns, so a resolver that ignores the principal leaks condition values, for example through a start naming another user's resource (RFC 0004 §5). Read access is the resolver's to enforce, and the runtime doesn't (intake, 2026-11-18). The conformance kit tests it: `resolverConformance` (`@affordances/runtime`) takes the application's resolvers and two principals, each with the private resources it may read. For every one, its own principal's `load` returns it, the other principal's and an anonymous principal's `load` return `null`, and neither of their `list`s includes it.
+**A resolver MUST return `null` for a resource its principal can't read.** The runtime evaluates conditions on whatever a resolver returns, so a resolver that ignores the principal leaks condition values, for example through a start naming another user's resource (RFC 0004 §5). Read access is the resolver's to enforce, and the runtime doesn't (decided 2026-11-18). The conformance kit tests it: `resolverConformance` (`@affordances/runtime`) takes the application's resolvers and two principals, each with the private resources it may read. For every one, its own principal's `load` returns it, the other principal's and an anonymous principal's `load` return `null`, and neither of their `list`s includes it.
 
 A resolver that throws makes the attributes it would have supplied `unknown`, never a guess. Conditions that read them evaluate to `unknown` (RFC 0001 §3.1), and the offer says so (§4.2).
 
@@ -485,7 +485,7 @@ type OrderBasis = ClaimFreeOrderBasis | { by: 'claim'; kind: 'recommendation'; s
   - **The order is fixed:** the variant itself fixes the order of the groups (untargeted offers first, then the manifest's resource order). `within` states the order inside each group.
   - **It names no claim:** `within` is claim-free, at any depth.
   - **It's checkable:** `checkOrderBasis` rejects an unknown key, free text, a claim inside a group, and any field the variant doesn't name.
-  - **Why it exists:** RFC 0003's S control groups a view's offers this way, and states that basis truthfully rather than claiming A's (intake, 2026-11-18).
+  - **Why it exists:** RFC 0003's S control groups a view's offers this way, and states that basis truthfully rather than claiming A's (decided 2026-11-18).
 - **Salience beyond order isn't represented.** There are no badges, highlights or emphasis fields. What a view can do to make an offer prominent is limited to its position and to the claims it shows, both of which are explicit. That's the limit of what condition D can vary through a policy (§6.1).
 
 ### 6.5 Expansion and inspection
@@ -517,7 +517,7 @@ type Expansion = {
 
 ### 6.6 A choice set carries its comparison
 
-**Status:** accepted (intake, 2026-11-18), from M5's audit. It was proposed in 1beb7fd1, with backend's runtime check folded in (a6376c8d).
+**Status:** accepted (2026-11-18), from M5's audit. It was proposed in 1beb7fd1, with the runtime check folded in (a6376c8d).
 
 - **What review verified:**
   - the audit's figures, and the 21 cells at c81eeeb1;
@@ -525,7 +525,7 @@ type Expansion = {
   - that only a request's `facts` limit cuts it, by named column, never cited or read attributes;
   - R3, since `facts` changes which columns show, never what's available;
   - that the runtime notes are consistent with §2.1, §5 and §7.
-- **Against every safety rule** (review, rule by rule, 2026-11-18): R1, R2, R3, R5 and R7 are confirmed, and R4 is strengthened. R7's revision half rests on §2.1's version rule. R6 is confirmed with one caveat, under Open. The check itself is below.
+- **Against every safety rule** (checked rule by rule in review, 2026-11-18): R1, R2, R3, R5 and R7 are confirmed, and R4 is strengthened. R7's revision half rests on §2.1's version rule. R6 is confirmed with one caveat, under Open. The check itself is below.
 - **Implemented** in c2ee930c (M7a), with RFC 0001 §9's `cites` in 900f4db4. M5's runs measured the runtime without it.
 
 **The finding.** M5's confirmatory run met the disclosure invariant (§6.3) and still failed its purpose.
@@ -565,7 +565,7 @@ type Comparison = {
   - **What gets cut:** columns, never rows, so no member carries less than another. Each cut column is named in `omitted.attributes`, and `expand({ from: choiceSetId, along: 'comparison' })` returns the whole table.
   - **The column order is fixed by the runtime:**
     - first, attributes that a shown claim on the capability cites (this needs `cites`, below);
-    - then attributes the capability's conditions and effects read, and those its confirmation summary renders, since the person approves those words (intake, 2026-11-18): the price, and the plan's name. As built (`keptColumns`, dd3a28ea), the input isn't counted: an IR capability's input is a plain JSON Schema, which can't read a target attribute. Its defaults are literals, and `targetAt` points the other way, at where the target's key sits. If the IR ever gains input defaults read from the target, this rule reopens;
+    - then attributes the capability's conditions and effects read, and those its confirmation summary renders, since the person approves those words (decided 2026-11-18): the price, and the plan's name. As built (`keptColumns`, dd3a28ea), the input isn't counted: an IR capability's input is a plain JSON Schema, which can't read a target attribute. Its defaults are literals, and `targetAt` points the other way, at where the target's key sits. If the IR ever gains input defaults read from the target, this rule reopens;
     - then the rest, in declared order.
   - **What's never cut:** the first two groups. A `facts` limit smaller than them cuts only the rest.
   - **A policy's default budget never applies here.** Only a `facts` limit the request states can cut the comparison. Otherwise a policy could truncate the facts it prefers the agent not to compare.
@@ -624,7 +624,7 @@ type Comparison = {
 **Open.**
 
 - **`alternativeTo` pairs,** such as the bundle against a plan with separate add-ons, compare instances of different types, so there are no common columns. Whether a shown pair carries each partner's target attributes is left open.
-- **Framing in attribute values** (review's R6 caveat). An attribute's value can carry framing text, and under this rule it shows on every view, under every policy, claims-omitted included, unattributed and unremovable. That isn't new exposure, since the plan list returned the same values, but it's now unconditional. A lint for preference-shaped attribute values is a candidate.
+- **Framing in attribute values** (R6's caveat, from review). An attribute's value can carry framing text, and under this rule it shows on every view, under every policy, claims-omitted included, unattributed and unremovable. That isn't new exposure, since the plan list returned the same values, but it's now unconditional. A lint for preference-shaped attribute values is a candidate.
 - **The conformance kit can't see an undeclared attribute,** such as a query output that returns a fact the resource never declares. A check that each query's output fields are declared attributes of its target type would narrow that gap.
 
 ## 7. Revisions

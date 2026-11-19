@@ -164,7 +164,7 @@ As RFC 0002 §6.1 maps them. Five are policies over the unchanged manifest, and 
     1. every choice set's member offers move out of the view's `offers` and into their choice set's `members`, as full offers, in the choice set's order;
     2. the view's other offers are grouped by their target's resource type, in the manifest's resource order, with untargeted offers first and A's order kept within each group.
 
-    Everything else is A's, including the counterbalancing through the fixture's keys (§4). S states its own order basis, truthfully: `{ by: 'group', key: 'targetType', within: { by: 'canonical' } }` (RFC 0002 §6.4). So S's view states the order the agent actually sees (R6), which matters because D tests whether agents use the stated basis. That basis is structural: its group key is a manifest-derived attribute, never free text, and it names no claim, recommendation or source. So the information check lets it differ from A's, and fails any basis that names a claim, a recommendation or a source, or that adds a field. This replaces the earlier rule that S keeps A's basis byte for byte, since R6's honesty comes first (intake, 2026-11-18). On this fixture the second move takes the add-on offers, which A's canonical order puts first, below the project's own. So on T6 and T7 the optimum's add-on is no longer in A's first position, though nothing is removed.
+    Everything else is A's, including the counterbalancing through the fixture's keys (§4). S states its own order basis, truthfully: `{ by: 'group', key: 'targetType', within: { by: 'canonical' } }` (RFC 0002 §6.4). So S's view states the order the agent actually sees (R6), which matters because D tests whether agents use the stated basis. That basis is structural: its group key is a manifest-derived attribute, never free text, and it names no claim, recommendation or source. So the information check lets it differ from A's, and fails any basis that names a claim, a recommendation or a source, or that adds a field. This replaces the earlier rule that S keeps A's basis byte for byte, since R6's honesty comes first (decided 2026-11-18). On this fixture the second move takes the add-on offers, which A's canonical order puts first, below the project's own. So on T6 and T7 the optimum's add-on is no longer in A's first position, though nothing is removed.
 
   - **It's a rendering, not a policy.** The runtime produces A's view, and the harness renders it nested. So nothing a policy decides differs. The basis S states is its rendering's, structural and truthful (above).
   - **`inspect` is the same in S and A.** The transform applies to views alone. `inspect` and `expand` are the same runtime calls on the same projection, and their answers aren't transformed, so what an S trial can reach on request is exactly what an A trial can.
@@ -341,7 +341,7 @@ The budget (§8) allows two confirmatory contrasts, sized to detect a 20-point s
 - **At the same power, the four don't fit the budget** (§8).
 - **S is the one information-constant contrast.**
   - Its views carry exactly A's information, and a test checks it (§3.2).
-  - Its structure includes the offers' position. Moving the optimum off A's first position is part of the contrast, as intake set it (01:11, 2026-11-18), not a confound. So H1 measures structure including position, and §4's and §7.3's position effects are read from A's own counterbalanced orders, apart from it.
+  - Its structure includes the offers' position. Moving the optimum off A's first position is part of the contrast, as decided on 2026-11-18, not a confound. So H1 measures structure including position, and §4's and §7.3's position effects are read from A's own counterbalanced orders, apart from it.
   - So a difference between S and A is choice architecture, structure and position, with the information unchanged: the core question.
   - If S shows no difference, the interval says how large a structural effect the data rules out.
 - **C is the other central question:** does transparent, attributed advocacy steer? That's the legitimate persuasion the project means to support.
@@ -362,7 +362,7 @@ The budget (§8) allows two confirmatory contrasts, sized to detect a 20-point s
 - **Missing outcomes:**
   - **A capped trial** counts as not optimal, and is reported, never dropped. That's the primary analysis, intent to treat. A sensitivity analysis excludes capped trials.
   - **The cap itself is checked in the pilot:** it reports the capped rate per condition. Above 5% in any condition, intake revisits the cap before the confirmatory run. The token-use distribution per condition is also reported, as a discovery-efficiency result.
-  - **Driver failures** (intake, 2026-11-18 12:05Z):
+  - **Driver failures** (decided 2026-11-18):
     - **A cap is only the CLI's own signal:** claude's turn limit (`error_max_turns`), or the tool server's calls cap. Any other failure of the driver is classed by the CLI's error text.
     - **A crash, or an overloaded API (529):**
       - the trial is recorded failed, and its files kept in `interrupted/`;
@@ -593,7 +593,7 @@ The record is [`confirmatory-2026-11-18/`](../apps/choice-bench/results/confirma
 - **H2, C against A:** rejected, with C lower. The effect differs between the models:
   - **Sonnet:** −73.7 points (Newcombe 95% CI −80.8 to −63.2, Fisher p 3.3e-31);
   - **Haiku:** −7.9 points (−19.8 to +4.3, p 0.263), not significant on its own.
-  - **Validity note** (intake, 2026-11-18). As built, C differs from A in two ways: the owner's claims, and the `advocated` policy's scope (neighborhood depth 1). That scope leaves out `hosting.plan.list`, the only offer carrying the plans' allowances.
+  - **Validity note** (decided 2026-11-18). As built, C differs from A in two ways: the owner's claims, and the `advocated` policy's scope (neighborhood depth 1). That scope leaves out `hosting.plan.list`, the only offer carrying the plans' allowances.
   - **So H2 measures the advocated policy as a whole** against exhaustive disclosure. It doesn't isolate the claims, and no claim that advocacy steers agents is made.
   - **What the audit found** (post hoc, descriptive): conditional on seeing Pro's allowance before the first approval request, C on Sonnet was optimal in 17 of 19 trials. Without it, 0 of 95 were.
   - **What's next:** exploratory cells separate the two factors. RFC 0002 §6.6 proposes the runtime rule this case calls for.
