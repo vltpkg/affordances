@@ -141,7 +141,7 @@ A declarative condition has one fixed `description`. RFC 0001 rule 5 already all
 ## Next steps
 
 - **This survey doesn't change RFC 0001.** It supplies the evidence that RFC 0001's open question 2 waits for, and M2e's tests use these cases as fixtures.
-- **For the decision on quantifiers,** there are two options, and the choice is intake's before M2e:
+- **For the decision on quantifiers,** there were two options, to be decided before M2e. The second was taken: RFC 0001 §3.1 now has bounded `some` and `every`, and `count`.
   1. **Keep §3.1 as it is.** Model lookups as references, and accept that "some/every/length" checks are guards or derived attributes. Three of the store's four capabilities then keep a guard.
   2. **Amend §3.1 with bounded `some` and `every`** over array-typed attribute paths, and a `count` (or non-empty) test. That covers 5 of the 7 checks that don't fit now. The two that need subtraction, 9a and 9c, stay guards or derived attributes, and arithmetic stays out.
 - **Either way, RFC 0002 should specify** how a refusal's `detail` is formed for a declarative condition.
