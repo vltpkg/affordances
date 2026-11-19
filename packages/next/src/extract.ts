@@ -1,7 +1,14 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { parseSync } from 'oxc-parser'
-import { byCodeUnit, scan, suggestId, type RouteEntry } from './codegen.ts'
+import {
+  byCodeUnit,
+  scan,
+  segmentResource,
+  suggestId,
+  targetTypes,
+  type RouteEntry,
+} from './codegen.ts'
 import type { Diagnostic } from './diagnostics.ts'
 import { parseCache, seedParse, sliceInput } from './slice.ts'
 
@@ -12,6 +19,7 @@ import { parseCache, seedParse, sliceInput } from './slice.ts'
 // output is IR-shaped definitions for the compiler's pipeline (compile.ts), which composes them with the capability modules and validates
 
 export { SOURCE } from './source.ts'
+export { segmentResource } from './codegen.ts'
 import { SOURCE } from './source.ts'
 
 type Provenance = {
@@ -76,8 +84,6 @@ export type Extracted = {
 
 type Node = { type: string; start: number; end: number; [key: string]: unknown }
 
-// RFC 0001 §6.1's identifier, as codegen checks it
-const ID = /^[a-z][A-Za-z0-9]*(\.[a-z][A-Za-z0-9]*)*$/
 const V0_FIELDS = [
   'description',
   'input',
@@ -140,20 +146,6 @@ const actionsIn = (program: ReturnType<typeof parseSync>['program']) => {
 
 const lineOf = (source: string, offset: number) => source.slice(0, offset).split('\n').length
 
-// E9: the last dynamic segment under a static one, as the target's type and key. The id is the segment as written,
-// never singularized (RFC 0005 §9.1); a segment that isn't an identifier, or a catch-all, yields nothing
-export const segmentResource = (route: string): { id: string; key: string } | undefined => {
-  const parts = route.split('/').filter(Boolean)
-  for (let i = parts.length - 1; i > 0; i--) {
-    const m = /^\[([A-Za-z_$][\w$]*)\]$/.exec(parts[i]!)
-    if (!m) continue
-    const id = parts[i - 1]!
-    if (id.startsWith('[') || !ID.test(id)) return undefined
-    return { id, key: m[1]! }
-  }
-  return undefined
-}
-
 const byId = <T extends { id: string }>(xs: T[]) => xs.toSorted((a, b) => byCodeUnit(a.id, b.id))
 
 /**
@@ -181,6 +173,8 @@ export const extract = (
     if (s) keys.set(s.id, (keys.get(s.id) ?? new Set()).add(s.key))
   }
   const conflicted = new Set([...keys].filter(([, k]) => k.size > 1).map(([id]) => id))
+  // a route's target type for its suggested ids, as E9 below infers it
+  const typeOf = targetTypes(entries)
   for (const id of conflicted)
     diagnostics.push({
       code: 'W_SEGMENT_CONFLICT',
@@ -272,7 +266,7 @@ export const extract = (
         diagnostics.push({
           code: 'W_NO_ID',
           ...where,
-          detail: `id: '${suggestId(entry.route, name, false, options.idPrefix)}'`,
+          detail: `id: '${suggestId(entry.route, name, false, options.idPrefix, typeOf(entry.route))}'`,
         })
         continue
       }

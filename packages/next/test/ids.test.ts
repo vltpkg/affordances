@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
 import { missingIds, render, scan, suggestId, writeIds } from '../src/codegen.ts'
+import { extract } from '../src/extract.ts'
 
 // RFC 0001 §10.1: capability ids on v0 actions, read statically; suggestions for the ones without, never identities
 const roots: string[] = []
@@ -95,6 +96,49 @@ describe('missingIds (W_NO_ID)', () => {
     })
     const suggested = missingIds(scan(root)).map((m) => m.suggested)
     expect(suggested).toEqual(['items.save', 'items.slug.save'])
+  })
+  // M8-ids: with the target's type known (E9's, as written), the suggestion is the type and the action's name, the
+  // verb as the developer wrote it; without one, the route's folders and the name, as before
+  test("with the target's type known, the type and the action's name, wherever the route nests", () => {
+    const root = project({
+      'app/shop/products/[slug]/reviews/actions.ts': `'use server'\n${action('add')}${action('createNewReview')}`,
+      'app/cart/actions.ts': `'use server'\n${action('updateQuantity')}`,
+    })
+    expect(missingIds(scan(root)).map((m) => [m.route, m.suggested])).toEqual([
+      // no target type: the folders, as before
+      ['/cart', 'cart.updateQuantity'],
+      // the verb is the name as written, never mapped to a standard one
+      ['/shop/products/[slug]/reviews', 'products.add'],
+      ['/shop/products/[slug]/reviews', 'products.createNewReview'],
+    ])
+    expect(missingIds(scan(root), { idPrefix: 'acmeStore' }).map((m) => m.suggested)).toEqual([
+      'acmeStore.cart.updateQuantity',
+      'acmeStore.products.add',
+      'acmeStore.products.createNewReview',
+    ])
+  })
+  test('a type two routes infer with different keys is no target, so its suggestions fall back to the folders', () => {
+    const root = project({
+      'app/items/[id]/edit/actions.ts': `'use server'\n${action('rename')}`,
+      'app/items/[slug]/actions.ts': `'use server'\n${action('archive')}`,
+    })
+    expect(missingIds(scan(root)).map((m) => m.suggested)).toEqual([
+      'items.edit.rename',
+      'items.archive',
+    ])
+  })
+  test('one suggestion function: the W_NO_ID diagnostic suggests what the codemod writes', () => {
+    const root = project({
+      'app/shop/products/[slug]/reviews/actions.ts': `'use server'\n${action('add')}`,
+    })
+    const [missing] = missingIds(scan(root))
+    const diagnostic = extract(root).diagnostics.find((d) => d.code === 'W_NO_ID')
+    expect(diagnostic?.detail).toBe(`id: '${missing!.suggested}'`)
+    // and what it writes is a placeholder, typed or not: the id is the developer's to choose
+    writeIds(root)
+    expect(
+      readFileSync(path.join(root, 'app/shop/products/[slug]/reviews/actions.ts'), 'utf8'),
+    ).toContain("id: 'products.add', // placeholder: choose this action's id")
   })
   test('a suggestion never takes an id already written', () => {
     const root = project({
