@@ -19,8 +19,9 @@ Four layers, each specified by an RFC and described, file by file, in `rfcs/arch
 **The IR (RFC 0001).** An app's capability manifest is one deterministic JSON document: its resources, the
 capabilities on them (queries, actions and events) with their conditions and effects, the relations between them,
 attributed claims, and the bindings that say where each capability is reached on a transport. It holds no code and
-describes no caller. Every type is a zod schema, so the TypeScript types, the validator and the generated JSON Schema
-can't disagree, and a test fails if the schema file drifts [C2.1]. A manifest's canonical form sorts every set and drops
+describes no caller. Every type is a zod schema, the TypeScript types are
+inferred from them, and the generated JSON Schema, whose refinements are mirrored by hand, is tested to agree with the
+validator; a test also fails if the schema file drifts [C2.1]. A manifest's canonical form sorts every set and drops
 what says nothing, and its digest is `sha256-` and the base64url of SHA-256 over the canonical form's RFC 8785 bytes
 [C2.2].
 
@@ -32,13 +33,15 @@ every offer the principal may see, with whole choice sets, and every alternative
 §6.6's comparison puts a choice set's members side by side on the attributes that tell them apart, in the view itself
 [C2.5].
 
-**The v1 wire and its transports (RFC 0004).** Version 1 is served beside v0, which stays as it is, and M7b's golden
-check holds the example app's v0 documents byte-identical [C2.6]. Over HTTP, a projection route serves `view`,
-`inspect`, `expand`, `check` and `execute`, every response as `application/vnd.affordances+json; version=1`, with
-refusals in one shape, `{ status: 'refused', code, detail }` [C2.7]. MCP and WebMCP share one tool core: the four
+**The v1 wire and its transports (RFC 0004).** Version 1 is served beside v0, which stays as it is, and a golden tool, run by hand at each wire change, found
+the example app's v0 documents byte-identical before and after (for example at ec7e80d1 and a60bd872) [C2.6]. Over HTTP, a projection route serves `view`,
+`inspect`, `expand`, `check` and `execute`, every response as `application/vnd.affordances+json; version=1`, and a refusal the route makes before the
+runtime has the runtime's shape, `{ status: 'refused', code, detail }`; the runtime's own refusals pass through whole
+[C2.7]. MCP and WebMCP share one tool core: the four
 generic tools, `project`, `expand`, `inspect` and `execute`, over an adapter for HTTP or for an in-process runtime [C2.8].
 MCP also has a per-capability mode, one tool per capability. What that mode loses is measured field by field, and on
-the reference app, of 136 fields across its 10 capabilities, it carries 2, 1 more at the call, and loses 133 [C2.9].
+the reference app, of 136 fields across its 10 capabilities, it carries 2, 1 more at the call, and loses 133, 127
+of them on the 9 capabilities it doesn't export as tools at all [C2.9].
 
 **Next.js compilation (RFC 0005).** At build time, an app's `capabilities.ts` modules, with v0's actions, become one
 canonical manifest, with its digest and diagnostics written beside it. An input schema is evaluated, never parsed by
@@ -63,13 +66,11 @@ The measurement code has rules of its own, each checked mechanically.
 - **Every committed trace re-scores.** Any change to the harness must leave every committed trace's metrics line
   byte-identical when it's scored again through the new code, and must reproduce M7f's confirmatory analysis byte for
   byte, in a clean export of the commit. Since the B1 round, the check also rebuilds each surface trace's replay records
-  from its server record and compares them with the committed bytes. At 2836cb40 that's 1630 of 1630 traces and 516 of
-  516 replays [C3.3].
-- **A run comes from a pin.** A run is launched from a read-only export of one commit, built once, whose `pin.json`
-  records the commit, a hash of the whole built tree, the build id, the lockfile's hash and the browser's version. Every
-  launch and every resume checks the tree against the pin before it runs anything. Review checks each pin independently:
-  the tree hash recomputed, every tracked file against the commit, and the pinned preflight run again on the export
-  [C3.4].
+  from its server record and compares them with the committed bytes. The committed archives hold 1630 traces, 516 of
+  them from the surface studies [C3.3].
+- **A surface study's run comes from a pin.** M7f's and T8's runs were launched from an export of one commit, built
+  once and then made read-only, whose `pin.json` records the commit, a hash of the whole built tree, the build id, the lockfile's hash and the browser's version. Every
+  launch and every resume checks the tree against the pin before it runs anything [C3.4]. M5's run had no pin.
 - **Information parity before any trial.** The preflight walks each surface through its own tools, as an agent gets
   them, and must reach every deciding fact by the surface's own matcher, or the surface is refused. A surface that
   couldn't reach a fact would measure the gap, not the surface. For T8, a depth check also confirms the deciding fact is
@@ -98,8 +99,7 @@ conditions: A (exhaustive disclosure), S (a structural order) and C (the advocat
   whole against exhaustive disclosure. It doesn't isolate the claims, and no claim is made that advocacy steers agents.
 - **What the mechanism might be: post hoc and descriptive.** On Sonnet, C was optimal in 17 of 19 trials that saw Pro's
   allowance before the first approval request, and in 0 of 95 that didn't. The exploratory run separated the two
-  factors: the narrow scope alone lowered Sonnet's rate by 38.6 points (−52.7 to −23.5), and the advocacy package over the
-  full scope showed no detectable effect (−4.6, −17.9 to +5.9). These are exploratory, cross-run estimates, and no
+  factors: the narrow scope alone was associated with a 38.6-point lower rate on Sonnet (−52.7 to −23.5), and the advocacy package over the full scope showed no detectable difference (−4.6, −17.9 to +5.9). These are exploratory, cross-run estimates, and no
   mechanism is claimed as established.
 
 ### The product fix
@@ -154,7 +154,8 @@ the product toolset never gives a model a token (RFC 0004 §4, §5).
 `apps/capability-demo` runs one capability, hosting-lab's plan subscription, through v0, version 1 over HTTP, MCP and
 WebMCP. Each is refused for confirmation, the person confirms in the app's own review page, and the store reads back
 the purchase. It runs from a clean checkout with one command, after the install and a one-time Chromium install. Headless, it exits 0 only if all 20 of
-its checks pass, and no transport gives an agent a way to approve.
+its checks pass. The demo never lets an agent approve: v0 would run a call on the agent's own
+`confirm: true` resend, so the demo never sends it, and MCP and WebMCP return no token.
 
 ## 9. Limitations
 
@@ -162,10 +163,13 @@ its checks pass, and no transport gives an agent a way to approve.
   beyond them.
 - **The drivers:** agents ran through command-line drivers, not the hosts people use, so a host's own behaviour isn't
   measured.
-- **Codex:** in M5's pilot only, and out of every later study until its isolation is solved.
+- **Codex:** in M5's pilot only, and out of every later study until the harness can keep the owner's global
+  instructions out of its trials: M5's pilot record labels its 15 Codex trials as having received them (M5-REPORT.md
+  §3.1, d56aa19d).
 - **MCP:** intended-only. Run non-interactively, the CLI answered every elicitation with `cancel` (15 of 15 in M7f's
   pilot), so MCP's completion isn't measured.
-- **WebMCP:** in-tool consent is pending. No browser build offered `requestUserInteraction`, so a call that needs
+- **WebMCP:** in-tool consent is pending. In the Chromium build measured (156.0.8078.4, headless, flagged),
+  `requestUserInteraction` wasn't available, so a call that needs
   confirmation returns its refusal, and the person confirms in the app.
 - **Pins:** results from different pins are never pooled. hosting-lab's base manifest changed after M7f, for T8.
 
@@ -178,42 +182,42 @@ its checks pass, and no transport gives an agent a way to approve.
 
 ## Claim-and-trace table
 
-| #     | Claim                                                                                                           | File                                                                                                            | Commit             |
-| ----- | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------ |
-| C2.1  | The IR's types are zod schemas, so types, validator and JSON Schema agree; a test fails on schema drift         | `packages/ir/src/schema.ts`, `packages/ir/test/schema.test.ts`                                                  | def4b5d1           |
-| C2.2  | The canonical form and the digest: `sha256-` and base64url of SHA-256 over the RFC 8785 bytes                   | `packages/ir/src/normalize.ts`, `packages/ir/src/digest.ts`                                                     | 875f7cd8           |
-| C2.3  | The built-in policies: exhaustive, resource, progressive and advocated                                          | `packages/runtime/src/views.ts`                                                                                 | 875f7cd8           |
-| C2.4  | The disclosure invariant, tested by construction over generated manifests                                       | `packages/runtime/test/disclosure.test.ts`                                                                      | c2ee930c           |
-| C2.5  | §6.6's comparison of a choice set's members                                                                     | `packages/runtime/src/comparison.ts`, `packages/runtime/test/comparison.test.ts`                                | dd3a28ea           |
-| C2.6  | v0 stays; the example app's v0 documents are held byte-identical                                                | `apps/example/scripts/v0-golden/`                                                                               | 06b96776           |
-| C2.7  | The projection route: five endpoints, the v1 media type, one refusal shape                                      | `packages/next/src/projection.ts`, `packages/next/test/projection.test.ts`                                      | 62f674c6           |
-| C2.8  | One tool core for MCP and WebMCP, the four generic tools, over an HTTP or in-process adapter                    | `packages/runtime/src/agent.ts`, `packages/mcp-v1/src/server.ts`                                                | 875f7cd8           |
-| C2.9  | Per-capability MCP on the reference app: of 136 fields over 10 capabilities, 2 carried, 1 at the call, 133 lost | `packages/mcp-v1/loss/hosting-lab.json`                                                                         | 095bb65c           |
-| C2.10 | Input schemas are evaluated in a sliced child under Node's permission model, run twice, opaque when refused     | `packages/next/src/slice.ts`, `packages/next/src/evaluator.ts`                                                  | 875f7cd8           |
-| C3.1  | The method: fixture, tasks with derived ground truth, CLI drivers, intended and completed outcomes              | `rfcs/0003-choice-benchmark-method.md`                                                                          | 638c2d06           |
-| C3.2  | M8e's headroom gate, read blind to the contrasts                                                                | `apps/choice-bench/results/surfaces-t8/PLAN.md` §6                                                              | 850efbac           |
-| C3.3  | The standing check: every committed trace re-scored byte-identical, M7f reproduced, replays rebuilt             | `apps/choice-bench/src/rescore.ts`, `apps/choice-bench/scripts/standing-check.sh`                               | 8a278903           |
-| C3.4  | A run comes from a read-only pinned export; every launch and resume checks the tree against the pin             | `apps/choice-bench/src/pin.ts`                                                                                  | 4141181a           |
-| C3.5  | The preflight's parity check, and T8's depth check                                                              | `apps/choice-bench/src/oracle.ts`, `apps/choice-bench/src/preflight.ts`                                         | 8a278903           |
-| C3.6  | Logins, canaries, owner-file stamps, the secrets and email scan; credential digests outside git                 | `apps/choice-bench/src/integrity.ts`                                                                            | 38ee40ef           |
-| C3.7  | Status reports only a fixed list of non-outcome fields                                                          | `apps/choice-bench/src/status.ts`                                                                               | 4ef0d23f           |
-| C3.8  | Harness faults are set aside, kept whole and rerun once, never scored; the pause rule                           | `apps/choice-bench/src/surface.ts`, `apps/choice-bench/src/surface-adapters.ts`                                 | fb93943e           |
-| C4.1  | M5's confirmatory run: 684 scored, T6, Sonnet 5.5 and Haiku 5.5, conditions A, S and C                          | `apps/choice-bench/results/M5-REPORT.md` §4.1                                                                   | 6c1f27c7           |
-| C4.2  | H1 not rejected: the figures above                                                                              | `apps/choice-bench/results/confirmatory-2026-11-18/README.md`; `M5-REPORT.md` §4.1                              | e815f273           |
-| C4.3  | H2 rejected, C lower, mostly on Sonnet: the figures above                                                       | `apps/choice-bench/results/confirmatory-2026-11-18/README.md`; `M5-REPORT.md` §4.1                              | e815f273           |
-| C4.4  | H2's validity note                                                                                              | `apps/choice-bench/results/M5-REPORT.md` §4.1                                                                   | 6c1f27c7           |
-| C4.5  | 17 of 19 against 0 of 95, post hoc and descriptive                                                              | `apps/choice-bench/results/confirmatory-2026-11-18/audit/README.md`                                             | 14a5a346           |
-| C4.6  | The exploratory estimates (E1, E2), cross-run                                                                   | `apps/choice-bench/results/exploratory-2026-11-18/README.md`                                                    | 3f958191           |
-| C4.7  | §6.6: every choice set carries its comparison                                                                   | `rfcs/0002-contextual-projection.md` §6.6; `packages/runtime/test/comparison.test.ts`                           | c2ee930c           |
-| C5.1  | M7f: 400 of 400 optimal, every contrast 0, ±7.1 per model, pooled interval degenerate                           | `apps/choice-bench/results/surfaces/confirmatory-2026-11-18/analysis.json`                                      | 9cbc48ee           |
-| C5.2  | M7f's reading, intake's words verbatim                                                                          | `apps/choice-bench/results/surfaces/confirmatory-2026-11-18/README.md`                                          | 36062197           |
-| C6.1  | T8's gate: Sonnet 18 of 20, Haiku 20 of 20, fail                                                                | `apps/choice-bench/results/surfaces-t8/pilot-2026-11-19/headroom.json`                                          | 98e5b090           |
-| C6.2  | T8's result, intake's line verbatim; no confirmatory run; 40 trials, not 440; the forking guard                 | `apps/choice-bench/results/surfaces-t8/pilot-2026-11-19/README.md`                                              | 59b7c4a3           |
-| C7.1  | No token-shaped string on MCP or WebMCP in M7f's pilot                                                          | `apps/choice-bench/results/surfaces/pilot-2026-11-18/README.md`                                                 | 6f878aa0           |
-| C7.2  | `toModel` removes every approval field and token-shaped text; no tool result in any mode carries a token        | `packages/runtime/src/agent.ts`, `packages/runtime/test/agent.test.ts`, `packages/mcp-v1/test/boundary.test.ts` | 6191b65b           |
-| C8.1  | The demo: four transports, refused, confirmed in the review page, read back; 20 checks, exit 0                  | `apps/capability-demo/README.md`, `demo.ts`                                                                     | 3c901eb8           |
-| C9.1  | The two models                                                                                                  | `apps/choice-bench/results/surfaces/PLAN.md` §4                                                                 | 0b0851e0           |
-| C9.2  | Codex in M5's pilot only (15 trials), and out until its isolation is solved                                     | `apps/choice-bench/results/M5-REPORT.md` §3.1; `surfaces/PLAN.md` §4                                            | 6c1f27c7; 0b0851e0 |
-| C9.3  | MCP's elicitation answered `cancel`, 15 of 15                                                                   | `apps/choice-bench/results/surfaces/pilot-2026-11-18/README.md` §2                                              | 6f878aa0           |
-| C9.4  | WebMCP's in-tool consent not offered by the browser                                                             | `rfcs/research/0004-webmcp/SPIKE.md`; `rfcs/0004-protocol-evolution.md` §5                                      | fa080a6a           |
-| C9.5  | Never pooled across pins; the base manifest moved for T8                                                        | `apps/choice-bench/results/surfaces-t8/pilot-2026-11-19/README.md`                                              | 59b7c4a3           |
+| #     | Claim                                                                                                          | File                                                                                                            | Commit                                      |
+| ----- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| C2.1  | The IR's types are zod schemas; the JSON Schema is tested to agree with the validator, and fails on drift      | `packages/ir/src/schema.ts`, `packages/ir/test/schema.test.ts`                                                  | def4b5d1                                    |
+| C2.2  | The canonical form and the digest: `sha256-` and base64url of SHA-256 over the RFC 8785 bytes                  | `packages/ir/src/normalize.ts`, `packages/ir/src/digest.ts`                                                     | 875f7cd8                                    |
+| C2.3  | The built-in policies: exhaustive, resource, progressive and advocated                                         | `packages/runtime/src/views.ts`                                                                                 | 875f7cd8                                    |
+| C2.4  | The disclosure invariant, tested by construction over generated manifests                                      | `packages/runtime/test/disclosure.test.ts`                                                                      | c2ee930c                                    |
+| C2.5  | §6.6's comparison of a choice set's members                                                                    | `packages/runtime/src/comparison.ts`, `packages/runtime/test/comparison.test.ts`                                | dd3a28ea                                    |
+| C2.6  | v0 stays; a hand-run golden tool found its documents byte-identical across wire changes (ec7e80d1, a60bd872)   | `apps/example/scripts/v0-golden/`                                                                               | 06b96776                                    |
+| C2.7  | The projection route: five endpoints, the v1 media type, the runtime's refusal shape before the runtime        | `packages/next/src/projection.ts`, `packages/next/test/projection.test.ts`                                      | 62f674c6                                    |
+| C2.8  | One tool core for MCP and WebMCP, the four generic tools, over an HTTP or in-process adapter                   | `packages/runtime/src/agent.ts`, `packages/mcp-v1/src/server.ts`                                                | 875f7cd8                                    |
+| C2.9  | Per-capability MCP: of 136 fields over 10 capabilities, 2 carried, 1 at the call, 133 lost (127 unexported)    | `packages/mcp-v1/loss/hosting-lab.json`                                                                         | 095bb65c                                    |
+| C2.10 | Input schemas are evaluated in a sliced child under Node's permission model, run twice, opaque when refused    | `packages/next/src/slice.ts`, `packages/next/src/evaluator.ts`                                                  | 875f7cd8                                    |
+| C3.1  | The method: fixture, tasks with derived ground truth, CLI drivers, intended and completed outcomes             | `rfcs/0003-choice-benchmark-method.md`                                                                          | 638c2d06                                    |
+| C3.2  | M8e's headroom gate, read blind to the contrasts                                                               | `apps/choice-bench/results/surfaces-t8/PLAN.md` §6                                                              | 850efbac                                    |
+| C3.3  | The standing check: every committed trace re-scored byte-identical, M7f reproduced, replays rebuilt (the rule) | `apps/choice-bench/src/rescore.ts`, `apps/choice-bench/scripts/standing-check.sh`                               | 8a278903                                    |
+| C3.4  | A surface study's run comes from a pinned export; every launch and resume checks the tree against the pin      | `apps/choice-bench/src/pin.ts`                                                                                  | 4141181a                                    |
+| C3.5  | The preflight's parity check, and T8's depth check                                                             | `apps/choice-bench/src/oracle.ts`, `apps/choice-bench/src/preflight.ts`                                         | 8a278903                                    |
+| C3.6  | Logins, canaries, owner-file stamps, the secrets and email scan; credential digests outside git                | `apps/choice-bench/src/integrity.ts`, `src/drivers/isolation.ts`, `src/canary.ts`                               | 38ee40ef; 1ad3fd35                          |
+| C3.7  | Status reports only a fixed list of non-outcome fields                                                         | `apps/choice-bench/src/status.ts`                                                                               | 4ef0d23f                                    |
+| C3.8  | Harness faults are set aside, kept whole and rerun once, never scored; the pause rule                          | `apps/choice-bench/src/surface.ts`, `src/surface-adapters.ts`, `src/harness.ts`                                 | fb93943e                                    |
+| C4.1  | M5's confirmatory run: 684 scored, T6, Sonnet 5.5 and Haiku 5.5, conditions A, S and C                         | `apps/choice-bench/results/M5-REPORT.md` §4.1                                                                   | 6c1f27c7                                    |
+| C4.2  | H1 not rejected: the figures above                                                                             | `apps/choice-bench/results/confirmatory-2026-11-18/README.md`; `M5-REPORT.md` §4.1                              | e815f273                                    |
+| C4.3  | H2 rejected, C lower, mostly on Sonnet: the figures above                                                      | `apps/choice-bench/results/confirmatory-2026-11-18/README.md`; `M5-REPORT.md` §4.1                              | e815f273                                    |
+| C4.4  | H2's validity note                                                                                             | `apps/choice-bench/results/M5-REPORT.md` §4.1                                                                   | 6c1f27c7                                    |
+| C4.5  | 17 of 19 against 0 of 95, post hoc and descriptive                                                             | `apps/choice-bench/results/confirmatory-2026-11-18/audit/README.md`                                             | 14a5a346                                    |
+| C4.6  | The exploratory estimates (E1, E2), cross-run                                                                  | `apps/choice-bench/results/exploratory-2026-11-18/README.md`                                                    | 3f958191                                    |
+| C4.7  | §6.6: every choice set carries its comparison                                                                  | `rfcs/0002-contextual-projection.md` §6.6; `packages/runtime/test/comparison.test.ts`                           | c2ee930c                                    |
+| C5.1  | M7f: 400 of 400 optimal, every contrast 0, ±7.1 per model, pooled interval degenerate                          | `apps/choice-bench/results/surfaces/confirmatory-2026-11-18/analysis.json`                                      | 9cbc48ee                                    |
+| C5.2  | M7f's reading, intake's words verbatim                                                                         | `apps/choice-bench/results/surfaces/confirmatory-2026-11-18/README.md`                                          | 36062197                                    |
+| C6.1  | T8's gate: Sonnet 18 of 20, Haiku 20 of 20, fail                                                               | `apps/choice-bench/results/surfaces-t8/pilot-2026-11-19/headroom.json`                                          | 98e5b090                                    |
+| C6.2  | T8's result, intake's line verbatim; no confirmatory run; 40 trials, not 440; the forking guard                | `apps/choice-bench/results/surfaces-t8/pilot-2026-11-19/README.md`                                              | 59b7c4a3                                    |
+| C7.1  | No token-shaped string on MCP or WebMCP in M7f's pilot                                                         | `apps/choice-bench/results/surfaces/pilot-2026-11-18/README.md`                                                 | 6f878aa0                                    |
+| C7.2  | `toModel` removes every approval field and token-shaped text; no tool result in any mode carries a token       | `packages/runtime/src/agent.ts`, `packages/runtime/test/agent.test.ts`, `packages/mcp-v1/test/boundary.test.ts` | 6191b65b                                    |
+| C8.1  | The demo: four transports, refused, confirmed in the review page, read back; 20 checks, exit 0                 | `apps/capability-demo/README.md`, `demo.ts`                                                                     | 3c901eb8                                    |
+| C9.1  | The two models                                                                                                 | `apps/choice-bench/results/surfaces/PLAN.md` §4                                                                 | 0b0851e0                                    |
+| C9.2  | Codex in M5's pilot only (15 trials), and out until the harness can isolate the owner's global instructions    | `apps/choice-bench/results/M5-REPORT.md` §3.1; `surfaces/PLAN.md` §4                                            | 6c1f27c7; 0b0851e0                          |
+| C9.3  | MCP's elicitation answered `cancel`, 15 of 15                                                                  | `apps/choice-bench/results/surfaces/pilot-2026-11-18/README.md` §2                                              | 6f878aa0                                    |
+| C9.4  | In the Chromium build measured, `requestUserInteraction` wasn't available; RFC 0004 §5 fails closed            | `rfcs/research/0004-webmcp/SPIKE.md`; `rfcs/0004-protocol-evolution.md` §5                                      | fa080a6a (SPIKE.md); 9eeb8fd3 (RFC 0004 §5) |
+| C9.5  | Never pooled across pins; the base manifest moved for T8                                                       | `apps/choice-bench/results/surfaces-t8/pilot-2026-11-19/README.md`                                              | 59b7c4a3                                    |
