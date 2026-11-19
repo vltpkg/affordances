@@ -3,14 +3,14 @@ import { digest } from '@affordances/ir'
 import type { Principal } from '@affordances/runtime'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { TASK_EDITS } from './conditions.ts'
+import { readFileSync } from 'node:fs'
 import { readEndState } from './lab-server.ts'
 import { remoteRuntime } from './remote.ts'
 import type { ServerRecord } from './server.ts'
 import { surfaces } from './surfaces.ts'
 import { createTools, TOOLS, type ToolName, type ToolsTrial } from './tools.ts'
 import { permutationFor } from './trial.ts'
+import { writeRecordAtomic } from './record-file.ts'
 
 // the full and progressive surfaces' tool server, as a driver launches it: node src/surface-server.ts <config.json>
 // (surfaces/PLAN.md §3). The benchmark's four tools, unchanged from M5 (src/tools.ts), over protocol 1 against the
@@ -56,8 +56,7 @@ const trial: ToolsTrial = {
   endState,
 }
 const tools = createTools(trial, condition, task)
-const taskEdit = TASK_EDITS[config.task]
-const manifestDigest = await digest(taskEdit ? taskEdit.apply(lab.manifest) : lab.manifest)
+const manifestDigest = await digest(lab.manifestFor(config.task, lab.manifest))
 const baseDigest = await digest(lab.manifest)
 
 const save = () => {
@@ -76,8 +75,7 @@ const save = () => {
     capped: tools.capped,
     endState: endState(),
   }
-  writeFileSync(`${config.out}.tmp`, JSON.stringify(record))
-  renameSync(`${config.out}.tmp`, config.out)
+  writeRecordAtomic(config.out, record)
 }
 save()
 

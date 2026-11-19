@@ -50,12 +50,12 @@ export const stampOwnerFiles = (files = ownerFiles(), sidecar?: string): OwnerSt
     mkdirSync(path.dirname(sidecar), { recursive: true })
     writeFileSync(sidecar, `${JSON.stringify(full, null, 2)}\n`)
   }
-  return full.map((s) => (isCredential(s.file) && s.sha256 ? { ...s, sha256: OUTSIDE_GIT } : s))
+  return full.map(masked)
 }
 
-// a stamp as a record shows it: a credential file's digest 'recorded outside git'
-const shown = (s: OwnerStamp | undefined) =>
-  s && isCredential(s.file) && s.sha256 ? { ...s, sha256: OUTSIDE_GIT } : (s ?? null)
+// a stamp as a record shows it, the one mask: a credential file's digest 'recorded outside git'
+const masked = (s: OwnerStamp) => (isCredential(s.file) && s.sha256 ? { ...s, sha256: OUTSIDE_GIT } : s)
+const shown = (s: OwnerStamp | undefined) => (s ? masked(s) : null)
 
 /**
  * The files whose stamp changed between two stampings, compared in full, from the sidecars. A credential file's change

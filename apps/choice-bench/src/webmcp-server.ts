@@ -2,10 +2,12 @@ import { reviewUrl } from '@affordances/hosting-lab/trial'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import { readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { chromium, type Page } from 'playwright'
 import type { McpCall } from './mcp-server.ts'
+import { parsedOrText } from './facts.ts'
+import { writeRecordAtomic } from './record-file.ts'
 
 // the WebMCP pilot surface's bridge, as a driver launches it: node src/webmcp-server.ts <config.json> (surfaces/
 // PLAN.md §3; design, 14:10Z and 15:02Z). Chromium with WebMCP on, the trial's own app open in it, and the tools the
@@ -51,8 +53,7 @@ const record: WebMcpRecord = {
   errors: [],
 }
 const save = () => {
-  writeFileSync(`${config.out}.tmp`, JSON.stringify(record))
-  renameSync(`${config.out}.tmp`, config.out)
+  writeRecordAtomic(config.out, record)
 }
 const context = await browser.newContext()
 await context.addCookies([
@@ -134,13 +135,6 @@ const run = (p: Page, name: string, args: Record<string, unknown>) =>
     },
     [name, args] as const,
   )
-const parsed = (text: string) => {
-  try {
-    return JSON.parse(text) as unknown
-  } catch {
-    return text
-  }
-}
 
 // the simulated person approves, as on every surface: in the app, on the review page of the refused call, and in the
 // same session, then back to the agent
@@ -215,12 +209,12 @@ server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
   }
   // executeTool answers with the page tool's own result, { content, isError }, as JSON: relayed as it is, and its text
   // recorded, as the other MCP servers record theirs
-  const result = parsed(text) as { content?: { type: 'text'; text: string }[]; isError?: boolean }
+  const result = parsedOrText(text) as { content?: { type: 'text'; text: string }[]; isError?: boolean }
   const content = Array.isArray(result?.content)
     ? result.content
     : [{ type: 'text' as const, text }]
   isError ||= result?.isError === true
-  const output = parsed(content.map((c) => c.text).join(''))
+  const output = parsedOrText(content.map((c) => c.text).join(''))
   record.calls.push({ tool: params.name, input, output, isError, at, ms: Date.now() - at })
   save()
   const refusal = output as { status?: string; code?: string }

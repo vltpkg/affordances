@@ -1,9 +1,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { chromium } from 'playwright'
 import { z } from 'zod'
+import { writeRecordAtomic } from './record-file.ts'
 
 // the browser surface's tool server, as a driver launches it: node src/browser-server.ts <config.json> (surfaces/
 // PLAN.md §3; the planner, 15:11Z). Pure browser automation: Chromium, with no flag beyond Playwright's own (no
@@ -73,8 +74,7 @@ const record: BrowserRecord = {
 // the off-site page a call's navigation was stopped at, if any
 let left: string | undefined
 const save = () => {
-  writeFileSync(`${config.out}.tmp`, JSON.stringify(record))
-  renameSync(`${config.out}.tmp`, config.out)
+  writeRecordAtomic(config.out, record)
 }
 const context = await browser.newContext()
 await context.addCookies([

@@ -2,10 +2,11 @@ import * as lab from '@affordances/hosting-lab/trial'
 import { digest } from '@affordances/ir'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { conditions, type ConditionId } from './conditions.ts'
 import { Aborted, createTools, TOOLS, type ToolName } from './tools.ts'
 import { setupTrial } from './trial.ts'
+import { writeRecordAtomic } from './record-file.ts'
 
 // one trial's tool server, as a driver launches it: node src/server.ts <config.json>. One process is one trial. After
 // every call it writes the trial's record, so the harness can score a trial however it ends, a cap's kill included
@@ -57,8 +58,7 @@ const save = () => {
     ...(aborted && { aborted }),
     endState: lab.endState(trial.sid),
   }
-  writeFileSync(`${config.out}.tmp`, JSON.stringify(record))
-  renameSync(`${config.out}.tmp`, config.out)
+  writeRecordAtomic(config.out, record)
 }
 save()
 

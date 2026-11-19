@@ -1,6 +1,6 @@
-import { canonicalJson } from '@affordances/ir'
 import type { ConditionId } from './conditions.ts'
 import type { McpCall, McpRecord } from './mcp-server.ts'
+import { keyOf, uniqueBy } from './requests.ts'
 
 // the MCP pilot surface's request events (surfaces/PLAN.md §5): its consequential execute, refused for confirmation
 // or run. Its tools are the generic four, so a request names its offer, as on full; and the person's approval is MCP's
@@ -31,16 +31,13 @@ export const mcpRequestEvent = (c: McpCall) => {
 }
 
 /** The request events, in order, each once: an offer and its input. */
-export const mcpRequestsOf = (record: Pick<McpRecord, 'calls'>) => {
-  const seen = new Set<string>()
-  return record.calls.filter(mcpRequestEvent).flatMap((c) => {
-    const r = { offer: String(c.input.offer), input: c.input.input }
-    const key = canonicalJson({ offer: r.offer, input: r.input ?? null })
-    if (seen.has(key)) return []
-    seen.add(key)
-    return [r]
-  })
-}
+export const mcpRequestsOf = (record: Pick<McpRecord, 'calls'>) =>
+  uniqueBy(
+    record.calls
+      .filter(mcpRequestEvent)
+      .map((c) => ({ offer: String(c.input.offer), input: c.input.input })),
+    keyOf,
+  )
 
 /** The pilot's finding: whether the client declared MCP's elicitation at initialize. */
 export const declaresElicitation = (record: Pick<McpRecord, 'clientCapabilities'>) =>

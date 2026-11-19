@@ -42,6 +42,15 @@ export const showsFact = (result: unknown, slug: string, fact: string, value: un
   return Object.values(o).some((v) => showsFact(v, slug, fact, value))
 }
 
+/** A tool's text as JSON when it is, else the text itself: what a recorder keeps of a tool's output. */
+export const parsedOrText = (text: string): unknown => {
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    return text
+  }
+}
+
 /** A tool's text as structured data when it's JSON, else nothing structured. */
 export const structured = (text: unknown): unknown => {
   if (typeof text !== 'string') return text

@@ -2,7 +2,6 @@ import * as lab from '@affordances/hosting-lab/trial'
 import { execFile } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
-import { canonicalJson } from '@affordances/ir'
 import { parseOfferId } from '@affordances/runtime'
 import { conditions } from './conditions.ts'
 import { askedToConfirm } from './response.ts'
@@ -13,6 +12,7 @@ import { mcpRequestsOf, type McpTrial } from './mcp.ts'
 import { surfaces, type SurfaceId } from './surfaces.ts'
 import { setupTrial } from './trial.ts'
 import { v0RequestsOf, type CapabilityRequest, type V0Trial } from './v0.ts'
+import { keyOf, uniqueBy } from './requests.ts'
 
 // the choice (the planner and intake, 2026-11-18): the intended end state. The agent's offers that came back
 // confirmation_required or ran are replayed, in order and each once, through the condition's own runtime on a fresh
@@ -87,7 +87,6 @@ type Request = { offer: string; input?: unknown }
 // what a replay needs of a trial: its condition, plan order and task, for a fresh copy of its starting store, and the
 // project key its requests carry
 type Base = Pick<ServerRecord, 'condition' | 'index' | 'task' | 'project'> & { surface?: SurfaceId }
-const keyOf = (r: Request) => canonicalJson({ offer: r.offer, input: r.input ?? null })
 
 // one replay of requests on a fresh store: within a decision, the first that applies wins and a later one is skipped
 const replayOnce = async (record: Base, given: (Request | CapabilityRequest)[]) => {
@@ -167,17 +166,13 @@ const replay = async (
 }
 
 // identical requests (same offer and input) count once: an approved choice is two, and add-on offers share an id
-const requestsOf = (record: ServerRecord): Request[] => {
-  const seen = new Set<string>()
-  return record.calls.flatMap((c) => {
-    if (c.tool !== 'execute') return []
-    const asked = askedToConfirm(c)
-    const r = c.input as Request
-    if (!(asked || c.state) || seen.has(keyOf(r))) return []
-    seen.add(keyOf(r))
-    return [r]
-  })
-}
+const requestsOf = (record: ServerRecord): Request[] =>
+  uniqueBy(
+    record.calls.flatMap((c) =>
+      c.tool === 'execute' && (askedToConfirm(c) || c.state) ? [c.input as Request] : [],
+    ),
+    keyOf,
+  )
 
 const replayAll = async (
   record: Base,

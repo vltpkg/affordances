@@ -4,8 +4,9 @@ import { httpAdapter } from '@affordances/runtime/agent'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
-import { readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { TASK_EDITS } from './conditions.ts'
+import { readFileSync } from 'node:fs'
+import { parsedOrText } from './facts.ts'
+import { writeRecordAtomic } from './record-file.ts'
 
 // the MCP pilot surface's tool server, as a driver launches it: node src/mcp-server.ts <config.json> (surfaces/
 // PLAN.md §3; the planner, 15:55Z). mcp-v1's own server, generic mode, over protocol 1 to the trial's server: its
@@ -47,8 +48,7 @@ const record: McpRecord = {
   elicitations: [],
 }
 const save = () => {
-  writeFileSync(`${config.out}.tmp`, JSON.stringify(record))
-  renameSync(`${config.out}.tmp`, config.out)
+  writeRecordAtomic(config.out, record)
 }
 save()
 
@@ -59,13 +59,6 @@ const asked = new Map<
 >()
 // the server's own requests to the client: its elicitations, by id
 const elicited = new Map<Id, number>()
-const parsed = (text: string) => {
-  try {
-    return JSON.parse(text) as unknown
-  } catch {
-    return text
-  }
-}
 // a message from the client
 const fromClient = (m: JSONRPCMessage) => {
   if ('method' in m && m.method === 'initialize') {
@@ -112,7 +105,7 @@ const toClient = (m: JSONRPCMessage) => {
     record.calls.push({
       tool: question.tool!,
       input: question.input!,
-      output: parsed(result.content?.map((c) => c.text ?? '').join('') ?? ''),
+      output: parsedOrText(result.content?.map((c) => c.text ?? '').join('') ?? ''),
       isError: result.isError === true,
       at: question.at,
       ms: Date.now() - question.at,
@@ -155,13 +148,12 @@ const withSession: typeof fetch = (input, init = {}) => {
   headers.set('authorization', `Bearer ${config.session}`)
   return fetch(input, { ...init, headers })
 }
-const edit = TASK_EDITS[config.task]
 await createMcpServer({
   adapter: httpAdapter(`${config.url}/api/projection`, withSession, {
     policy: 'exhaustive',
     start: { type: 'hosting.project', key: config.project },
   }),
   // the public manifest the trial's server serves, with its task's claim edit
-  manifest: edit ? edit.apply(lab.manifest) : lab.manifest,
+  manifest: lab.manifestFor(config.task, lab.manifest),
   mode: 'generic',
 }).connect(new Recording())

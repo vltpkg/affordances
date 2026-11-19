@@ -2,7 +2,9 @@ import { createServer } from '@affordances/mcp'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
-import { readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
+import { parsedOrText } from './facts.ts'
+import { writeRecordAtomic } from './record-file.ts'
 
 // the v0 surface's tool server, as a driver launches it: node src/v0-server.ts <config.json> (surfaces/PLAN.md §3).
 // It's packages/mcp's own createServer, run unchanged against the trial's server with the trial's session as its
@@ -32,8 +34,7 @@ type Id = string | number
 const config = JSON.parse(readFileSync(process.argv[2]!, 'utf8')) as V0Config
 const record: V0Record = { surface: 'v0', url: config.url, toolLists: [], calls: [] }
 const save = () => {
-  writeFileSync(`${config.out}.tmp`, JSON.stringify(record))
-  renameSync(`${config.out}.tmp`, config.out)
+  writeRecordAtomic(config.out, record)
 }
 save()
 
@@ -50,13 +51,6 @@ const seen = (m: JSONRPCMessage) => {
     at: Date.now(),
   })
 }
-const parsed = (text: string) => {
-  try {
-    return JSON.parse(text) as unknown
-  } catch {
-    return text
-  }
-}
 const answered = (m: JSONRPCMessage) => {
   if (!('id' in m) || !('result' in m)) return
   const question = asked.get(m.id)
@@ -68,7 +62,7 @@ const answered = (m: JSONRPCMessage) => {
     record.calls.push({
       tool: question.tool!,
       input: question.input!,
-      output: parsed(result.content?.map((c) => c.text ?? '').join('') ?? ''),
+      output: parsedOrText(result.content?.map((c) => c.text ?? '').join('') ?? ''),
       isError: result.isError === true,
       at: question.at,
       ms: Date.now() - question.at,

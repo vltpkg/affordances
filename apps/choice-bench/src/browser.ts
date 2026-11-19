@@ -3,6 +3,7 @@ import { canonicalJson } from '@affordances/ir'
 import type { BrowserLoad, BrowserRecord } from './browser-server.ts'
 import type { ConditionId } from './conditions.ts'
 import type { CapabilityRequest } from './v0.ts'
+import { uniqueBy } from './requests.ts'
 
 // the browser surface's request events (surfaces/PLAN.md §5): the first load of the review-and-confirm page carrying a
 // selection, and the confirm click. A selection is the review page's action and its fields, the same names as the
@@ -51,14 +52,10 @@ export const browserRequestsOf = (
           const l = loadBefore(record, c.at)
           return l ? [l] : []
         })
-  const seen = new Set<string>()
-  return loads.flatMap((l) => {
-    const r = requestOf(l.review)!
-    const key = canonicalJson(r)
-    if (seen.has(key)) return []
-    seen.add(key)
-    return [r]
-  })
+  return uniqueBy(
+    loads.map((l) => requestOf(l.review)!),
+    (r) => canonicalJson(r),
+  )
 }
 
 /** The time of the first request event under the first-load rule, the PLAN's default. */

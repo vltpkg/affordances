@@ -250,7 +250,6 @@ const emptyRecord = async (
       aborted: [],
       errors: [],
     }
-  const taskEdit = lab.TASK_EDITS[t.spec.task]
   return {
     surface: surface.id as SurfaceServerRecord['surface'],
     condition: surface.condition!.id as SurfaceServerRecord['condition'],
@@ -258,7 +257,7 @@ const emptyRecord = async (
     index: t.spec.index,
     plans: t.plans,
     project: t.project,
-    manifestDigest: await digest(taskEdit ? taskEdit.apply(lab.manifest) : lab.manifest),
+    manifestDigest: await digest(lab.manifestFor(t.spec.task, lab.manifest)),
     baseDigest: await digest(lab.manifest),
     calls: [],
     exposures: [],
@@ -555,7 +554,6 @@ export const runSurfaceTrial = async (
   const otherTools = names.filter((n) => !known.has(n))
   const traceMismatch =
     canonicalJson(driverCalls) !== canonicalJson(record.calls.map((c) => c.tool))
-  const taskEdit = lab.TASK_EDITS[spec.task]
   const lines = [
     {
       kind: 'trial',
@@ -573,7 +571,7 @@ export const runSurfaceTrial = async (
         env: server.env,
       },
       fixture: {
-        manifestDigest: await digest(taskEdit ? taskEdit.apply(lab.manifest) : lab.manifest),
+        manifestDigest: await digest(lab.manifestFor(spec.task, lab.manifest)),
         baseDigest: await digest(lab.manifest),
       },
       prompt,
