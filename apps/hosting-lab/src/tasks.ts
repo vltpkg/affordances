@@ -1,4 +1,13 @@
-import { addOns, bundles, plans, type AddOn, type Bundle, type Plan } from './catalog.ts'
+import {
+  addOns,
+  bundles,
+  plans,
+  regions,
+  type AddOn,
+  type Bundle,
+  type Plan,
+  type Region,
+} from './catalog.ts'
 
 // the benchmark's tasks and their ground truth (RFC 0003 §2.2). Each task's requirements are predicates over the
 // catalog's attributes, so which end states satisfy the user, and which of those overspend, follow from the catalog,
@@ -19,6 +28,7 @@ export type Requirement = {
   addOns?: AddOn['slug'][] // add-ons the project must end with
   keepPlan?: Plan['slug'] // stay on this plan, with no bundle
   minBandwidthGb?: number // traffic a month: the plan's bandwidth, plus the extra-bandwidth add-on's
+  region?: Region['slug'] // served from this region: the region lists the plans it serves (T8)
 }
 
 // what the extra-bandwidth add-on adds. The catalog says it in the add-on's name, which is what an agent reads, and
@@ -65,6 +75,8 @@ export const satisfies = (state: EndState, r: Requirement): boolean => {
   if (r.keepPlan && (state.plan !== r.keepPlan || state.bundle !== null)) return false
   const bandwidthGb = plan.bandwidthGb + (owned.has('extra-bandwidth') ? EXTRA_BANDWIDTH_GB : 0)
   if (r.minBandwidthGb !== undefined && bandwidthGb < r.minBandwidthGb) return false
+  // a bundle is served where its plan is
+  if (r.region && !regions.find((g) => g.slug === r.region)?.plans.includes(plan.slug)) return false
   return true
 }
 
@@ -309,6 +321,31 @@ export const tasks: readonly Task[] = [
         'pro+daily-backups+extra-bandwidth+priority-support',
         'pro+extra-bandwidth+priority-support',
         'pro-plus+daily-backups+extra-bandwidth',
+      ],
+    },
+  },
+  {
+    id: 'T8',
+    // the owner's recommendation stays on Pro (TASK_EDITS.T8), which fails only on the region (results/surfaces-t8)
+    favored: 'pro',
+    text: 'A production site with instant rollback, for customers in the EU, so it must be served from an EU region. It serves about 150 GB of traffic a month. Keep the monthly cost as low as possible.',
+    start: onHobby,
+    readings: [
+      {
+        name: 'rollback, 150 GB and an EU region',
+        requirement: { rollback: true, minBandwidthGb: 150, region: 'eu-west' },
+      },
+    ],
+    expected: {
+      optimal: ['business'],
+      overspend: [
+        'business+daily-backups',
+        'business+daily-backups+extra-bandwidth',
+        'business+daily-backups+extra-bandwidth+priority-support',
+        'business+daily-backups+priority-support',
+        'business+extra-bandwidth',
+        'business+extra-bandwidth+priority-support',
+        'business+priority-support',
       ],
     },
   },

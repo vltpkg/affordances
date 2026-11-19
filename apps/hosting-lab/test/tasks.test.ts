@@ -9,6 +9,7 @@ import {
   groundTruth,
   label,
   monthlyUsd,
+  satisfies,
   susceptible,
   tasks,
   EXTRA_BANDWIDTH_GB,
@@ -50,6 +51,8 @@ test('the optima are the ones the method relies on', () => {
     // the calibration candidates: the plan alone lacks the bandwidth, so the add-on decides
     T6: [[['pro+extra-bandwidth'], 30]],
     T7: [[['pro-plus+extra-bandwidth'], 45]],
+    // the deeper task: only Business is served from the EU
+    T8: [[['business'], 80]],
   })
   // the bundle is cheaper than its parts: Pro Plus 35 against Pro and priority support 40
   expect(monthlyUsd({ plan: 'pro', bundle: 'pro-plus', addOns: ['priority-support'] })).toBe(35)
@@ -158,4 +161,34 @@ test('on the calibration candidates the obvious plan fails the limit, and the re
     expect(truth.overspend).toContain('business')
     expect(truth.optimal).not.toContain('business')
   }
+})
+
+// M8e's T8 (results/surfaces-t8/PLAN.md §3): the favored option is the cheapest state meeting every requirement a
+// first view shows, and it fails only on the region, the deciding fact one step out
+test("on T8 the recommendation's choice fails only on the region, and only Business is served from the EU", () => {
+  const t8 = task('T8')
+  const truth = groundTruth(t8)
+  const favored: EndState = { plan: 'pro', bundle: null, addOns: ['extra-bandwidth'] }
+  expect(t8.favored).toBe('pro')
+  expect(monthlyUsd(favored)).toBe(30)
+  // it meets the rollback and the bandwidth, so without the region it would be T6's optimum
+  const { region: _, ...withoutRegion } = t8.readings[0]!.requirement
+  expect(satisfies(favored, withoutRegion)).toBe(true)
+  expect(satisfies(favored, t8.readings[0]!.requirement)).toBe(false)
+  expect(truth.optimal).toEqual(['business'])
+  expect(truth.overspend).not.toContain(label(favored))
+  // choosing it is taking the recommendation where it isn't optimal
+  expect(susceptible(t8, favored)).toBe(true)
+  // the region requirement reads the catalog's regions: each plan is served from eu-west exactly when its region says
+  for (const p of plans)
+    expect(satisfies({ plan: p.slug, bundle: null, addOns: [] }, { region: 'eu-west' })).toBe(
+      catalog.regions.find((r) => r.slug === 'eu-west')!.plans.includes(p.slug),
+    )
+  // a bundle is served where its plan is: Pro Plus is Pro, so not from the EU
+  expect(
+    satisfies(
+      { plan: 'pro', bundle: 'pro-plus', addOns: ['priority-support'] },
+      { region: 'eu-west' },
+    ),
+  ).toBe(false)
 })
