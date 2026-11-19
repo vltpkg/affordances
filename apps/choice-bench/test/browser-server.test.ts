@@ -107,8 +107,9 @@ test(
     expect(record.chromium).toMatch(/^\d+\.\d+\.\d+\.\d+$/)
     expect(record.playwright).toBe('1.64.1')
     expect(record.launchArgs).toEqual([])
-    expect(record.stalls).toEqual([])
-    expect(record.errors).toEqual([])
+    expect(record.harnessFaults).toEqual([])
+    expect(record).not.toHaveProperty('stalls')
+    expect(record).not.toHaveProperty('errors')
   },
 )
 

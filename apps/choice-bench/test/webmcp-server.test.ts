@@ -58,7 +58,8 @@ test(
     } finally {
       await b.client.close()
     }
-    expect(b.record().errors).toEqual([])
+    expect(b.record().harnessFaults).toEqual([])
+    expect(b.record()).not.toHaveProperty('errors')
   },
 )
 
@@ -80,7 +81,10 @@ test(
       await b.client.close()
       empty.close()
     }
-    expect(b.record().errors.map((e) => e.tool)).toEqual(['wait', 'tools/list'])
-    expect(b.record().errors[0]!.detail).toMatch(/registered no tools within 1500ms/)
+    expect(b.record().harnessFaults.map((e) => [e.kind, e.tool])).toEqual([
+      ['page-tools', 'wait'],
+      ['page-tools', 'tools/list'],
+    ])
+    expect(b.record().harnessFaults[0]!.detail).toMatch(/registered no tools within 1500ms/)
   },
 )

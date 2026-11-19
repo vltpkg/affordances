@@ -14,6 +14,7 @@ import {
   type McpTrial,
 } from './mcp.ts'
 import { regionSeenIn } from './oracle.ts'
+import type { RecordFault } from './record-file.ts'
 import { keyOf, uniqueBy, type Request } from './requests.ts'
 import { askedToConfirm, responseOf } from './response.ts'
 import type { SurfaceServerConfig, SurfaceServerRecord } from './surface-server.ts'
@@ -36,6 +37,33 @@ export type SurfaceRecord =
 
 /** A harness fault: its class, and what showed it. */
 export type FaultInfo = { kind: string; detail: string }
+
+/** The stall a record's faults make (§5), or none: the page's tools, then the browser itself, then a stale ref. */
+export const stallOf = (faults: readonly RecordFault[]): FaultInfo | undefined => {
+  const of = (kind: RecordFault['kind']) => faults.filter((f) => f.kind === kind)
+  const pageTools = of('page-tools')
+  const browser = of('browser')
+  const refs = of('ref')
+  if (pageTools.length)
+    return {
+      kind: 'stall',
+      detail: `the page's tools failed: ${pageTools.map((f) => f.detail).join('; ')}`,
+    }
+  if (browser.length)
+    return {
+      kind: 'stall',
+      detail: `the browser failed: ${browser.map((f) => f.detail).join('; ')}`,
+    }
+  if (refs.length)
+    return {
+      kind: 'stall',
+      detail: `a ref from the preceding snapshot didn't resolve: ${refs.map((f) => `${f.tool} ${f.ref}`).join(', ')}`,
+    }
+  return undefined
+}
+
+// a record's faults, from its list, or from the fields a record archived before it keeps
+const listed = (record: { harnessFaults?: RecordFault[] }) => record.harnessFaults
 
 /** What the runner (or the preflight) knows of a trial when it writes the tool server's config. */
 export type ServerContext = {
@@ -90,8 +118,8 @@ export type SurfaceAdapter<R extends SurfaceRecord = SurfaceRecord> = {
   confirmReplay?: (record: R, c: ReplayContext) => unknown
   // the requests a replay record holds, or undefined when the agent never executed anything ('none')
   requests: (record: never) => (Request | CapabilityRequest)[] | undefined
-  // a stall the record itself shows: the browser failed, or the page's tools did
-  stall?: (record: R) => FaultInfo | undefined
+  // the harness faults its server recorded; none on a surface whose server records none
+  faults: (record: R) => RecordFault[]
   capped: (record: R) => boolean
   // the trial line's surface-specific evidence, and the metrics line's
   trialEvidence?: (record: R) => Record<string, unknown>
@@ -186,6 +214,7 @@ const tools: SurfaceAdapter<SurfaceServerRecord> = {
   replay: (record) => record,
   requests: (record: SurfaceServerRecord) =>
     record.calls.some((c) => c.tool === 'execute') ? toolsRequests(record) : undefined,
+  faults: () => [],
   capped: (record) => record.capped,
 }
 
@@ -211,6 +240,7 @@ const v0: SurfaceAdapter<V0Record> = {
   replay: (record, c) => replayOf(record, c) satisfies V0Trial,
   requests: (record: V0Trial) =>
     record.calls.some((c) => c.tool === 'affordances_call') ? v0RequestsOf(record) : undefined,
+  faults: () => [],
   capped: () => false,
 }
 
@@ -251,6 +281,7 @@ const mcp: SurfaceAdapter<McpRecord> = {
   allowanceSeen: graphAllowance,
   replay: (record, c) => replayOf(record, c) as McpTrial,
   requests: genericRequests,
+  faults: () => [],
   capped: () => false,
   // the MCP pilot's finding: whether the client declared elicitation, and what it was asked
   trialEvidence: (record) => ({
@@ -275,20 +306,15 @@ const webmcp: SurfaceAdapter<WebMcpRecord> = {
     calls: [],
     completions: [],
     aborted: [],
-    errors: [],
+    harnessFaults: [],
   }),
   tools: new Set(Object.keys(TOOLS)),
   reads: genericReads,
   allowanceSeen: graphAllowance,
   replay: (record, c) => replayOf(record, c) as unknown as McpTrial,
   requests: genericRequests,
-  stall: (record) =>
-    record.errors.length
-      ? {
-          kind: 'stall',
-          detail: `the page's tools failed: ${record.errors.map((e) => e.detail).join('; ')}`,
-        }
-      : undefined,
+  faults: (record) =>
+    listed(record) ?? (record.errors ?? []).map((e) => ({ kind: 'page-tools' as const, ...e })),
   capped: () => false,
   // the WebMCP bridge's browser, the same across trials, and the simulated person's completions on the review page
   trialEvidence: (record) => ({
@@ -314,8 +340,7 @@ const browser: SurfaceAdapter<BrowserRecord> = {
     loads: [],
     confirms: [],
     aborted: [],
-    stalls: [],
-    errors: [],
+    harnessFaults: [],
   }),
   tools: new Set(['open', 'snapshot', 'click', 'fill', 'submit']),
   reads: (record) => {
@@ -350,18 +375,11 @@ const browser: SurfaceAdapter<BrowserRecord> = {
       : undefined,
   // the browser's two stalls: the browser itself failed, or a ref from the immediately preceding snapshot didn't
   // resolve. A ref the agent invented is its own mistake, told to it, and no stall
-  stall: (record) =>
-    record.errors.length
-      ? {
-          kind: 'stall',
-          detail: `the browser failed: ${record.errors.map((e) => e.detail).join('; ')}`,
-        }
-      : record.stalls.length
-        ? {
-            kind: 'stall',
-            detail: `a ref from the preceding snapshot didn't resolve: ${record.stalls.map((s) => `${s.tool} ${s.ref}`).join(', ')}`,
-          }
-        : undefined,
+  faults: (record) =>
+    listed(record) ?? [
+      ...(record.errors ?? []).map((e) => ({ kind: 'browser' as const, ...e })),
+      ...(record.stalls ?? []).map((r) => ({ kind: 'ref' as const, ...r })),
+    ],
   capped: () => false,
   // Chromium's and Playwright's versions, and its flags, none beyond Playwright's, so no WebMCP; and any request to
   // another origin, aborted

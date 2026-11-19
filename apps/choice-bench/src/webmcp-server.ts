@@ -7,7 +7,7 @@ import { createRequire } from 'node:module'
 import { chromium, type Page } from 'playwright'
 import type { McpCall } from './mcp-server.ts'
 import { parsedOrText } from './facts.ts'
-import { writeRecordAtomic } from './record-file.ts'
+import { writeRecordAtomic, type RecordFault } from './record-file.ts'
 
 // the WebMCP pilot surface's bridge, as a driver launches it: node src/webmcp-server.ts <config.json> (surfaces/
 // PLAN.md §3; design, 14:10Z and 15:02Z). Chromium with WebMCP on, the trial's own app open in it, and the tools the
@@ -31,7 +31,9 @@ export type WebMcpRecord = {
   // the simulated person's completions on the review page, each after a refusal for confirmation
   completions: { call: number; review: string; confirmed: boolean; at: number; detail?: string }[]
   aborted: { url: string; at: number }[]
-  errors: { call: number; tool: string; detail: string }[]
+  // the page's tools failing, the harness's stall; a record archived before this list keeps them as errors
+  harnessFaults: RecordFault[]
+  errors?: { call: number; tool: string; detail: string }[]
 }
 
 const config = JSON.parse(readFileSync(process.argv[2]!, 'utf8')) as WebMcpConfig
@@ -50,7 +52,7 @@ const record: WebMcpRecord = {
   calls: [],
   completions: [],
   aborted: [],
-  errors: [],
+  harnessFaults: [],
 }
 const save = () => {
   writeRecordAtomic(config.out, record)
@@ -94,7 +96,8 @@ const waitForTools = async () => {
     if ((await toolCount()) > 0) return
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
-  record.errors.push({
+  record.harnessFaults.push({
+    kind: 'page-tools',
     call: record.calls.length,
     tool: 'wait',
     detail: `the page registered no tools within ${TOOLS_TIMEOUT_MS}ms`,
@@ -185,7 +188,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   // design (17:26Z): the page's tools go from none to four at hydration and never drop, so an empty list after the
   // wait is unexplained. It's the harness's fault, a stall, never the agent's, and its trace goes to design
   if (!tools.length)
-    record.errors.push({
+    record.harnessFaults.push({
+      kind: 'page-tools',
       call: record.calls.length,
       tool: 'tools/list',
       detail: 'the page listed no tools after its wait',
@@ -205,7 +209,12 @@ server.setRequestHandler(CallToolRequestSchema, async ({ params }) => {
   } catch (e) {
     isError = true
     text = 'The page’s tool failed.'
-    record.errors.push({ call, tool: params.name, detail: (e as Error).message.split('\n')[0]! })
+    record.harnessFaults.push({
+      kind: 'page-tools',
+      call,
+      tool: params.name,
+      detail: (e as Error).message.split('\n')[0]!,
+    })
   }
   // executeTool answers with the page tool's own result, { content, isError }, as JSON: relayed as it is, and its text
   // recorded, as the other MCP servers record theirs

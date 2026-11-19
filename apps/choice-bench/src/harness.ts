@@ -312,15 +312,7 @@ export const runTrial = async (spec: TrialSpec, driver: Driver, dir: string) => 
     failure ?? (existsSync(out) ? undefined : `the tool server never started (no error)`),
   )
   if (failed && (failed.kind === 'auth' || priorFailures(dir, spec.id) === 0)) {
-    writeFileSync(
-      path.join(dir, `${spec.id}.failure.json`),
-      JSON.stringify({
-        ...failed,
-        at: new Date().toISOString(),
-        exitCode: result?.exitCode ?? null,
-        raw: result?.raw ?? null,
-      }),
-    )
+    recordFailure(dir, spec.id, failed, result, { raw: result?.raw ?? null })
     setAside(dir, spec.id)
     throw new DriverFailure(spec.id, failed.kind, failed.detail)
   }
@@ -344,12 +336,11 @@ export const runTrial = async (spec: TrialSpec, driver: Driver, dir: string) => 
         : 'final'
   // the driver's record of its benchmark calls against the server's: a mismatch marks the trial (§5.1). Any other
   // tool the CLI called is recorded apart, and a sub-agent spawn marks the trial (§8)
-  const names = (result?.trace ?? []).map((t) => t.name.replace(/^mcp__bench__/, ''))
-  const driverCalls = names.filter((n) => n in TOOLS)
-  const otherTools = names.filter((n) => !(n in TOOLS))
-  const spawned = otherTools.some((n) => /spawn/i.test(n))
-  const traceMismatch =
-    canonicalJson(driverCalls) !== canonicalJson(record.calls.map((c) => c.tool))
+  const { otherTools, spawned, traceMismatch } = traceCheck(
+    result,
+    new Set(Object.keys(TOOLS)),
+    record.calls,
+  )
   const intended = await intendedEndState(out)
   const metrics = computeMetrics(record, result ?? { usage, durationMs: 0 }, end, intended)
   const policy = conditions[spec.condition].policy
@@ -404,6 +395,43 @@ export const runTrial = async (spec: TrialSpec, driver: Driver, dir: string) => 
   // read from the lines just written, as a resume reads them, so a run and its resume agree: the resolved model is the
   // trace's, which for codex is the -m id it ran
   return resultOf(spec, lines[0] as Line, lines.at(-2) as Line, metrics)
+}
+
+/** A driver failure's record, beside the trial's other files: its class, when, the CLI's exit code, and any extra. */
+export const recordFailure = (
+  dir: string,
+  id: string,
+  failed: { kind: string; detail: string },
+  result: DriverResult | undefined,
+  extra: Record<string, unknown> = {},
+) =>
+  writeFileSync(
+    path.join(dir, `${id}.failure.json`),
+    JSON.stringify({
+      ...failed,
+      at: new Date().toISOString(),
+      exitCode: result?.exitCode ?? null,
+      ...extra,
+    }),
+  )
+
+/**
+ * The driver's record of its calls against the server's: a mismatch marks the trial (§5.1). Any other tool the CLI
+ * called is recorded apart, and a sub-agent spawn marks the trial (§8).
+ */
+export const traceCheck = (
+  result: DriverResult | undefined,
+  known: ReadonlySet<string>,
+  calls: readonly { tool: string }[],
+) => {
+  const names = (result?.trace ?? []).map((t) => t.name.replace(/^mcp__bench__/, ''))
+  const otherTools = names.filter((n) => !known.has(n))
+  return {
+    otherTools,
+    spawned: otherTools.some((n) => /spawn/i.test(n)),
+    traceMismatch:
+      canonicalJson(names.filter((n) => known.has(n))) !== canonicalJson(calls.map((c) => c.tool)),
+  }
 }
 
 // canary mode's plan (boundary review #7, the planner, 2026-11-18): the preflight alone needs drivers and models, not

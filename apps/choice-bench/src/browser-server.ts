@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { chromium } from 'playwright'
 import { z } from 'zod'
-import { writeRecordAtomic } from './record-file.ts'
+import { writeRecordAtomic, type RecordFault } from './record-file.ts'
 
 // the browser surface's tool server, as a driver launches it: node src/browser-server.ts <config.json> (surfaces/
 // PLAN.md §3; the planner, 15:11Z). Pure browser automation: Chromium, with no flag beyond Playwright's own (no
@@ -44,10 +44,12 @@ export type BrowserRecord = {
   confirms: { call: number; at: number }[]
   // requests to any other origin, aborted
   aborted: { url: string; at: number }[]
-  // a ref that was in the immediately preceding snapshot and didn't resolve: the PLAN's harness stall (§5)
-  stalls: { call: number; tool: string; ref: string; detail: string }[]
-  // the browser itself failed, not the agent: the PLAN's other browser stall ('the browser driver threw')
-  errors: { call: number; tool: string; detail: string }[]
+  // the PLAN's two browser stalls (§5): a ref that was in the immediately preceding snapshot and didn't resolve
+  // ('ref'), and the browser itself failing, not the agent ('browser'). A record archived before this list keeps them
+  // as stalls and errors
+  harnessFaults: RecordFault[]
+  stalls?: { call: number; tool: string; ref: string; detail: string }[]
+  errors?: { call: number; tool: string; detail: string }[]
 }
 
 const config = JSON.parse(readFileSync(process.argv[2]!, 'utf8')) as BrowserConfig
@@ -68,8 +70,7 @@ const record: BrowserRecord = {
   loads: [],
   confirms: [],
   aborted: [],
-  stalls: [],
-  errors: [],
+  harnessFaults: [],
 }
 // the off-site page a call's navigation was stopped at, if any
 let left: string | undefined
@@ -161,7 +162,8 @@ const element = async (call: number, tool: string, ref: string) => {
     await locator.waitFor({ state: 'attached', timeout: 5000 })
     return locator
   } catch (e) {
-    record.stalls.push({
+    record.harnessFaults.push({
+      kind: 'ref',
       call,
       tool,
       ref,
@@ -272,7 +274,8 @@ for (const [name, tool] of Object.entries(TOOLS))
         if (e instanceof AgentError) output = e.message
         else {
           output = 'The browser failed.'
-          record.errors.push({
+          record.harnessFaults.push({
+            kind: 'browser',
             call,
             tool: name,
             detail: e instanceof Error ? e.message : String(e),

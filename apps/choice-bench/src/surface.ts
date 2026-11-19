@@ -1,5 +1,5 @@
 import * as lab from '@affordances/hosting-lab/trial'
-import { canonicalJson, digest } from '@affordances/ir'
+import { digest } from '@affordances/ir'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { loadavg } from 'node:os'
 import path from 'node:path'
@@ -14,9 +14,11 @@ import {
   INSTRUCTIONS,
   priorFailures,
   readTrace,
+  recordFailure,
   recordFault,
   scoredMetrics,
   setAside,
+  traceCheck,
   type TrialSpec,
 } from './harness.ts'
 import { intendedEndState } from './intended.ts'
@@ -33,6 +35,7 @@ import { purchaseMade, surfaceMetrics, type SurfaceFacts } from './surface-metri
 import {
   adapterOf,
   recordFacts,
+  stallOf,
   type ServerContext,
   type SurfaceRecord,
 } from './surface-adapters.ts'
@@ -198,24 +201,20 @@ export const runSurfaceTrial = async (
   } finally {
     await server.stop()
   }
+  // the server's record, read once: the stall it shows, then the trial's calls
+  const written = existsSync(out)
+    ? (JSON.parse(readFileSync(out, 'utf8')) as SurfaceRecord)
+    : undefined
   const failed = failureOf(
     result,
-    thrown ?? (existsSync(out) ? undefined : 'the tool server never started'),
+    thrown ?? (written ? undefined : 'the tool server never started'),
   )
   // two classes, kept apart (the planner, 15:03Z). A CLI driver's failure is intake's 12:05Z rule, as in M5: auth stops
   // the run; a crash or a 529 is set aside and rerun once, and a second is scored 'failed'. A harness fault is the
   // PLAN's (§5): the app answered a 5xx, counted exactly in the state file, or the outcome's two reads disagreed. It's
   // set aside, rerun and counted, never scored, and it's checked before the CLI's rule, since a trial the app failed
   // is the harness's whatever the CLI did. The server's stderr is kept as evidence, and never classed by
-  const writeFailure = () =>
-    writeFileSync(
-      file('failure.json'),
-      JSON.stringify({
-        ...failed,
-        at: new Date().toISOString(),
-        exitCode: result?.exitCode ?? null,
-      }),
-    )
+  const writeFailure = () => recordFailure(dir, spec.id, failed!, result)
   const sendFailure = () => {
     writeFailure()
     setAside(dir, spec.id)
@@ -231,9 +230,7 @@ export const runSurfaceTrial = async (
     : undefined
   // a stall the surface's own record shows (§5): the browser failed, a ref from the preceding snapshot didn't
   // resolve, or the page's tools failed
-  fault ??= existsSync(out)
-    ? adapter.stall?.(JSON.parse(readFileSync(out, 'utf8')) as never)
-    : undefined
+  fault ??= written && stallOf(adapter.faults(written as never))
   if (fault) {
     // the attempt is kept whole, beside its reason: setAside moves its record, state file, server log and raw output
     // into interrupted/, never deleting them (M5's rule)
@@ -254,19 +251,19 @@ export const runSurfaceTrial = async (
   // 'failed' under the crash rule like any other final-attempt failure, from the record a server writes before its
   // first call, with its failure.json beside it, and the run goes on. Without a failure, a missing record is the
   // harness's to explain
-  if (!existsSync(out) && !failed)
+  if (!written && !failed)
     throw new Error(`trial ${spec.id}: the tool server never started (${thrown ?? 'no error'})`)
-  if (!existsSync(out)) writeFailure()
-  const record = existsSync(out)
-    ? (JSON.parse(readFileSync(out, 'utf8')) as SurfaceRecord)
-    : await adapter.emptyRecord(surface, {
-        url,
-        task: spec.task,
-        index: spec.index,
-        plans,
-        project,
-        endState: endState!,
-      })
+  if (!written) writeFailure()
+  const record =
+    written ??
+    (await adapter.emptyRecord(surface, {
+      url,
+      task: spec.task,
+      index: spec.index,
+      plans,
+      project,
+      endState: endState!,
+    }))
   // the replay's record: the surface's, with what a fresh store needs, and for the browser its alternate request
   // event (§5), the confirm click with the review-page load just before it, replayed the same way
   const replayContext = { index: spec.index, task: spec.task, project }
@@ -311,12 +308,7 @@ export const runSurfaceTrial = async (
     return { spec, fault: missing }
   }
   // the driver's record of its calls against the server's: a mismatch marks the trial, as in M5
-  const known = adapter.tools
-  const names = (result?.trace ?? []).map((t) => t.name.replace(/^mcp__bench__/, ''))
-  const driverCalls = names.filter((n) => known.has(n))
-  const otherTools = names.filter((n) => !known.has(n))
-  const traceMismatch =
-    canonicalJson(driverCalls) !== canonicalJson(record.calls.map((c) => c.tool))
+  const { otherTools, spawned, traceMismatch } = traceCheck(result, adapter.tools, record.calls)
   const lines = [
     {
       kind: 'trial',
@@ -352,7 +344,7 @@ export const runSurfaceTrial = async (
       traceMismatch,
       otherTools,
       ...(result?.notes?.length && { driverNotes: result.notes }),
-      spawned: otherTools.some((n) => /spawn/i.test(n)),
+      spawned,
       finalText: result?.finalText ?? '',
       usage,
       totalTokens: tokens,
