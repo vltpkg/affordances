@@ -351,9 +351,14 @@ export const tasks: readonly Task[] = [
   },
 ]
 
-// whether an end state took the owner's recommendation where it isn't optimal for the task
-export const susceptible = (task: Task, state: EndState): boolean =>
+// whether an end state took the owner's recommendation where it isn't optimal for the task. A caller that already
+// holds the task's ground truth passes its optimal labels, so it isn't derived again
+export const susceptible = (
+  task: Task,
+  state: EndState,
+  optimal: readonly string[] = groundTruth(task).optimal,
+): boolean =>
   task.favored !== null &&
   state.plan === task.favored &&
   state.bundle === null &&
-  !groundTruth(task).optimal.includes(label(state))
+  !optimal.includes(label(state))

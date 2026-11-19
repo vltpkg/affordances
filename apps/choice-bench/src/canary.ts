@@ -1,9 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import os from 'node:os'
 import { createHash } from 'node:crypto'
 import { canonicalJson } from '@affordances/ir'
 import path from 'node:path'
-import { contextLeaks } from './drivers/isolation.ts'
+import { contextLeaks, SEAT_ROOT } from './drivers/isolation.ts'
 import type { Driver } from './drivers/types.ts'
 
 // the context canary (intake, 2026-11-18): before any run, the same diagnostic that voided the pilot's Claude cells,
@@ -217,13 +216,7 @@ export const baselineDiffers = (now: Baseline, then: Baseline): string[] =>
 
 // the baselines, kept across runs and sessions outside the repo: one file per driver and model, holding the CLI
 // version and the passages matched. It's keyed WITHOUT the version, so a CLI update is a difference, never a new key
-export const BASELINES_ROOT = path.join(
-  os.homedir(),
-  '.cache',
-  'affordances-exports',
-  'build-backend-engineer',
-  'canary-baselines',
-)
+export const BASELINES_ROOT = path.join(SEAT_ROOT, 'canary-baselines')
 
 // every real-model run checks its canaries against the baselines, or writes the ones that don't exist yet; it never
 // skips (the planner, 2026-11-18). Any difference refuses the run

@@ -48,44 +48,42 @@ export const codexCli = (options: {
       // isolated: false is the canary's own negative check, never a trial
       if (options.isolated !== false) assertIsolated(dir)
       const sessionsBefore = codexSessions()
-      {
-        const server =
-          'url' in trial.mcp
-            ? [`mcp_servers.${SERVER}.url=${toml(trial.mcp.url)}`]
-            : [
-                `mcp_servers.${SERVER}.command=${toml(trial.mcp.command)}`,
-                `mcp_servers.${SERVER}.args=${toml(trial.mcp.args)}`,
-              ]
-        const ran = await runCli(
-          command,
-          [
-            'exec',
-            '--json',
-            '--ephemeral',
-            // no AGENTS.md of any kind loads: the canary refuses the run if the user's global one still does
-            '-c',
-            'project_doc_max_bytes=0',
-            '--ignore-user-config',
-            '--ignore-rules',
-            '--skip-git-repo-check',
-            '-s',
-            'read-only',
-            '-C',
-            dir,
-            '-m',
-            trial.model,
-            ...server.flatMap((c) => ['-c', c]),
-            '-c',
-            `mcp_servers.${SERVER}.default_tools_approval_mode="approve"`,
-            '-c',
-            'web_search="disabled"',
-            ...(options.disabled ?? DISABLED).flatMap((f) => ['--disable', f]),
-            trial.prompt,
-          ],
-          { dir, timeoutMs: trial.timeoutMs, env: trialEnv(), stdin: '' },
-        )
-        return { ...parse(ran, version), footprint: footprintOf(dir, sessionsBefore) }
-      }
+      const server =
+        'url' in trial.mcp
+          ? [`mcp_servers.${SERVER}.url=${toml(trial.mcp.url)}`]
+          : [
+              `mcp_servers.${SERVER}.command=${toml(trial.mcp.command)}`,
+              `mcp_servers.${SERVER}.args=${toml(trial.mcp.args)}`,
+            ]
+      const ran = await runCli(
+        command,
+        [
+          'exec',
+          '--json',
+          '--ephemeral',
+          // no AGENTS.md of any kind loads: the canary refuses the run if the user's global one still does
+          '-c',
+          'project_doc_max_bytes=0',
+          '--ignore-user-config',
+          '--ignore-rules',
+          '--skip-git-repo-check',
+          '-s',
+          'read-only',
+          '-C',
+          dir,
+          '-m',
+          trial.model,
+          ...server.flatMap((c) => ['-c', c]),
+          '-c',
+          `mcp_servers.${SERVER}.default_tools_approval_mode="approve"`,
+          '-c',
+          'web_search="disabled"',
+          ...(options.disabled ?? DISABLED).flatMap((f) => ['--disable', f]),
+          trial.prompt,
+        ],
+        { dir, timeoutMs: trial.timeoutMs, env: trialEnv(), stdin: '' },
+      )
+      return { ...parse(ran, version), footprint: footprintOf(dir, sessionsBefore) }
     },
   }
 }

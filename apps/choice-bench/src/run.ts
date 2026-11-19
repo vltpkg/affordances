@@ -26,10 +26,10 @@ import { baselineOf, checkBaseline, type CanaryRecord, readCanary, runCanary } f
 import {
   configRoots,
   contextLeaks,
-  emailScan,
-  filesWithSecrets,
+  scanResults,
   loginStatus,
   TRIALS_ROOT,
+  underTrialsRoot,
 } from './drivers/isolation.ts'
 import { type Failed, pilotReport, type Result } from './report.ts'
 
@@ -207,7 +207,7 @@ if (mode === 'plan') {
   }
   if (real) {
     // trial cwds go under the dedicated trials root, outside the repo and /tmp (the planner, 2026-11-18)
-    if (!path.resolve(out).startsWith(`${TRIALS_ROOT}${path.sep}`)) {
+    if (!underTrialsRoot(out)) {
       console.error(`a real-model run's results go under ${TRIALS_ROOT}`)
       process.exit(3)
     }
@@ -337,7 +337,9 @@ if (mode === 'plan') {
     ),
   }
   // no credential reaches the results (the planner's security rule)
-  const credentialLeaks = real ? filesWithSecrets(out) : []
+  // and the user's email in them: counts only, the address never (intake). One pass over the results for both
+  const scanned = real ? scanResults(out) : undefined
+  const credentialLeaks = scanned?.secrets ?? []
   const loginsAfter = real ? loginStatus() : undefined
   const report = {
     run: {
@@ -346,7 +348,7 @@ if (mode === 'plan') {
       credentialLeaks,
       // whether the user's email appears in the results: counts only, the address never (intake). An archive of
       // them redacts it (scripts/archive.ts)
-      emailScan: real ? emailScan(out) : { checked: false },
+      emailScan: scanned?.email ?? { checked: false },
       logins: { before: loginsBefore, after: loginsAfter },
       ...(stopped && { stopped, notRun }),
       // trials whose CLI wrote under their own Claude key: flagged, listed, never deleted (ruling B)

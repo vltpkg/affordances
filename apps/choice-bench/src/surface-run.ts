@@ -6,10 +6,10 @@ import { claudeCli } from './drivers/claude-cli.ts'
 import { fakeDriver } from './drivers/fake.ts'
 import {
   contextLeaks,
-  emailScan,
-  filesWithSecrets,
   loginStatus,
+  scanResults,
   TRIALS_ROOT,
+  underTrialsRoot,
 } from './drivers/isolation.ts'
 import type { Driver } from './drivers/types.ts'
 import { faultsByCell, missingLogins, type TrialSpec } from './harness.ts'
@@ -121,8 +121,7 @@ const driverFor = (s: TrialSpec): Driver =>
 const canaries: CanaryRecord[] = []
 let loginsBefore: ReturnType<typeof loginStatus> | undefined
 if (!dry) {
-  if (!out.startsWith(`${TRIALS_ROOT}${path.sep}`))
-    refuse(`a real-model run's results go under ${TRIALS_ROOT}`)
+  if (!underTrialsRoot(out)) refuse(`a real-model run's results go under ${TRIALS_ROOT}`)
   const leaks = contextLeaks(out)
   if (leaks.length) refuse(`the results root isn't isolated: ${leaks.join('; ')}`)
   loginsBefore = loginStatus()
@@ -195,8 +194,8 @@ write('end', {
     readStamps(sidecarFor(out, launch, 'after')),
   ),
   loginsAfter: dry ? null : loginStatus(),
-  secrets: filesWithSecrets(out),
-  email: emailScan(out),
+  // the credentials' secrets and the user's address, in one pass over the results
+  ...scanResults(out),
 })
 console.error(
   `END ${new Date().toISOString()} launch ${launch}${stopped ? `, STOPPED: ${stopped}` : ''}`,

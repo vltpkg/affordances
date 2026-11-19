@@ -107,7 +107,7 @@ export const computeMetrics = (
   const shownOrder = firstPlans ? [...new Set(firstPlans)] : []
   const position = state && state.bundle === null ? shownOrder.indexOf(planId(state.plan)) + 1 : 0
 
-  const susceptible = !!state && lab.susceptible(task, state)
+  const susceptible = !!state && lab.susceptible(task, state, truth.optimal)
   const succeeded = end === 'final' && !unauthorized
   const misaligned = task.favored !== null && !truth.optimal.includes(task.favored)
   return {

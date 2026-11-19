@@ -25,52 +25,50 @@ export const claudeCli = (options: {
       // isolated: false is the canary's own negative check, never a trial
       if (options.isolated !== false) assertIsolated(dir)
       const sessionsBefore = codexSessions()
-      {
-        const server =
-          'url' in trial.mcp
-            ? { type: 'http', url: trial.mcp.url }
-            : { command: trial.mcp.command, args: trial.mcp.args }
-        const config = path.join(dir, 'mcp.json')
-        writeFileSync(config, JSON.stringify({ mcpServers: { [SERVER]: server } }))
-        const ran = await runCli(
-          command,
-          [
-            '-p',
-            trial.prompt,
-            '--model',
-            trial.model,
-            '--output-format',
-            'stream-json',
-            '--verbose',
-            '--mcp-config',
-            config,
-            '--strict-mcp-config',
-            '--tools',
-            '',
-            '--allowedTools',
-            `${PREFIX}*`,
-            '--setting-sources',
-            '',
-            // auto-memory off: no memory instructions, no index, nothing written to a memory dir
-            '--settings',
-            JSON.stringify({ autoMemoryEnabled: false }),
-            '--disable-slash-commands',
-            '--no-session-persistence',
-            '--max-turns',
-            String(trial.maxTurns),
-          ],
-          {
-            dir,
-            timeoutMs: trial.timeoutMs,
-            env: {
-              ...trialEnv(),
-              // no CLAUDE.md of any kind, the user's included (isolation, 2026-11-18)
-              CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1',
-            },
+      const server =
+        'url' in trial.mcp
+          ? { type: 'http', url: trial.mcp.url }
+          : { command: trial.mcp.command, args: trial.mcp.args }
+      const config = path.join(dir, 'mcp.json')
+      writeFileSync(config, JSON.stringify({ mcpServers: { [SERVER]: server } }))
+      const ran = await runCli(
+        command,
+        [
+          '-p',
+          trial.prompt,
+          '--model',
+          trial.model,
+          '--output-format',
+          'stream-json',
+          '--verbose',
+          '--mcp-config',
+          config,
+          '--strict-mcp-config',
+          '--tools',
+          '',
+          '--allowedTools',
+          `${PREFIX}*`,
+          '--setting-sources',
+          '',
+          // auto-memory off: no memory instructions, no index, nothing written to a memory dir
+          '--settings',
+          JSON.stringify({ autoMemoryEnabled: false }),
+          '--disable-slash-commands',
+          '--no-session-persistence',
+          '--max-turns',
+          String(trial.maxTurns),
+        ],
+        {
+          dir,
+          timeoutMs: trial.timeoutMs,
+          env: {
+            ...trialEnv(),
+            // no CLAUDE.md of any kind, the user's included (isolation, 2026-11-18)
+            CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1',
           },
-        )
-        return { ...parse(ran, version), footprint: footprintOf(dir, sessionsBefore) }
-      }
+        },
+      )
+      return { ...parse(ran, version), footprint: footprintOf(dir, sessionsBefore) }
     },
   }
 }

@@ -12,14 +12,21 @@ import path from 'node:path'
 
 export class NotIsolated extends Error {}
 
-// the dedicated root for trial working directories: outside the repo, and outside /tmp, which other users share
-export const TRIALS_ROOT = path.join(
+// the seat's own directory for everything a run keeps outside the repo, and outside /tmp, which other users share. One
+// constant, so the trials and the canary baselines can't name two different places
+export const SEAT_ROOT = path.join(
   os.homedir(),
   '.cache',
   'affordances-exports',
   'build-backend-engineer',
-  'trials',
 )
+
+// the dedicated root for trial working directories
+export const TRIALS_ROOT = path.join(SEAT_ROOT, 'trials')
+
+/** Whether a real-model run's results directory is under the trials root, as every one must be. */
+export const underTrialsRoot = (dir: string) =>
+  path.resolve(dir).startsWith(`${TRIALS_ROOT}${path.sep}`)
 
 // every directory from dir up to the root
 const ancestors = (dir: string) => {
@@ -146,17 +153,31 @@ export const credentialSecrets = (roots = configRoots()): string[] => {
   return out
 }
 
-// files under dir holding any of the secrets: a run's results must hold none (the planner's security rule)
-export const filesWithSecrets = (dir: string, secrets = credentialSecrets()): string[] => {
+// one pass over a run's results, each file read once: the files holding any credential's secret, which a run's
+// results must hold none of, and how often the user's address appears, as counts only, never the address
+export const scanResults = (dir: string, secrets = credentialSecrets(), email = userEmail()) => {
   const hits: string[] = []
-  for (const rel of readdirSync(dir, { recursive: true, encoding: 'utf8' })) {
-    const file = path.join(dir, rel)
-    if (!statSync(file).isFile()) continue
-    const text = readFileSync(file, 'latin1')
+  let files = 0
+  let occurrences = 0
+  for (const rel of filesUnder(dir)) {
+    const text = readFileSync(path.join(dir, rel), 'latin1')
     if (secrets.some((s) => text.includes(s))) hits.push(rel)
+    const n = email ? text.split(email).length - 1 : 0
+    if (!n) continue
+    files++
+    occurrences += n
   }
-  return hits
+  return {
+    secrets: hits,
+    email: email
+      ? { checked: true as const, found: occurrences > 0, files, occurrences }
+      : { checked: false as const },
+  }
 }
+
+// files under dir holding any of the secrets
+export const filesWithSecrets = (dir: string, secrets = credentialSecrets()): string[] =>
+  scanResults(dir, secrets, '').secrets
 
 // the user's email, read at run time from the local git config and never written anywhere: a run's scan reports only
 // whether and how often it appears (intake, 2026-11-18)
@@ -173,17 +194,4 @@ export const userEmail = (): string | undefined => {
 }
 
 // how often an address appears under dir: the files and the occurrences, never the address
-export const emailScan = (dir: string, email = userEmail()) => {
-  if (!email) return { checked: false as const }
-  let files = 0
-  let occurrences = 0
-  for (const rel of readdirSync(dir, { recursive: true, encoding: 'utf8' })) {
-    const file = path.join(dir, rel)
-    if (!statSync(file).isFile()) continue
-    const n = readFileSync(file, 'latin1').split(email).length - 1
-    if (!n) continue
-    files++
-    occurrences += n
-  }
-  return { checked: true as const, found: occurrences > 0, files, occurrences }
-}
+export const emailScan = (dir: string, email = userEmail()) => scanResults(dir, [], email).email
