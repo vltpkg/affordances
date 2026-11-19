@@ -1,89 +1,44 @@
-import {
-  defineCapability,
-  defineManifest,
-  definePrincipal,
-  defineResource,
-  validate,
-} from '@affordances/ir'
-import { createRuntime } from '@affordances/runtime'
+import { validate, type CapabilityManifest } from '@affordances/ir'
 import { describe, expect, test } from 'vitest'
-import { z } from 'zod'
-import * as lab from '../src/app/capabilities.ts'
-import { handlers, memoryTokens } from '../src/lib/handlers.ts'
-import { principalFor, resolvers } from '../src/lib/resolvers.ts'
+import { manifest } from '../src/app/capabilities.ts'
+import { principalFor } from '../src/lib/resolvers.ts'
+import { runtimeFor } from '../src/lib/runtime.ts'
 import { account } from '../src/lib/store.ts'
+import { TASK_EDITS } from '../src/lib/task-edits.ts'
 
-// M8e's T8 fixture (apps/choice-bench/results/surfaces-t8/PLAN.md §3), measured on the real runtime before the plan is
-// approved: where the deciding fact, which plans each region serves, sits in each policy's first view, from the
-// project start a trial uses. Nothing here changes the app: the region is added to a copy of the compiled manifest
+// M8e's T8 fixture (apps/choice-bench/results/surfaces-t8/PLAN.md §3), on the real runtime with hosting-lab's own
+// resolvers and handlers: where the deciding fact, which plans each region serves, sits in each policy's first view,
+// from the project start a trial uses. The fixture as built is T8's manifest, the base with T8's claim edit. The two
+// designs the plan rejects are small edits to it, so the test shows why each was rejected
 
-const owner = definePrincipal({
-  description: 'A signed-in account',
-  attributes: z.object({ id: z.string() }),
-})
-const REGIONS = [
-  { slug: 'us-east', name: 'US East', jurisdiction: 'US', plans: ['hobby', 'pro', 'business'] },
-  { slug: 'eu-west', name: 'EU West', jurisdiction: 'EU', plans: ['business'] },
-]
-// the region's definitions, compiled on their own: with `alternatives`, the region offers are a choice set, which
-// carries its comparison; a view's offers carry their target only by reference, so without it the regions' attributes
-// reach no view at all (asserted below)
-const regionsWith = (alternatives: boolean) => {
-  const region = defineResource({
-    id: 'hosting.region',
-    description: 'A region a project can be served from, and the plans that serve it',
-    key: 'slug',
-    attributes: z.object({
-      slug: z.string(),
-      name: z.string(),
-      jurisdiction: z.string(),
-      plans: z.array(z.string()),
-    }),
-    ...(alternatives && { alternatives: true as const }),
-  })
-  const readRegion = defineCapability({
-    id: 'hosting.region.read',
-    kind: 'query',
-    description: 'Read a region: where it is, and which plans serve it',
-    target: region,
-    input: z.object({ region: z.string() }),
-    targetAt: 'region',
-    principal: owner,
-    authorization: { principal: 'authenticated' },
-  })
-  return defineManifest({
-    namespace: lab.manifest.namespace,
-    title: 'regions',
-    owner: { id: 'hosting-lab', name: 'Hosting Lab (fictional)' },
-    principal: owner,
-    resources: [region],
-    capabilities: [readRegion],
-  })
+type View = { offers: { capability: string }[]; choiceSets: { id: string; comparison?: unknown }[] }
+type Compiled = {
+  resources: { id: string; alternatives?: boolean }[]
+  relations?: { type: string; from: string; to: string }[]
 }
 
-type Compiled = { resources: unknown[]; capabilities: unknown[]; relations?: unknown[] }
-const withRegions = (from: string, alternatives: boolean) => {
-  const m = structuredClone(lab.manifest) as unknown as Compiled
-  const r = regionsWith(alternatives) as unknown as Compiled
-  m.resources.push(...r.resources)
-  m.capabilities.push(...r.capabilities)
-  m.relations = [
-    ...(m.relations ?? []),
-    {
-      type: 'relatedTo',
-      from,
-      to: 'hosting.region.read',
-      description: 'Where a plan is served from',
-    },
-  ]
-  return m
+const asBuilt = () => TASK_EDITS.T8!.apply(manifest)
+// the relation from hosting.plan.subscribe instead, which binds the project, so it's a start capability
+const relatedFromSubscribe = () => {
+  const m = structuredClone(asBuilt()) as unknown as Compiled
+  m.relations = m.relations!.map((r) =>
+    r.to === 'hosting.region.read' ? { ...r, from: 'hosting.plan.subscribe' } : r,
+  )
+  return m as unknown as CapabilityManifest
+}
+// the region without alternatives, so its offers form no choice set, and no comparison carries its attributes
+const withoutAlternatives = () => {
+  const m = structuredClone(asBuilt()) as unknown as Compiled
+  m.resources = m.resources.map((r) => {
+    if (r.id !== 'hosting.region') return r
+    const { alternatives: _, ...rest } = r
+    return rest
+  })
+  return m as unknown as CapabilityManifest
 }
 
 // the regions' offers, and the plans each serves, from a view's region choice set
-const regionsIn = (v: {
-  offers: { capability: string }[]
-  choiceSets: { id: string; comparison?: unknown }[]
-}) => ({
+const regionsIn = (v: View) => ({
   offers: v.offers.filter((o) => o.capability === 'hosting.region.read').length,
   plans: (
     v.choiceSets.find((s) => s.id === 'hosting.region.read@hosting.region')?.comparison as
@@ -92,38 +47,15 @@ const regionsIn = (v: {
   )?.rows.map((r) => [r.name, r.plans]),
 })
 
-const firstViews = async (from: string, alternatives = true) => {
-  const m = withRegions(from, alternatives)
-  expect(validate(m as never)).toMatchObject({ ok: true })
-  const runtime = createRuntime({
-    manifest: m as never,
-    resources: {
-      ...resolvers,
-      'hosting.region': {
-        load: async (k: string) => {
-          const r = REGIONS.find((x) => x.slug === k)
-          return r ? { attributes: { ...r } } : null
-        },
-        list: async () => REGIONS.map((r) => r.slug),
-      },
-    },
-    handlers: { ...handlers, 'hosting.region.read': { run: async () => ({}) } } as never,
-    approvalKeys: {
-      current: (await crypto.subtle.generateKey({ name: 'HMAC', hash: 'SHA-256' }, false, [
-        'sign',
-        'verify',
-      ])) as CryptoKey,
-    },
-    seenTokens: memoryTokens(),
-  })
-  const sid = `t8-depth-${from}`
+const firstViews = async (m: CapabilityManifest, sid: string) => {
+  expect(validate(m)).toMatchObject({ ok: true })
+  const runtime = runtimeFor(m)
   const start = { type: 'hosting.project', key: account(sid).project.id }
   const principal = principalFor(sid)
   const full = (await runtime.project({ principal, policy: 'exhaustive', start })).view()
   const projection = await runtime.project({ principal, policy: 'progressive', start })
   const progressive = projection.view()
-  const listed = progressive.omitted.expand
-  const step = listed.find((e) => e.along === 'relations')
+  const step = progressive.omitted.expand.find((e) => e.along === 'relations')
   const expanded = step
     ? await projection.expand({ from: step.from, along: step.along })
     : undefined
@@ -142,9 +74,9 @@ const both = [
   ['US East', ['hobby', 'pro', 'business']],
 ]
 
-describe("T8's deciding fact, one step out (measured)", () => {
-  test('related from hosting.plan.list: full shows it first, progressive one listed expansion from the start', async () => {
-    const m = await firstViews('hosting.plan.list')
+describe("T8's deciding fact, one step out (measured on the fixture as built)", () => {
+  test('as built: full shows it first, and progressive one listed expansion from the start', async () => {
+    const m = await firstViews(asBuilt(), 't8-depth-built')
     expect(m.full).toEqual({ offers: 2, plans: both })
     expect(m.fullHasAttributes).toBe(true)
     expect(m.progressive).toEqual({ offers: 0, plans: undefined })
@@ -153,15 +85,15 @@ describe("T8's deciding fact, one step out (measured)", () => {
     expect(m.expanded).toEqual({ offers: 2, plans: both })
   })
 
-  test('without alternatives, the region offers are in full and progressive views, but their plans are in no view', async () => {
-    const m = await firstViews('hosting.plan.list', false)
+  test('without alternatives, rejected: the region offers are in the views, but no region attribute is', async () => {
+    const m = await firstViews(withoutAlternatives(), 't8-depth-plain')
     expect(m.full).toEqual({ offers: 2, plans: undefined })
     expect(m.fullHasAttributes).toBe(false)
     expect(m.expanded).toEqual({ offers: 2, plans: undefined })
   })
 
   test('related from hosting.plan.subscribe, rejected: it binds the project, so progressive shows the regions first', async () => {
-    const m = await firstViews('hosting.plan.subscribe')
+    const m = await firstViews(relatedFromSubscribe(), 't8-depth-subscribe')
     expect(m.progressive).toEqual({ offers: 2, plans: both })
   })
 })
