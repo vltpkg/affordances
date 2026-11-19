@@ -1,5 +1,5 @@
 import type { Principal, ResourceResolver } from '@affordances/runtime'
-import { addOns, bundles } from '../catalog.ts'
+import { addOns, bundles, regions } from '../catalog.ts'
 import {
   accountById,
   currentPlans,
@@ -36,6 +36,7 @@ export const resolvers: Record<string, ResourceResolver> = {
   'hosting.plan': catalog(currentPlans, 'id'),
   'hosting.addOn': catalog(() => addOns, 'slug'),
   'hosting.bundle': catalog(() => bundles, 'slug'),
+  'hosting.region': catalog(() => regions, 'slug'),
   'hosting.project': {
     load: async (key, principal) => {
       const project = projectOf(principal)

@@ -50,6 +50,7 @@ test('the definitions include declared and derived relations, every derived one 
   const i = await inspect(principalFor(sid))
   expect(i.definitions.relations).toEqual([
     expect.objectContaining({ type: 'alternativeTo', from: 'hosting.bundle.subscribe' }),
+    expect.objectContaining({ type: 'relatedTo', from: 'hosting.plan.list' }),
   ])
   expect(i.definitions.derived.length).toBeGreaterThan(0)
   expect(i.definitions.derived.every((e) => e.basis === 'inferred')).toBe(true)
@@ -144,8 +145,9 @@ test("the inspector's marks are the runtime's kept columns, on every set a view 
         })
       }
     }
-  // the inspector projects with no start, so the plan set is in view under exhaustive, for both manifests
-  expect(compared).toBe(2)
+  // the inspector projects with no start, so the plan set and T8's region set are in view under exhaustive, for both
+  // manifests
+  expect(compared).toBe(4)
   // and a policy that omits claims cites none, whatever claims the capability has
   for (const policy of POLICIES.filter((p) => p === 'progressive'))
     for (const set of (await inspect(principal, { policy, m: TASK_EDITS.T6!.apply(manifest) }))

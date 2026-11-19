@@ -3,6 +3,9 @@ import { ownsDeployment, planHasRollback } from './guards.ts'
 import { accountOf, projectOf } from './resolvers.ts'
 import { messages } from './messages.ts'
 import * as store from './store.ts'
+import { regions } from '../catalog.ts'
+
+const regionBySlug = (slug: string) => regions.find((r) => r.slug === slug)
 
 // what the projection runtime runs for each capability (RFC 0002 §11): its guards, its run once every check has
 // passed (§8.1, step 9), and the sentence to repeat. The same store calls as the v0 actions make. Next-free, so a
@@ -20,6 +23,7 @@ const fields = (i: unknown) => i as Input
 
 const defined: Record<string, Handler> = {
   'hosting.plan.list': { run: () => store.planRows() },
+  'hosting.region.read': { run: (_, { target }) => regionBySlug(target!.key) },
   'hosting.project.read': {
     run: (_, { principal }) => {
       caller(principal)

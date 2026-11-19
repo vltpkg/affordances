@@ -88,6 +88,21 @@ export const deployment = defineResource({
   }),
 })
 
+export const region = defineResource({
+  id: 'hosting.region',
+  description: 'Where a project is served from, and the plans each region serves',
+  key: 'slug',
+  attributes: z.object({
+    slug: z.enum(['us-east', 'eu-west']),
+    name: z.string(),
+    jurisdiction: z.enum(['US', 'EU']),
+    plans: z.array(z.enum(['hobby', 'pro', 'business'])),
+  }),
+  // a project is served from one region: so the regions are alternatives, and their facts reach a view through the
+  // choice set's comparison (RFC 0002 §6.6), which is the only way a resource's attributes reach one
+  alternatives: true,
+})
+
 // ---- what an agent can read ----
 
 export const listPlans = defineCapability({
@@ -123,6 +138,16 @@ export const readProject = defineCapability({
       owns: when.eq('target.ownerId', when.path('principal.id')).because('You own the project'),
     },
   },
+})
+
+export const readRegion = defineCapability({
+  id: 'hosting.region.read',
+  kind: 'query',
+  description: 'Read a region: where it is, and which plans it serves',
+  target: region,
+  input: z.object({ region: z.string() }),
+  targetAt: 'region',
+  authorization: { principal: 'authenticated' },
 })
 
 // ---- plans ----
@@ -442,10 +467,11 @@ export const manifest = defineManifest({
   title: 'Hosting Lab',
   owner: { id: 'hosting-lab', name: 'Hosting Lab (fictional)' },
   principal: owner,
-  resources: [project, plan, addOn, bundle, deployment],
+  resources: [project, plan, addOn, bundle, deployment, region],
   capabilities: [
     listPlans,
     readProject,
+    readRegion,
     subscribe,
     subscribeBundle,
     cancel,
@@ -462,6 +488,14 @@ export const manifest = defineManifest({
       from: 'hosting.bundle.subscribe',
       to: 'hosting.plan.subscribe',
       description: 'A bundle and a plan with separate add-ons serve the same goal',
+    },
+    // from the plans' list, not from subscribing, which binds the project and would put the regions in progressive's
+    // first view (results/surfaces-t8/PLAN.md §3)
+    {
+      type: 'relatedTo',
+      from: 'hosting.plan.list',
+      to: 'hosting.region.read',
+      description: 'Where a plan is served from',
     },
   ],
 })

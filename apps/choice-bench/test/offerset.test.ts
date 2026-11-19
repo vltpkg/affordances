@@ -10,7 +10,14 @@ test('C as built refuses: its advocated scope leaves hosting.plan.list out of th
     {
       condition: 'C',
       control: 'exhaustive-claims-omitted',
-      onlyInControl: ['hosting.plan.list'],
+      // and, since M8e's T8 fixture is in hosting-lab's manifest, the regions' offers too. M5's records were made
+      // without them, from their own pinned export, and re-score unchanged
+      onlyInControl: [
+        'hosting.plan.list',
+        'hosting.region.read@hosting.region',
+        'hosting.region.read@hosting.region:eu-west',
+        'hosting.region.read@hosting.region:us-east',
+      ],
       onlyInCondition: [],
     },
   ])

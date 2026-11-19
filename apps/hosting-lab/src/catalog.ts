@@ -76,3 +76,17 @@ export type Bundle = {
 export const bundles: readonly Bundle[] = [
   { slug: 'pro-plus', name: 'Pro Plus', plan: 'pro', addOns: ['priority-support'], priceUsd: 35 },
 ]
+
+// where each plan is served from (M8e's T8 fixture, results/surfaces-t8/PLAN.md §3): two regions, each with the plans it
+// serves. The fact lives on the region, since a relation is between definitions, never instances
+export type Region = {
+  slug: 'us-east' | 'eu-west'
+  name: string
+  jurisdiction: 'US' | 'EU'
+  plans: Plan['slug'][]
+}
+
+export const regions: readonly Region[] = [
+  { slug: 'us-east', name: 'US East', jurisdiction: 'US', plans: ['hobby', 'pro', 'business'] },
+  { slug: 'eu-west', name: 'EU West', jurisdiction: 'EU', plans: ['business'] },
+]

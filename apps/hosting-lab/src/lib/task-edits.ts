@@ -31,3 +31,22 @@ export const TASK_EDITS: Record<string, TaskEdit> = Object.fromEntries(
     },
   ]),
 )
+
+// M8e's T8 (results/surfaces-t8/PLAN.md §3): the owner's recommendation stays on Pro, worded for production sites, and
+// every word is true. It cites rollback, the fact its statement relies on (RFC 0001 §9)
+TASK_EDITS.T8 = {
+  name: 'owner-recommends-pro-for-production',
+  apply: (m: CapabilityManifest) => {
+    const out = structuredClone(m)
+    const claims = out.claims ?? []
+    const at = claims.findIndex((c) => c.id === 'proRecommended')
+    if (at < 0) throw new Error('the fixture has no proRecommended claim to reword')
+    claims[at] = {
+      ...claims[at]!,
+      statement:
+        'Recommended for production sites: instant rollback, and extra bandwidth whenever you need it',
+      cites: ['rollback'],
+    }
+    return out
+  },
+}

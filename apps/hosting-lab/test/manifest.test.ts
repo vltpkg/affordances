@@ -19,8 +19,10 @@ import { manifest } from '../src/app/capabilities.ts'
 // - M5's: 'sha256-5wGv2c-mT5wJu9N542it5-327q9I3dVboRvAGUDucs4', the manifest of the c81eeeb1 era (calibration, the
 //   confirmatory and exploratory runs), unchanged by the move into a capability module (RFC 0005 §1, 4ee4e0cb)
 // - M7f's: the claims cite what their statements rely on (RFC 0002 §6.6, M7a). Only M7f's new export uses it, which
-//   names its own commit and is never pooled with c81eeeb1's
-const ON_RECORD = 'sha256-TdMAthJoydo0hSSNqNByr3W31-_HXXpO185qdNojN2s'
+//   names its own commit and is never pooled with c81eeeb1's: 'sha256-TdMAthJoydo0hSSNqNByr3W31-_HXXpO185qdNojN2s'
+// - M8e's: T8's regions (results/surfaces-t8/PLAN.md §3), the hosting.region resource, its read query and the
+//   relatedTo from the plans' list. M8e's pin names its own commit and is never pooled with M7f's
+const ON_RECORD = 'sha256-Unrg7FlERwbxQerOUeG1eoCHUvV4Sm7-L1okp6XzUp0'
 
 test('the capability module gives the manifest on record, byte for byte', async () => {
   expect(await digest(manifest)).toBe(ON_RECORD)
@@ -64,13 +66,20 @@ test('normalizing is idempotent, and the digest is stable', async () => {
   expect(value).toMatch(/^sha256-[A-Za-z0-9_-]{43}$/)
 })
 
-test('the plans are one choice set, and the bundle is an alternative to subscribing', () => {
+test('the plans are one choice set, the regions another, and the bundle is an alternative to subscribing', () => {
   expect(manifest.resources.find((r) => r.id === 'hosting.plan')?.alternatives).toBe(true)
+  expect(manifest.resources.find((r) => r.id === 'hosting.region')?.alternatives).toBe(true)
   expect(manifest.relations).toEqual([
     expect.objectContaining({
       type: 'alternativeTo',
       from: 'hosting.bundle.subscribe',
       to: 'hosting.plan.subscribe',
+    }),
+    // T8's: where a plan is served from, one step from the plans' list
+    expect.objectContaining({
+      type: 'relatedTo',
+      from: 'hosting.plan.list',
+      to: 'hosting.region.read',
     }),
   ])
 })
@@ -161,5 +170,34 @@ test('every establishes holds in the state its effect describes', () => {
   expect(establishing.map((e) => e.id).toSorted()).toEqual(Object.keys(afterSuccess).toSorted())
   expect(establishing.map((e) => [e.id, evaluate(e.expr, afterSuccess[e.id]!)])).toEqual(
     establishing.map((e) => [e.id, true]),
+  )
+})
+
+// M8e's T8 fixture, exactly as results/surfaces-t8/PLAN.md §3 states it
+test('T8: two regions as data, a region query that charges nothing, and the claim on Pro reworded', async () => {
+  const { regions } = await import('../src/catalog.ts')
+  expect(regions).toEqual([
+    { slug: 'us-east', name: 'US East', jurisdiction: 'US', plans: ['hobby', 'pro', 'business'] },
+    { slug: 'eu-west', name: 'EU West', jurisdiction: 'EU', plans: ['business'] },
+  ])
+  const read = manifest.capabilities.find((c) => c.id === 'hosting.region.read')!
+  expect([read.kind, read.target, read.targetAt, read.authorization]).toEqual([
+    'query',
+    'hosting.region',
+    '/region',
+    { principal: 'authenticated' },
+  ])
+  expect(read.effects ?? []).toEqual([])
+  const { TASK_EDITS } = await import('../src/lib/task-edits.ts')
+  const edited = TASK_EDITS.T8!.apply(manifest)
+  expect(edited.claims!.find((c) => c.id === 'proRecommended')).toMatchObject({
+    statement:
+      'Recommended for production sites: instant rollback, and extra bandwidth whenever you need it',
+    cites: ['rollback'],
+    applies: { eq: [{ path: 'target.slug' }, { value: 'pro' }] },
+  })
+  // and the edit is T8's alone: the base manifest's claim is unchanged
+  expect(manifest.claims!.find((c) => c.id === 'proRecommended')!.statement).toBe(
+    'Recommended for production projects',
   )
 })
