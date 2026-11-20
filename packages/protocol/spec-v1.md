@@ -81,22 +81,22 @@ type Resource = {
 
 ## Media type
 
-A resource is sent as `application/vnd.affordances+json`. Errors are sent as `application/problem+json`.
+A resource is sent as `application/vnd.affordances-draft-1+json`. Errors are sent as `application/problem+json`.
 
 A URL that has another representation, such as an HTML page, must not return a resource for a request that did not ask for one. A JSON API whose URLs serve nothing else may send its resources as `application/json`.
 
 ## Discovery
 
-**Per page.** A client requests the page's own URL with `Accept: application/vnd.affordances+json`. The server responds with the page's resource, or `404` if the page has none.
+**Per page.** A client requests the page's own URL with `Accept: application/vnd.affordances-draft-1+json`. The server responds with the page's resource, or `404` if the page has none.
 
 HTML responses for pages with a resource should advertise it as an alternate representation, in both places:
 
 ```http
-Link: <?affordances=1>; rel="alternate"; type="application/vnd.affordances+json"
+Link: <?affordances=1>; rel="alternate"; type="application/vnd.affordances-draft-1+json"
 ```
 
 ```html
-<link rel="alternate" type="application/vnd.affordances+json" href="?affordances=1" />
+<link rel="alternate" type="application/vnd.affordances-draft-1+json" href="?affordances=1" />
 ```
 
 `?affordances=1` is an alias for the `Accept` header, for clients that cannot set headers. A server that supports it must treat `GET <url>?affordances=1` like `GET <url>` with the Affordances `Accept` header, and must leave `affordances` out of the resource's `$id` and of the query it gives the page's state.
@@ -198,7 +198,7 @@ type Delta = {
 }
 ```
 
-A delta is sent as `application/vnd.affordances.delta+json`. Removing the last item from the cart:
+A delta is sent as `application/vnd.affordances.delta-draft-1+json`. Removing the last item from the cart:
 
 ```http
 POST /cart?action=cart.updateQuantity
@@ -227,7 +227,7 @@ Content-Type: application/json
 - `output` is the action's return value. When the action has an `outputSchema`, `output` must match it.
 - `message` is a short sentence suitable to repeat to the person.
 
-A server may answer `200` with the whole resource instead, as `application/vnd.affordances+json` or `application/json`. The media type tells a client which one it got.
+A server may answer `200` with the whole resource instead, as `application/vnd.affordances-draft-1+json` or `application/json`. The media type tells a client which one it got.
 
 ## Problems
 
@@ -384,9 +384,9 @@ A definition is enough to plan with, not to act on. To perform an action a clien
 
 ## Versioning
 
-This is major version 1. Responses carry it as the media type's `v` parameter: `application/vnd.affordances+json; v=1`. A client may ask for a major version the same way in `Accept`; a server that can't serve it answers `406`. A request without `v` gets the newest major the server supports.
+This is the first draft of version 1, and its media types say so: `application/vnd.affordances-draft-1+json` and `application/vnd.affordances.delta-draft-1+json`. A draft that changes the format gets the next number, and the finished version drops the suffix. A server may serve several drafts and chooses by `Accept`; one that can serve none of the requested media types answers `406`.
 
-A breaking change ships as a new major version. Additive changes, such as new optional members, may ship within a major version, and clients must ignore members they don't recognize.
+Within a draft, and within a finished version, additive changes such as new optional members may ship, and clients must ignore members they don't recognize. A breaking change needs a new draft, or a new major version once the version is finished.
 
 ## Mapping to MCP and WebMCP
 
@@ -425,7 +425,7 @@ Non-normative.
 - `confirm: true` becomes a token bound to the session, the action, the input and the summary, sent in a header.
 - A delta's `ok`, `changed`, `actionsAdded` and `actionsRemoved` become one merge `patch`. `redirect` becomes a `303`.
 - Errors are RFC 9457 problems instead of `{ ok: false, error }`, and `issues` becomes `errors` with JSON Pointers. A failed origin check answers `403` instead of `401`, and `401` carries `WWW-Authenticate`.
-- `v` moves from the body into the media type.
+- `v` moves from the body into the media type, which names the draft: `application/vnd.affordances-draft-1+json`.
 - HTML advertises the resource with `rel="alternate"` and its media type, instead of `rel="affordances"`.
 - The site index becomes the site document and the collection of action definitions. `route` is gone from resources: a definition names the URL template of the resources that list it.
 
